@@ -42,6 +42,8 @@ interface WorkbookGridCellProps {
   sheetName: string;
   side: 'base' | 'mine';
   versionLabel: string;
+  headerRowNumber?: number;
+  rowSelectionColumn?: number;
   selectedCell?: WorkbookSelectedCell | null;
   onSelectCell?: ((cell: WorkbookSelectedCell | null) => void) | undefined;
   width: number;
@@ -107,6 +109,8 @@ const WorkbookGridCell = memo(({
   sheetName,
   side,
   versionLabel,
+  headerRowNumber = 0,
+  rowSelectionColumn = 0,
   selectedCell = null,
   onSelectCell,
   width,
@@ -191,6 +195,36 @@ const WorkbookGridCell = memo(({
       data-workbook-col={originalColumn}
       onClick={() => {
         if (!onSelectCell) return;
+        if (headerRowNumber > 0 && rowNumber === headerRowNumber) {
+          onSelectCell({
+            kind: 'column',
+            sheetName,
+            side,
+            versionLabel,
+            rowNumber,
+            colIndex: originalColumn,
+            colLabel,
+            address: colLabel,
+            value: cell.value,
+            formula: cell.formula,
+          });
+          return;
+        }
+        if (originalColumn === rowSelectionColumn) {
+          onSelectCell({
+            kind: 'row',
+            sheetName,
+            side,
+            versionLabel,
+            rowNumber,
+            colIndex: originalColumn,
+            colLabel,
+            address: `${rowNumber}`,
+            value: '',
+            formula: '',
+          });
+          return;
+        }
         onSelectCell({
           kind: 'cell',
           sheetName,
@@ -297,22 +331,6 @@ const WorkbookGridCell = memo(({
         }}>
         {cell.value || '\u00A0'}
       </span>
-      {isSelected && (
-        <span
-          aria-hidden="true"
-          style={{
-            position: 'absolute',
-            right: 2,
-            bottom: 2,
-            width: 7,
-            height: 7,
-            borderRadius: 999,
-            background: selectionAccent,
-            boxShadow: `0 0 0 2px ${T.bg1}`,
-            pointerEvents: 'none',
-          }}
-        />
-      )}
     </button>
   );
 

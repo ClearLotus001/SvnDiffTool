@@ -18,6 +18,7 @@ type IconName =
   | 'collapse'
   | 'expand'
   | 'whitespace'
+  | 'hiddenColumns'
   | 'language'
   | 'file'
   | 'help'
@@ -53,11 +54,14 @@ interface ToolbarProps {
   setCollapseCtx: React.Dispatch<React.SetStateAction<boolean>>;
   showWhitespace: boolean;
   setShowWhitespace: React.Dispatch<React.SetStateAction<boolean>>;
+  showHiddenColumns: boolean;
+  setShowHiddenColumns: React.Dispatch<React.SetStateAction<boolean>>;
   fontSize: number;
   setFontSize: React.Dispatch<React.SetStateAction<number>>;
   onGoto: () => void;
   onHelp: () => void;
   isElectron: boolean;
+  isWorkbookMode: boolean;
 }
 
 function Icon({ name, size = 12 }: { name: IconName; size?: number }) {
@@ -154,6 +158,14 @@ function Icon({ name, size = 12 }: { name: IconName; size?: number }) {
           <path d="M10.5 4h3" />
         </svg>
       );
+    case 'hiddenColumns':
+      return (
+        <svg {...common}>
+          <rect x="2.5" y="3" width="3" height="10" rx="1" />
+          <rect x="10.5" y="3" width="3" height="10" rx="1" />
+          <path d="M7.5 3.5v9" strokeDasharray="1.5 1.5" />
+        </svg>
+      );
     case 'language':
       return (
         <svg {...common}>
@@ -223,8 +235,9 @@ const Toolbar = memo((props: ToolbarProps) => {
     themeKey, setThemeKey, layout, setLayout,
     hunkIdx, totalHunks, onPrev, onNext,
     showSearch, setShowSearch, collapseCtx, setCollapseCtx,
-    showWhitespace, setShowWhitespace, fontSize, setFontSize,
-    onGoto, onHelp, isElectron,
+    showWhitespace, setShowWhitespace, showHiddenColumns, setShowHiddenColumns,
+    fontSize, setFontSize,
+    onGoto, onHelp, isElectron, isWorkbookMode,
   } = props;
 
   const T = useTheme();
@@ -285,16 +298,17 @@ const Toolbar = memo((props: ToolbarProps) => {
   const groupPadding = responsiveMode === 'tight' ? 1 : 2;
 
   const Btn = ({
-    active = false, onClick, children, tooltip = '', compact = false,
+    active = false, onClick, children, tooltip = '', compact = false, disabled = false,
   }: {
     active?: boolean;
     onClick: () => void;
     children: React.ReactNode;
     tooltip?: string;
     compact?: boolean;
+    disabled?: boolean;
   }) => {
     const button = (
-      <button onClick={onClick} aria-label={tooltip || undefined} style={{
+      <button onClick={onClick} disabled={disabled} aria-label={tooltip || undefined} style={{
       background: active ? `${T.acc}22` : 'transparent',
       border: `1px solid ${active ? `${T.acc}66` : 'transparent'}`,
       color: active ? T.acc : T.t0,
@@ -302,7 +316,6 @@ const Toolbar = memo((props: ToolbarProps) => {
         ? (responsiveMode === 'tight' ? '0 6px' : '0 8px')
         : (responsiveMode === 'tight' ? '0 8px' : '0 10px'),
       borderRadius: 8,
-      cursor: 'pointer',
       fontSize: FONT_SIZE.sm,
       fontFamily: FONT_UI,
       fontWeight: 600,
@@ -314,6 +327,8 @@ const Toolbar = memo((props: ToolbarProps) => {
       height: 28,
       minWidth: compact ? 28 : 'auto',
       lineHeight: 1,
+      opacity: disabled ? 0.45 : 1,
+      cursor: disabled ? 'not-allowed' : 'pointer',
       ...noDragStyle,
     }}>
       {children}
@@ -593,6 +608,14 @@ const Toolbar = memo((props: ToolbarProps) => {
           <Btn active={showWhitespace} onClick={() => setShowWhitespace(v => !v)} tooltip={t('toolbarWhitespaceTitle')}>
             <Icon name="whitespace" />
             {showWhitespaceText && <span>{t('toolbarWhitespaceLabel')}</span>}
+          </Btn>
+          <Btn
+            active={showHiddenColumns}
+            onClick={() => setShowHiddenColumns(v => !v)}
+            tooltip={t('toolbarHiddenColumnsTitle')}
+            disabled={!isWorkbookMode}>
+            <Icon name="hiddenColumns" />
+            {showWhitespaceText && <span>{t('toolbarHiddenColumnsLabel')}</span>}
           </Btn>
         </Group>
 

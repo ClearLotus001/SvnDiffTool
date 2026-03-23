@@ -66,7 +66,7 @@ export function buildWorkbookCompareCells(
     ? columns
     : Array.from({ length: Math.max(leftRow?.cells.length ?? 0, rightRow?.cells.length ?? 0) }, (_, index) => index);
 
-  if (!leftRow || !rightRow || leftRow.rowNumber !== rightRow.rowNumber) {
+  if (!leftRow || !rightRow) {
     const existingSide = leftRow ? 'base' : 'mine';
     const existingRow = leftRow ?? rightRow;
     if (!existingRow) return result;

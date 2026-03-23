@@ -158,6 +158,31 @@ export interface WorkbookFreezeState {
   colCount?: number;
 }
 
+export interface WorkbookMergeRange {
+  startRow: number;
+  endRow: number;
+  startCol: number;
+  endCol: number;
+}
+
+export interface WorkbookSheetMetadata {
+  name: string;
+  hiddenColumns: number[];
+  mergeRanges: WorkbookMergeRange[];
+  rowCount?: number;
+  maxColumns?: number;
+}
+
+export interface WorkbookMetadataMap {
+  sheets: Record<string, WorkbookSheetMetadata>;
+}
+
+export interface WorkbookSheetPresentation {
+  visibleColumns: number[];
+  baseMergeRanges: WorkbookMergeRange[];
+  mineMergeRanges: WorkbookMergeRange[];
+}
+
 // ── Theme ─────────────────────────────────────────────────────────────────────
 
 export type ThemeKey = 'dark' | 'light' | 'hc';
@@ -213,6 +238,9 @@ export interface DiffData extends DiffMeta {
   mineContent: string | null;
   baseBytes: Uint8Array | null;
   mineBytes: Uint8Array | null;
+  precomputedDiffLines?: DiffLine[] | null;
+  baseWorkbookMetadata?: WorkbookMetadataMap | null;
+  mineWorkbookMetadata?: WorkbookMetadataMap | null;
   revisionOptions?: SvnRevisionInfo[] | null;
   baseRevisionInfo?: SvnRevisionInfo | null;
   mineRevisionInfo?: SvnRevisionInfo | null;
@@ -240,6 +268,7 @@ export interface DiffPerformanceMetrics {
   textResolveMs?: number;
   metadataMs?: number;
   diffMs?: number;
+  rustDiffMs?: number;
   totalAppMs?: number;
   diffLineCount?: number;
 }

@@ -54,7 +54,18 @@ const WorkbookColumnCompareRow = memo(({
   const sizes = useMemo(() => getWorkbookFontScale(fontSize), [fontSize]);
   const baseRow = parseWorkbookRowLine(row.left);
   const mineRow = parseWorkbookRowLine(row.right);
-  const rowNumber = baseRow?.rowNumber ?? mineRow?.rowNumber ?? 0;
+  const baseRowNumber = baseRow?.rowNumber ?? mineRow?.rowNumber ?? 0;
+  const mineRowNumber = mineRow?.rowNumber ?? baseRow?.rowNumber ?? 0;
+  const displayRowLabel = baseRowNumber !== mineRowNumber
+    ? `${baseRowNumber || '-'}|${mineRowNumber || '-'}`
+    : String(baseRowNumber || mineRowNumber || '');
+  const rowSelectionSide = selectedCell?.sheetName === sheetName
+    ? selectedCell.side
+    : baseRow
+    ? 'base'
+    : 'mine';
+  const rowSelectionNumber = rowSelectionSide === 'base' ? baseRowNumber : mineRowNumber;
+  const rowSelectionVersion = rowSelectionSide === 'base' ? baseVersion : mineVersion;
   const compareCells = useMemo(
     () => buildWorkbookCompareCells(row.left, row.right, renderColumns?.map(entry => entry.column) ?? visibleColumns),
     [renderColumns, row.left, row.right, visibleColumns],
@@ -65,7 +76,7 @@ const WorkbookColumnCompareRow = memo(({
   const isSelectedRow = Boolean(
     isSelectionSheet
     && selectionKind !== 'column'
-    && selectedCell?.rowNumber === rowNumber,
+    && selectedCell?.rowNumber === rowSelectionNumber,
   );
   const baseTone = getRowTone(row, 'base');
   const mineTone = getRowTone(row, 'mine');
@@ -111,12 +122,12 @@ const WorkbookColumnCompareRow = memo(({
             onSelectCell({
               kind: 'row',
               sheetName,
-              side: 'base',
-              versionLabel: baseVersion,
-              rowNumber,
+              side: rowSelectionSide,
+              versionLabel: rowSelectionVersion,
+              rowNumber: rowSelectionNumber,
               colIndex: selectedCell?.colIndex ?? 0,
               colLabel: selectedCell?.colLabel ?? 'A',
-              address: `${rowNumber}`,
+              address: `${rowSelectionNumber}`,
               value: '',
               formula: '',
             });
@@ -128,7 +139,7 @@ const WorkbookColumnCompareRow = memo(({
             textAlign: 'right',
             paddingRight: 10,
             userSelect: 'none',
-            fontSize: sizes.line,
+            fontSize: baseRowNumber !== mineRowNumber ? sizes.meta : sizes.line,
             fontWeight: isSelectedRow ? 700 : 500,
             lineHeight: `${ROW_H}px`,
             flexShrink: 0,
@@ -146,7 +157,7 @@ const WorkbookColumnCompareRow = memo(({
             outline: 'none',
             boxShadow: isSelectedRow ? `inset 0 0 0 1px ${selectionAccent}4d` : undefined,
           }}>
-          {rowNumber || ''}
+          {displayRowLabel}
         </button>
       </div>
 
@@ -170,11 +181,11 @@ const WorkbookColumnCompareRow = memo(({
 
         return (
           <div
-            key={`pair-${rowNumber}-${originalColumn}`}
+            key={`pair-${displayRowLabel}-${originalColumn}`}
             style={{ display: 'flex', minWidth: WORKBOOK_CELL_WIDTH * 2, flexShrink: 0 }}>
             <WorkbookGridCell
               cell={baseCell}
-              rowNumber={rowNumber}
+              rowNumber={baseRowNumber}
               originalColumn={originalColumn}
               tone={compareCell?.changed ? baseTone : 'neutral'}
               active={active}
@@ -196,7 +207,7 @@ const WorkbookColumnCompareRow = memo(({
             />
             <WorkbookGridCell
               cell={mineCell}
-              rowNumber={rowNumber}
+              rowNumber={mineRowNumber}
               originalColumn={originalColumn}
               tone={compareCell?.changed ? mineTone : 'neutral'}
               active={active}

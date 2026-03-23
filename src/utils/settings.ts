@@ -5,6 +5,7 @@ export interface AppSettings {
   layout: LayoutMode;
   collapseCtx: boolean;
   showWhitespace: boolean;
+  showHiddenColumns: boolean;
   fontSize: number;
 }
 
@@ -15,6 +16,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   layout: 'split-h',
   collapseCtx: true,
   showWhitespace: false,
+  showHiddenColumns: false,
   fontSize: 14,
 };
 
@@ -45,6 +47,7 @@ export function getStoredAppSettings(): AppSettings {
       layout: isLayoutMode(parsed.layout) ? parsed.layout : DEFAULT_SETTINGS.layout,
       collapseCtx: typeof parsed.collapseCtx === 'boolean' ? parsed.collapseCtx : DEFAULT_SETTINGS.collapseCtx,
       showWhitespace: typeof parsed.showWhitespace === 'boolean' ? parsed.showWhitespace : DEFAULT_SETTINGS.showWhitespace,
+      showHiddenColumns: typeof parsed.showHiddenColumns === 'boolean' ? parsed.showHiddenColumns : DEFAULT_SETTINGS.showHiddenColumns,
       fontSize: clampFontSize(parsed.fontSize),
     };
   } catch {

@@ -1,3 +1,5 @@
+import type { SvnRevisionInfo } from '../types';
+
 const TRAILING_PAREN_VERSION = /\s*\(([^)]+)\)\s*$/;
 const KEYWORD_VERSION = /\b(?:r|rev|revision|ver|version|v)\s*[:#-]?\s*([0-9][\w.-]*)\b/i;
 const TRAILING_SIDE_LABEL = /\s*[:：-]\s*(working copy|working base|current|base|mine|head)\s*$/i;
@@ -50,4 +52,12 @@ export function resolveDisplayFileName(fileName: string, ...candidates: string[]
   return candidates
     .map(extractDisplayName)
     .find(Boolean) ?? '';
+}
+
+export function resolveVersionLabel(
+  name: string,
+  revisionInfo?: Pick<SvnRevisionInfo, 'revision'> | null,
+  fallback = '',
+): string {
+  return revisionInfo?.revision?.trim() || extractVersionLabel(name) || fallback;
 }

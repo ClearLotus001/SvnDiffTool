@@ -1,6 +1,13 @@
 import { XMLParser } from 'fast-xml-parser';
 import { strFromU8, unzipSync } from 'fflate';
-import type { SplitRow, WorkbookMetadataSource } from '../types';
+import type {
+  SplitRow,
+  WorkbookMergeRange,
+  WorkbookMetadataMap,
+  WorkbookMetadataSource,
+  WorkbookSheetMetadata,
+  WorkbookSheetPresentation,
+} from '../types';
 import { parseWorkbookDisplayLine } from './workbookDisplay';
 
 const ZIP_WORKBOOK_EXTENSIONS = new Set(['.xlsx', '.xlsm', '.xltx', '.xltm']);
@@ -14,28 +21,12 @@ const xmlParser = new XMLParser({
   htmlEntities: false,
 });
 
-export interface WorkbookMergeRange {
-  startRow: number;
-  endRow: number;
-  startCol: number;
-  endCol: number;
-}
-
-export interface WorkbookSheetMetadata {
-  name: string;
-  hiddenColumns: number[];
-  mergeRanges: WorkbookMergeRange[];
-}
-
-export interface WorkbookMetadataMap {
-  sheets: Record<string, WorkbookSheetMetadata>;
-}
-
-export interface WorkbookSheetPresentation {
-  visibleColumns: number[];
-  baseMergeRanges: WorkbookMergeRange[];
-  mineMergeRanges: WorkbookMergeRange[];
-}
+export type {
+  WorkbookMergeRange,
+  WorkbookMetadataMap,
+  WorkbookSheetMetadata,
+  WorkbookSheetPresentation,
+};
 
 function asArray<T>(value: T | T[] | null | undefined): T[] {
   if (value == null) return [];
@@ -109,6 +100,10 @@ function parseWorkbookSheets(zip: Record<string, Uint8Array>): { name: string; p
   });
 
   return asArray<any>(workbookXml?.workbook?.sheets?.sheet)
+    .filter((sheet) => {
+      const state = typeof sheet?.state === 'string' ? sheet.state.trim().toLowerCase() : '';
+      return state !== 'hidden' && state !== 'veryhidden';
+    })
     .map((sheet, index) => {
       const sheetName = typeof sheet?.name === 'string' ? sheet.name : `Sheet${index + 1}`;
       const relId = typeof sheet?.['r:id'] === 'string' ? sheet['r:id'] : '';
@@ -244,6 +239,7 @@ export function buildWorkbookSheetPresentation(
   baseMetadata: WorkbookMetadataMap | null,
   mineMetadata: WorkbookMetadataMap | null,
   fallbackColumnCount: number,
+  includeHiddenColumns = false,
 ): WorkbookSheetPresentation {
   const baseSheet = baseMetadata?.sheets[sheetName] ?? null;
   const mineSheet = mineMetadata?.sheets[sheetName] ?? null;
@@ -260,6 +256,11 @@ export function buildWorkbookSheetPresentation(
     columnSet.forEach(column => candidateColumns.add(column));
   });
 
+  if (includeHiddenColumns) {
+    (baseSheet?.hiddenColumns ?? []).forEach(column => candidateColumns.add(column));
+    (mineSheet?.hiddenColumns ?? []).forEach(column => candidateColumns.add(column));
+  }
+
   if (candidateColumns.size === 0) {
     for (let column = 0; column < Math.max(1, fallbackColumnCount); column += 1) {
       candidateColumns.add(column);
@@ -268,7 +269,7 @@ export function buildWorkbookSheetPresentation(
 
   let visibleColumns = [...candidateColumns]
     .sort((left, right) => left - right)
-    .filter(column => !(baseHidden.has(column) && mineHidden.has(column)));
+    .filter(column => includeHiddenColumns || !(baseHidden.has(column) && mineHidden.has(column)));
 
   if (visibleColumns.length === 0) visibleColumns = [0];
 

@@ -18,6 +18,26 @@ export function getWorkbookRowScopedSelection(
   return selection.rowNumber === rowNumber ? selection : null;
 }
 
+export function getWorkbookPairScopedSelection(
+  selection: WorkbookSelectedCell | null,
+  sheetName: string,
+  baseRowNumber: number | null,
+  mineRowNumber: number | null,
+  visibleColumns: number[],
+): WorkbookSelectedCell | null {
+  if (!selection || selection.sheetName !== sheetName) return null;
+
+  if (selection.kind === 'column') {
+    return visibleColumns.length === 0 || visibleColumns.includes(selection.colIndex)
+      ? selection
+      : null;
+  }
+
+  const expectedRowNumber = selection.side === 'base' ? baseRowNumber : mineRowNumber;
+  if (expectedRowNumber == null) return null;
+  return selection.rowNumber === expectedRowNumber ? selection : null;
+}
+
 export function buildWorkbookSelectionSelector(selection: WorkbookSelectedCell): string | null {
   if (selection.kind === 'row') return null;
 

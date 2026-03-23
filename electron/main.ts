@@ -37,6 +37,9 @@ interface DiffData {
   mineContent: string | null;
   baseBytes: Uint8Array | null;
   mineBytes: Uint8Array | null;
+  precomputedDiffLines: DiffLine[] | null;
+  baseWorkbookMetadata: WorkbookMetadataMap | null;
+  mineWorkbookMetadata: WorkbookMetadataMap | null;
   revisionOptions: SvnRevisionInfo[] | null;
   baseRevisionInfo: SvnRevisionInfo | null;
   mineRevisionInfo: SvnRevisionInfo | null;
@@ -51,8 +54,39 @@ interface DiffPerformanceMetrics {
   mineReadMs?: number;
   baseParserMs?: number;
   mineParserMs?: number;
+  metadataMs?: number;
+  rustDiffMs?: number;
   baseBytes?: number;
   mineBytes?: number;
+}
+
+interface DiffLine {
+  type: 'equal' | 'add' | 'delete';
+  base: string | null;
+  mine: string | null;
+  baseLineNo: number | null;
+  mineLineNo: number | null;
+  baseCharSpans: null;
+  mineCharSpans: null;
+}
+
+interface WorkbookMergeRange {
+  startRow: number;
+  endRow: number;
+  startCol: number;
+  endCol: number;
+}
+
+interface WorkbookSheetMetadata {
+  name: string;
+  hiddenColumns: number[];
+  mergeRanges: WorkbookMergeRange[];
+  rowCount?: number;
+  maxColumns?: number;
+}
+
+interface WorkbookMetadataMap {
+  sheets: Record<string, WorkbookSheetMetadata>;
 }
 
 const argv = process.argv.slice(2);
@@ -95,13 +129,23 @@ let cachedRevisionOptions: SvnRevisionInfo[] | undefined;
 interface FilePayloadMetrics {
   readMs: number;
   parserMs: number;
+  metadataMs: number;
   byteLength: number;
 }
 
 interface FilePayload {
   content: string | null;
   bytes: Uint8Array | null;
+  metadata: WorkbookMetadataMap | null;
   perf: FilePayloadMetrics;
+}
+
+interface RustDiffLinePayload {
+  type?: unknown;
+  base?: unknown;
+  mine?: unknown;
+  baseLineNo?: unknown;
+  mineLineNo?: unknown;
 }
 
 function asArray<T>(value: T | T[] | null | undefined): T[] {
@@ -276,12 +320,181 @@ async function tryParseWorkbookWithRust(filePath: string): Promise<{ content: st
   }
 }
 
+function normalizeWorkbookMetadata(input: unknown): WorkbookMetadataMap | null {
+  if (!input || typeof input !== 'object') return null;
+  const rawSheets = (input as { sheets?: unknown }).sheets;
+  if (!rawSheets || typeof rawSheets !== 'object') return null;
+
+  const sheets = Object.fromEntries(
+    Object.entries(rawSheets as Record<string, unknown>).flatMap(([name, rawSheet]) => {
+      if (!rawSheet || typeof rawSheet !== 'object') return [];
+      const sheet = rawSheet as Record<string, unknown>;
+      const hiddenColumns = Array.isArray(sheet.hiddenColumns)
+        ? sheet.hiddenColumns
+            .map(value => Number(value))
+            .filter(value => Number.isFinite(value) && value >= 0)
+        : [];
+      const mergeRanges = Array.isArray(sheet.mergeRanges)
+        ? sheet.mergeRanges.flatMap((range) => {
+            if (!range || typeof range !== 'object') return [];
+            const rawRange = range as Record<string, unknown>;
+            const startRow = Number(rawRange.startRow);
+            const endRow = Number(rawRange.endRow);
+            const startCol = Number(rawRange.startCol);
+            const endCol = Number(rawRange.endCol);
+            if (![startRow, endRow, startCol, endCol].every(Number.isFinite)) return [];
+            return [{
+              startRow,
+              endRow,
+              startCol,
+              endCol,
+            }];
+          })
+        : [];
+
+      const normalized: WorkbookSheetMetadata = {
+        name: typeof sheet.name === 'string' ? sheet.name : name,
+        hiddenColumns,
+        mergeRanges,
+      };
+      const rowCount = Number(sheet.rowCount);
+      if (Number.isFinite(rowCount) && rowCount >= 0) normalized.rowCount = rowCount;
+      const maxColumns = Number(sheet.maxColumns);
+      if (Number.isFinite(maxColumns) && maxColumns >= 0) normalized.maxColumns = maxColumns;
+      return [[name, normalized]];
+    }),
+  );
+
+  return { sheets };
+}
+
+async function tryResolveWorkbookMetadataWithRust(filePath: string): Promise<{ metadata: WorkbookMetadataMap | null; parseMs: number }> {
+  const parserPath = resolveRustParserPath();
+  if (!parserPath) return { metadata: null, parseMs: 0 };
+
+  const parseStart = performance.now();
+  try {
+    const result = await execFileTextCommand(parserPath, ['--metadata-json', filePath], RUST_MAX_BUFFER);
+    const parseMs = performance.now() - parseStart;
+
+    if (!result.ok || !result.stdout.trim()) {
+      if (result.stderr.trim()) {
+        console.warn('[rust-parser-metadata]', result.stderr.trim());
+      }
+      return { metadata: null, parseMs };
+    }
+
+    const parsed = JSON.parse(result.stdout) as unknown;
+    return {
+      metadata: normalizeWorkbookMetadata(parsed),
+      parseMs,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn('[rust-parser-metadata]', message);
+    return { metadata: null, parseMs: performance.now() - parseStart };
+  }
+}
+
+function normalizeRustDiffLines(input: unknown): DiffLine[] | null {
+  if (!Array.isArray(input)) return null;
+
+  const diffLines = input.flatMap((entry): DiffLine[] => {
+    if (!entry || typeof entry !== 'object') return [];
+    const payload = entry as RustDiffLinePayload;
+    const type = payload.type === 'equal' || payload.type === 'add' || payload.type === 'delete'
+      ? payload.type
+      : null;
+    if (!type) return [];
+
+    const baseLineNo = payload.baseLineNo == null ? null : Number(payload.baseLineNo);
+    const mineLineNo = payload.mineLineNo == null ? null : Number(payload.mineLineNo);
+    return [{
+      type,
+      base: typeof payload.base === 'string' ? payload.base : null,
+      mine: typeof payload.mine === 'string' ? payload.mine : null,
+      baseLineNo: Number.isFinite(baseLineNo) ? baseLineNo : null,
+      mineLineNo: Number.isFinite(mineLineNo) ? mineLineNo : null,
+      baseCharSpans: null,
+      mineCharSpans: null,
+    }];
+  });
+
+  return diffLines;
+}
+
+async function tryResolveWorkbookDiffWithRust(baseFilePath: string, mineFilePath: string): Promise<{ diffLines: DiffLine[] | null; parseMs: number }> {
+  const parserPath = resolveRustParserPath();
+  if (!parserPath) return { diffLines: null, parseMs: 0 };
+
+  const parseStart = performance.now();
+  try {
+    const result = await execFileTextCommand(parserPath, ['--diff-json', baseFilePath, mineFilePath], RUST_MAX_BUFFER);
+    const parseMs = performance.now() - parseStart;
+    if (!result.ok || !result.stdout.trim()) {
+      if (result.stderr.trim()) console.warn('[rust-parser-diff]', result.stderr.trim());
+      return { diffLines: null, parseMs };
+    }
+
+    const parsed = JSON.parse(result.stdout) as unknown;
+    return {
+      diffLines: normalizeRustDiffLines(parsed),
+      parseMs,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn('[rust-parser-diff]', message);
+    return { diffLines: null, parseMs: performance.now() - parseStart };
+  }
+}
+
+async function withWorkbookDiffSources<T>(
+  basePathCandidate: string,
+  baseBytes: Uint8Array | null,
+  minePathCandidate: string,
+  mineBytes: Uint8Array | null,
+  fileName: string,
+  run: (basePath: string, minePath: string) => Promise<T>,
+): Promise<T | null> {
+  const tempPaths: string[] = [];
+  const resolveSource = async (pathCandidate: string, bytes: Uint8Array | null, suffix: 'base' | 'mine'): Promise<string | null> => {
+    if (pathCandidate && fs.existsSync(pathCandidate)) {
+      return pathCandidate;
+    }
+    if (!bytes || bytes.byteLength === 0) return null;
+
+    const tempPath = path.join(
+      os.tmpdir(),
+      `svn-excel-diff-${suffix}-${Date.now()}-${Math.random().toString(16).slice(2)}${getExtension(fileName) || '.bin'}`,
+    );
+    await fs.promises.writeFile(tempPath, Buffer.from(bytes));
+    tempPaths.push(tempPath);
+    return tempPath;
+  };
+
+  try {
+    const basePath = await resolveSource(basePathCandidate, baseBytes, 'base');
+    const minePath = await resolveSource(minePathCandidate, mineBytes, 'mine');
+    if (!basePath || !minePath) return null;
+    return await run(basePath, minePath);
+  } finally {
+    await Promise.all(tempPaths.map(async (tempPath) => {
+      try {
+        await fs.promises.unlink(tempPath);
+      } catch {
+        // ignore temp cleanup failure
+      }
+    }));
+  }
+}
+
 async function readFilePayload(filePath: string): Promise<FilePayload> {
   if (!filePath) {
     return {
       content: null,
       bytes: null,
-      perf: { readMs: 0, parserMs: 0, byteLength: 0 },
+      metadata: null,
+      perf: { readMs: 0, parserMs: 0, metadataMs: 0, byteLength: 0 },
     };
   }
 
@@ -290,7 +503,8 @@ async function readFilePayload(filePath: string): Promise<FilePayload> {
       return {
         content: null,
         bytes: null,
-        perf: { readMs: 0, parserMs: 0, byteLength: 0 },
+        metadata: null,
+        perf: { readMs: 0, parserMs: 0, metadataMs: 0, byteLength: 0 },
       };
     }
 
@@ -299,14 +513,19 @@ async function readFilePayload(filePath: string): Promise<FilePayload> {
       const buffer = await fs.promises.readFile(filePath);
       const workbookBytes = Uint8Array.from(buffer);
       const readMs = performance.now() - readStart;
-      const parsedWorkbook = await tryParseWorkbookWithRust(filePath);
+      const [parsedWorkbook, metadataResult] = await Promise.all([
+        tryParseWorkbookWithRust(filePath),
+        tryResolveWorkbookMetadataWithRust(filePath),
+      ]);
       if (parsedWorkbook.content) {
         return {
           content: parsedWorkbook.content,
           bytes: workbookBytes,
+          metadata: metadataResult.metadata,
           perf: {
             readMs,
             parserMs: parsedWorkbook.parseMs,
+            metadataMs: metadataResult.parseMs,
             byteLength: workbookBytes.length,
           },
         };
@@ -315,9 +534,11 @@ async function readFilePayload(filePath: string): Promise<FilePayload> {
       return {
         content: null,
         bytes: workbookBytes,
+        metadata: metadataResult.metadata,
         perf: {
           readMs,
           parserMs: parsedWorkbook.parseMs,
+          metadataMs: metadataResult.parseMs,
           byteLength: workbookBytes.length,
         },
       };
@@ -329,9 +550,11 @@ async function readFilePayload(filePath: string): Promise<FilePayload> {
     return {
       content,
       bytes: null,
+      metadata: null,
       perf: {
         readMs,
         parserMs: 0,
+        metadataMs: 0,
         byteLength: Buffer.byteLength(content, 'utf-8'),
       },
     };
@@ -340,7 +563,8 @@ async function readFilePayload(filePath: string): Promise<FilePayload> {
     return {
       content: `[读取文件失败 / Error reading file: ${message}]`,
       bytes: null,
-      perf: { readMs: 0, parserMs: 0, byteLength: 0 },
+      metadata: null,
+      perf: { readMs: 0, parserMs: 0, metadataMs: 0, byteLength: 0 },
     };
   }
 }
@@ -355,13 +579,18 @@ async function buildPayloadFromBuffer(buffer: Buffer, fileName: string): Promise
 
     try {
       await fs.promises.writeFile(tempFilePath, buffer);
-      const parsedWorkbook = await tryParseWorkbookWithRust(tempFilePath);
+      const [parsedWorkbook, metadataResult] = await Promise.all([
+        tryParseWorkbookWithRust(tempFilePath),
+        tryResolveWorkbookMetadataWithRust(tempFilePath),
+      ]);
       return {
         content: parsedWorkbook.content,
         bytes,
+        metadata: metadataResult.metadata,
         perf: {
           readMs: 0,
           parserMs: parsedWorkbook.parseMs,
+          metadataMs: metadataResult.parseMs,
           byteLength: bytes.length,
         },
       };
@@ -377,9 +606,11 @@ async function buildPayloadFromBuffer(buffer: Buffer, fileName: string): Promise
   return {
     content: buffer.toString('utf-8'),
     bytes: null,
+    metadata: null,
     perf: {
       readMs: 0,
       parserMs: 0,
+      metadataMs: 0,
       byteLength: buffer.length,
     },
   };
@@ -551,7 +782,8 @@ async function readRevisionPayload(source: SvnRevisionInfo, target: string, file
     return {
       content: '[SVN] 无法定位仓库 URL，无法按版本切换',
       bytes: null,
-      perf: { readMs: 0, parserMs: 0, byteLength: 0 },
+      metadata: null,
+      perf: { readMs: 0, parserMs: 0, metadataMs: 0, byteLength: 0 },
     };
   }
 
@@ -561,7 +793,8 @@ async function readRevisionPayload(source: SvnRevisionInfo, target: string, file
     return {
       content: `[SVN] 读取版本 ${source.revision} 失败: ${message}`,
       bytes: null,
-      perf: { readMs: 0, parserMs: 0, byteLength: 0 },
+      metadata: null,
+      perf: { readMs: 0, parserMs: 0, metadataMs: 0, byteLength: 0 },
     };
   }
 
@@ -600,6 +833,16 @@ async function buildDiffData(
       ? readRevisionPayload(mineRevisionInfo, target, resolvedFileName)
       : readFilePayload(args.minePath),
   ]);
+  const rustDiffResult = isWorkbookFile(resolvedFileName)
+    ? await withWorkbookDiffSources(
+        baseRevisionId ? '' : args.basePath,
+        basePayload.bytes,
+        mineRevisionId ? '' : args.minePath,
+        minePayload.bytes,
+        resolvedFileName,
+        (basePath, minePath) => tryResolveWorkbookDiffWithRust(basePath, minePath),
+      )
+    : null;
 
   return {
     svnUrl: target,
@@ -618,6 +861,9 @@ async function buildDiffData(
     mineContent: minePayload.content,
     baseBytes: basePayload.bytes,
     mineBytes: minePayload.bytes,
+    precomputedDiffLines: rustDiffResult?.diffLines ?? null,
+    baseWorkbookMetadata: basePayload.metadata,
+    mineWorkbookMetadata: minePayload.metadata,
     revisionOptions,
     baseRevisionInfo,
     mineRevisionInfo,
@@ -629,6 +875,8 @@ async function buildDiffData(
       mineReadMs: minePayload.perf.readMs,
       baseParserMs: basePayload.perf.parserMs,
       mineParserMs: minePayload.perf.parserMs,
+      metadataMs: basePayload.perf.metadataMs + minePayload.perf.metadataMs,
+      rustDiffMs: rustDiffResult?.parseMs ?? 0,
       baseBytes: basePayload.perf.byteLength,
       mineBytes: minePayload.perf.byteLength,
     },
@@ -706,6 +954,16 @@ async function buildLocalDiffData(basePath: string, minePath: string): Promise<D
     readFilePayload(resolvedBasePath),
     readFilePayload(resolvedMinePath),
   ]);
+  const rustDiffResult = isWorkbookFile(resolvedFileName)
+    ? await withWorkbookDiffSources(
+        resolvedBasePath,
+        basePayload.bytes,
+        resolvedMinePath,
+        minePayload.bytes,
+        resolvedFileName,
+        (baseFilePath, mineFilePath) => tryResolveWorkbookDiffWithRust(baseFilePath, mineFilePath),
+      )
+    : null;
 
   return {
     svnUrl: '',
@@ -716,6 +974,9 @@ async function buildLocalDiffData(basePath: string, minePath: string): Promise<D
     mineContent: minePayload.content,
     baseBytes: basePayload.bytes,
     mineBytes: minePayload.bytes,
+    precomputedDiffLines: rustDiffResult?.diffLines ?? null,
+    baseWorkbookMetadata: basePayload.metadata,
+    mineWorkbookMetadata: minePayload.metadata,
     revisionOptions: null,
     baseRevisionInfo: null,
     mineRevisionInfo: null,
@@ -727,6 +988,8 @@ async function buildLocalDiffData(basePath: string, minePath: string): Promise<D
       mineReadMs: minePayload.perf.readMs,
       baseParserMs: basePayload.perf.parserMs,
       mineParserMs: minePayload.perf.parserMs,
+      metadataMs: basePayload.perf.metadataMs + minePayload.perf.metadataMs,
+      rustDiffMs: rustDiffResult?.parseMs ?? 0,
       baseBytes: basePayload.perf.byteLength,
       mineBytes: minePayload.perf.byteLength,
     },

@@ -4,7 +4,6 @@ import { FONT_CODE, FONT_SIZE, FONT_UI } from '../constants/typography';
 import { useI18n } from '../context/i18n';
 import type { DiffLine } from '../types';
 import { useTheme } from '../context/theme';
-import { extractVersionLabel } from '../utils/diffMeta';
 import Tooltip from './Tooltip';
 
 interface StatsBarProps {
@@ -13,6 +12,8 @@ interface StatsBarProps {
   mineName: string;
   fileName: string;
   totalLines: number;
+  baseVersionLabel: string;
+  mineVersionLabel: string;
 }
 
 const Dot = ({ c }: { c: string }) => (
@@ -61,7 +62,15 @@ const RoleBadge = ({ side, accent }: { side: 'base' | 'mine'; accent: string }) 
   );
 };
 
-const StatsBar = memo(({ diffLines, baseName, mineName, fileName, totalLines }: StatsBarProps) => {
+const StatsBar = memo(({
+  diffLines,
+  baseName,
+  mineName,
+  fileName,
+  totalLines,
+  baseVersionLabel,
+  mineVersionLabel,
+}: StatsBarProps) => {
   const T = useTheme();
   const { t } = useI18n();
 
@@ -74,9 +83,6 @@ const StatsBar = memo(({ diffLines, baseName, mineName, fileName, totalLines }: 
     const chg = Math.min(add, del);
     return { add: add - chg, del: del - chg, chg };
   }, [diffLines]);
-
-  const baseVersion = extractVersionLabel(baseName) || t('commonBase');
-  const mineVersion = extractVersionLabel(mineName) || t('commonMine');
 
   const metric = (color: string, value: string, label: string) => (
     <div style={{
@@ -149,8 +155,8 @@ const StatsBar = memo(({ diffLines, baseName, mineName, fileName, totalLines }: 
       {metric(T.chgTx, `~${stats.chg}`, t('statsModified'))}
 
       {fileName && metaPill(t('commonTableFile'), fileName, T.acc2)}
-      {metaPill(t('statsBaseVersion'), baseVersion, T.acc2, baseName, 'base')}
-      {metaPill(t('statsMineVersion'), mineVersion, T.acc, mineName, 'mine')}
+      {metaPill(t('statsBaseVersion'), baseVersionLabel, T.acc2, baseName, 'base')}
+      {metaPill(t('statsMineVersion'), mineVersionLabel, T.acc, mineName, 'mine')}
 
       <div style={{ flex: 1 }} />
       <span style={{ whiteSpace: 'nowrap', fontFamily: FONT_UI, fontSize: FONT_SIZE.sm }}>{t('statsLines', { count: totalLines })}</span>

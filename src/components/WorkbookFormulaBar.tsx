@@ -35,6 +35,9 @@ const WorkbookFormulaBar = memo(({
     : selection?.side === 'mine'
     ? t('tooltipLocalLabel')
     : t('formulaBarHint');
+  const sideMeta = selection?.versionLabel
+    ? `${sideLabel} · ${selection.versionLabel}`
+    : sideLabel;
   const sideAccent = selection?.side === 'base' ? T.acc2 : T.acc;
   const selectionAddress = selection?.kind === 'row'
     ? `R${selection.rowNumber}`
@@ -140,7 +143,7 @@ const WorkbookFormulaBar = memo(({
             flexShrink: 0,
           }}
         />
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sideLabel}</span>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sideMeta}</span>
       </div>
 
       <div

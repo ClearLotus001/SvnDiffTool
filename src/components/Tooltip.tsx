@@ -1,4 +1,4 @@
-import { memo, useEffect, useId, useRef, useState, type CSSProperties } from 'react';
+import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { FONT_SIZE, FONT_UI } from '../constants/typography';
 import { useTheme } from '../context/theme';
@@ -14,6 +14,54 @@ interface TooltipProps {
   anchorStyle?: CSSProperties | undefined;
 }
 
+interface TooltipLayout {
+  left: number;
+  top: number;
+  actualPlacement: TooltipPlacement;
+  arrowOffset: number;
+}
+
+const VIEWPORT_PADDING = 12;
+const TOOLTIP_GAP = 8;
+const ARROW_SAFE_PADDING = 18;
+
+export function computeTooltipLayout(
+  rect: DOMRect,
+  viewportWidth: number,
+  viewportHeight: number,
+  bubbleWidth: number,
+  bubbleHeight: number,
+  preferredPlacement: TooltipPlacement,
+): TooltipLayout {
+  const canPlaceTop = rect.top >= bubbleHeight + TOOLTIP_GAP + VIEWPORT_PADDING;
+  const canPlaceBottom = viewportHeight - rect.bottom >= bubbleHeight + TOOLTIP_GAP + VIEWPORT_PADDING;
+  const actualPlacement = preferredPlacement === 'bottom'
+    ? 'bottom'
+    : canPlaceTop || !canPlaceBottom
+    ? 'top'
+    : 'bottom';
+
+  const anchorCenter = rect.left + (rect.width / 2);
+  const clampedLeft = Math.min(
+    Math.max(anchorCenter - (bubbleWidth / 2), VIEWPORT_PADDING),
+    Math.max(VIEWPORT_PADDING, viewportWidth - bubbleWidth - VIEWPORT_PADDING),
+  );
+  const top = actualPlacement === 'top'
+    ? rect.top - TOOLTIP_GAP - bubbleHeight
+    : rect.bottom + TOOLTIP_GAP;
+  const arrowOffset = Math.min(
+    Math.max(anchorCenter - clampedLeft, ARROW_SAFE_PADDING),
+    Math.max(ARROW_SAFE_PADDING, bubbleWidth - ARROW_SAFE_PADDING),
+  );
+
+  return {
+    left: clampedLeft,
+    top,
+    actualPlacement,
+    arrowOffset,
+  };
+}
+
 const Tooltip = memo(({
   content,
   children,
@@ -25,32 +73,15 @@ const Tooltip = memo(({
   const T = useTheme();
   const id = useId();
   const anchorRef = useRef<HTMLSpanElement>(null);
+  const bubbleRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [rect, setRect] = useState<DOMRect | null>(null);
+  const [bubbleSize, setBubbleSize] = useState({ width: maxWidth, height: 40 });
 
   const updateRect = () => {
     const nextRect = anchorRef.current?.getBoundingClientRect();
     if (nextRect) setRect(nextRect);
   };
-
-  const resolvedPlacement: TooltipPlacement = (() => {
-    if (!rect || typeof window === 'undefined') return placement;
-    if (placement === 'bottom') return 'bottom';
-
-    const spaceAbove = rect.top;
-    const spaceBelow = window.innerHeight - rect.bottom;
-    if (spaceAbove < 52 && spaceBelow > spaceAbove) return 'bottom';
-    return 'top';
-  })();
-
-  const anchorX = (() => {
-    if (!rect || typeof window === 'undefined') return 0;
-    const halfWidth = maxWidth / 2;
-    return Math.min(
-      Math.max(rect.left + rect.width / 2, halfWidth + 12),
-      window.innerWidth - halfWidth - 12,
-    );
-  })();
 
   useEffect(() => {
     if (!open) return;
@@ -64,6 +95,19 @@ const Tooltip = memo(({
     };
   }, [open]);
 
+  useLayoutEffect(() => {
+    if (!open) return;
+    const bubble = bubbleRef.current;
+    if (!bubble) return;
+    const nextWidth = Math.ceil(bubble.offsetWidth);
+    const nextHeight = Math.ceil(bubble.offsetHeight);
+    setBubbleSize((prev) => (
+      prev.width === nextWidth && prev.height === nextHeight
+        ? prev
+        : { width: nextWidth, height: nextHeight }
+    ));
+  }, [maxWidth, open, rect, content]);
+
   const resolvedContent: React.ReactNode = (() => {
     if (typeof content === 'function') {
       return open ? content() : null;
@@ -71,9 +115,21 @@ const Tooltip = memo(({
     return content ?? null;
   })();
 
+  const layout = useMemo(() => {
+    if (!rect || typeof window === 'undefined') return null;
+    return computeTooltipLayout(
+      rect,
+      window.innerWidth,
+      window.innerHeight,
+      bubbleSize.width,
+      bubbleSize.height,
+      placement,
+    );
+  }, [bubbleSize.height, bubbleSize.width, placement, rect]);
+
   const tooltip = !disabled && resolvedContent ? (
     open &&
-    rect &&
+    layout &&
     typeof document !== 'undefined' &&
     createPortal(
       <div
@@ -81,14 +137,14 @@ const Tooltip = memo(({
         role="tooltip"
         style={{
           position: 'fixed',
-          left: anchorX,
-          top: resolvedPlacement === 'top' ? rect.top - 8 : rect.bottom + 8,
-          transform: resolvedPlacement === 'top' ? 'translate(-50%, -100%)' : 'translate(-50%, 0)',
+          left: layout.left,
+          top: layout.top,
           zIndex: 9999,
           pointerEvents: 'none',
           opacity: 1,
         }}>
         <div
+          ref={bubbleRef}
           style={{
             position: 'relative',
             maxWidth,
@@ -100,7 +156,7 @@ const Tooltip = memo(({
             fontSize: FONT_SIZE.sm,
             lineHeight: 1.35,
             fontFamily: FONT_UI,
-            boxShadow: '0 14px 28px rgba(0, 0, 0, 0.12)',
+            boxShadow: '0 14px 30px rgba(0, 0, 0, 0.12)',
             textAlign: 'center',
             whiteSpace: 'normal',
           }}>
@@ -108,17 +164,20 @@ const Tooltip = memo(({
           <span
             style={{
               position: 'absolute',
-              left: '50%',
-              width: 8,
-              height: 8,
-              background: T.bg1,
+              left: layout.arrowOffset,
+              width: 12,
+              height: 12,
+              background: `linear-gradient(180deg, ${T.bg2} 0%, ${T.bg1} 100%)`,
               borderLeft: `1px solid ${T.border}`,
               borderTop: `1px solid ${T.border}`,
-              borderTopLeftRadius: 3,
-              transform: resolvedPlacement === 'top'
+              borderTopLeftRadius: 4,
+              transform: layout.actualPlacement === 'top'
                 ? 'translateX(-50%) rotate(225deg)'
                 : 'translateX(-50%) rotate(45deg)',
-              top: resolvedPlacement === 'top' ? 'calc(100% - 1px)' : -4,
+              top: layout.actualPlacement === 'top' ? 'calc(100% - 5px)' : -5,
+              boxShadow: layout.actualPlacement === 'top'
+                ? '4px 4px 10px rgba(0, 0, 0, 0.06)'
+                : '-4px -4px 10px rgba(0, 0, 0, 0.06)',
             }}
           />
         </div>

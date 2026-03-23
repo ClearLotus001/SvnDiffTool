@@ -23,9 +23,12 @@ interface WorkbookLineProps {
   sheetName?: string;
   side?: 'base' | 'mine';
   versionLabel?: string;
+  headerRowNumber?: number;
+  rowSelectionColumn?: number;
   selectedCell?: WorkbookSelectedCell | null;
   onSelectCell?: ((cell: WorkbookSelectedCell | null) => void) | undefined;
   lineNumber?: number | null;
+  rowHeight?: number;
   freezeColumnCount?: number;
   stickyLeft?: number;
   rowHighlightBg?: string | undefined;
@@ -80,9 +83,12 @@ const WorkbookLine = memo(({
   sheetName = '',
   side = 'mine',
   versionLabel = '',
+  headerRowNumber = 0,
+  rowSelectionColumn = 0,
   selectedCell = null,
   onSelectCell,
   lineNumber = null,
+  rowHeight = ROW_H,
   freezeColumnCount = 1,
   stickyLeft = 0,
   rowHighlightBg,
@@ -213,8 +219,8 @@ const WorkbookLine = memo(({
       ? mergeSlot.visibleSpan * WORKBOOK_CELL_WIDTH
       : WORKBOOK_CELL_WIDTH;
     const mergedHeight = mergeSlot?.kind === 'start'
-      ? mergeSlot.rowSpan * ROW_H
-      : ROW_H;
+      ? mergeSlot.rowSpan * rowHeight
+      : rowHeight;
 
     const sticky = visibleIndex < freezeColumnCount;
     const stickyBoundary = sticky && visibleIndex === freezeColumnCount - 1;
@@ -228,7 +234,7 @@ const WorkbookLine = memo(({
             width: mergedWidth,
             minWidth: mergedWidth,
             maxWidth: mergedWidth,
-            height: ROW_H,
+            height: rowHeight,
             visibility: 'hidden',
             pointerEvents: 'none',
             flexShrink: 0,
@@ -247,6 +253,8 @@ const WorkbookLine = memo(({
         sheetName={sheetName}
         side={side}
         versionLabel={versionLabel}
+        headerRowNumber={headerRowNumber}
+        rowSelectionColumn={rowSelectionColumn}
         selectedCell={selectedCell}
           onSelectCell={onSelectCell}
           width={mergedWidth}
@@ -315,11 +323,11 @@ const WorkbookLine = memo(({
             color: active ? T.acc2 : T.lnTx,
             ...(isSelectedRow ? { color: selectionAccent } : {}),
             textAlign: 'right',
-            paddingRight: 10,
+            paddingRight: 8,
             userSelect: 'none',
             fontSize: sizes.line,
             fontWeight: isSelectedRow ? 700 : 500,
-            lineHeight: `${ROW_H}px`,
+            lineHeight: `${rowHeight}px`,
             flexShrink: 0,
             background: isSelectedRow
               ? `linear-gradient(180deg, ${selectionAccent}24 0%, ${selectionAccent}12 100%)`

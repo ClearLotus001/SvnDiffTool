@@ -17,6 +17,7 @@
     "typecheck:renderer": "tsc --noEmit",
     "typecheck:electron": "tsc -p tsconfig.electron.json --noEmit",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit",
+    "test:workbook": "tsx --test tests/*.test.ts",
     "preview": "vite preview"
   },
   "build": {

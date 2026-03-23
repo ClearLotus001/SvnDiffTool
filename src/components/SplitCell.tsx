@@ -22,6 +22,8 @@ interface SplitCellProps {
   fontSize: number;
   sheetName?: string;
   versionLabel?: string;
+  headerRowNumber?: number;
+  rowSelectionColumn?: number;
   selectedCell?: WorkbookSelectedCell | null;
   onSelectCell?: ((cell: WorkbookSelectedCell | null) => void) | undefined;
   pairedLine?: DiffLine | null;
@@ -37,6 +39,7 @@ interface SplitCellProps {
   changedColumns?: number[];
   workbookRoleLabel?: string;
   workbookRoleTone?: 'base' | 'mine';
+  rowHeightOverride?: number;
 }
 
 const EMPTY_COMPARE_CELLS = new Map<number, WorkbookCompareCellState>();
@@ -63,6 +66,8 @@ const SplitCell = memo(({
   fontSize,
   sheetName = '',
   versionLabel = '',
+  headerRowNumber = 0,
+  rowSelectionColumn = 0,
   selectedCell = null,
   onSelectCell,
   pairedLine = null,
@@ -78,14 +83,16 @@ const SplitCell = memo(({
   changedColumns,
   workbookRoleLabel,
   workbookRoleTone,
+  rowHeightOverride,
 }: SplitCellProps) => {
   const T = useTheme();
+  const resolvedRowHeight = rowHeightOverride ?? ROW_H;
 
   // Empty padding cell (for alignment when one side has no matching line)
   if (!line) {
     return (
       <div style={{
-        flex: 1, display: 'flex', height: ROW_H,
+        flex: 1, display: 'flex', height: resolvedRowHeight,
         background: T.bg2,
         borderLeft: `3px solid ${T.bg4}`,
         minWidth: 0,
@@ -141,7 +148,7 @@ const SplitCell = memo(({
 
   return (
     <div style={{
-      flex: workbookLine ? '0 0 auto' : 1, display: 'flex', height: ROW_H,
+      flex: workbookLine ? '0 0 auto' : 1, display: 'flex', height: resolvedRowHeight,
       borderLeft: workbookLine ? 'none' : `3px solid ${brd}`,
       background: searchBg ?? bg,
       overflow: workbookLine ? 'visible' : 'hidden',
@@ -157,7 +164,7 @@ const SplitCell = memo(({
           paddingLeft: 4, paddingRight: 3,
           color: pfxC, userSelect: 'none',
           fontSize: FONT_SIZE.md, flexShrink: 0,
-          lineHeight: `${ROW_H}px`,
+          lineHeight: `${resolvedRowHeight}px`,
           fontFamily: FONT_CODE,
         }}>
           {pfx}
@@ -171,12 +178,15 @@ const SplitCell = memo(({
           sheetName={sheetName}
           side={side === 'left' ? 'base' : 'mine'}
           versionLabel={versionLabel}
+          headerRowNumber={headerRowNumber}
+          rowSelectionColumn={rowSelectionColumn}
           selectedCell={selectedCell}
           onSelectCell={onSelectCell}
           lineNumber={lineNo}
           freezeColumnCount={freezeColumnCount}
           stickyLeft={stickyLeftBase}
           rowHighlightBg={searchBg}
+          rowHeight={resolvedRowHeight}
           fontSize={fontSize}
           columnCount={columnCount}
           visibleColumns={visibleColumns}
@@ -199,7 +209,7 @@ const SplitCell = memo(({
           flex: 1, paddingRight: 6,
           whiteSpace: 'pre', fontSize,
           overflow: 'hidden',
-          lineHeight: `${ROW_H}px`,
+          lineHeight: `${resolvedRowHeight}px`,
           color: T.t0,
           fontFamily: FONT_CODE,
           minWidth: 0,

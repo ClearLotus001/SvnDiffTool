@@ -162,6 +162,10 @@ function parseWorkbookSheets(zip: Record<string, Uint8Array>): { name: string; p
   });
 
   return asArray<any>(workbookXml?.workbook?.sheets?.sheet)
+    .filter((sheet) => {
+      const state = typeof sheet?.state === 'string' ? sheet.state.trim().toLowerCase() : '';
+      return state !== 'hidden' && state !== 'veryhidden';
+    })
     .map((sheet, index) => {
       const sheetName = typeof sheet?.name === 'string' ? sheet.name : `Sheet${index + 1}`;
       const relId = typeof sheet?.['r:id'] === 'string' ? sheet['r:id'] : '';

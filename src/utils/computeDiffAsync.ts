@@ -1,5 +1,5 @@
 import type { DiffLine } from '../types';
-import { computeDiff } from '../engine/diff';
+import { computeSmartDiff } from '../engine/smartDiff';
 
 interface DiffWorkerRequest {
   baseText: string;
@@ -20,7 +20,7 @@ type DiffWorkerResponse = DiffWorkerSuccess | DiffWorkerFailure;
 
 export function computeDiffAsync(baseText: string, mineText: string): Promise<DiffLine[]> {
   if (typeof Worker === 'undefined') {
-    return Promise.resolve(computeDiff(baseText, mineText));
+    return Promise.resolve(computeSmartDiff(baseText, mineText));
   }
 
   return new Promise((resolve, reject) => {

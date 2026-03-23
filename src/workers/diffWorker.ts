@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-import { computeDiff } from '../engine/diff';
+import { computeSmartDiff } from '../engine/smartDiff';
 
 interface DiffWorkerRequest {
   baseText: string;
@@ -9,7 +9,7 @@ interface DiffWorkerRequest {
 
 interface DiffWorkerSuccess {
   ok: true;
-  diffLines: ReturnType<typeof computeDiff>;
+  diffLines: ReturnType<typeof computeSmartDiff>;
 }
 
 interface DiffWorkerFailure {
@@ -22,7 +22,7 @@ type DiffWorkerResponse = DiffWorkerSuccess | DiffWorkerFailure;
 self.onmessage = (event: MessageEvent<DiffWorkerRequest>) => {
   try {
     const { baseText, mineText } = event.data;
-    const diffLines = computeDiff(baseText, mineText);
+    const diffLines = computeSmartDiff(baseText, mineText);
     const response: DiffWorkerResponse = { ok: true, diffLines };
     self.postMessage(response);
   } catch (error) {

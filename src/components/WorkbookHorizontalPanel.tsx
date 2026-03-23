@@ -13,7 +13,6 @@ import { useVirtual, ROW_H } from '../hooks/useVirtual';
 import { useHorizontalVirtualColumns } from '../hooks/useHorizontalVirtualColumns';
 import { LN_W } from '../constants/layout';
 import { parseWorkbookDisplayLine, WORKBOOK_CELL_WIDTH } from '../utils/workbookDisplay';
-import { extractVersionLabel } from '../utils/diffMeta';
 import {
   findWorkbookSectionIndex,
   getWorkbookColumnLabel,
@@ -32,24 +31,29 @@ import {
 } from '../utils/workbookSelection';
 import { buildWorkbookCompareCells } from '../utils/workbookCompare';
 import {
-  type CollapseExpansionState,
   expandCollapseBlock,
   getExpandedHiddenCount,
+  type CollapseExpansionState,
 } from '../utils/collapseState';
+import { buildCollapsedItems, buildCollapsibleRowBlocks } from '../utils/collapsibleRows';
 import {
   buildWorkbookSheetPresentation,
   type WorkbookMetadataMap,
 } from '../utils/workbookMeta';
 import SplitCell from './SplitCell';
 import CollapseBar from './CollapseBar';
-import WorkbookMiniMap, { type WorkbookMiniMapSegment, type WorkbookMiniMapTone } from './WorkbookMiniMap';
+import WorkbookMiniMap, {
+  type WorkbookMiniMapDebugStats,
+  type WorkbookMiniMapSegment,
+  type WorkbookMiniMapTone,
+} from './WorkbookMiniMap';
+import WorkbookCanvasHoverTooltip, { type WorkbookCanvasHoverCell } from './WorkbookCanvasHoverTooltip';
+import WorkbookPaneCanvasStrip, { type WorkbookPaneCanvasRow } from './WorkbookPaneCanvasStrip';
+import WorkbookPerfDebugPanel, { type WorkbookPerfDebugStats } from './WorkbookPerfDebugPanel';
 import WorkbookSheetTabs from './WorkbookSheetTabs';
+import WorkbookVersionBar from './WorkbookVersionBar';
 
 const CONTEXT_LINES = 3;
-
-type SplitItem =
-  | { kind: 'split-line'; row: SplitRow; lineIdx: number }
-  | { kind: 'split-collapse'; count: number; blockId: string; fromIdx: number; toIdx: number };
 
 function splitRowHasLineIdx(row: SplitRow, lineIdx: number): boolean {
   return row.lineIdxs.includes(lineIdx);
@@ -93,72 +97,6 @@ function isEqualSplitRow(row: SplitRow): boolean {
   return row.left?.type === 'equal' && row.right?.type === 'equal';
 }
 
-function buildSplitItems(
-  splitRows: SplitRow[],
-  collapseCtx: boolean,
-  expandedBlocks: CollapseExpansionState,
-): SplitItem[] {
-  if (!collapseCtx) {
-    return splitRows.map(row => ({ kind: 'split-line' as const, row, lineIdx: row.lineIdx }));
-  }
-
-  const result: SplitItem[] = [];
-  let i = 0;
-
-  while (i < splitRows.length) {
-    const row = splitRows[i]!;
-    const isEqual = isEqualSplitRow(row);
-
-    if (!isEqual) {
-      result.push({ kind: 'split-line', row, lineIdx: row.lineIdx });
-      i += 1;
-      continue;
-    }
-
-    const eqStart = i;
-    while (i < splitRows.length && isEqualSplitRow(splitRows[i]!)) i += 1;
-    const count = i - eqStart;
-
-    if (count <= CONTEXT_LINES * 2) {
-      for (let k = eqStart; k < i; k += 1) {
-        result.push({ kind: 'split-line', row: splitRows[k]!, lineIdx: splitRows[k]!.lineIdx });
-      }
-      continue;
-    }
-
-    const blockId = `wh-${eqStart}-${i}`;
-    const hiddenCount = count - (CONTEXT_LINES * 2);
-    const expandedHiddenCount = Math.min(hiddenCount, getExpandedHiddenCount(expandedBlocks, blockId));
-    if (expandedHiddenCount >= hiddenCount) {
-      for (let k = eqStart; k < i; k += 1) {
-        result.push({ kind: 'split-line', row: splitRows[k]!, lineIdx: splitRows[k]!.lineIdx });
-      }
-      continue;
-    }
-
-    for (let k = eqStart; k < eqStart + CONTEXT_LINES; k += 1) {
-      result.push({ kind: 'split-line', row: splitRows[k]!, lineIdx: splitRows[k]!.lineIdx });
-    }
-    for (let k = eqStart + CONTEXT_LINES; k < eqStart + CONTEXT_LINES + expandedHiddenCount; k += 1) {
-      result.push({ kind: 'split-line', row: splitRows[k]!, lineIdx: splitRows[k]!.lineIdx });
-    }
-
-    result.push({
-      kind: 'split-collapse',
-      count: hiddenCount - expandedHiddenCount,
-      blockId,
-      fromIdx: splitRows[eqStart + CONTEXT_LINES + expandedHiddenCount]!.lineIdx,
-      toIdx: splitRows[i - CONTEXT_LINES - 1]!.lineIdx,
-    });
-
-    for (let k = i - CONTEXT_LINES; k < i; k += 1) {
-      result.push({ kind: 'split-line', row: splitRows[k]!, lineIdx: splitRows[k]!.lineIdx });
-    }
-  }
-
-  return result;
-}
-
 interface WorkbookHorizontalPanelProps {
   diffLines: DiffLine[];
   collapseCtx: boolean;
@@ -169,14 +107,20 @@ interface WorkbookHorizontalPanelProps {
   showWhitespace: boolean;
   fontSize: number;
   onScrollerReady: (scrollToIndex: (idx: number, align?: 'start' | 'center') => void) => void;
-  baseName: string;
-  mineName: string;
+  baseVersionLabel: string;
+  mineVersionLabel: string;
   selectedCell: WorkbookSelectedCell | null;
   onSelectCell: (cell: WorkbookSelectedCell | null) => void;
   onWorkbookNavigationReady?: ((navigate: ((direction: WorkbookMoveDirection) => void) | null) => void) | undefined;
   baseWorkbookMetadata: WorkbookMetadataMap | null;
   mineWorkbookMetadata: WorkbookMetadataMap | null;
   freezeStateBySheet: Record<string, WorkbookFreezeState>;
+  showPerfDebug?: boolean;
+  showHiddenColumns?: boolean;
+}
+
+function getNow() {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
 
 const WorkbookHorizontalPanel = memo(({
@@ -189,24 +133,29 @@ const WorkbookHorizontalPanel = memo(({
   showWhitespace,
   fontSize,
   onScrollerReady,
-  baseName,
-  mineName,
+  baseVersionLabel,
+  mineVersionLabel,
   selectedCell,
   onSelectCell,
   onWorkbookNavigationReady,
   baseWorkbookMetadata,
   mineWorkbookMetadata,
   freezeStateBySheet,
+  showPerfDebug = false,
+  showHiddenColumns = false,
 }: WorkbookHorizontalPanelProps) => {
   const T = useTheme();
   const sizes = useMemo(() => getWorkbookFontScale(fontSize), [fontSize]);
   const leftScrollRef = useRef<HTMLDivElement>(null);
   const rightScrollRef = useRef<HTMLDivElement>(null);
   const syncOwnerRef = useRef<'left' | 'right' | null>(null);
+  const scrollSyncCountRef = useRef(0);
+  const miniMapDebugRef = useRef<WorkbookMiniMapDebugStats | null>({ clickCount: 0, lastClickMs: 0 });
+  const [hoveredCanvasCell, setHoveredCanvasCell] = useState<WorkbookCanvasHoverCell | null>(null);
   const [expandedBlocks, setExpandedBlocks] = useState<CollapseExpansionState>({});
   const [activeWorkbookSectionIdx, setActiveWorkbookSectionIdx] = useState(-1);
-  const baseVersion = useMemo(() => extractVersionLabel(baseName) || baseName, [baseName]);
-  const mineVersion = useMemo(() => extractVersionLabel(mineName) || mineName, [mineName]);
+  const baseVersion = useMemo(() => baseVersionLabel.trim(), [baseVersionLabel]);
+  const mineVersion = useMemo(() => mineVersionLabel.trim(), [mineVersionLabel]);
 
   const workbookSections = useMemo(() => getWorkbookSections(diffLines), [diffLines]);
   const sectionRowIndex = useMemo(
@@ -276,16 +225,37 @@ const WorkbookHorizontalPanel = memo(({
       return rowNumber != null && rowNumber <= freezeRowNumber;
     });
   }, [activeWorkbookSection, freezeRowNumber, sectionRows]);
-
-  const items = useMemo(
-    () => buildSplitItems(visibleSplitRows, collapseCtx, expandedBlocks),
-    [visibleSplitRows, collapseCtx, expandedBlocks],
+  const rowBlocks = useMemo(
+    () => buildCollapsibleRowBlocks(visibleSplitRows, isEqualSplitRow),
+    [visibleSplitRows],
   );
 
-  const { totalH, startIdx, endIdx, scrollToIndex } = useVirtual(
+  const itemsMeasured = useMemo(() => {
+    const start = getNow();
+    const value = buildCollapsedItems(rowBlocks, collapseCtx, expandedBlocks, {
+      contextLines: CONTEXT_LINES,
+      blockPrefix: 'wh',
+      buildRowItem: (row) => ({ kind: 'split-line' as const, row, lineIdx: row.lineIdx }),
+      buildCollapseItem: ({ blockId, count, fromIdx, toIdx }) => ({
+        kind: 'split-collapse' as const,
+        blockId,
+        count,
+        fromIdx,
+        toIdx,
+      }),
+    });
+    return {
+      value,
+      duration: getNow() - start,
+    };
+  }, [rowBlocks, collapseCtx, expandedBlocks]);
+  const items = itemsMeasured.value;
+
+  const { totalH, startIdx, endIdx, scrollToIndex, debug: rowVirtualDebug } = useVirtual(
     items.length,
     leftScrollRef as RefObject<HTMLDivElement>,
     ROW_H,
+    { overscanMin: 12, overscanFactor: 1.5 },
   );
   const sheetPresentation = useMemo(
     () => buildWorkbookSheetPresentation(
@@ -294,8 +264,9 @@ const WorkbookHorizontalPanel = memo(({
       baseWorkbookMetadata,
       mineWorkbookMetadata,
       activeWorkbookSection?.maxColumns ?? 1,
+      showHiddenColumns,
     ),
-    [activeWorkbookSection?.maxColumns, activeWorkbookSection?.name, baseWorkbookMetadata, mineWorkbookMetadata, sectionRows],
+    [activeWorkbookSection?.maxColumns, activeWorkbookSection?.name, baseWorkbookMetadata, mineWorkbookMetadata, sectionRows, showHiddenColumns],
   );
   const singleGridWidth = (LN_W + 3) + (sheetPresentation.visibleColumns.length * WORKBOOK_CELL_WIDTH);
   const virtualColumns = useHorizontalVirtualColumns({
@@ -304,9 +275,64 @@ const WorkbookHorizontalPanel = memo(({
     cellWidth: WORKBOOK_CELL_WIDTH,
     frozenCount: freezeColumnCount,
     mergedRanges: [...sheetPresentation.baseMergeRanges, ...sheetPresentation.mineMergeRanges],
+    overscanMin: 6,
+    overscanFactor: 1.5,
   });
   const stickyHeaderHeight = ROW_H + (frozenRows.length * ROW_H);
   const contentHeight = totalH + stickyHeaderHeight;
+  const headerRowNumber = activeWorkbookSection?.firstDataRowNumber ?? 0;
+  const rowSelectionColumn = sheetPresentation.visibleColumns[0] ?? 0;
+  const useCanvasBody = sheetPresentation.baseMergeRanges.length === 0 && sheetPresentation.mineMergeRanges.length === 0;
+  const bodySegments = useMemo(() => {
+    if (!useCanvasBody) return null;
+
+    const slice = items.slice(startIdx, endIdx);
+    const segments: Array<
+      | { kind: 'rows'; rows: WorkbookPaneCanvasRow[]; top: number; height: number }
+      | { kind: 'collapse'; item: Extract<typeof slice[number], { kind: 'split-collapse' }>; top: number; height: number }
+    > = [];
+    let currentRows: WorkbookPaneCanvasRow[] = [];
+    let cursorTop = 0;
+    let currentRowsTop = 0;
+
+    const flushRows = () => {
+      if (currentRows.length === 0) return;
+      const height = currentRows.length * ROW_H;
+      segments.push({
+        kind: 'rows',
+        rows: currentRows,
+        top: currentRowsTop,
+        height,
+      });
+      currentRows = [];
+    };
+
+    slice.forEach((item) => {
+      if (item.kind === 'split-collapse') {
+        flushRows();
+        segments.push({
+          kind: 'collapse',
+          item,
+          top: cursorTop,
+          height: ROW_H,
+        });
+        cursorTop += ROW_H;
+        currentRowsTop = cursorTop;
+        return;
+      }
+
+      if (currentRows.length === 0) currentRowsTop = cursorTop;
+      currentRows.push({
+        row: item.row,
+        isSearchMatch: item.row.lineIdxs.some(idx => searchMatchSet.has(idx)),
+        isActiveSearch: item.row.lineIdxs.includes(activeSearchLineIdx),
+      });
+      cursorTop += ROW_H;
+    });
+
+    flushRows();
+    return segments;
+  }, [activeSearchLineIdx, endIdx, items, searchMatchSet, startIdx, useCanvasBody]);
 
   const workbookNavigationRows = useMemo(() => {
     if (!activeWorkbookSection || !selectedCell) return [];
@@ -331,12 +357,16 @@ const WorkbookHorizontalPanel = memo(({
     if (!from || !to) return;
     if (syncOwnerRef.current && syncOwnerRef.current !== source) return;
     syncOwnerRef.current = source;
+    let didSync = false;
     if (Math.abs(to.scrollTop - from.scrollTop) > 1) {
       to.scrollTop = from.scrollTop;
+      didSync = true;
     }
     if (Math.abs(to.scrollLeft - from.scrollLeft) > 1) {
       to.scrollLeft = from.scrollLeft;
+      didSync = true;
     }
+    if (didSync) scrollSyncCountRef.current += 1;
     requestAnimationFrame(() => {
       syncOwnerRef.current = null;
     });
@@ -433,7 +463,22 @@ const WorkbookHorizontalPanel = memo(({
 
     const rafId = requestAnimationFrame(() => {
       const el = source.querySelector<HTMLElement>(selector);
-      if (!el) return;
+      if (!el) {
+        if (useCanvasBody && selectedCell.kind === 'cell') {
+          const targetPosition = sheetPresentation.visibleColumns.findIndex(column => column === selectedCell.colIndex);
+          if (targetPosition < 0 || targetPosition < freezeColumnCount) return;
+          const targetLeft = LN_W + 3 + (freezeColumnCount * WORKBOOK_CELL_WIDTH) + ((targetPosition - freezeColumnCount) * WORKBOOK_CELL_WIDTH);
+          const leftBoundary = source.scrollLeft + (LN_W + 3 + (freezeColumnCount * WORKBOOK_CELL_WIDTH)) + 12;
+          const rightBoundary = source.scrollLeft + source.clientWidth - 12;
+          if (targetLeft < leftBoundary) {
+            source.scrollLeft = Math.max(0, targetLeft - (LN_W + 3 + (freezeColumnCount * WORKBOOK_CELL_WIDTH)) - 12);
+          } else if (targetLeft + WORKBOOK_CELL_WIDTH > rightBoundary) {
+            source.scrollLeft = Math.max(0, targetLeft + WORKBOOK_CELL_WIDTH - source.clientWidth + 12);
+          }
+          if (target) target.scrollLeft = source.scrollLeft;
+        }
+        return;
+      }
 
       const frozenWidth = LN_W + 3 + (freezeColumnCount * WORKBOOK_CELL_WIDTH);
       const didScroll = ensureElementVisibleHorizontally(source, el, frozenWidth);
@@ -443,9 +488,10 @@ const WorkbookHorizontalPanel = memo(({
     });
 
     return () => cancelAnimationFrame(rafId);
-  }, [activeWorkbookSection, freezeColumnCount, selectedCell]);
+  }, [activeWorkbookSection, freezeColumnCount, selectedCell, sheetPresentation.visibleColumns, useCanvasBody]);
 
-  const miniMapSegments = useMemo<WorkbookMiniMapSegment[]>(() => {
+  const miniMapMeasured = useMemo(() => {
+    const start = getNow();
     const segments: WorkbookMiniMapSegment[] = [{ tone: 'equal', height: ROW_H }];
 
     frozenRows.forEach((row) => {
@@ -469,8 +515,55 @@ const WorkbookHorizontalPanel = memo(({
       });
     });
 
-    return segments;
+    return {
+      value: segments,
+      duration: getNow() - start,
+    };
   }, [frozenRows, items, searchMatchSet, sheetPresentation.visibleColumns]);
+  const miniMapSegments = miniMapMeasured.value;
+  const perfStats = useMemo<WorkbookPerfDebugStats>(() => ({
+    panel: 'horizontal',
+    sheetName: activeWorkbookSection?.name ?? '',
+    totalRows: items.length,
+    renderedRows: Math.max(0, endIdx - startIdx),
+    collapseBlocks: items.filter(item => item.kind === 'split-collapse').length,
+    totalColumns: sheetPresentation.visibleColumns.length,
+    renderedColumns: virtualColumns.columnEntries.length,
+    frozenRows: frozenRows.length,
+    frozenColumns: freezeColumnCount,
+    buildItemsMs: itemsMeasured.duration,
+    miniMapMs: miniMapMeasured.duration,
+    rowWindowMs: rowVirtualDebug.lastCalcMs,
+    rowWindowUpdates: rowVirtualDebug.rangeUpdates,
+    rowOverscan: rowVirtualDebug.overscan,
+    rowViewport: rowVirtualDebug.viewportHeight,
+    columnWindowMs: virtualColumns.debug.lastCalcMs,
+    columnWindowUpdates: virtualColumns.debug.rangeUpdates,
+    columnOverscan: virtualColumns.debug.overscan,
+    columnViewport: virtualColumns.debug.viewportWidth,
+    miniMapClickMs: miniMapDebugRef.current?.lastClickMs ?? 0,
+    miniMapClickCount: miniMapDebugRef.current?.clickCount ?? 0,
+    scrollSyncCount: scrollSyncCountRef.current,
+  }), [
+    activeWorkbookSection?.name,
+    endIdx,
+    freezeColumnCount,
+    frozenRows.length,
+    items,
+    itemsMeasured.duration,
+    miniMapMeasured.duration,
+    rowVirtualDebug.lastCalcMs,
+    rowVirtualDebug.overscan,
+    rowVirtualDebug.rangeUpdates,
+    rowVirtualDebug.viewportHeight,
+    sheetPresentation.visibleColumns.length,
+    startIdx,
+    virtualColumns.columnEntries.length,
+    virtualColumns.debug.lastCalcMs,
+    virtualColumns.debug.overscan,
+    virtualColumns.debug.rangeUpdates,
+    virtualColumns.debug.viewportWidth,
+  ]);
 
   const handleSelectSheet = useCallback((index: number) => {
     onSelectCell(null);
@@ -599,6 +692,8 @@ const WorkbookHorizontalPanel = memo(({
         versionLabel={side === 'left' ? baseVersion : mineVersion}
         selectedCell={scopedSelection}
         onSelectCell={onSelectCell}
+        headerRowNumber={headerRowNumber}
+        rowSelectionColumn={rowSelectionColumn}
         stickyLeftBase={0}
         freezeColumnCount={freezeColumnCount}
         columnCount={activeWorkbookSection?.maxColumns ?? 0}
@@ -649,37 +744,91 @@ const WorkbookHorizontalPanel = memo(({
             ))}
           </div>
           <div style={{ position: 'absolute', top: stickyHeaderHeight + (startIdx * ROW_H), left: 0, minWidth: '100%' }}>
-            {items.slice(startIdx, endIdx).map((item) => {
-              const key = item.kind === 'split-collapse'
-                ? `${side}-${item.blockId}`
-                : `${side}-row-${item.lineIdx}`;
-              if (item.kind === 'split-collapse') {
-                return (
-                  <CollapseBar
-                    key={key}
-                    count={item.count}
-                    onExpand={() => startTransition(() => {
-                      setExpandedBlocks(prev => expandCollapseBlock(
-                        prev,
-                        item.blockId,
-                        item.count + getExpandedHiddenCount(prev, item.blockId),
-                      ));
-                    })}
-                  />
-                );
-              }
+            {useCanvasBody && bodySegments ? (
+              bodySegments.map((segment, index) => {
+                if (segment.kind === 'collapse') {
+                  return (
+                    <div key={`${side}-collapse-${segment.item.blockId}`} style={{ position: 'absolute', top: segment.top, left: 0, minWidth: '100%' }}>
+                      <CollapseBar
+                        count={segment.item.count}
+                        onExpand={() => startTransition(() => {
+                          setExpandedBlocks(prev => expandCollapseBlock(
+                            prev,
+                            segment.item.blockId,
+                            segment.item.count + getExpandedHiddenCount(prev, segment.item.blockId),
+                          ));
+                        })}
+                      />
+                    </div>
+                  );
+                }
 
-              return (
-                <div key={key}>
-                  {renderPaneRow(
-                    item.row,
-                    side,
-                    item.row.lineIdxs.some(idx => searchMatchSet.has(idx)),
-                    item.row.lineIdxs.includes(activeSearchLineIdx),
-                  )}
-                </div>
-              );
-            })}
+                return (
+                  <div
+                    key={`${side}-canvas-${index}`}
+                    style={{
+                      position: 'absolute',
+                      top: segment.top,
+                      left: 0,
+                      right: 0,
+                      minWidth: '100%',
+                      height: segment.height,
+                    }}>
+                    <div style={{ position: 'sticky', left: 0, width: virtualColumns.debug.viewportWidth, overflow: 'hidden' }}>
+                      <WorkbookPaneCanvasStrip
+                        rows={segment.rows}
+                        side={side === 'left' ? 'base' : 'mine'}
+                        viewportWidth={virtualColumns.debug.viewportWidth}
+                        scrollRef={ref}
+                        freezeColumnCount={freezeColumnCount}
+                        sheetName={activeWorkbookSection?.name ?? ''}
+                        versionLabel={side === 'left' ? baseVersion : mineVersion}
+                        headerRowNumber={headerRowNumber}
+                        rowSelectionColumn={rowSelectionColumn}
+                        selectedCell={selectedCell}
+                        onSelectCell={onSelectCell}
+                        onHoverChange={setHoveredCanvasCell}
+                        fontSize={fontSize}
+                        visibleColumns={sheetPresentation.visibleColumns}
+                        renderColumns={virtualColumns.columnEntries}
+                      />
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              items.slice(startIdx, endIdx).map((item) => {
+                const key = item.kind === 'split-collapse'
+                  ? `${side}-${item.blockId}`
+                  : `${side}-row-${item.lineIdx}`;
+                if (item.kind === 'split-collapse') {
+                  return (
+                    <CollapseBar
+                      key={key}
+                      count={item.count}
+                      onExpand={() => startTransition(() => {
+                        setExpandedBlocks(prev => expandCollapseBlock(
+                          prev,
+                          item.blockId,
+                          item.count + getExpandedHiddenCount(prev, item.blockId),
+                        ));
+                      })}
+                    />
+                  );
+                }
+
+                return (
+                  <div key={key}>
+                    {renderPaneRow(
+                      item.row,
+                      side,
+                      item.row.lineIdxs.some(idx => searchMatchSet.has(idx)),
+                      item.row.lineIdxs.includes(activeSearchLineIdx),
+                    )}
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       </div>
@@ -688,6 +837,11 @@ const WorkbookHorizontalPanel = memo(({
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
+      <WorkbookVersionBar
+        baseVersion={baseVersion}
+        mineVersion={mineVersion}
+      />
+      {showPerfDebug && <WorkbookPerfDebugPanel stats={perfStats} />}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
           <div style={{ flex: 1, display: 'flex', minWidth: 0, minHeight: 0 }}>
@@ -701,8 +855,10 @@ const WorkbookHorizontalPanel = memo(({
           segments={miniMapSegments}
           scrollRef={leftScrollRef as RefObject<HTMLDivElement>}
           contentHeight={contentHeight}
+          debugRef={miniMapDebugRef}
         />
       </div>
+      <WorkbookCanvasHoverTooltip hover={hoveredCanvasCell} />
       <WorkbookSheetTabs
         sections={workbookSections}
         activeIndex={resolvedActiveWorkbookSectionIdx}

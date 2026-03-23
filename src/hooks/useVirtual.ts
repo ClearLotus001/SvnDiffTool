@@ -21,7 +21,7 @@
 //     reminding maintainers to update if CSS changes.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect, useCallback, RefObject, useRef } from 'react';
+import { useState, useEffect, useCallback, RefObject, useRef, useMemo } from 'react';
 import type { VirtualState } from '../types';
 
 /**
@@ -29,21 +29,108 @@ import type { VirtualState } from '../types';
  * If you change this, update all inline `style={{ height: ROW_H }}` usages too.
  */
 export const ROW_H = 21;
-const OVERSCAN_MIN = 80;
+const DEFAULT_OVERSCAN_MIN = 80;
+const DEFAULT_OVERSCAN_FACTOR = 3;
+
+export interface UseVirtualOptions {
+  overscanMin?: number;
+  overscanFactor?: number;
+}
+
+export interface VirtualWindow extends VirtualState {
+  visibleRowCount: number;
+  overscan: number;
+}
+
+export interface VirtualDebugInfo {
+  viewportHeight: number;
+  visibleRowCount: number;
+  overscan: number;
+  rangeUpdates: number;
+  lastCalcMs: number;
+}
 
 interface UseVirtualReturn extends VirtualState {
   scrollToIndex: (idx: number, align?: 'start' | 'center') => void;
+  debug: VirtualDebugInfo;
+}
+
+function getNow() {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
+export function computeVirtualWindow(
+  count: number,
+  rowHeight: number,
+  viewH: number,
+  scrollTop: number,
+  overscanMin = DEFAULT_OVERSCAN_MIN,
+  overscanFactor = DEFAULT_OVERSCAN_FACTOR,
+): VirtualWindow {
+  const visibleRowCount = Math.max(1, Math.ceil(viewH / Math.max(rowHeight, 1)));
+  const overscan = Math.max(overscanMin, Math.ceil(visibleRowCount * overscanFactor));
+  const startIdx = Math.max(0, Math.floor((scrollTop - overscan * rowHeight) / rowHeight));
+  const endIdx = Math.min(count, Math.ceil((scrollTop + viewH + overscan * rowHeight) / rowHeight));
+  return {
+    totalH: count * rowHeight,
+    startIdx,
+    endIdx,
+    visibleRowCount,
+    overscan,
+  };
 }
 
 export function useVirtual(
   count: number,
   scrollRef: RefObject<HTMLDivElement>,
   rowHeight: number = ROW_H,
+  options: UseVirtualOptions = {},
 ): UseVirtualReturn {
-  const [scrollTop, setScrollTop] = useState(0);
-  const [viewH, setViewH]         = useState(600);
+  const overscanMin = options.overscanMin ?? DEFAULT_OVERSCAN_MIN;
+  const overscanFactor = options.overscanFactor ?? DEFAULT_OVERSCAN_FACTOR;
+  const [viewH, setViewH] = useState(600);
+  const [windowRange, setWindowRange] = useState<VirtualWindow>(() => computeVirtualWindow(
+    count,
+    rowHeight,
+    600,
+    0,
+    overscanMin,
+    overscanFactor,
+  ));
   const latestScrollTopRef = useRef(0);
+  const viewHRef = useRef(600);
+  const rangeRef = useRef(windowRange);
   const rafRef = useRef<number>(0);
+  const lastCalcMsRef = useRef(0);
+  const rangeUpdateCountRef = useRef(1);
+
+  const applyWindowRange = useCallback((scrollTop: number, nextViewH: number) => {
+    const calcStart = getNow();
+    const nextRange = computeVirtualWindow(
+      count,
+      rowHeight,
+      nextViewH,
+      scrollTop,
+      overscanMin,
+      overscanFactor,
+    );
+    lastCalcMsRef.current = getNow() - calcStart;
+
+    const prevRange = rangeRef.current;
+    if (
+      prevRange.startIdx === nextRange.startIdx
+      && prevRange.endIdx === nextRange.endIdx
+      && prevRange.visibleRowCount === nextRange.visibleRowCount
+      && prevRange.overscan === nextRange.overscan
+      && prevRange.totalH === nextRange.totalH
+    ) {
+      return;
+    }
+
+    rangeRef.current = nextRange;
+    rangeUpdateCountRef.current += 1;
+    setWindowRange(nextRange);
+  }, [count, overscanFactor, overscanMin, rowHeight]);
 
   // ResizeObserver — stable ref, runs once
   useEffect(() => {
@@ -51,15 +138,17 @@ export function useVirtual(
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
       const nextViewH = Math.max(0, Math.round(entries[0]?.contentRect.height ?? el.clientHeight));
+      viewHRef.current = nextViewH;
       setViewH(prev => (prev === nextViewH ? prev : nextViewH));
+      applyWindowRange(latestScrollTopRef.current, nextViewH);
     });
     ro.observe(el);
-    setViewH(prev => {
-      const nextViewH = Math.max(0, el.clientHeight);
-      return prev === nextViewH ? prev : nextViewH;
-    });
+    const nextViewH = Math.max(0, el.clientHeight);
+    viewHRef.current = nextViewH;
+    setViewH(prev => (prev === nextViewH ? prev : nextViewH));
+    applyWindowRange(Math.max(0, Math.round(el.scrollTop)), nextViewH);
     return () => ro.disconnect();
-  }, [scrollRef]);
+  }, [applyWindowRange, scrollRef]);
 
   // Keep up with thumb dragging without pushing React through more than one
   // rerender per frame.
@@ -71,7 +160,7 @@ export function useVirtual(
       if (rafRef.current) return;
       rafRef.current = requestAnimationFrame(() => {
         rafRef.current = 0;
-        setScrollTop(prev => (prev === latestScrollTopRef.current ? prev : latestScrollTopRef.current));
+        applyWindowRange(latestScrollTopRef.current, viewHRef.current);
       });
     };
     el.addEventListener('scroll', onScroll, { passive: true });
@@ -79,13 +168,13 @@ export function useVirtual(
       el.removeEventListener('scroll', onScroll);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [scrollRef]);
+  }, [applyWindowRange, scrollRef]);
 
-  const totalH  = count * rowHeight;
-  const visibleRowCount = Math.max(1, Math.ceil(viewH / Math.max(rowHeight, 1)));
-  const overscan = Math.max(OVERSCAN_MIN, visibleRowCount * 3);
-  const startIdx = Math.max(0, Math.floor((scrollTop - overscan * rowHeight) / rowHeight));
-  const endIdx   = Math.min(count, Math.ceil((scrollTop + viewH + overscan * rowHeight) / rowHeight));
+  useEffect(() => {
+    applyWindowRange(latestScrollTopRef.current, viewHRef.current);
+  }, [applyWindowRange]);
+
+  const totalH = count * rowHeight;
 
   const scrollToIndex = useCallback(
     (idx: number, align: 'start' | 'center' = 'start') => {
@@ -106,5 +195,19 @@ export function useVirtual(
     [scrollRef, viewH, rowHeight],
   );
 
-  return { totalH, startIdx, endIdx, scrollToIndex };
+  const debug = useMemo<VirtualDebugInfo>(() => ({
+    viewportHeight: viewH,
+    visibleRowCount: windowRange.visibleRowCount,
+    overscan: windowRange.overscan,
+    rangeUpdates: rangeUpdateCountRef.current,
+    lastCalcMs: lastCalcMsRef.current,
+  }), [viewH, windowRange.endIdx, windowRange.overscan, windowRange.startIdx, windowRange.visibleRowCount]);
+
+  return {
+    totalH,
+    startIdx: windowRange.startIdx,
+    endIdx: windowRange.endIdx,
+    scrollToIndex,
+    debug,
+  };
 }

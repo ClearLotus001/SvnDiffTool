@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, type RefObject } from 'react';
+import { memo, useEffect, useRef, useState, type MutableRefObject, type RefObject } from 'react';
 import { useTheme } from '../context/theme';
 
 export type WorkbookMiniMapTone = 'equal' | 'add' | 'delete' | 'mixed';
@@ -9,18 +9,36 @@ export interface WorkbookMiniMapSegment {
   searchHit?: boolean;
 }
 
+export interface WorkbookMiniMapDebugStats {
+  clickCount: number;
+  lastClickMs: number;
+}
+
 interface WorkbookMiniMapProps {
   segments: WorkbookMiniMapSegment[];
   scrollRef: RefObject<HTMLDivElement>;
   contentHeight: number;
+  debugRef?: MutableRefObject<WorkbookMiniMapDebugStats | null>;
 }
 
 const WIDTH = 28;
+
+export function computeMiniMapTargetScrollTop(
+  ratio: number,
+  contentHeight: number,
+  viewportHeight: number,
+): number {
+  const normalizedRatio = Math.max(0, Math.min(1, ratio));
+  const maxScrollTop = Math.max(0, contentHeight - viewportHeight);
+  const targetCenter = normalizedRatio * contentHeight;
+  return Math.max(0, Math.min(maxScrollTop, targetCenter - (viewportHeight / 2)));
+}
 
 const WorkbookMiniMap = memo(({
   segments,
   scrollRef,
   contentHeight,
+  debugRef,
 }: WorkbookMiniMapProps) => {
   const T = useTheme();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -93,10 +111,13 @@ const WorkbookMiniMap = memo(({
       const H = Math.max(1, cont.clientHeight || contHeight);
       const total = Math.max(contentHeight, 1);
       const ratio = H / total;
-      setVp({
-        top: el.scrollTop * ratio,
-        h: Math.max(el.clientHeight * ratio, 20),
-      });
+      const nextTop = el.scrollTop * ratio;
+      const nextHeight = Math.max(el.clientHeight * ratio, 20);
+      setVp(prev => (
+        Math.abs(prev.top - nextTop) < 0.5 && Math.abs(prev.h - nextHeight) < 0.5
+          ? prev
+          : { top: nextTop, h: nextHeight }
+      ));
     };
 
     const onScroll = () => {
@@ -117,13 +138,23 @@ const WorkbookMiniMap = memo(({
   }, [contentHeight, contHeight, scrollRef]);
 
   const handleClick = (event: React.MouseEvent) => {
+    const start = typeof performance !== 'undefined' ? performance.now() : Date.now();
     const cont = contRef.current;
     const el = scrollRef.current;
     if (!cont || !el) return;
 
     const rect = cont.getBoundingClientRect();
     const ratio = (event.clientY - rect.top) / Math.max(cont.clientHeight, 1);
-    el.scrollTop = Math.max(0, ratio * contentHeight);
+    const nextTop = computeMiniMapTargetScrollTop(ratio, contentHeight, el.clientHeight);
+    el.scrollTo({ top: nextTop, behavior: 'auto' });
+    if (debugRef) {
+      const duration = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - start;
+      const current = debugRef.current ?? { clickCount: 0, lastClickMs: 0 };
+      debugRef.current = {
+        clickCount: current.clickCount + 1,
+        lastClickMs: duration,
+      };
+    }
   };
 
   return (
