@@ -1,0 +1,11 @@
+node_modules/
+dist/
+dist-electron/
+release/
+
+rust/target/
+
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
