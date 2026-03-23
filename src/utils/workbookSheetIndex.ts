@@ -17,9 +17,9 @@ function offsetSplitRows(rows: SplitRow[], lineIdxOffset: number): SplitRow[] {
 
 function isWorkbookDataRow(row: SplitRow): boolean {
   const leftParsed = parseWorkbookDisplayLine(row.left?.base ?? row.left?.mine ?? '');
-  if (leftParsed?.kind === 'row') return true;
   const rightParsed = parseWorkbookDisplayLine(row.right?.base ?? row.right?.mine ?? '');
-  return rightParsed?.kind === 'row';
+  if (leftParsed?.kind === 'sheet' || rightParsed?.kind === 'sheet') return false;
+  return leftParsed?.kind === 'row' || rightParsed?.kind === 'row';
 }
 
 export function buildWorkbookSectionRowIndex(
