@@ -40,14 +40,22 @@ function decodeUtf8(bytes: Uint8Array): string {
   return textDecoder.decode(bytes);
 }
 
-function collectText(node: unknown): string {
+function collectOpenXmlText(node: unknown): string {
   if (node == null) return '';
   if (typeof node === 'string' || typeof node === 'number' || typeof node === 'boolean') {
     return String(node);
   }
-  if (Array.isArray(node)) return node.map(collectText).join('');
+  if (Array.isArray(node)) return node.map(collectOpenXmlText).join('');
   if (typeof node === 'object') {
-    return Object.values(node as Record<string, unknown>).map(collectText).join('');
+    const record = node as Record<string, unknown>;
+    if ('#text' in record) {
+      return collectOpenXmlText(record['#text']);
+    }
+    return [
+      record.t,
+      record.r,
+      record.is,
+    ].map(collectOpenXmlText).join('');
   }
   return '';
 }
@@ -85,9 +93,8 @@ function normalizeCellValue(value: string): string {
   return value
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')
-    .replace(/\n+/g, ' / ')
-    .replace(/\t/g, '    ')
-    .trim();
+    .replace(/\n/g, ' / ')
+    .replace(/\t/g, '    ');
 }
 
 function buildUnsupportedWorkbookMessage(fileName: string): string {
@@ -112,24 +119,20 @@ function buildWorkbookErrorMessage(fileName: string, error: unknown): string {
 function parseSharedStrings(zip: Record<string, Uint8Array>): string[] {
   const xml = parseXml(zip, 'xl/sharedStrings.xml');
   const items = asArray<any>(xml?.sst?.si);
-  return items.map(item => {
-    if (item?.t != null) return collectText(item.t);
-    const runs = asArray<any>(item?.r);
-    return runs.map(run => collectText(run?.t)).join('');
-  });
+  return items.map(item => normalizeCellValue(collectOpenXmlText(item)));
 }
 
 function parseCellValue(cell: any, sharedStrings: string[]): WorkbookCellDisplay {
   const type = typeof cell?.t === 'string' ? cell.t : '';
-  const rawValue = normalizeCellValue(collectText(cell?.v));
-  const formula = normalizeCellValue(collectText(cell?.f));
+  const rawValue = normalizeCellValue(collectOpenXmlText(cell?.v));
+  const formula = normalizeCellValue(collectOpenXmlText(cell?.f));
 
   let value = '';
   if (type === 's') {
-    const index = Number(rawValue);
+    const index = Number(rawValue.trim());
     value = Number.isFinite(index) ? normalizeCellValue(sharedStrings[index] ?? '') : rawValue;
   } else if (type === 'inlineStr') {
-    value = normalizeCellValue(collectText(cell?.is));
+    value = normalizeCellValue(collectOpenXmlText(cell?.is));
   } else if (type === 'b') {
     value = rawValue === '1' ? 'TRUE' : 'FALSE';
   } else if (type === 'e') {
@@ -141,7 +144,7 @@ function parseCellValue(cell: any, sharedStrings: string[]): WorkbookCellDisplay
   if (formula) {
     const normalizedFormula = `=${formula}`;
     return {
-      value: value || normalizedFormula,
+      value,
       formula: normalizedFormula,
     };
   }

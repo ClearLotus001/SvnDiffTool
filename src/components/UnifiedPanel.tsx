@@ -169,15 +169,6 @@ const UnifiedPanel = memo(({
     if (idx >= 0) scrollToIndex(idx, 'center');
   }, [activeSearchLineIdx, items, scrollToIndex]);
 
-  useEffect(() => {
-    const targetLineIdx = hunkPositions[activeHunkIdx];
-    if (targetLineIdx === undefined) return;
-    const idx = items.findIndex(
-      it => it.kind === 'line' && (it as LineItem).lineIdx === targetLineIdx,
-    );
-    if (idx >= 0) scrollToIndex(idx);
-  }, [activeHunkIdx, hunkPositions, items, scrollToIndex]);
-
   const workbookHeaderHeight = isWorkbookMode ? ROW_H : 0;
   const columnLabels = getWorkbookColumnLabels(activeWorkbookSection?.maxColumns ?? 0);
 
@@ -220,6 +211,7 @@ const UnifiedPanel = memo(({
           flex: 1,
           overflowY: 'auto',
           overflowX: 'auto',
+          overflowAnchor: 'none',
           position: 'relative',
           minWidth: 0,
           minHeight: 0,

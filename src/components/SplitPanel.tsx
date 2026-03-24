@@ -224,13 +224,6 @@ const SplitPanel = memo(({
     if (idx >= 0) scrollToIndex(idx, 'center');
   }, [activeSearchLineIdx, items, scrollToIndex]);
 
-  useEffect(() => {
-    const targetLineIdx = hunkPositions[activeHunkIdx];
-    if (targetLineIdx === undefined) return;
-    const idx = items.findIndex(it => it.kind === 'split-line' && splitRowTouchesOrAfter(it.row, targetLineIdx));
-    if (idx >= 0) scrollToIndex(idx);
-  }, [activeHunkIdx, hunkPositions, items, scrollToIndex]);
-
   const workbookFrozenRowHeight = frozenRow
     ? (vertical ? (ROW_H * 2) + 1 : ROW_H)
     : 0;
@@ -413,6 +406,7 @@ const SplitPanel = memo(({
           flex: 1,
           overflowY: 'auto',
           overflowX: 'auto',
+          overflowAnchor: 'none',
           position: 'relative',
           minWidth: 0,
           minHeight: 0,

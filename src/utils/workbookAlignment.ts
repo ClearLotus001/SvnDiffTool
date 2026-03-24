@@ -1,5 +1,7 @@
+import type { WorkbookCompareMode } from '../types';
 import type { WorkbookRowDisplayLine } from './workbookDisplay';
 import { parseWorkbookDisplayLine } from './workbookDisplay';
+import { hasWorkbookCellContent, serializeWorkbookCellForMode } from './workbookCellContract';
 
 export interface WorkbookAlignmentEntry<TMeta = unknown> {
   rawLine: string;
@@ -24,22 +26,26 @@ interface LCSEntry {
   mineIdx: number;
 }
 
-export function buildWorkbookRowSignature(parsed: WorkbookRowDisplayLine): string {
+export function buildWorkbookRowSignature(
+  parsed: WorkbookRowDisplayLine,
+  compareMode: WorkbookCompareMode = 'strict',
+): string {
   const cells = [...parsed.cells];
   while (cells.length > 0) {
     const lastCell = cells[cells.length - 1];
-    if (!lastCell || lastCell.value.trim() || lastCell.formula.trim()) break;
+    if (!lastCell || hasWorkbookCellContent(lastCell, compareMode)) break;
     cells.pop();
   }
 
   return cells
-    .map(cell => `${cell.value}\u001F${cell.formula}`)
+    .map(cell => serializeWorkbookCellForMode(cell, compareMode))
     .join('\t');
 }
 
 export function createWorkbookAlignmentEntry<TMeta>(
   rawLine: string,
   meta: TMeta,
+  compareMode: WorkbookCompareMode = 'strict',
 ): WorkbookAlignmentEntry<TMeta> | null {
   const parsed = parseWorkbookDisplayLine(rawLine);
   if (parsed?.kind !== 'row') return null;
@@ -47,7 +53,7 @@ export function createWorkbookAlignmentEntry<TMeta>(
   return {
     rawLine,
     parsed,
-    signature: buildWorkbookRowSignature(parsed),
+    signature: buildWorkbookRowSignature(parsed, compareMode),
     meta,
   };
 }

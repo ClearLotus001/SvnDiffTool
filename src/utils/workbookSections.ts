@@ -1,4 +1,5 @@
-import type { DiffLine } from '../types';
+import type { DiffLine, WorkbookCompareMode } from '../types';
+import { hasWorkbookCellContent } from './workbookCellContract';
 import { parseWorkbookDisplayLine } from './workbookDisplay';
 
 export interface WorkbookSection {
@@ -10,7 +11,10 @@ export interface WorkbookSection {
   firstDataRowNumber: number | null;
 }
 
-export function getWorkbookSections(diffLines: DiffLine[]): WorkbookSection[] {
+export function getWorkbookSections(
+  diffLines: DiffLine[],
+  compareMode: WorkbookCompareMode = 'strict',
+): WorkbookSection[] {
   const sections: WorkbookSection[] = [];
   let current: WorkbookSection | null = null;
 
@@ -34,7 +38,7 @@ export function getWorkbookSections(diffLines: DiffLine[]): WorkbookSection[] {
     if (current && parsed.kind === 'row') {
       current.endLineIdx = lineIdx;
       current.maxColumns = Math.max(current.maxColumns, parsed.cells.length);
-      const hasVisibleCell = parsed.cells.some(cell => cell.value.trim() || cell.formula.trim());
+      const hasVisibleCell = parsed.cells.some(cell => hasWorkbookCellContent(cell, compareMode));
       if (current.firstDataLineIdx == null && hasVisibleCell) {
         current.firstDataLineIdx = lineIdx;
         current.firstDataRowNumber = parsed.rowNumber;

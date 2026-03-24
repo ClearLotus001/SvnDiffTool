@@ -21,6 +21,12 @@ enum OutputMode {
     DiffJson,
 }
 
+struct ParsedArgs {
+    output_mode: OutputMode,
+    file_path: String,
+    compare_mode: String,
+}
+
 #[derive(Debug, Clone)]
 struct SheetInfo {
     name: String,
@@ -51,11 +57,19 @@ struct WorkbookMetadataMap {
     sheets: BTreeMap<String, WorkbookSheetMetadata>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkbookCellSnapshotJson {
+    value: String,
+    formula: String,
+}
+
 #[derive(Debug, Clone)]
 struct WorkbookRowEntry {
     raw_line: String,
     signature: String,
     row_number: usize,
+    cells: Vec<WorkbookCellSnapshotJson>,
 }
 
 #[derive(Debug, Clone)]
@@ -73,6 +87,50 @@ struct WorkbookSheetPair {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct WorkbookCellDeltaJson {
+    column: usize,
+    base_cell: WorkbookCellSnapshotJson,
+    mine_cell: WorkbookCellSnapshotJson,
+    changed: bool,
+    masked: bool,
+    strict_only: bool,
+    kind: String,
+    has_base_content: bool,
+    has_mine_content: bool,
+    has_content: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkbookRowDeltaJson {
+    line_idx: usize,
+    line_idxs: Vec<usize>,
+    left_line_idx: Option<usize>,
+    right_line_idx: Option<usize>,
+    cell_deltas: Vec<WorkbookCellDeltaJson>,
+    changed_columns: Vec<usize>,
+    strict_only_columns: Vec<usize>,
+    changed_count: usize,
+    has_changes: bool,
+    tone: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkbookSectionDeltaJson {
+    name: String,
+    rows: Vec<WorkbookRowDeltaJson>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkbookPrecomputedDeltaJson {
+    compare_mode: String,
+    sections: Vec<WorkbookSectionDeltaJson>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct DiffLineJson {
     #[serde(rename = "type")]
     line_type: String,
@@ -82,14 +140,33 @@ struct DiffLineJson {
     mine_line_no: Option<usize>,
 }
 
-fn parse_args() -> Result<(OutputMode, String), String> {
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkbookDiffOutputJson {
+    diff_lines: Vec<DiffLineJson>,
+    workbook_delta: WorkbookPrecomputedDeltaJson,
+}
+
+fn normalize_compare_mode(value: &str) -> Result<String, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "strict" => Ok("strict".to_string()),
+        "content" => Ok("content".to_string()),
+        _ => Err("Compare mode must be either 'strict' or 'content'".to_string()),
+    }
+}
+
+fn parse_args() -> Result<ParsedArgs, String> {
     let mut args = env::args().skip(1);
     match args.next().as_deref() {
         Some("--metadata-json") => {
             let file_path = args
                 .next()
                 .ok_or_else(|| "Usage: svn_excel_parser --metadata-json <workbook-path>".to_string())?;
-            Ok((OutputMode::MetadataJson, file_path))
+            Ok(ParsedArgs {
+                output_mode: OutputMode::MetadataJson,
+                file_path,
+                compare_mode: "strict".to_string(),
+            })
         }
         Some("--diff-json") => {
             let base_path = args
@@ -98,9 +175,29 @@ fn parse_args() -> Result<(OutputMode, String), String> {
             let mine_path = args
                 .next()
                 .ok_or_else(|| "Usage: svn_excel_parser --diff-json <base-workbook-path> <mine-workbook-path>".to_string())?;
-            Ok((OutputMode::DiffJson, format!("{base_path}\n{mine_path}")))
+            let compare_mode = match args.next() {
+                Some(flag) if flag == "--compare-mode" => {
+                    let value = args
+                        .next()
+                        .ok_or_else(|| "Usage: svn_excel_parser --diff-json <base-workbook-path> <mine-workbook-path> [--compare-mode strict|content]".to_string())?;
+                    normalize_compare_mode(&value)?
+                }
+                Some(_) => {
+                    return Err("Usage: svn_excel_parser --diff-json <base-workbook-path> <mine-workbook-path> [--compare-mode strict|content]".to_string());
+                }
+                None => "strict".to_string(),
+            };
+            Ok(ParsedArgs {
+                output_mode: OutputMode::DiffJson,
+                file_path: format!("{base_path}\n{mine_path}"),
+                compare_mode,
+            })
         }
-        Some(file_path) => Ok((OutputMode::Text, file_path.to_string())),
+        Some(file_path) => Ok(ParsedArgs {
+            output_mode: OutputMode::Text,
+            file_path: file_path.to_string(),
+            compare_mode: "strict".to_string(),
+        }),
         None => Err("Usage: svn_excel_parser <workbook-path>".to_string()),
     }
 }
@@ -267,38 +364,78 @@ fn encode_cell(value: &str, formula: Option<&str>) -> String {
 
     match normalized_formula {
         Some(formula_text) => {
-            let visible_value = if normalized_value.is_empty() {
-                formula_text.clone()
-            } else {
-                normalized_value
-            };
-            format!("{visible_value}{FORMULA_SEPARATOR}{formula_text}")
+            format!("{normalized_value}{FORMULA_SEPARATOR}{formula_text}")
         }
         None => normalized_value,
     }
 }
 
+fn has_workbook_cell_content(cell: &WorkbookCellSnapshotJson, compare_mode: &str) -> bool {
+    let normalized_value = if compare_mode == "content" && cell.value.trim().is_empty() {
+        ""
+    } else {
+        cell.value.as_str()
+    };
+    !normalized_value.is_empty() || !cell.formula.is_empty()
+}
+
+fn workbook_cells_differ(
+    left_cell: &WorkbookCellSnapshotJson,
+    right_cell: &WorkbookCellSnapshotJson,
+    compare_mode: &str,
+) -> bool {
+    let left_value = if compare_mode == "content" && left_cell.value.trim().is_empty() {
+        ""
+    } else {
+        left_cell.value.as_str()
+    };
+    let right_value = if compare_mode == "content" && right_cell.value.trim().is_empty() {
+        ""
+    } else {
+        right_cell.value.as_str()
+    };
+    left_value != right_value || left_cell.formula != right_cell.formula
+}
+
 fn build_row_line_and_signature(
     row_number: usize,
-    cells: &[String],
+    cells: &[WorkbookCellSnapshotJson],
+    compare_mode: &str,
 ) -> WorkbookRowEntry {
+    let encoded_cells: Vec<String> = cells
+        .iter()
+        .map(|cell| encode_cell(&cell.value, (!cell.formula.is_empty()).then_some(cell.formula.as_str())))
+        .collect();
     let raw_line = if cells.is_empty() {
         format!("{}\t{}", ROW_PREFIX, row_number)
     } else {
-        format!("{}\t{}\t{}", ROW_PREFIX, row_number, cells.join("\t"))
+        format!("{}\t{}\t{}", ROW_PREFIX, row_number, encoded_cells.join("\t"))
     };
-    let signature = cells.join("\t");
+    let mut trimmed_cells = cells.to_vec();
+    while let Some(last_cell) = trimmed_cells.last() {
+        if has_workbook_cell_content(last_cell, compare_mode) {
+            break;
+        }
+        trimmed_cells.pop();
+    }
+    let signature = trimmed_cells
+        .iter()
+        .map(|cell| encode_cell(&cell.value, (!cell.formula.is_empty()).then_some(cell.formula.as_str())))
+        .collect::<Vec<_>>()
+        .join("\t");
 
     WorkbookRowEntry {
         raw_line,
         signature,
         row_number,
+        cells: cells.to_vec(),
     }
 }
 
 fn collect_workbook_row_entries(
     range: &Range<Data>,
     formulas: Option<&Range<String>>,
+    compare_mode: &str,
 ) -> Vec<WorkbookRowEntry> {
     let (start_row, start_col) = range.start().unwrap_or((0, 0));
     let mut result = Vec::new();
@@ -316,7 +453,7 @@ fn collect_workbook_row_entries(
             }
         }
 
-        let mut encoded_cells = Vec::new();
+        let mut row_cells = Vec::new();
         if let Some(last_col) = last_non_empty {
             for abs_col in start_col..=last_col {
                 let value = row
@@ -326,17 +463,20 @@ fn collect_workbook_row_entries(
                 let formula = formulas
                     .and_then(|formula_range| get_formula_for_position(formula_range, abs_row, abs_col))
                     .map(|formula| format!("={}", formula));
-                encoded_cells.push(encode_cell(&value, formula.as_deref()));
+                row_cells.push(WorkbookCellSnapshotJson {
+                    value,
+                    formula: formula.unwrap_or_default(),
+                });
             }
         }
 
-        result.push(build_row_line_and_signature((abs_row + 1) as usize, &encoded_cells));
+        result.push(build_row_line_and_signature((abs_row + 1) as usize, &row_cells, compare_mode));
     }
 
     result
 }
 
-fn parse_workbook_document(file_path: &str) -> io::Result<Vec<WorkbookSheetDiffEntry>> {
+fn parse_workbook_document(file_path: &str, compare_mode: &str) -> io::Result<Vec<WorkbookSheetDiffEntry>> {
     let mut workbook = open_workbook_auto(file_path)
         .map_err(|error| io::Error::new(io::ErrorKind::Other, format!("Failed to open workbook: {error}")))?;
     let sheet_names = collect_visible_sheet_infos(file_path)
@@ -354,7 +494,7 @@ fn parse_workbook_document(file_path: &str) -> io::Result<Vec<WorkbookSheetDiffE
         result.push(WorkbookSheetDiffEntry {
             name: sheet_name.clone(),
             raw_sheet_line: format!("{}\t{}", SHEET_PREFIX, normalize_field(&sheet_name).trim()),
-            rows: collect_workbook_row_entries(&range, Some(&formulas)),
+            rows: collect_workbook_row_entries(&range, Some(&formulas), compare_mode),
         });
     }
 
@@ -393,11 +533,10 @@ fn align_workbook_sheets(
     pairs
 }
 
-#[derive(Clone)]
 struct LcsNode {
     base_idx: usize,
     mine_idx: usize,
-    prev: Option<Box<LcsNode>>,
+    prev_idx: Option<usize>,
 }
 
 fn patience_lcs(base_rows: &[WorkbookRowEntry], mine_rows: &[WorkbookRowEntry]) -> Vec<(usize, usize)> {
@@ -410,7 +549,8 @@ fn patience_lcs(base_rows: &[WorkbookRowEntry], mine_rows: &[WorkbookRowEntry]) 
         mine_index.entry(row.signature.as_str()).or_default().push(index);
     }
 
-    let mut piles: Vec<Option<LcsNode>> = Vec::new();
+    let mut nodes: Vec<LcsNode> = Vec::new();
+    let mut piles: Vec<usize> = Vec::new();
     let mut tails: Vec<usize> = Vec::new();
 
     for (base_idx, row) in base_rows.iter().enumerate() {
@@ -436,31 +576,33 @@ fn patience_lcs(base_rows: &[WorkbookRowEntry], mine_rows: &[WorkbookRowEntry]) 
                 continue;
             }
 
-            let node = LcsNode {
+            let node_idx = nodes.len();
+            nodes.push(LcsNode {
                 base_idx,
                 mine_idx,
-                prev: if low > 0 {
-                    piles[low - 1].as_ref().cloned().map(Box::new)
+                prev_idx: if low > 0 {
+                    Some(piles[low - 1])
                 } else {
                     None
                 },
-            };
+            });
 
             if low == piles.len() {
-                piles.push(Some(node.clone()));
+                piles.push(node_idx);
                 tails.push(mine_idx);
             } else {
-                piles[low] = Some(node.clone());
+                piles[low] = node_idx;
                 tails[low] = mine_idx;
             }
         }
     }
 
     let mut result = Vec::new();
-    let mut cursor = piles.last().and_then(|node| node.as_ref().cloned());
-    while let Some(node) = cursor {
+    let mut cursor = piles.last().copied();
+    while let Some(node_idx) = cursor {
+        let node = &nodes[node_idx];
         result.push((node.base_idx, node.mine_idx));
-        cursor = node.prev.as_deref().cloned();
+        cursor = node.prev_idx;
     }
     result.reverse();
     result
@@ -483,10 +625,132 @@ fn push_diff_line(
     });
 }
 
+fn resolve_cell_delta_kind(
+    base_cell: &WorkbookCellSnapshotJson,
+    mine_cell: &WorkbookCellSnapshotJson,
+    compare_mode: &str,
+) -> String {
+    if !workbook_cells_differ(base_cell, mine_cell, compare_mode) {
+        return "equal".to_string();
+    }
+
+    let has_base_content = has_workbook_cell_content(base_cell, compare_mode);
+    let has_mine_content = has_workbook_cell_content(mine_cell, compare_mode);
+    if has_base_content != has_mine_content {
+        if has_mine_content {
+            return "add".to_string();
+        }
+        return "delete".to_string();
+    }
+
+    "modify".to_string()
+}
+
+fn build_workbook_row_delta_json(
+    base_row: Option<&WorkbookRowEntry>,
+    mine_row: Option<&WorkbookRowEntry>,
+    line_idx: usize,
+    left_line_idx: Option<usize>,
+    right_line_idx: Option<usize>,
+    compare_mode: &str,
+) -> WorkbookRowDeltaJson {
+    let max_columns = usize::max(
+        base_row.map(|row| row.cells.len()).unwrap_or(0),
+        mine_row.map(|row| row.cells.len()).unwrap_or(0),
+    );
+    let empty_cell = WorkbookCellSnapshotJson { value: String::new(), formula: String::new() };
+    let mut cell_deltas = Vec::new();
+    let mut changed_columns = Vec::new();
+    let mut strict_only_columns = Vec::new();
+    let mut saw_add = false;
+    let mut saw_delete = false;
+    let mut saw_modify = false;
+
+    for column in 0..max_columns {
+        let base_cell = base_row
+            .and_then(|row| row.cells.get(column))
+            .cloned()
+            .unwrap_or_else(|| empty_cell.clone());
+        let mine_cell = mine_row
+            .and_then(|row| row.cells.get(column))
+            .cloned()
+            .unwrap_or_else(|| empty_cell.clone());
+        let changed = workbook_cells_differ(&base_cell, &mine_cell, compare_mode);
+        let has_base_content = has_workbook_cell_content(&base_cell, compare_mode);
+        let has_mine_content = has_workbook_cell_content(&mine_cell, compare_mode);
+        let has_content = has_base_content || has_mine_content;
+        if !changed && !has_content {
+            continue;
+        }
+
+        let kind = resolve_cell_delta_kind(&base_cell, &mine_cell, compare_mode);
+        if changed {
+            changed_columns.push(column);
+            if workbook_cells_differ(&base_cell, &mine_cell, "strict")
+                && !workbook_cells_differ(&base_cell, &mine_cell, "content")
+            {
+                strict_only_columns.push(column);
+            }
+            match kind.as_str() {
+                "add" => saw_add = true,
+                "delete" => saw_delete = true,
+                "modify" => saw_modify = true,
+                _ => {}
+            }
+        }
+
+        cell_deltas.push(WorkbookCellDeltaJson {
+            column,
+            base_cell,
+            mine_cell,
+            changed,
+            masked: !changed,
+            strict_only: strict_only_columns.contains(&column),
+            kind,
+            has_base_content,
+            has_mine_content,
+            has_content,
+        });
+    }
+
+    let tone = if !saw_add && !saw_delete && !saw_modify {
+        "equal"
+    } else if saw_modify || (saw_add && saw_delete) {
+        "mixed"
+    } else if saw_add {
+        "add"
+    } else {
+        "delete"
+    };
+
+    let mut line_idxs = Vec::new();
+    if let Some(left_idx) = left_line_idx {
+        line_idxs.push(left_idx);
+    }
+    if let Some(right_idx) = right_line_idx {
+        line_idxs.push(right_idx);
+    }
+
+    WorkbookRowDeltaJson {
+        line_idx,
+        line_idxs,
+        left_line_idx,
+        right_line_idx,
+        changed_count: changed_columns.len(),
+        has_changes: !changed_columns.is_empty(),
+        changed_columns,
+        strict_only_columns,
+        tone: tone.to_string(),
+        cell_deltas,
+    }
+}
+
 fn append_row_pairs(
     output: &mut Vec<DiffLineJson>,
     base_rows: &[WorkbookRowEntry],
     mine_rows: &[WorkbookRowEntry],
+    sheet_rows: &mut Vec<WorkbookRowDeltaJson>,
+    compare_mode: &str,
 ) {
     let anchors = patience_lcs(base_rows, mine_rows);
     let mut base_idx = 0usize;
@@ -496,10 +760,12 @@ fn append_row_pairs(
         output: &mut Vec<DiffLineJson>,
         base_rows: &[WorkbookRowEntry],
         mine_rows: &[WorkbookRowEntry],
+        sheet_rows: &mut Vec<WorkbookRowDeltaJson>,
         base_idx: &mut usize,
         mine_idx: &mut usize,
         base_end: usize,
         mine_end: usize,
+        compare_mode: &str,
     ) {
         let unmatched_count = usize::max(base_end.saturating_sub(*base_idx), mine_end.saturating_sub(*mine_idx));
         for offset in 0..unmatched_count {
@@ -516,6 +782,7 @@ fn append_row_pairs(
 
             match (base_row, mine_row) {
                 (Some(base_row), Some(mine_row)) => {
+                    let left_line_idx = output.len();
                     push_diff_line(
                         output,
                         "delete",
@@ -524,6 +791,7 @@ fn append_row_pairs(
                         Some(base_row.row_number),
                         None,
                     );
+                    let right_line_idx = output.len();
                     push_diff_line(
                         output,
                         "add",
@@ -532,8 +800,17 @@ fn append_row_pairs(
                         None,
                         Some(mine_row.row_number),
                     );
+                    sheet_rows.push(build_workbook_row_delta_json(
+                        Some(base_row),
+                        Some(mine_row),
+                        left_line_idx,
+                        Some(left_line_idx),
+                        Some(right_line_idx),
+                        compare_mode,
+                    ));
                 }
                 (Some(base_row), None) => {
+                    let left_line_idx = output.len();
                     push_diff_line(
                         output,
                         "delete",
@@ -542,8 +819,17 @@ fn append_row_pairs(
                         Some(base_row.row_number),
                         None,
                     );
+                    sheet_rows.push(build_workbook_row_delta_json(
+                        Some(base_row),
+                        None,
+                        left_line_idx,
+                        Some(left_line_idx),
+                        None,
+                        compare_mode,
+                    ));
                 }
                 (None, Some(mine_row)) => {
+                    let right_line_idx = output.len();
                     push_diff_line(
                         output,
                         "add",
@@ -552,6 +838,14 @@ fn append_row_pairs(
                         None,
                         Some(mine_row.row_number),
                     );
+                    sheet_rows.push(build_workbook_row_delta_json(
+                        None,
+                        Some(mine_row),
+                        right_line_idx,
+                        None,
+                        Some(right_line_idx),
+                        compare_mode,
+                    ));
                 }
                 (None, None) => {}
             }
@@ -561,9 +855,10 @@ fn append_row_pairs(
     }
 
     for (anchor_base_idx, anchor_mine_idx) in anchors {
-        emit_unmatched_rows(output, base_rows, mine_rows, &mut base_idx, &mut mine_idx, anchor_base_idx, anchor_mine_idx);
+        emit_unmatched_rows(output, base_rows, mine_rows, sheet_rows, &mut base_idx, &mut mine_idx, anchor_base_idx, anchor_mine_idx, compare_mode);
         let base_row = &base_rows[anchor_base_idx];
         let mine_row = &mine_rows[anchor_mine_idx];
+        let line_idx = output.len();
         push_diff_line(
             output,
             "equal",
@@ -572,77 +867,119 @@ fn append_row_pairs(
             Some(base_row.row_number),
             Some(mine_row.row_number),
         );
+        sheet_rows.push(build_workbook_row_delta_json(
+            Some(base_row),
+            Some(mine_row),
+            line_idx,
+            Some(line_idx),
+            Some(line_idx),
+            compare_mode,
+        ));
         base_idx = anchor_base_idx + 1;
         mine_idx = anchor_mine_idx + 1;
     }
 
-    emit_unmatched_rows(output, base_rows, mine_rows, &mut base_idx, &mut mine_idx, base_rows.len(), mine_rows.len());
+    emit_unmatched_rows(output, base_rows, mine_rows, sheet_rows, &mut base_idx, &mut mine_idx, base_rows.len(), mine_rows.len(), compare_mode);
 }
 
-fn compute_workbook_diff_lines(base_file_path: &str, mine_file_path: &str) -> io::Result<Vec<DiffLineJson>> {
-    let base_sheets = parse_workbook_document(base_file_path)?;
-    let mine_sheets = parse_workbook_document(mine_file_path)?;
+fn compute_workbook_diff_output(base_file_path: &str, mine_file_path: &str, compare_mode: &str) -> io::Result<WorkbookDiffOutputJson> {
+    let base_sheets = parse_workbook_document(base_file_path, compare_mode)?;
+    let mine_sheets = parse_workbook_document(mine_file_path, compare_mode)?;
     let sheet_pairs = align_workbook_sheets(base_sheets, mine_sheets);
-    let mut result = Vec::new();
+    let mut diff_lines = Vec::new();
+    let mut sections = Vec::new();
 
     for pair in sheet_pairs {
         match (pair.base, pair.mine) {
             (Some(base_sheet), Some(mine_sheet)) => {
+                let section_name = base_sheet.name.clone();
                 push_diff_line(
-                    &mut result,
+                    &mut diff_lines,
                     "equal",
                     Some(base_sheet.raw_sheet_line.clone()),
                     Some(mine_sheet.raw_sheet_line.clone()),
                     None,
                     None,
                 );
-                append_row_pairs(&mut result, &base_sheet.rows, &mine_sheet.rows);
+                let mut rows = Vec::new();
+                append_row_pairs(&mut diff_lines, &base_sheet.rows, &mine_sheet.rows, &mut rows, compare_mode);
+                sections.push(WorkbookSectionDeltaJson { name: section_name, rows });
             }
             (Some(base_sheet), None) => {
+                let section_name = base_sheet.name.clone();
                 push_diff_line(
-                    &mut result,
+                    &mut diff_lines,
                     "delete",
                     Some(base_sheet.raw_sheet_line.clone()),
                     None,
                     None,
                     None,
                 );
+                let mut rows = Vec::new();
                 for row in base_sheet.rows {
+                    let line_idx = diff_lines.len();
                     push_diff_line(
-                        &mut result,
+                        &mut diff_lines,
                         "delete",
-                        Some(row.raw_line),
+                        Some(row.raw_line.clone()),
                         None,
                         Some(row.row_number),
                         None,
                     );
+                    rows.push(build_workbook_row_delta_json(
+                        Some(&row),
+                        None,
+                        line_idx,
+                        Some(line_idx),
+                        None,
+                        compare_mode,
+                    ));
                 }
+                sections.push(WorkbookSectionDeltaJson { name: section_name, rows });
             }
             (None, Some(mine_sheet)) => {
+                let section_name = mine_sheet.name.clone();
                 push_diff_line(
-                    &mut result,
+                    &mut diff_lines,
                     "add",
                     None,
                     Some(mine_sheet.raw_sheet_line.clone()),
                     None,
                     None,
                 );
+                let mut rows = Vec::new();
                 for row in mine_sheet.rows {
+                    let line_idx = diff_lines.len();
                     push_diff_line(
-                        &mut result,
+                        &mut diff_lines,
                         "add",
                         None,
-                        Some(row.raw_line),
+                        Some(row.raw_line.clone()),
                         None,
                         Some(row.row_number),
                     );
+                    rows.push(build_workbook_row_delta_json(
+                        None,
+                        Some(&row),
+                        line_idx,
+                        None,
+                        Some(line_idx),
+                        compare_mode,
+                    ));
                 }
+                sections.push(WorkbookSectionDeltaJson { name: section_name, rows });
             }
             (None, None) => {}
         }
     }
 
-    Ok(result)
+    Ok(WorkbookDiffOutputJson {
+        diff_lines,
+        workbook_delta: WorkbookPrecomputedDeltaJson {
+            compare_mode: compare_mode.to_string(),
+            sections,
+        },
+    })
 }
 
 fn get_formula_for_position<'a>(
@@ -878,13 +1215,16 @@ fn write_workbook_metadata_json(file_path: &str) -> io::Result<()> {
 }
 
 fn main() {
-    let (output_mode, file_path) = match parse_args() {
+    let parsed_args = match parse_args() {
         Ok(result) => result,
         Err(message) => {
             eprintln!("{}", message);
             std::process::exit(1);
         }
     };
+    let output_mode = parsed_args.output_mode;
+    let file_path = parsed_args.file_path;
+    let compare_mode = parsed_args.compare_mode;
 
     match output_mode {
         OutputMode::DiffJson => {
@@ -915,11 +1255,11 @@ fn main() {
             let mut parts = file_path.splitn(2, '\n');
             let base_file_path = parts.next().unwrap_or_default();
             let mine_file_path = parts.next().unwrap_or_default();
-            match compute_workbook_diff_lines(base_file_path, mine_file_path) {
-                Ok(diff_lines) => {
+            match compute_workbook_diff_output(base_file_path, mine_file_path, &compare_mode) {
+                Ok(diff_output) => {
                     let stdout = io::stdout();
                     let mut handle = stdout.lock();
-                    serde_json::to_writer(&mut handle, &diff_lines)
+                    serde_json::to_writer(&mut handle, &diff_output)
                         .map_err(|error| io::Error::new(io::ErrorKind::Other, error.to_string()))
                 }
                 Err(error) => Err(error),

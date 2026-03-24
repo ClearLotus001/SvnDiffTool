@@ -1,10 +1,17 @@
-import type { DiffLine, SplitRow } from '../types';
+import type {
+  DiffLine,
+  SplitRow,
+  WorkbookCompareMode,
+  WorkbookPrecomputedDeltaPayload,
+} from '../types';
 import type { WorkbookSection } from './workbookSections';
 import { parseWorkbookDisplayLine } from './workbookDisplay';
 import {
+  buildWorkbookRowSignature,
   alignWorkbookEntries,
   createWorkbookAlignmentEntry,
 } from './workbookAlignment';
+import { hydrateWorkbookRowDelta } from './workbookDelta';
 
 export interface IndexedWorkbookSectionRows {
   rows: SplitRow[];
@@ -62,7 +69,11 @@ function alignWorkbookChangeRows(
   ));
 }
 
-function buildWorkbookSplitRows(sectionDiffLines: DiffLine[], lineIdxOffset: number): SplitRow[] {
+function buildWorkbookSplitRows(
+  sectionDiffLines: DiffLine[],
+  lineIdxOffset: number,
+  compareMode: WorkbookCompareMode = 'strict',
+): SplitRow[] {
   const rows: SplitRow[] = [];
   let index = 0;
 
@@ -71,7 +82,15 @@ function buildWorkbookSplitRows(sectionDiffLines: DiffLine[], lineIdxOffset: num
 
     if (line.type === 'equal') {
       const lineIdx = index + lineIdxOffset;
-      if (line.base && line.mine && line.base !== line.mine) {
+      const leftParsed = line.base ? parseWorkbookDisplayLine(line.base) : null;
+      const rightParsed = line.mine ? parseWorkbookDisplayLine(line.mine) : null;
+      const rowNumbersDiffer = leftParsed?.kind === 'row' && rightParsed?.kind === 'row'
+        ? leftParsed.rowNumber !== rightParsed.rowNumber
+        : false;
+      const lineSemanticallyDiffers = leftParsed?.kind === 'row' && rightParsed?.kind === 'row'
+        ? buildWorkbookRowSignature(leftParsed, compareMode) !== buildWorkbookRowSignature(rightParsed, compareMode)
+        : line.base !== line.mine;
+      if (line.base && line.mine && (lineSemanticallyDiffers || rowNumbersDiffer)) {
         rows.push(buildSplitRow(
           makeSideScopedEqualLine(line, 'base'),
           makeSideScopedEqualLine(line, 'mine'),
@@ -101,13 +120,13 @@ function buildWorkbookSplitRows(sectionDiffLines: DiffLine[], lineIdxOffset: num
       .map((entry, entryIndex) => createWorkbookAlignmentEntry(entry.base ?? entry.mine ?? '', {
         line: entry,
         lineIdx: lineIdxOffset + deleteStart + entryIndex,
-      }));
+      }, compareMode));
     const mineRows = sectionDiffLines
       .slice(addStart, index)
       .map((entry, entryIndex) => createWorkbookAlignmentEntry(entry.base ?? entry.mine ?? '', {
         line: entry,
         lineIdx: lineIdxOffset + addStart + entryIndex,
-      }));
+      }, compareMode));
 
     rows.push(...alignWorkbookChangeRows(baseRows, mineRows, lineIdxOffset + deleteStart));
 
@@ -127,15 +146,37 @@ function isWorkbookDataRow(row: SplitRow): boolean {
 export function buildWorkbookSectionRowIndex(
   diffLines: DiffLine[],
   sections: WorkbookSection[],
+  compareMode: WorkbookCompareMode = 'strict',
 ): Map<string, IndexedWorkbookSectionRows> {
   const sectionMap = new Map<string, IndexedWorkbookSectionRows>();
 
   sections.forEach((section) => {
     const contentStartIdx = Math.min(section.startLineIdx + 1, section.endLineIdx + 1);
     const sectionDiffLines = diffLines.slice(contentStartIdx, section.endLineIdx + 1);
-    const splitRows = buildWorkbookSplitRows(sectionDiffLines, contentStartIdx)
+    const splitRows = buildWorkbookSplitRows(sectionDiffLines, contentStartIdx, compareMode)
       .filter(isWorkbookDataRow);
     sectionMap.set(section.name, { rows: splitRows });
+  });
+
+  return sectionMap;
+}
+
+export function buildWorkbookSectionRowIndexFromPrecomputedDelta(
+  diffLines: DiffLine[],
+  payload: WorkbookPrecomputedDeltaPayload | null | undefined,
+): Map<string, IndexedWorkbookSectionRows> {
+  const sectionMap = new Map<string, IndexedWorkbookSectionRows>();
+  if (!payload) return sectionMap;
+
+  payload.sections.forEach((section) => {
+    const rows: SplitRow[] = section.rows.map((row) => ({
+      left: row.leftLineIdx != null ? (diffLines[row.leftLineIdx] ?? null) : null,
+      right: row.rightLineIdx != null ? (diffLines[row.rightLineIdx] ?? null) : null,
+      lineIdx: row.lineIdx,
+      lineIdxs: row.lineIdxs,
+      workbookRowDelta: hydrateWorkbookRowDelta(row),
+    }));
+    sectionMap.set(section.name, { rows });
   });
 
   return sectionMap;

@@ -97,6 +97,8 @@ export interface SplitRow {
   lineIdx: number;
   /** all underlying diff line indexes represented by this row */
   lineIdxs: number[];
+  /** Optional precomputed workbook delta for this paired row */
+  workbookRowDelta?: WorkbookRowDelta;
 }
 
 export interface SplitLineItem {
@@ -139,6 +141,7 @@ export interface SearchState {
 export type LayoutMode = 'unified' | 'split-h' | 'split-v';
 export type WorkbookMoveDirection = 'up' | 'down' | 'left' | 'right';
 export type WorkbookSelectionKind = 'cell' | 'row' | 'column';
+export type WorkbookCompareMode = 'strict' | 'content';
 
 export interface WorkbookSelectedCell {
   kind: WorkbookSelectionKind;
@@ -183,6 +186,59 @@ export interface WorkbookSheetPresentation {
   mineMergeRanges: WorkbookMergeRange[];
 }
 
+export interface WorkbookCellSnapshot {
+  value: string;
+  formula: string;
+}
+
+export type WorkbookCellDeltaKind = 'equal' | 'add' | 'delete' | 'modify';
+export type WorkbookRowDeltaTone = 'equal' | 'add' | 'delete' | 'mixed';
+
+export interface WorkbookCellDelta {
+  column: number;
+  baseCell: WorkbookCellSnapshot;
+  mineCell: WorkbookCellSnapshot;
+  changed: boolean;
+  masked: boolean;
+  strictOnly: boolean;
+  kind: WorkbookCellDeltaKind;
+  hasBaseContent: boolean;
+  hasMineContent: boolean;
+  hasContent: boolean;
+}
+
+export interface WorkbookRowDelta {
+  cellDeltas: Map<number, WorkbookCellDelta>;
+  changedColumns: number[];
+  strictOnlyColumns: number[];
+  changedCount: number;
+  hasChanges: boolean;
+  tone: WorkbookRowDeltaTone;
+}
+
+export interface WorkbookCellDeltaPayload extends Omit<WorkbookCellDelta, 'baseCell' | 'mineCell'> {
+  baseCell: WorkbookCellSnapshot;
+  mineCell: WorkbookCellSnapshot;
+}
+
+export interface WorkbookRowDeltaPayload extends Omit<WorkbookRowDelta, 'cellDeltas'> {
+  lineIdx: number;
+  lineIdxs: number[];
+  leftLineIdx: number | null;
+  rightLineIdx: number | null;
+  cellDeltas: WorkbookCellDeltaPayload[];
+}
+
+export interface WorkbookSectionDeltaPayload {
+  name: string;
+  rows: WorkbookRowDeltaPayload[];
+}
+
+export interface WorkbookPrecomputedDeltaPayload {
+  compareMode: 'strict';
+  sections: WorkbookSectionDeltaPayload[];
+}
+
 // ── Theme ─────────────────────────────────────────────────────────────────────
 
 export type ThemeKey = 'dark' | 'light' | 'hc';
@@ -206,6 +262,8 @@ export interface Theme {
   kw: string; str: string; num: string; cmt: string; punc: string;
   // line number gutter
   lnBg: string; lnTx: string;
+  // scrollbar
+  scrollThumb: string; scrollThumbHover: string; scrollTrack: string;
   // minimap
   miniAdd: string; miniDel: string; miniVp: string;
   // search
@@ -239,6 +297,9 @@ export interface DiffData extends DiffMeta {
   baseBytes: Uint8Array | null;
   mineBytes: Uint8Array | null;
   precomputedDiffLines?: DiffLine[] | null;
+  precomputedWorkbookDelta?: WorkbookPrecomputedDeltaPayload | null;
+  precomputedDiffLinesByMode?: Partial<Record<WorkbookCompareMode, DiffLine[] | null>> | null;
+  precomputedWorkbookDeltaByMode?: Partial<Record<WorkbookCompareMode, WorkbookPrecomputedDeltaPayload | null>> | null;
   baseWorkbookMetadata?: WorkbookMetadataMap | null;
   mineWorkbookMetadata?: WorkbookMetadataMap | null;
   revisionOptions?: SvnRevisionInfo[] | null;

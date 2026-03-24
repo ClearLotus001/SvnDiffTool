@@ -267,6 +267,8 @@ const SplitHeader = memo(({
         gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
         gap: 0,
         padding: 0,
+        width: '100%',
+        minWidth: 0,
         background: '#faf9f5',
         borderBottom: `1px solid ${T.border}`,
         flexShrink: 0,

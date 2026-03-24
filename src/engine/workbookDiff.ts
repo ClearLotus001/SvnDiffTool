@@ -1,4 +1,4 @@
-import type { DiffLine } from '../types';
+import type { DiffLine, WorkbookCompareMode } from '../types';
 import { parseWorkbookDisplayLine } from '../utils/workbookDisplay';
 import {
   alignWorkbookEntries,
@@ -30,7 +30,10 @@ export function isWorkbookText(text: string): boolean {
   return parsed?.kind === 'sheet' || parsed?.kind === 'row';
 }
 
-function parseWorkbookDocument(text: string): WorkbookSheetEntry[] {
+function parseWorkbookDocument(
+  text: string,
+  compareMode: WorkbookCompareMode = 'strict',
+): WorkbookSheetEntry[] {
   const lines = splitLines(text);
   const sheets: WorkbookSheetEntry[] = [];
   let current: WorkbookSheetEntry | null = null;
@@ -51,7 +54,7 @@ function parseWorkbookDocument(text: string): WorkbookSheetEntry[] {
     }
 
     if (!current) return;
-    const entry = createWorkbookAlignmentEntry(line, { rowNumber: parsed.rowNumber });
+    const entry = createWorkbookAlignmentEntry(line, { rowNumber: parsed.rowNumber }, compareMode);
     if (entry) current.rows.push(entry);
   });
 
@@ -188,9 +191,13 @@ function appendSheetDiff(
   }
 }
 
-export function computeWorkbookDiff(baseText: string, mineText: string): DiffLine[] {
-  const baseSheets = parseWorkbookDocument(baseText);
-  const mineSheets = parseWorkbookDocument(mineText);
+export function computeWorkbookDiff(
+  baseText: string,
+  mineText: string,
+  compareMode: WorkbookCompareMode = 'strict',
+): DiffLine[] {
+  const baseSheets = parseWorkbookDocument(baseText, compareMode);
+  const mineSheets = parseWorkbookDocument(mineText, compareMode);
   const sheetPairs = alignWorkbookSheets(baseSheets, mineSheets);
   const result: DiffLine[] = [];
 

@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import type { WorkbookMergeRange } from '../utils/workbookMeta';
+import { clampWorkbookColumnWidth } from '../utils/workbookColumnWidths';
 
 export interface HorizontalVirtualColumnEntry {
   column: number;
   position: number;
+  width: number;
+  displayWidth: number;
+  offset: number;
 }
 
 interface UseHorizontalVirtualColumnsOptions {
@@ -12,6 +16,7 @@ interface UseHorizontalVirtualColumnsOptions {
   cellWidth: number;
   frozenCount: number;
   widthMultiplier?: number;
+  getColumnWidth?: ((column: number) => number) | undefined;
   mergedRanges?: WorkbookMergeRange[];
   overscanMin?: number;
   overscanFactor?: number;
@@ -20,8 +25,10 @@ interface UseHorizontalVirtualColumnsOptions {
 interface HorizontalVirtualColumnsResult {
   columnEntries: HorizontalVirtualColumnEntry[];
   totalWidth: number;
+  frozenWidth: number;
   leadingSpacerWidth: number;
   trailingSpacerWidth: number;
+  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
   debug: {
     viewportWidth: number;
     scrollLeft: number;
@@ -49,6 +56,30 @@ interface HorizontalWindow {
 
 function getNow() {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
+function buildPrefixSums(widths: number[]): number[] {
+  const prefixSums = new Array<number>(widths.length + 1).fill(0);
+  widths.forEach((width, index) => {
+    prefixSums[index + 1] = prefixSums[index]! + width;
+  });
+  return prefixSums;
+}
+
+function upperBound(values: number[], target: number): number {
+  let low = 0;
+  let high = values.length;
+
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if ((values[mid] ?? 0) <= target) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+
+  return low;
 }
 
 export function preparePositionedMergedColumnRanges(
@@ -79,16 +110,16 @@ export function preparePositionedMergedColumnRanges(
 }
 
 export function computeHorizontalWindow(
-  nonFrozenColumnCount: number,
+  nonFrozenDisplayWidths: number[],
   clampedFrozenCount: number,
   scrollLeft: number,
   viewportWidth: number,
-  unitWidth: number,
+  frozenWidth: number,
   mergedRanges: PositionedMergedColumnRange[],
   overscanMin = DEFAULT_MIN_OVERSCAN_COLUMNS,
   overscanFactor = DEFAULT_OVERSCAN_FACTOR,
 ): HorizontalWindow {
-  if (nonFrozenColumnCount === 0) {
+  if (nonFrozenDisplayWidths.length === 0) {
     return {
       startIndex: 0,
       endIndex: 0,
@@ -97,15 +128,26 @@ export function computeHorizontalWindow(
     };
   }
 
-  const frozenWidth = clampedFrozenCount * unitWidth;
-  const availableWidth = Math.max(unitWidth, viewportWidth - frozenWidth);
-  const visibleColumnCount = Math.max(1, Math.ceil(availableWidth / unitWidth));
-  const overscan = Math.max(overscanMin, Math.ceil(visibleColumnCount * overscanFactor));
-  let startIndex = Math.max(0, Math.floor(scrollLeft / unitWidth) - overscan);
-  let endIndex = Math.min(
-    nonFrozenColumnCount,
-    Math.ceil((scrollLeft + availableWidth) / unitWidth) + overscan,
+  const nonFrozenPrefixSums = buildPrefixSums(nonFrozenDisplayWidths);
+  const totalNonFrozenWidth = nonFrozenPrefixSums[nonFrozenPrefixSums.length - 1] ?? 0;
+  const availableWidth = Math.max(1, viewportWidth - frozenWidth);
+  const maxScrollLeft = Math.max(0, totalNonFrozenWidth - availableWidth);
+  const clampedScrollLeft = Math.max(0, Math.min(scrollLeft, maxScrollLeft));
+  const visibleStart = Math.min(
+    nonFrozenDisplayWidths.length - 1,
+    Math.max(0, upperBound(nonFrozenPrefixSums, clampedScrollLeft) - 1),
   );
+  const visibleEnd = Math.min(
+    nonFrozenDisplayWidths.length,
+    Math.max(
+      visibleStart + 1,
+      upperBound(nonFrozenPrefixSums, clampedScrollLeft + availableWidth - 1),
+    ),
+  );
+  const visibleColumnCount = Math.max(1, visibleEnd - visibleStart);
+  const overscan = Math.max(overscanMin, Math.ceil(visibleColumnCount * overscanFactor));
+  let startIndex = Math.max(0, visibleStart - overscan);
+  let endIndex = Math.min(nonFrozenDisplayWidths.length, visibleEnd + overscan);
 
   if (mergedRanges.length > 0) {
     let changed = true;
@@ -123,7 +165,7 @@ export function computeHorizontalWindow(
         const nextEndIndex = Math.max(endIndex, (range.endPosition - clampedFrozenCount) + 1);
         if (nextStartIndex !== startIndex || nextEndIndex !== endIndex) {
           startIndex = nextStartIndex;
-          endIndex = Math.min(nonFrozenColumnCount, nextEndIndex);
+          endIndex = Math.min(nonFrozenDisplayWidths.length, nextEndIndex);
           changed = true;
         }
       });
@@ -144,6 +186,7 @@ export function useHorizontalVirtualColumns({
   cellWidth,
   frozenCount,
   widthMultiplier = 1,
+  getColumnWidth,
   mergedRanges = [],
   overscanMin = DEFAULT_MIN_OVERSCAN_COLUMNS,
   overscanFactor = DEFAULT_OVERSCAN_FACTOR,
@@ -159,40 +202,56 @@ export function useHorizontalVirtualColumns({
   const viewportWidthRef = useRef(1200);
   const windowRangeRef = useRef(windowRange);
   const rafRef = useRef(0);
-
   const rangeUpdateCountRef = useRef(1);
   const lastCalcMsRef = useRef(0);
 
   const layout = useMemo(() => {
-    const unitWidth = cellWidth * widthMultiplier;
-    const totalWidth = columns.length * unitWidth;
+    let runningOffset = 0;
+    const columnMetrics: HorizontalVirtualColumnEntry[] = columns.map((column, position) => {
+      const width = clampWorkbookColumnWidth(getColumnWidth?.(column) ?? cellWidth);
+      const displayWidth = width * widthMultiplier;
+      const entry: HorizontalVirtualColumnEntry = {
+        column,
+        position,
+        width,
+        displayWidth,
+        offset: runningOffset,
+      };
+      runningOffset += displayWidth;
+      return entry;
+    });
+    const totalWidth = runningOffset;
     const clampedFrozenCount = Math.min(frozenCount, columns.length);
-    const frozenEntries = columns.slice(0, clampedFrozenCount).map((column, position) => ({
-      column,
-      position,
-    }));
-    const nonFrozenColumns = columns.slice(clampedFrozenCount);
+    const frozenEntries = columnMetrics.slice(0, clampedFrozenCount);
+    const nonFrozenEntries = columnMetrics.slice(clampedFrozenCount);
+    const nonFrozenDisplayWidths = nonFrozenEntries.map(entry => entry.displayWidth);
+    const nonFrozenPrefixSums = buildPrefixSums(nonFrozenDisplayWidths);
+    const frozenWidth = frozenEntries.reduce((sum, entry) => sum + entry.displayWidth, 0);
     const positionedMergedRanges = preparePositionedMergedColumnRanges(columns, mergedRanges);
+    const columnLayoutByColumn = new Map(columnMetrics.map(entry => [entry.column, entry]));
 
     return {
-      unitWidth,
       totalWidth,
       clampedFrozenCount,
       frozenEntries,
-      nonFrozenColumns,
+      nonFrozenEntries,
+      nonFrozenDisplayWidths,
+      nonFrozenPrefixSums,
+      frozenWidth,
       positionedMergedRanges,
+      columnLayoutByColumn,
     };
-  }, [cellWidth, columns, frozenCount, mergedRanges, widthMultiplier]);
+  }, [cellWidth, columns, frozenCount, getColumnWidth, mergedRanges, widthMultiplier]);
 
   const applyWindowRange = useMemo(() => (
     (scrollLeft: number, nextViewportWidth: number) => {
       const calcStart = getNow();
       const nextRange = computeHorizontalWindow(
-        layout.nonFrozenColumns.length,
+        layout.nonFrozenDisplayWidths,
         layout.clampedFrozenCount,
         scrollLeft,
         nextViewportWidth,
-        layout.unitWidth,
+        layout.frozenWidth,
         layout.positionedMergedRanges,
         overscanMin,
         overscanFactor,
@@ -213,7 +272,7 @@ export function useHorizontalVirtualColumns({
       rangeUpdateCountRef.current += 1;
       setWindowRange(nextRange);
     }
-  ), [layout.clampedFrozenCount, layout.nonFrozenColumns.length, layout.positionedMergedRanges, layout.unitWidth, overscanFactor, overscanMin]);
+  ), [layout.clampedFrozenCount, layout.frozenWidth, layout.nonFrozenDisplayWidths, layout.positionedMergedRanges, overscanFactor, overscanMin]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -252,19 +311,14 @@ export function useHorizontalVirtualColumns({
   }, [applyWindowRange]);
 
   return useMemo(() => {
-    const {
-      unitWidth,
-      totalWidth,
-      clampedFrozenCount,
-      frozenEntries,
-      nonFrozenColumns,
-    } = layout;
     if (columns.length === 0) {
       return {
         columnEntries: [],
-        totalWidth,
+        totalWidth: 0,
+        frozenWidth: 0,
         leadingSpacerWidth: 0,
         trailingSpacerWidth: 0,
+        columnLayoutByColumn: new Map<number, HorizontalVirtualColumnEntry>(),
         debug: {
           viewportWidth,
           scrollLeft: scrollLeftRef.current,
@@ -276,12 +330,23 @@ export function useHorizontalVirtualColumns({
       };
     }
 
-    if (nonFrozenColumns.length === 0) {
+    const {
+      totalWidth,
+      frozenEntries,
+      nonFrozenEntries,
+      nonFrozenPrefixSums,
+      frozenWidth,
+      columnLayoutByColumn,
+    } = layout;
+
+    if (nonFrozenEntries.length === 0) {
       return {
         columnEntries: frozenEntries,
         totalWidth,
+        frozenWidth,
         leadingSpacerWidth: 0,
         trailingSpacerWidth: 0,
+        columnLayoutByColumn,
         debug: {
           viewportWidth,
           scrollLeft: scrollLeftRef.current,
@@ -293,18 +358,20 @@ export function useHorizontalVirtualColumns({
       };
     }
 
-    const virtualEntries = nonFrozenColumns
-      .slice(windowRange.startIndex, windowRange.endIndex)
-      .map((column, index) => ({
-        column,
-        position: clampedFrozenCount + windowRange.startIndex + index,
-      }));
+    const virtualEntries = nonFrozenEntries.slice(windowRange.startIndex, windowRange.endIndex);
+    const leadingSpacerWidth = nonFrozenPrefixSums[windowRange.startIndex] ?? 0;
+    const trailingSpacerWidth = Math.max(
+      0,
+      (nonFrozenPrefixSums[nonFrozenPrefixSums.length - 1] ?? 0) - (nonFrozenPrefixSums[windowRange.endIndex] ?? 0),
+    );
 
     return {
       columnEntries: [...frozenEntries, ...virtualEntries],
       totalWidth,
-      leadingSpacerWidth: windowRange.startIndex * unitWidth,
-      trailingSpacerWidth: Math.max(0, (nonFrozenColumns.length - windowRange.endIndex) * unitWidth),
+      frozenWidth,
+      leadingSpacerWidth,
+      trailingSpacerWidth,
+      columnLayoutByColumn,
       debug: {
         viewportWidth,
         scrollLeft: scrollLeftRef.current,

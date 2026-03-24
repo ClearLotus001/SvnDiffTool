@@ -81,6 +81,59 @@ test('workbook-native diff pairs changed rows at the same logical position', () 
   assert.equal(compareCells.get(1)?.changed, true);
 });
 
+test('workbook-native diff keeps whitespace-only cell changes visible to compare cells', () => {
+  const base = buildWorkbook([
+    ['ID', 'Flag'],
+    ['10001', ' '],
+  ]);
+  const mine = buildWorkbook([
+    ['ID', 'Flag'],
+    ['10001', ''],
+  ]);
+
+  const diffLines = computeSmartDiff(base, mine);
+  assert.equal(diffLines.some((line) => line.type === 'delete' && line.baseLineNo === 2), true);
+  assert.equal(diffLines.some((line) => line.type === 'add' && line.mineLineNo === 2), true);
+
+  const rows = getSectionRows(diffLines);
+  const changedRow = rows.find((row) => {
+    const left = parseWorkbookRowLine(row.left);
+    const right = parseWorkbookRowLine(row.right);
+    return left?.rowNumber === 2 && right?.rowNumber === 2;
+  });
+
+  assert.ok(changedRow);
+  const compareCells = buildWorkbookCompareCells(changedRow.left, changedRow.right);
+  assert.equal(compareCells.get(1)?.changed, true);
+  assert.equal(compareCells.get(1)?.baseCell.value, ' ');
+  assert.equal(compareCells.get(1)?.mineCell.value, '');
+});
+
+test('workbook content mode ignores whitespace-only cell diffs consistently', () => {
+  const base = buildWorkbook([
+    ['ID', 'Flag'],
+    ['10001', ' '],
+  ]);
+  const mine = buildWorkbook([
+    ['ID', 'Flag'],
+    ['10001', ''],
+  ]);
+
+  const diffLines = computeSmartDiff(base, mine, 'content');
+  assert.equal(diffLines.every((line) => line.type === 'equal'), true);
+
+  const rows = getSectionRows(diffLines);
+  const targetRow = rows.find((row) => {
+    const left = parseWorkbookRowLine(row.left);
+    const right = parseWorkbookRowLine(row.right);
+    return left?.rowNumber === 2 && right?.rowNumber === 2;
+  });
+
+  assert.ok(targetRow);
+  const compareCells = buildWorkbookCompareCells(targetRow.left, targetRow.right, undefined, 'content');
+  assert.equal([...compareCells.values()].filter((cell) => cell.changed).length, 0);
+});
+
 test('workbook-native diff does not degrade large workbooks into duplicated sheet sections', () => {
   const rowCount = 60010;
   const baseRows = Array.from({ length: rowCount }, (_, index) => [`ID-${index + 1}`, `Name-${index + 1}`]);

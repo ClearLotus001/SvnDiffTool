@@ -1,9 +1,10 @@
-import type { DiffLine } from '../types';
+import type { DiffLine, WorkbookCompareMode } from '../types';
 import { computeSmartDiff } from '../engine/smartDiff';
 
 interface DiffWorkerRequest {
   baseText: string;
   mineText: string;
+  compareMode: WorkbookCompareMode;
 }
 
 interface DiffWorkerSuccess {
@@ -18,9 +19,13 @@ interface DiffWorkerFailure {
 
 type DiffWorkerResponse = DiffWorkerSuccess | DiffWorkerFailure;
 
-export function computeDiffAsync(baseText: string, mineText: string): Promise<DiffLine[]> {
+export function computeDiffAsync(
+  baseText: string,
+  mineText: string,
+  compareMode: WorkbookCompareMode = 'strict',
+): Promise<DiffLine[]> {
   if (typeof Worker === 'undefined') {
-    return Promise.resolve(computeSmartDiff(baseText, mineText));
+    return Promise.resolve(computeSmartDiff(baseText, mineText, compareMode));
   }
 
   return new Promise((resolve, reject) => {
@@ -45,7 +50,7 @@ export function computeDiffAsync(baseText: string, mineText: string): Promise<Di
       reject(new Error(event.message || 'Failed to compute diff in worker.'));
     };
 
-    const payload: DiffWorkerRequest = { baseText, mineText };
+    const payload: DiffWorkerRequest = { baseText, mineText, compareMode };
     worker.postMessage(payload);
   });
 }

@@ -2,29 +2,53 @@ import { memo } from 'react';
 import { FONT_CODE, FONT_SIZE, FONT_UI } from '../constants/typography';
 import { useI18n } from '../context/i18n';
 import { useTheme } from '../context/theme';
+import {
+  hasWorkbookCellRawContent,
+} from '../utils/workbookCellContract';
+import type { WorkbookCompareCellState } from '../utils/workbookCompare';
+import { getWorkbookCompareBadgeVisual } from '../utils/workbookCompareVisuals';
 import type { WorkbookCellDisplay } from '../utils/workbookDisplay';
 
 interface WorkbookCompareTooltipProps {
-  baseCell: WorkbookCellDisplay;
-  mineCell: WorkbookCellDisplay;
-  changed: boolean;
+  compareCell: WorkbookCompareCellState;
 }
 
-function hasContent(cell: WorkbookCellDisplay) {
-  return Boolean(cell.value.trim() || cell.formula.trim());
+function hasContent(cell: WorkbookCompareCellState['baseCell']) {
+  return hasWorkbookCellRawContent(cell);
 }
 
-const EMPTY_CELL: WorkbookCellDisplay = { value: '', formula: '' };
+function getInvisiblePreview(value: string): string | null {
+  if (value === '') return '∅';
+  const preview = value
+    .replace(/ /g, '␠')
+    .replace(/\t/g, '⇥')
+    .replace(/\r\n/g, '↵')
+    .replace(/\r/g, '↵')
+    .replace(/\n/g, '↵');
+  return preview === value ? null : preview;
+}
 
 const WorkbookCompareTooltip = memo(({
-  baseCell,
-  mineCell,
-  changed,
+  compareCell,
 }: WorkbookCompareTooltipProps) => {
   const T = useTheme();
   const { t } = useI18n();
+  const { baseCell, mineCell, changed, kind, strictOnly } = compareCell;
   const showBase = hasContent(baseCell);
   const showMine = hasContent(mineCell);
+  const showWhitespaceSensitiveHint = changed && strictOnly;
+  const showClearedHint = changed && kind === 'delete';
+  const showAddedHint = changed && kind === 'add';
+  const showModifiedHint = changed && kind === 'modify';
+
+  const badges = [
+    showClearedHint ? { label: t('tooltipBadgeCleared'), ...getWorkbookCompareBadgeVisual(T, 'delete') } : null,
+    showAddedHint ? { label: t('tooltipBadgeAdded'), ...getWorkbookCompareBadgeVisual(T, 'add') } : null,
+    showModifiedHint ? { label: t('tooltipBadgeModified'), ...getWorkbookCompareBadgeVisual(T, 'modify') } : null,
+    showWhitespaceSensitiveHint
+      ? { label: t('tooltipBadgeWhitespaceSensitive'), textColor: T.acc2, background: `${T.acc2}14`, border: `${T.acc2}33` }
+      : null,
+  ].filter((badge): badge is { label: string; textColor: string; background: string; border: string } => badge != null);
 
   const renderPane = (
     label: string,
@@ -97,6 +121,18 @@ const WorkbookCompareTooltip = memo(({
             }}>
             {cell.value || t('formulaBarEmptyValue')}
           </span>
+          {getInvisiblePreview(cell.value) && (
+            <span
+              style={{
+                color: T.t2,
+                fontSize: FONT_SIZE.xs,
+                fontFamily: FONT_CODE,
+                minWidth: 0,
+                wordBreak: 'break-word',
+              }}>
+              {getInvisiblePreview(cell.value)}
+            </span>
+          )}
         </div>
 
         <div style={{ display: 'grid', gap: 2, minWidth: 0 }}>
@@ -114,14 +150,22 @@ const WorkbookCompareTooltip = memo(({
             }}>
             {cell.formula || t('formulaBarEmpty')}
           </span>
+          {getInvisiblePreview(cell.formula) && (
+            <span
+              style={{
+                color: T.t2,
+                fontSize: FONT_SIZE.xs,
+                fontFamily: FONT_CODE,
+                minWidth: 0,
+                wordBreak: 'break-word',
+              }}>
+              {getInvisiblePreview(cell.formula)}
+            </span>
+          )}
         </div>
       </div>
     </div>
   );
-
-  if (!showBase && !showMine) {
-    return renderPane(t('tooltipLocalLabel'), T.acc, EMPTY_CELL, true);
-  }
 
   if (!showBase || !showMine) {
     return renderPane(
@@ -136,13 +180,93 @@ const WorkbookCompareTooltip = memo(({
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
-        gap: 12,
+        gap: 10,
         minWidth: 320,
         textAlign: 'left',
       }}>
+      {badges.length > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 6,
+          }}>
+          {badges.map((badge) => (
+            <span
+              key={badge.label}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '2px 8px',
+                borderRadius: 999,
+                background: badge.background,
+                border: `1px solid ${badge.border}`,
+                color: badge.textColor,
+                fontSize: FONT_SIZE.xs,
+                fontFamily: FONT_UI,
+                fontWeight: 800,
+                whiteSpace: 'nowrap',
+              }}>
+              {badge.label}
+            </span>
+          ))}
+        </div>
+      )}
+      {showWhitespaceSensitiveHint && (
+        <div
+          style={{
+            padding: '6px 8px',
+            borderRadius: 10,
+            background: `${T.acc2}14`,
+            border: `1px solid ${T.acc2}33`,
+            color: T.acc2,
+            fontSize: FONT_SIZE.xs,
+            fontFamily: FONT_UI,
+            fontWeight: 700,
+          }}>
+          {t('tooltipWhitespaceSensitiveHint')}
+        </div>
+      )}
+      {showClearedHint && (
+        <div
+          style={{
+            padding: '6px 8px',
+            borderRadius: 10,
+            background: `${T.delBrd}12`,
+            border: `1px solid ${T.delBrd}33`,
+            color: T.delTx,
+            fontSize: FONT_SIZE.xs,
+            fontFamily: FONT_UI,
+            fontWeight: 700,
+          }}>
+          {t('tooltipClearedHint')}
+        </div>
+      )}
+      {showAddedHint && (
+        <div
+          style={{
+            padding: '6px 8px',
+            borderRadius: 10,
+            background: `${T.addBrd}12`,
+            border: `1px solid ${T.addBrd}33`,
+            color: T.addTx,
+            fontSize: FONT_SIZE.xs,
+            fontFamily: FONT_UI,
+            fontWeight: 700,
+          }}>
+          {t('tooltipAddedHint')}
+        </div>
+      )}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+          gap: 12,
+          minWidth: 320,
+        }}>
       {renderPane(t('tooltipBaseLabel'), T.acc2, baseCell)}
       {renderPane(t('tooltipLocalLabel'), T.acc, mineCell)}
+      </div>
     </div>
   );
 });

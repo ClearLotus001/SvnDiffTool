@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 const electronBinary = require('electron') as string;
@@ -12,6 +14,8 @@ const readyResources = [
   mainBundlePath,
   preloadBundlePath,
 ];
+const devProfileHash = createHash('sha1').update(rootDir).digest('hex').slice(0, 10);
+const devProfileDir = path.join(os.tmpdir(), 'SvnExcelDiffTool-dev', devProfileHash);
 
 let electronProcess: ChildProcess | null = null;
 let shutdownRequested = false;
@@ -50,9 +54,12 @@ function stopElectron() {
 function startElectron() {
   if (shutdownRequested) return;
 
+  fs.mkdirSync(devProfileDir, { recursive: true });
+
   const childEnv: NodeJS.ProcessEnv = {
     ...process.env,
     NODE_ENV: 'development',
+    ELECTRON_DEV_PROFILE_DIR: devProfileDir,
   };
   delete childEnv.ELECTRON_RUN_AS_NODE;
 

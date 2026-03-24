@@ -2,7 +2,7 @@
 import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { FONT_CODE, FONT_SIZE, FONT_UI } from '../constants/typography';
 import { useI18n } from '../context/i18n';
-import type { ThemeKey, LayoutMode } from '../types';
+import type { ThemeKey, LayoutMode, WorkbookCompareMode } from '../types';
 import { THEMES } from '../theme';
 import { useTheme } from '../context/theme';
 import Tooltip from './Tooltip';
@@ -46,6 +46,7 @@ interface ToolbarProps {
   setLayout: (l: LayoutMode) => void;
   hunkIdx: number;
   totalHunks: number;
+  hunkTargetLabel?: string;
   onPrev: () => void;
   onNext: () => void;
   showSearch: boolean;
@@ -56,6 +57,8 @@ interface ToolbarProps {
   setShowWhitespace: React.Dispatch<React.SetStateAction<boolean>>;
   showHiddenColumns: boolean;
   setShowHiddenColumns: React.Dispatch<React.SetStateAction<boolean>>;
+  workbookCompareMode: WorkbookCompareMode;
+  setWorkbookCompareMode: React.Dispatch<React.SetStateAction<WorkbookCompareMode>>;
   fontSize: number;
   setFontSize: React.Dispatch<React.SetStateAction<number>>;
   onGoto: () => void;
@@ -233,9 +236,10 @@ const Toolbar = memo((props: ToolbarProps) => {
   const {
     fileName,
     themeKey, setThemeKey, layout, setLayout,
-    hunkIdx, totalHunks, onPrev, onNext,
+    hunkIdx, totalHunks, hunkTargetLabel = '', onPrev, onNext,
     showSearch, setShowSearch, collapseCtx, setCollapseCtx,
     showWhitespace, setShowWhitespace, showHiddenColumns, setShowHiddenColumns,
+    workbookCompareMode, setWorkbookCompareMode,
     fontSize, setFontSize,
     onGoto, onHelp, isElectron, isWorkbookMode,
   } = props;
@@ -289,6 +293,8 @@ const Toolbar = memo((props: ToolbarProps) => {
   const showLayoutText = responsiveMode === 'regular';
   const showActionText = responsiveMode === 'regular';
   const showWhitespaceText = responsiveMode === 'regular' || responsiveMode === 'condensed';
+  const showCompareModeText = responsiveMode !== 'tight';
+  const showCompareModeStatusText = responsiveMode === 'regular' || responsiveMode === 'condensed';
   const showFileMeta = responsiveMode === 'regular';
   const showFileChip = responsiveMode !== 'tight';
   const showThemeLabel = responsiveMode === 'regular' || responsiveMode === 'condensed';
@@ -491,7 +497,9 @@ const Toolbar = memo((props: ToolbarProps) => {
       minHeight: 44,
       flexShrink: 0,
       minWidth: 0,
-      overflow: 'hidden',
+      overflow: 'visible',
+      position: 'relative',
+      zIndex: 20,
       ...(isElectron ? { WebkitAppRegion: 'drag' as const } : {}),
     }} ref={rootRef}>
       <div style={{
@@ -526,7 +534,7 @@ const Toolbar = memo((props: ToolbarProps) => {
             <Icon name="brand" size={14} />
           </div>
           <span style={{ fontWeight: 700, fontSize: FONT_SIZE.md, letterSpacing: -0.1, color: T.t0, whiteSpace: 'nowrap', fontFamily: FONT_UI }}>
-            SvnExcelDiffTool
+            SvnDiffTool
           </span>
         </div>
 
@@ -587,6 +595,32 @@ const Toolbar = memo((props: ToolbarProps) => {
           <span style={{ fontSize: FONT_SIZE.sm, color: T.t1, fontFamily: FONT_CODE, minWidth: 42, textAlign: 'center', lineHeight: 1, ...noDragStyle }}>
             {totalHunks > 0 ? `${hunkIdx + 1}/${totalHunks}` : '–/–'}
           </span>
+          {hunkTargetLabel && (
+            <Tooltip content={hunkTargetLabel} anchorStyle={noDragAnchorStyle}>
+              <span
+                style={{
+                  maxWidth: responsiveMode === 'tight' ? 88 : 136,
+                  height: 24,
+                  padding: '0 8px',
+                  borderRadius: 999,
+                  border: `1px solid ${T.border}`,
+                  background: `${T.acc2}10`,
+                  color: T.acc2,
+                  fontSize: FONT_SIZE.xs,
+                  fontWeight: 700,
+                  fontFamily: FONT_CODE,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  ...noDragStyle,
+                }}>
+                {hunkTargetLabel}
+              </span>
+            </Tooltip>
+          )}
           <Btn onClick={onNext} tooltip={t('toolbarNextHunkTitle')} compact>
             <Icon name="next" />
           </Btn>
@@ -618,6 +652,56 @@ const Toolbar = memo((props: ToolbarProps) => {
             {showWhitespaceText && <span>{t('toolbarHiddenColumnsLabel')}</span>}
           </Btn>
         </Group>
+
+        {isWorkbookMode && (
+          <Group>
+            <Btn
+              active={workbookCompareMode === 'content'}
+              onClick={() => setWorkbookCompareMode('content')}
+              tooltip={t('toolbarCompareModeContentTitle')}
+              compact={!showCompareModeText}>
+              <span>{showCompareModeText ? t('toolbarCompareModeContent') : t('toolbarCompareModeContentShort')}</span>
+            </Btn>
+            <Btn
+              active={workbookCompareMode === 'strict'}
+              onClick={() => setWorkbookCompareMode('strict')}
+              tooltip={t('toolbarCompareModeStrictTitle')}
+              compact={!showCompareModeText}>
+              <span>{showCompareModeText ? t('toolbarCompareModeStrict') : t('toolbarCompareModeStrictShort')}</span>
+            </Btn>
+            <Tooltip
+              content={workbookCompareMode === 'strict'
+                ? t('toolbarCompareModeStatusStrictHint')
+                : t('toolbarCompareModeStatusContentHint')}
+              anchorStyle={noDragAnchorStyle}>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  height: 24,
+                  padding: showCompareModeStatusText ? '0 8px' : '0 6px',
+                  borderRadius: 999,
+                  border: `1px solid ${workbookCompareMode === 'strict' ? `${T.acc2}44` : `${T.border2}`}`,
+                  background: workbookCompareMode === 'strict' ? `${T.acc2}12` : T.bg1,
+                  color: workbookCompareMode === 'strict' ? T.acc2 : T.t1,
+                  fontSize: FONT_SIZE.xs,
+                  fontWeight: 700,
+                  fontFamily: FONT_UI,
+                  whiteSpace: 'nowrap',
+                  lineHeight: 1,
+                  ...noDragStyle,
+                }}>
+                {showCompareModeStatusText
+                  ? (workbookCompareMode === 'strict'
+                    ? t('toolbarCompareModeStatusStrict')
+                    : t('toolbarCompareModeStatusContent'))
+                  : (workbookCompareMode === 'strict'
+                    ? t('toolbarCompareModeStrictShort')
+                    : t('toolbarCompareModeContentShort'))}
+              </span>
+            </Tooltip>
+          </Group>
+        )}
 
         <Group>
           <Btn onClick={() => setFontSize(s => Math.max(10, s - 1))} tooltip={t('toolbarDecreaseFontTitle')} compact>

@@ -17,6 +17,7 @@ interface CliArgs {
 }
 
 type SvnRevisionSourceKind = 'revision' | 'working-copy' | 'input-file';
+type WorkbookCompareMode = 'strict' | 'content';
 
 interface SvnRevisionInfo {
   id: string;
@@ -38,6 +39,9 @@ interface DiffData {
   baseBytes: Uint8Array | null;
   mineBytes: Uint8Array | null;
   precomputedDiffLines: DiffLine[] | null;
+  precomputedWorkbookDelta: WorkbookPrecomputedDeltaPayload | null;
+  precomputedDiffLinesByMode: Partial<Record<WorkbookCompareMode, DiffLine[] | null>> | null;
+  precomputedWorkbookDeltaByMode: Partial<Record<WorkbookCompareMode, WorkbookPrecomputedDeltaPayload | null>> | null;
   baseWorkbookMetadata: WorkbookMetadataMap | null;
   mineWorkbookMetadata: WorkbookMetadataMap | null;
   revisionOptions: SvnRevisionInfo[] | null;
@@ -89,6 +93,50 @@ interface WorkbookMetadataMap {
   sheets: Record<string, WorkbookSheetMetadata>;
 }
 
+interface WorkbookCellSnapshot {
+  value: string;
+  formula: string;
+}
+
+type WorkbookCellDeltaKind = 'equal' | 'add' | 'delete' | 'modify';
+type WorkbookRowDeltaTone = 'equal' | 'add' | 'delete' | 'mixed';
+
+interface WorkbookCellDeltaPayload {
+  column: number;
+  baseCell: WorkbookCellSnapshot;
+  mineCell: WorkbookCellSnapshot;
+  changed: boolean;
+  masked: boolean;
+  strictOnly: boolean;
+  kind: WorkbookCellDeltaKind;
+  hasBaseContent: boolean;
+  hasMineContent: boolean;
+  hasContent: boolean;
+}
+
+interface WorkbookRowDeltaPayload {
+  lineIdx: number;
+  lineIdxs: number[];
+  leftLineIdx: number | null;
+  rightLineIdx: number | null;
+  cellDeltas: WorkbookCellDeltaPayload[];
+  changedColumns: number[];
+  strictOnlyColumns: number[];
+  changedCount: number;
+  hasChanges: boolean;
+  tone: WorkbookRowDeltaTone;
+}
+
+interface WorkbookSectionDeltaPayload {
+  name: string;
+  rows: WorkbookRowDeltaPayload[];
+}
+
+interface WorkbookPrecomputedDeltaPayload {
+  compareMode: 'strict';
+  sections: WorkbookSectionDeltaPayload[];
+}
+
 const argv = process.argv.slice(2);
 
 const cliArgs: CliArgs = {
@@ -120,11 +168,18 @@ const execFileAsync = promisify(execFile);
 const RUST_MAX_BUFFER = 256 * 1024 * 1024;
 const SVN_TEXT_MAX_BUFFER = 64 * 1024 * 1024;
 const SVN_BINARY_MAX_BUFFER = 256 * 1024 * 1024;
+const FILE_PAYLOAD_CACHE_LIMIT = 12;
+const REVISION_PAYLOAD_CACHE_LIMIT = 24;
+const FILE_PAYLOAD_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+const REVISION_PAYLOAD_CACHE_MAX_BYTES = 128 * 1024 * 1024;
+const DEV_PROFILE_ROOT = process.env.ELECTRON_DEV_PROFILE_DIR?.trim() || '';
 
 let mainWindow: BrowserWindow | null = null;
 let cachedSvnTarget: string | null | undefined;
 let activeCliArgs: CliArgs = { ...cliArgs };
 let cachedRevisionOptions: SvnRevisionInfo[] | undefined;
+const filePayloadCache = new Map<string, { mtimeMs: number; size: number; payload: FilePayload; memoryBytes: number }>();
+const revisionPayloadCache = new Map<string, { payload: FilePayload; memoryBytes: number }>();
 
 interface FilePayloadMetrics {
   readMs: number;
@@ -148,6 +203,60 @@ interface RustDiffLinePayload {
   mineLineNo?: unknown;
 }
 
+interface RustWorkbookDiffPayload {
+  diffLines?: unknown;
+  workbookDelta?: unknown;
+}
+
+interface RustWorkbookDiffCollection {
+  diffLinesByMode: Partial<Record<WorkbookCompareMode, DiffLine[] | null>>;
+  workbookDeltaByMode: Partial<Record<WorkbookCompareMode, WorkbookPrecomputedDeltaPayload | null>>;
+  parseMs: number;
+}
+
+function estimatePayloadMemoryBytes(payload: FilePayload): number {
+  const contentBytes = payload.content ? Buffer.byteLength(payload.content, 'utf-8') : 0;
+  const rawBytes = payload.bytes?.byteLength ?? 0;
+  const metadataBytes = payload.metadata ? Buffer.byteLength(JSON.stringify(payload.metadata), 'utf-8') : 0;
+  return contentBytes + rawBytes + metadataBytes;
+}
+
+function trimCacheByBudget<T extends { memoryBytes: number }>(
+  cache: Map<string, T>,
+  limit: number,
+  maxBytes: number,
+) {
+  let totalBytes = 0;
+  cache.forEach((entry) => {
+    totalBytes += entry.memoryBytes;
+  });
+
+  while (cache.size > limit || totalBytes > maxBytes) {
+    const oldestKey = cache.keys().next().value;
+    if (!oldestKey) break;
+    const oldestEntry = cache.get(oldestKey);
+    if (!oldestEntry) {
+      cache.delete(oldestKey);
+      continue;
+    }
+    totalBytes -= oldestEntry.memoryBytes;
+    cache.delete(oldestKey);
+  }
+}
+
+function rememberCacheEntry<T extends { memoryBytes: number }>(
+  cache: Map<string, T>,
+  key: string,
+  value: T,
+  limit: number,
+  maxBytes: number,
+): T {
+  if (cache.has(key)) cache.delete(key);
+  cache.set(key, value);
+  trimCacheByBudget(cache, limit, maxBytes);
+  return value;
+}
+
 function asArray<T>(value: T | T[] | null | undefined): T[] {
   if (value == null) return [];
   return Array.isArray(value) ? value : [value];
@@ -161,6 +270,24 @@ function setActiveCliArgs(nextArgs: CliArgs) {
   activeCliArgs = { ...nextArgs };
   cachedSvnTarget = undefined;
   cachedRevisionOptions = undefined;
+}
+
+function configureDevelopmentPaths() {
+  if (!DEV_PROFILE_ROOT) return;
+
+  const userDataPath = path.join(DEV_PROFILE_ROOT, 'user-data');
+  const sessionDataPath = path.join(DEV_PROFILE_ROOT, 'session-data');
+  const logsPath = path.join(DEV_PROFILE_ROOT, 'logs');
+  const diskCachePath = path.join(sessionDataPath, 'cache');
+
+  [userDataPath, sessionDataPath, logsPath, diskCachePath].forEach((targetPath) => {
+    fs.mkdirSync(targetPath, { recursive: true });
+  });
+
+  app.setPath('userData', userDataPath);
+  app.setPath('sessionData', sessionDataPath);
+  app.setPath('logs', logsPath);
+  app.commandLine.appendSwitch('disk-cache-dir', diskCachePath);
 }
 
 function resolveIconPath(): string | undefined {
@@ -423,29 +550,177 @@ function normalizeRustDiffLines(input: unknown): DiffLine[] | null {
   return diffLines;
 }
 
-async function tryResolveWorkbookDiffWithRust(baseFilePath: string, mineFilePath: string): Promise<{ diffLines: DiffLine[] | null; parseMs: number }> {
+function normalizeWorkbookCellSnapshot(input: unknown): WorkbookCellSnapshot | null {
+  if (!input || typeof input !== 'object') return null;
+  const value = typeof (input as { value?: unknown }).value === 'string' ? (input as { value: string }).value : null;
+  const formula = typeof (input as { formula?: unknown }).formula === 'string' ? (input as { formula: string }).formula : null;
+  if (value == null || formula == null) return null;
+  return { value, formula };
+}
+
+function normalizeWorkbookCellDeltaPayload(input: unknown): WorkbookCellDeltaPayload | null {
+  if (!input || typeof input !== 'object') return null;
+  const payload = input as Record<string, unknown>;
+  const column = Number(payload.column);
+  const baseCell = normalizeWorkbookCellSnapshot(payload.baseCell);
+  const mineCell = normalizeWorkbookCellSnapshot(payload.mineCell);
+  const kind = payload.kind === 'equal' || payload.kind === 'add' || payload.kind === 'delete' || payload.kind === 'modify'
+    ? payload.kind
+    : null;
+  if (!Number.isFinite(column) || !baseCell || !mineCell || !kind) return null;
+
+  return {
+    column,
+    baseCell,
+    mineCell,
+    changed: Boolean(payload.changed),
+    masked: Boolean(payload.masked),
+    strictOnly: Boolean(payload.strictOnly),
+    kind,
+    hasBaseContent: Boolean(payload.hasBaseContent),
+    hasMineContent: Boolean(payload.hasMineContent),
+    hasContent: Boolean(payload.hasContent),
+  };
+}
+
+function normalizeWorkbookRowDeltaPayload(input: unknown): WorkbookRowDeltaPayload | null {
+  if (!input || typeof input !== 'object') return null;
+  const payload = input as Record<string, unknown>;
+  const lineIdx = Number(payload.lineIdx);
+  const leftLineIdx = payload.leftLineIdx == null ? null : Number(payload.leftLineIdx);
+  const rightLineIdx = payload.rightLineIdx == null ? null : Number(payload.rightLineIdx);
+  const tone = payload.tone === 'equal' || payload.tone === 'add' || payload.tone === 'delete' || payload.tone === 'mixed'
+    ? payload.tone
+    : null;
+  const lineIdxs = Array.isArray(payload.lineIdxs)
+    ? payload.lineIdxs.map((value) => Number(value)).filter((value) => Number.isFinite(value))
+    : [];
+  const changedColumns = Array.isArray(payload.changedColumns)
+    ? payload.changedColumns.map((value) => Number(value)).filter((value) => Number.isFinite(value))
+    : [];
+  const strictOnlyColumns = Array.isArray(payload.strictOnlyColumns)
+    ? payload.strictOnlyColumns.map((value) => Number(value)).filter((value) => Number.isFinite(value))
+    : [];
+  const cellDeltas = Array.isArray(payload.cellDeltas)
+    ? payload.cellDeltas
+        .map(normalizeWorkbookCellDeltaPayload)
+        .filter((value): value is WorkbookCellDeltaPayload => value != null)
+    : [];
+  if (!Number.isFinite(lineIdx) || !tone) return null;
+
+  return {
+    lineIdx,
+    lineIdxs,
+    leftLineIdx: Number.isFinite(leftLineIdx) ? leftLineIdx : null,
+    rightLineIdx: Number.isFinite(rightLineIdx) ? rightLineIdx : null,
+    cellDeltas,
+    changedColumns,
+    strictOnlyColumns,
+    changedCount: Number.isFinite(Number(payload.changedCount)) ? Number(payload.changedCount) : cellDeltas.filter((delta) => delta.changed).length,
+    hasChanges: Boolean(payload.hasChanges),
+    tone,
+  };
+}
+
+function normalizeWorkbookPrecomputedDeltaPayload(input: unknown): WorkbookPrecomputedDeltaPayload | null {
+  if (!input || typeof input !== 'object') return null;
+  const payload = input as Record<string, unknown>;
+  if (payload.compareMode !== 'strict') return null;
+  const sections = Array.isArray(payload.sections)
+    ? payload.sections.flatMap((entry) => {
+        if (!entry || typeof entry !== 'object') return [];
+        const raw = entry as Record<string, unknown>;
+        const name = typeof raw.name === 'string' ? raw.name : '';
+        if (!name) return [];
+        const rows = Array.isArray(raw.rows)
+          ? raw.rows
+              .map(normalizeWorkbookRowDeltaPayload)
+              .filter((value): value is WorkbookRowDeltaPayload => value != null)
+          : [];
+        return [{ name, rows }];
+      })
+    : [];
+
+  return {
+    compareMode: 'strict',
+    sections,
+  };
+}
+
+function normalizeRustWorkbookDiffPayload(input: unknown): { diffLines: DiffLine[] | null; workbookDelta: WorkbookPrecomputedDeltaPayload | null } {
+  if (Array.isArray(input)) {
+    return {
+      diffLines: normalizeRustDiffLines(input),
+      workbookDelta: null,
+    };
+  }
+
+  if (!input || typeof input !== 'object') {
+    return { diffLines: null, workbookDelta: null };
+  }
+
+  const payload = input as RustWorkbookDiffPayload;
+  return {
+    diffLines: normalizeRustDiffLines(payload.diffLines),
+    workbookDelta: normalizeWorkbookPrecomputedDeltaPayload(payload.workbookDelta),
+  };
+}
+
+async function tryResolveWorkbookDiffWithRust(
+  baseFilePath: string,
+  mineFilePath: string,
+  compareMode: WorkbookCompareMode = 'strict',
+): Promise<{ diffLines: DiffLine[] | null; workbookDelta: WorkbookPrecomputedDeltaPayload | null; parseMs: number }> {
   const parserPath = resolveRustParserPath();
-  if (!parserPath) return { diffLines: null, parseMs: 0 };
+  if (!parserPath) return { diffLines: null, workbookDelta: null, parseMs: 0 };
 
   const parseStart = performance.now();
   try {
-    const result = await execFileTextCommand(parserPath, ['--diff-json', baseFilePath, mineFilePath], RUST_MAX_BUFFER);
+    const result = await execFileTextCommand(
+      parserPath,
+      ['--diff-json', baseFilePath, mineFilePath, '--compare-mode', compareMode],
+      RUST_MAX_BUFFER,
+    );
     const parseMs = performance.now() - parseStart;
     if (!result.ok || !result.stdout.trim()) {
       if (result.stderr.trim()) console.warn('[rust-parser-diff]', result.stderr.trim());
-      return { diffLines: null, parseMs };
+      return { diffLines: null, workbookDelta: null, parseMs };
     }
 
     const parsed = JSON.parse(result.stdout) as unknown;
+    const normalized = normalizeRustWorkbookDiffPayload(parsed);
     return {
-      diffLines: normalizeRustDiffLines(parsed),
+      diffLines: normalized.diffLines,
+      workbookDelta: normalized.workbookDelta,
       parseMs,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.warn('[rust-parser-diff]', message);
-    return { diffLines: null, parseMs: performance.now() - parseStart };
+    return { diffLines: null, workbookDelta: null, parseMs: performance.now() - parseStart };
   }
+}
+
+async function tryResolveWorkbookDiffsWithRust(
+  baseFilePath: string,
+  mineFilePath: string,
+): Promise<RustWorkbookDiffCollection> {
+  const [strictResult, contentResult] = await Promise.all([
+    tryResolveWorkbookDiffWithRust(baseFilePath, mineFilePath, 'strict'),
+    tryResolveWorkbookDiffWithRust(baseFilePath, mineFilePath, 'content'),
+  ]);
+
+  return {
+    diffLinesByMode: {
+      strict: strictResult.diffLines,
+      content: contentResult.diffLines,
+    },
+    workbookDeltaByMode: {
+      strict: strictResult.workbookDelta,
+      content: contentResult.workbookDelta,
+    },
+    parseMs: strictResult.parseMs + contentResult.parseMs,
+  };
 }
 
 async function withWorkbookDiffSources<T>(
@@ -488,6 +763,16 @@ async function withWorkbookDiffSources<T>(
   }
 }
 
+function canUseDirectWorkbookDiff(basePath: string, minePath: string, fileName: string): boolean {
+  return Boolean(
+    isWorkbookFile(fileName)
+    && basePath
+    && minePath
+    && fs.existsSync(basePath)
+    && fs.existsSync(minePath),
+  );
+}
+
 async function readFilePayload(filePath: string): Promise<FilePayload> {
   if (!filePath) {
     return {
@@ -508,6 +793,12 @@ async function readFilePayload(filePath: string): Promise<FilePayload> {
       };
     }
 
+    const stat = await fs.promises.stat(filePath);
+    const cachedPayload = filePayloadCache.get(filePath);
+    if (cachedPayload && cachedPayload.mtimeMs === stat.mtimeMs && cachedPayload.size === stat.size) {
+      return cachedPayload.payload;
+    }
+
     if (isWorkbookFile(filePath)) {
       const readStart = performance.now();
       const buffer = await fs.promises.readFile(filePath);
@@ -517,22 +808,8 @@ async function readFilePayload(filePath: string): Promise<FilePayload> {
         tryParseWorkbookWithRust(filePath),
         tryResolveWorkbookMetadataWithRust(filePath),
       ]);
-      if (parsedWorkbook.content) {
-        return {
-          content: parsedWorkbook.content,
-          bytes: workbookBytes,
-          metadata: metadataResult.metadata,
-          perf: {
-            readMs,
-            parserMs: parsedWorkbook.parseMs,
-            metadataMs: metadataResult.parseMs,
-            byteLength: workbookBytes.length,
-          },
-        };
-      }
-
-      return {
-        content: null,
+      const payload = {
+        content: parsedWorkbook.content,
         bytes: workbookBytes,
         metadata: metadataResult.metadata,
         perf: {
@@ -542,12 +819,24 @@ async function readFilePayload(filePath: string): Promise<FilePayload> {
           byteLength: workbookBytes.length,
         },
       };
+      const cachePayload: FilePayload = {
+        ...payload,
+        bytes: null,
+      };
+      rememberCacheEntry(filePayloadCache, filePath, {
+        mtimeMs: stat.mtimeMs,
+        size: stat.size,
+        payload: cachePayload,
+        memoryBytes: estimatePayloadMemoryBytes(cachePayload),
+      }, FILE_PAYLOAD_CACHE_LIMIT, FILE_PAYLOAD_CACHE_MAX_BYTES);
+
+      return payload;
     }
 
     const readStart = performance.now();
     const content = await fs.promises.readFile(filePath, 'utf-8');
     const readMs = performance.now() - readStart;
-    return {
+    const payload = {
       content,
       bytes: null,
       metadata: null,
@@ -558,6 +847,13 @@ async function readFilePayload(filePath: string): Promise<FilePayload> {
         byteLength: Buffer.byteLength(content, 'utf-8'),
       },
     };
+    rememberCacheEntry(filePayloadCache, filePath, {
+      mtimeMs: stat.mtimeMs,
+      size: stat.size,
+      payload,
+      memoryBytes: estimatePayloadMemoryBytes(payload),
+    }, FILE_PAYLOAD_CACHE_LIMIT, FILE_PAYLOAD_CACHE_MAX_BYTES);
+    return payload;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return {
@@ -778,6 +1074,12 @@ async function readRevisionPayload(source: SvnRevisionInfo, target: string, file
   if (source.id === SPECIAL_BASE_ID) return readFilePayload(args.basePath);
   if (source.id === SPECIAL_MINE_ID) return readFilePayload(args.minePath);
 
+  const revisionCacheKey = `${target}::${fileName}::${source.id}`;
+  const cachedPayload = revisionPayloadCache.get(revisionCacheKey);
+  if (cachedPayload) {
+    return cachedPayload.payload;
+  }
+
   if (!target) {
     return {
       content: '[SVN] 无法定位仓库 URL，无法按版本切换',
@@ -798,7 +1100,12 @@ async function readRevisionPayload(source: SvnRevisionInfo, target: string, file
     };
   }
 
-  return buildPayloadFromBuffer(result.stdout, fileName);
+  const payload = await buildPayloadFromBuffer(result.stdout, fileName);
+  rememberCacheEntry(revisionPayloadCache, revisionCacheKey, {
+    payload,
+    memoryBytes: estimatePayloadMemoryBytes(payload),
+  }, REVISION_PAYLOAD_CACHE_LIMIT, REVISION_PAYLOAD_CACHE_MAX_BYTES);
+  return payload;
 }
 
 function makeSideDisplayName(fileName: string, info: SvnRevisionInfo, fallback: string): string {
@@ -824,25 +1131,31 @@ async function buildDiffData(
 
   const baseRevisionInfo = resolveRevisionById('base', revisionOptions, baseRevisionId);
   const mineRevisionInfo = resolveRevisionById('mine', revisionOptions, mineRevisionId);
+  const directRustDiffTask = !baseRevisionId
+    && !mineRevisionId
+    && canUseDirectWorkbookDiff(args.basePath, args.minePath, resolvedFileName)
+      ? tryResolveWorkbookDiffsWithRust(args.basePath, args.minePath)
+      : null;
 
-  const [basePayload, minePayload] = await Promise.all([
+  const [basePayload, minePayload, directRustDiffResult] = await Promise.all([
     baseRevisionId
       ? readRevisionPayload(baseRevisionInfo, target, resolvedFileName)
       : readFilePayload(args.basePath),
     mineRevisionId
       ? readRevisionPayload(mineRevisionInfo, target, resolvedFileName)
       : readFilePayload(args.minePath),
+    directRustDiffTask ?? Promise.resolve(null),
   ]);
-  const rustDiffResult = isWorkbookFile(resolvedFileName)
+  const rustDiffResult = directRustDiffResult ?? (isWorkbookFile(resolvedFileName)
     ? await withWorkbookDiffSources(
         baseRevisionId ? '' : args.basePath,
         basePayload.bytes,
         mineRevisionId ? '' : args.minePath,
         minePayload.bytes,
         resolvedFileName,
-        (basePath, minePath) => tryResolveWorkbookDiffWithRust(basePath, minePath),
+        (basePath, minePath) => tryResolveWorkbookDiffsWithRust(basePath, minePath),
       )
-    : null;
+    : null);
 
   return {
     svnUrl: target,
@@ -861,7 +1174,10 @@ async function buildDiffData(
     mineContent: minePayload.content,
     baseBytes: basePayload.bytes,
     mineBytes: minePayload.bytes,
-    precomputedDiffLines: rustDiffResult?.diffLines ?? null,
+    precomputedDiffLines: rustDiffResult?.diffLinesByMode.strict ?? null,
+    precomputedWorkbookDelta: rustDiffResult?.workbookDeltaByMode.strict ?? null,
+    precomputedDiffLinesByMode: rustDiffResult?.diffLinesByMode ?? null,
+    precomputedWorkbookDeltaByMode: rustDiffResult?.workbookDeltaByMode ?? null,
     baseWorkbookMetadata: basePayload.metadata,
     mineWorkbookMetadata: minePayload.metadata,
     revisionOptions,
@@ -950,20 +1266,24 @@ async function buildLocalDiffData(basePath: string, minePath: string): Promise<D
   const resolvedBasePath = basePath.trim();
   const resolvedMinePath = minePath.trim();
   const resolvedFileName = path.basename(resolvedMinePath || resolvedBasePath || 'local-diff');
-  const [basePayload, minePayload] = await Promise.all([
+  const directRustDiffTask = canUseDirectWorkbookDiff(resolvedBasePath, resolvedMinePath, resolvedFileName)
+    ? tryResolveWorkbookDiffsWithRust(resolvedBasePath, resolvedMinePath)
+    : null;
+  const [basePayload, minePayload, directRustDiffResult] = await Promise.all([
     readFilePayload(resolvedBasePath),
     readFilePayload(resolvedMinePath),
+    directRustDiffTask ?? Promise.resolve(null),
   ]);
-  const rustDiffResult = isWorkbookFile(resolvedFileName)
+  const rustDiffResult = directRustDiffResult ?? (isWorkbookFile(resolvedFileName)
     ? await withWorkbookDiffSources(
         resolvedBasePath,
         basePayload.bytes,
         resolvedMinePath,
         minePayload.bytes,
         resolvedFileName,
-        (baseFilePath, mineFilePath) => tryResolveWorkbookDiffWithRust(baseFilePath, mineFilePath),
+        (baseFilePath, mineFilePath) => tryResolveWorkbookDiffsWithRust(baseFilePath, mineFilePath),
       )
-    : null;
+    : null);
 
   return {
     svnUrl: '',
@@ -974,7 +1294,10 @@ async function buildLocalDiffData(basePath: string, minePath: string): Promise<D
     mineContent: minePayload.content,
     baseBytes: basePayload.bytes,
     mineBytes: minePayload.bytes,
-    precomputedDiffLines: rustDiffResult?.diffLines ?? null,
+    precomputedDiffLines: rustDiffResult?.diffLinesByMode.strict ?? null,
+    precomputedWorkbookDelta: rustDiffResult?.workbookDeltaByMode.strict ?? null,
+    precomputedDiffLinesByMode: rustDiffResult?.diffLinesByMode ?? null,
+    precomputedWorkbookDeltaByMode: rustDiffResult?.workbookDeltaByMode ?? null,
     baseWorkbookMetadata: basePayload.metadata,
     mineWorkbookMetadata: minePayload.metadata,
     revisionOptions: null,
@@ -1012,7 +1335,7 @@ function createWindow() {
     frame: false,
     titleBarStyle: 'hidden',
     backgroundColor: '#f4efe6',
-    title: 'SvnExcelDiffTool',
+    title: 'SvnDiffTool',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -1034,6 +1357,14 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.error('[electron] failed to load window', {
+      errorCode,
+      errorDescription,
+      validatedURL,
+    });
+  });
 }
 
 ipcMain.handle('get-diff-data', async () => buildDiffData());
@@ -1047,11 +1378,11 @@ ipcMain.handle('pick-diff-file', async () => {
     title: 'Select working copy file',
     properties: ['openFile'],
     filters: [
+      { name: 'All files', extensions: ['*'] },
       {
         name: 'Supported files',
-        extensions: ['xlsx', 'xlsm', 'xltx', 'xltm', 'xlsb', 'xls', 'csv', 'tsv', 'txt', 'json', 'js', 'ts', 'jsx', 'tsx', 'xml'],
+        extensions: ['xlsx', 'xlsm', 'xltx', 'xltm', 'xlsb', 'xls', 'csv', 'tsv', 'txt', 'json', 'js', 'ts', 'jsx', 'tsx', 'xml', 'lua', 'yaml', 'yml', 'ini', 'cfg', 'conf', 'md'],
       },
-      { name: 'All files', extensions: ['*'] },
     ],
   });
 
@@ -1093,6 +1424,7 @@ ipcMain.on('open-external', (_, url: unknown) => {
   }
 });
 
+configureDevelopmentPaths();
 void app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {

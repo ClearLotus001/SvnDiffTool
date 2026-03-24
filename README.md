@@ -1,6 +1,7 @@
-# SvnExcelDiffTool
+# SvnDiffTool
 
-SvnExcelDiffTool 是一个面向 TortoiseSVN 的外部 Diff 查看器，用更直观的 Electron 界面替代系统默认文本比较窗口。  
+SvnDiffTool 是一个面向 TortoiseSVN 的外部 Diff 查看器，用更直观的 Electron 界面替代系统默认文本比较窗口。  
+它不局限于 Excel，既适合常见文本文件，也支持部分工作簿文件的差异查看。  
 界面风格参考 Beyond Compare，适合在代码审查、版本回溯和日常 SVN 对比时更快看清差异。
 
 当前版本更适合 `.js`、`.ts`、`.tsx`、`.json`、`.xml`、`.py`、`.java`、`.txt` 这类文本文件。  
@@ -61,7 +62,7 @@ npm run build:win
 打包完成后，输出文件位于：
 
 ```text
-release/SvnExcelDiffTool-1.0.0.exe
+release/SvnDiffTool-1.0.0.exe
 ```
 
 这是 portable 形式，可直接分发和使用，无需安装；文件名现在默认不再带空格。
@@ -73,7 +74,7 @@ release/SvnExcelDiffTool-1.0.0.exe
 3. 将外部 Diff 命令设置为：
 
 ```text
-"C:\Path\To\SvnExcelDiffTool.exe" %base %mine %bname %yname %yurl %fn
+"C:\Path\To\SvnDiffTool.exe" %base %mine %bname %yname %yurl %fn
 ```
 
 参数含义：
@@ -140,7 +141,7 @@ npm run dev:app
 ## 项目结构
 
 ```text
-SvnExcelDiffTool/
+SvnDiffTool/
 ├── electron/
 │   ├── main.ts              # Electron 主进程入口
 │   └── preload.ts           # 预加载桥接层
@@ -180,7 +181,7 @@ SvnExcelDiffTool/
 
 优先检查：
 
-- `SvnExcelDiffTool.exe` 路径是否正确
+- `SvnDiffTool.exe` 路径是否正确
 - 路径是否加了双引号
 - 外部命令参数是否仍然是 `%base %mine %bname %yname %yurl %fn`
 
@@ -188,7 +189,7 @@ SvnExcelDiffTool/
 
 如果你是手动启动 exe 或在开发模式直接启动 app，而不是由 TortoiseSVN 传参启动，应用会进入开发态等待选择工作副本文件；如果你点击了“加载示例”，则会显示 demo 数据。这不是故障。
 
-### 3. 为什么某些文件看起来不像“Excel diff”
+### 3. 为什么某些文件看起来不像“表格语义 diff”
 
 当前工具本质上是文本差异查看器，更适合文本类文件。  
 对于二进制 `.xls` / `.xlsx`，如果需要按工作表、单元格、公式来比较，需要额外的 Excel 解析与渲染能力。

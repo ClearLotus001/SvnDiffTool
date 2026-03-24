@@ -31,6 +31,7 @@ const CollapseBar = memo(({ count, onExpand }: CollapseBarProps) => {
         color: T.t2,
         fontSize: FONT_SIZE.sm,
         fontFamily: FONT_UI,
+        userSelect: 'none',
       }}>
       <span style={{ fontFamily: FONT_CODE }}>···</span>
       <span style={{ color: T.acc2, fontFamily: FONT_CODE }}>{t('collapseBarLines', { count })}</span>

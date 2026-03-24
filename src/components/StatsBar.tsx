@@ -2,7 +2,7 @@
 import { memo, useMemo } from 'react';
 import { FONT_CODE, FONT_SIZE, FONT_UI } from '../constants/typography';
 import { useI18n } from '../context/i18n';
-import type { DiffLine } from '../types';
+import type { DiffLine, WorkbookCompareMode } from '../types';
 import { useTheme } from '../context/theme';
 import Tooltip from './Tooltip';
 
@@ -14,6 +14,8 @@ interface StatsBarProps {
   totalLines: number;
   baseVersionLabel: string;
   mineVersionLabel: string;
+  isWorkbookMode?: boolean;
+  workbookCompareMode?: WorkbookCompareMode;
 }
 
 const Dot = ({ c }: { c: string }) => (
@@ -70,6 +72,8 @@ const StatsBar = memo(({
   totalLines,
   baseVersionLabel,
   mineVersionLabel,
+  isWorkbookMode = false,
+  workbookCompareMode = 'strict',
 }: StatsBarProps) => {
   const T = useTheme();
   const { t } = useI18n();
@@ -143,6 +147,8 @@ const StatsBar = memo(({
       background: T.bg1, borderTop: `1px solid ${T.border}`,
       minHeight: 30, display: 'flex', alignItems: 'center',
       gap: 10, padding: '4px 10px', flexShrink: 0,
+      width: '100%',
+      minWidth: 0,
       fontSize: FONT_SIZE.sm, color: T.t2,
       overflowX: 'auto',
       fontFamily: FONT_UI,
@@ -155,6 +161,40 @@ const StatsBar = memo(({
       {metric(T.chgTx, `~${stats.chg}`, t('statsModified'))}
 
       {fileName && metaPill(t('commonTableFile'), fileName, T.acc2)}
+      {isWorkbookMode && (
+        <Tooltip
+          content={workbookCompareMode === 'strict'
+            ? t('toolbarCompareModeStatusStrictHint')
+            : t('toolbarCompareModeStatusContentHint')}
+          maxWidth={360}>
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              minWidth: 0,
+              padding: '2px 8px',
+              borderRadius: 999,
+              background: workbookCompareMode === 'strict' ? `${T.acc2}10` : T.bg2,
+              border: `1px solid ${workbookCompareMode === 'strict' ? `${T.acc2}40` : T.border}`,
+              flexShrink: 0,
+            }}>
+            <Dot c={workbookCompareMode === 'strict' ? T.acc2 : T.t2} />
+            <span
+              style={{
+                fontSize: FONT_SIZE.xs,
+                color: workbookCompareMode === 'strict' ? T.acc2 : T.t1,
+                fontWeight: 700,
+                whiteSpace: 'nowrap',
+                fontFamily: FONT_UI,
+              }}>
+              {workbookCompareMode === 'strict'
+                ? t('toolbarCompareModeStatusStrict')
+                : t('toolbarCompareModeStatusContent')}
+            </span>
+          </div>
+        </Tooltip>
+      )}
       {metaPill(t('statsBaseVersion'), baseVersionLabel, T.acc2, baseName, 'base')}
       {metaPill(t('statsMineVersion'), mineVersionLabel, T.acc, mineName, 'mine')}
 

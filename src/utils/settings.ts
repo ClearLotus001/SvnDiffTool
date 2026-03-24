@@ -1,4 +1,4 @@
-import type { LayoutMode, ThemeKey } from '../types';
+import type { LayoutMode, ThemeKey, WorkbookCompareMode } from '../types';
 
 export interface AppSettings {
   themeKey: ThemeKey;
@@ -6,6 +6,7 @@ export interface AppSettings {
   collapseCtx: boolean;
   showWhitespace: boolean;
   showHiddenColumns: boolean;
+  workbookCompareMode: WorkbookCompareMode;
   fontSize: number;
 }
 
@@ -17,6 +18,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   collapseCtx: true,
   showWhitespace: false,
   showHiddenColumns: false,
+  workbookCompareMode: 'strict',
   fontSize: 14,
 };
 
@@ -26,6 +28,10 @@ function isThemeKey(value: unknown): value is ThemeKey {
 
 function isLayoutMode(value: unknown): value is LayoutMode {
   return value === 'unified' || value === 'split-h' || value === 'split-v';
+}
+
+function isWorkbookCompareMode(value: unknown): value is WorkbookCompareMode {
+  return value === 'strict' || value === 'content';
 }
 
 function clampFontSize(value: unknown): number {
@@ -48,6 +54,9 @@ export function getStoredAppSettings(): AppSettings {
       collapseCtx: typeof parsed.collapseCtx === 'boolean' ? parsed.collapseCtx : DEFAULT_SETTINGS.collapseCtx,
       showWhitespace: typeof parsed.showWhitespace === 'boolean' ? parsed.showWhitespace : DEFAULT_SETTINGS.showWhitespace,
       showHiddenColumns: typeof parsed.showHiddenColumns === 'boolean' ? parsed.showHiddenColumns : DEFAULT_SETTINGS.showHiddenColumns,
+      workbookCompareMode: isWorkbookCompareMode(parsed.workbookCompareMode)
+        ? parsed.workbookCompareMode
+        : DEFAULT_SETTINGS.workbookCompareMode,
       fontSize: clampFontSize(parsed.fontSize),
     };
   } catch {

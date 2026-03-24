@@ -2,6 +2,8 @@ import type { SplitRow, WorkbookMoveDirection, WorkbookSelectedCell } from '../t
 import type { WorkbookCellDisplay, WorkbookRowDisplayLine } from './workbookDisplay';
 import { parseWorkbookDisplayLine } from './workbookDisplay';
 import type { WorkbookSection } from './workbookSections';
+import type { WorkbookMergeRange } from './workbookMeta';
+import { findWorkbookMergeRange } from './workbookMergeLayout';
 
 export interface WorkbookRowEntry {
   sheetName: string;
@@ -50,11 +52,14 @@ export function buildWorkbookRowEntry(
 export function buildWorkbookSelectedCell(
   entry: WorkbookRowEntry,
   requestedColIndex: number,
+  mergeRanges: WorkbookMergeRange[] = [],
 ): WorkbookSelectedCell {
   const fallbackColumns = entry.cells.map((_, index) => index);
   const visibleColumns = entry.visibleColumns.length > 0 ? entry.visibleColumns : fallbackColumns;
-  const clampedColumn = visibleColumns.includes(requestedColIndex)
-    ? requestedColIndex
+  const mergeRange = findWorkbookMergeRange(mergeRanges, entry.rowNumber, requestedColIndex);
+  const normalizedColumn = mergeRange?.startCol ?? requestedColIndex;
+  const clampedColumn = visibleColumns.includes(normalizedColumn)
+    ? normalizedColumn
     : visibleColumns[0] ?? 0;
   const colIndex = Math.max(0, clampedColumn);
   const cell = entry.cells[colIndex] ?? { value: '', formula: '' };
@@ -78,6 +83,7 @@ export function moveWorkbookSelection(
   entries: WorkbookRowEntry[],
   selection: WorkbookSelectedCell | null,
   direction: WorkbookMoveDirection,
+  mergeRangesBySide: Partial<Record<'base' | 'mine', WorkbookMergeRange[]>> = {},
 ): WorkbookSelectedCell | null {
   if (!selection || selection.kind !== 'cell') return null;
 
@@ -91,26 +97,39 @@ export function moveWorkbookSelection(
   const currentIndex = scopedEntries.findIndex(entry => entry.rowNumber === selection.rowNumber);
   if (currentIndex < 0) return null;
 
+  const sideMergeRanges = mergeRangesBySide[selection.side] ?? [];
+
   if (direction === 'left' || direction === 'right') {
     const currentEntry = scopedEntries[currentIndex]!;
     const visibleColumns = currentEntry.visibleColumns.length > 0
       ? currentEntry.visibleColumns
       : currentEntry.cells.map((_, index) => index);
-    const currentVisibleIndex = Math.max(
+    const currentRange = findWorkbookMergeRange(sideMergeRanges, selection.rowNumber, selection.colIndex);
+    const currentStartColumn = currentRange?.startCol ?? selection.colIndex;
+    const currentEndColumn = currentRange?.endCol ?? selection.colIndex;
+    const startVisibleIndex = Math.max(
       0,
-      visibleColumns.findIndex(column => column === selection.colIndex),
+      visibleColumns.findIndex(column => column === currentStartColumn),
+    );
+    const endVisibleIndex = Math.max(
+      startVisibleIndex,
+      visibleColumns.findIndex(column => column === currentEndColumn),
     );
     const nextVisibleIndex = direction === 'left'
-      ? Math.max(0, currentVisibleIndex - 1)
-      : Math.min(visibleColumns.length - 1, currentVisibleIndex + 1);
-    return buildWorkbookSelectedCell(currentEntry, visibleColumns[nextVisibleIndex] ?? selection.colIndex);
+      ? Math.max(0, startVisibleIndex - 1)
+      : Math.min(visibleColumns.length - 1, endVisibleIndex + 1);
+    return buildWorkbookSelectedCell(
+      currentEntry,
+      visibleColumns[nextVisibleIndex] ?? selection.colIndex,
+      sideMergeRanges,
+    );
   }
 
   const nextIndex = direction === 'up'
     ? Math.max(0, currentIndex - 1)
     : Math.min(scopedEntries.length - 1, currentIndex + 1);
 
-  return buildWorkbookSelectedCell(scopedEntries[nextIndex]!, selection.colIndex);
+  return buildWorkbookSelectedCell(scopedEntries[nextIndex]!, selection.colIndex, sideMergeRanges);
 }
 
 export function findWorkbookSectionIndexByName(

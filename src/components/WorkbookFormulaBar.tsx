@@ -2,22 +2,32 @@ import { memo, useMemo } from 'react';
 import { FONT_CODE, FONT_UI, getWorkbookFontScale } from '../constants/typography';
 import { useI18n } from '../context/i18n';
 import { useTheme } from '../context/theme';
-import type { WorkbookFreezeState, WorkbookSelectedCell } from '../types';
+import type { WorkbookFreezeState, WorkbookMergeRange, WorkbookSelectedCell } from '../types';
+import { findWorkbookMergeRange } from '../utils/workbookMergeLayout';
+import { getWorkbookColumnLabel } from '../utils/workbookSections';
 
 interface WorkbookFormulaBarProps {
   selection: WorkbookSelectedCell | null;
   fontSize: number;
   freezeState?: WorkbookFreezeState | null;
+  mergeRanges?: WorkbookMergeRange[];
   onFreezeRow: () => void;
   onFreezeColumn: () => void;
   onFreezePane: () => void;
   onResetFreeze: () => void;
 }
 
+function formatMergeRange(range: WorkbookMergeRange): string {
+  const start = `${getWorkbookColumnLabel(range.startCol)}${range.startRow}`;
+  const end = `${getWorkbookColumnLabel(range.endCol)}${range.endRow}`;
+  return start === end ? start : `${start}:${end}`;
+}
+
 const WorkbookFormulaBar = memo(({
   selection,
   fontSize,
   freezeState = null,
+  mergeRanges = [],
   onFreezeRow,
   onFreezeColumn,
   onFreezePane,
@@ -39,11 +49,15 @@ const WorkbookFormulaBar = memo(({
     ? `${sideLabel} · ${selection.versionLabel}`
     : sideLabel;
   const sideAccent = selection?.side === 'base' ? T.acc2 : T.acc;
+  const mergeRange = selection?.kind === 'cell'
+    ? findWorkbookMergeRange(mergeRanges, selection.rowNumber, selection.colIndex)
+    : null;
+  const mergeRangeLabel = mergeRange ? formatMergeRange(mergeRange) : '';
   const selectionAddress = selection?.kind === 'row'
     ? `R${selection.rowNumber}`
     : selection?.kind === 'column'
     ? selection.colLabel
-    : selection?.address ?? '—';
+    : (mergeRangeLabel || selection?.address || '—');
   const canFreezeRow = Boolean(selection && selection.kind !== 'column');
   const canFreezeColumn = Boolean(selection && selection.kind !== 'row');
   const canFreezePane = Boolean(selection && selection.kind === 'cell');
@@ -145,6 +159,35 @@ const WorkbookFormulaBar = memo(({
         />
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sideMeta}</span>
       </div>
+
+      {mergeRangeLabel && (
+        <div
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            minWidth: 160,
+            height: 34,
+            padding: '0 12px',
+            borderRadius: 10,
+            border: `1px solid ${T.border}`,
+            background: T.bg2,
+            color: T.t1,
+            fontFamily: FONT_UI,
+            fontSize: sizes.ui,
+            gap: 8,
+          }}>
+          <span style={{ color: T.t2 }}>{t('formulaMergeLabel')}:</span>
+          <span
+            style={{
+              color: T.t0,
+              fontFamily: FONT_CODE,
+              fontWeight: 700,
+              whiteSpace: 'nowrap',
+            }}>
+            {mergeRangeLabel}
+          </span>
+        </div>
+      )}
 
       <div
         style={{

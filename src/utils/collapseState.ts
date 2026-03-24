@@ -1,8 +1,5 @@
 export type CollapseExpansionState = Record<string, number>;
 
-export const COLLAPSE_EXPAND_CHUNK = 320;
-export const COLLAPSE_EXPAND_DIRECT_THRESHOLD = 480;
-
 export function getExpandedHiddenCount(
   state: CollapseExpansionState,
   blockId: string,
@@ -12,13 +9,9 @@ export function getExpandedHiddenCount(
 
 export function getNextExpandedHiddenCount(
   hiddenCount: number,
-  currentExpandedCount: number,
+  _currentExpandedCount: number,
 ): number {
-  if (hiddenCount <= COLLAPSE_EXPAND_DIRECT_THRESHOLD) return hiddenCount;
-  const nextExpandedCount = currentExpandedCount > 0
-    ? currentExpandedCount + COLLAPSE_EXPAND_CHUNK
-    : COLLAPSE_EXPAND_CHUNK;
-  return Math.min(hiddenCount, nextExpandedCount);
+  return hiddenCount;
 }
 
 export function expandCollapseBlock(

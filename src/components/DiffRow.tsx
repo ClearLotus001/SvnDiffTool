@@ -7,14 +7,8 @@ import { useTheme } from '../context/theme';
 import { copyText } from '../utils/clipboard';
 import { tokenize } from '../engine/tokenizer';
 import { ROW_H } from '../hooks/useVirtual';
-import {
-  getWorkbookCopyText,
-  getWorkbookVisualWidth,
-  parseWorkbookDisplayLine,
-} from '../utils/workbookDisplay';
 import Ln from './Ln';
 import TokenText from './TokenText';
-import WorkbookLine from './WorkbookLine';
 
 interface DiffRowProps {
   line: DiffLine;
@@ -41,7 +35,6 @@ const DiffRow = memo(({ line, isSearchMatch, isActiveSearch, showWhitespace, fon
   const T       = useTheme();
   const { t } = useI18n();
   const content = line.base ?? line.mine ?? '';
-  const workbookLine = useMemo(() => parseWorkbookDisplayLine(content), [content]);
   const tokens  = useMemo(() => tokenize(content), [content]);
   const [hovered, setHovered] = useState(false);
 
@@ -59,9 +52,7 @@ const DiffRow = memo(({ line, isSearchMatch, isActiveSearch, showWhitespace, fon
     : isSearchMatch
     ? `${T.searchHl}28`
     : undefined;
-  const copyValue = workbookLine ? getWorkbookCopyText(workbookLine) : content;
-  const workbookWidth = workbookLine ? getWorkbookVisualWidth(workbookLine) : 0;
-  const tone = isAdd ? 'add' : isDel ? 'delete' : 'neutral';
+  const copyValue = content;
 
   return (
     <div
@@ -75,38 +66,31 @@ const DiffRow = memo(({ line, isSearchMatch, isActiveSearch, showWhitespace, fon
         background: searchBg ?? rowBg,
         outline: isActiveSearch ? `1px solid ${T.searchHl}` : undefined,
         position: 'relative',
-        width: workbookLine ? 94 + workbookWidth : undefined,
       }}>
-      <Ln n={workbookLine?.kind === 'row' ? workbookLine.rowNumber : line.baseLineNo} T={T} active={isActiveSearch} />
-      <Ln n={workbookLine?.kind === 'row' ? workbookLine.rowNumber : line.mineLineNo} T={T} active={isActiveSearch} />
-      {!workbookLine && (
-        <span style={{
-          paddingLeft: 4, paddingRight: 3,
-          color: pfxTx, userSelect: 'none',
-          fontSize: FONT_SIZE.md, flexShrink: 0,
-          lineHeight: `${ROW_H}px`,
-          fontFamily: FONT_CODE,
-        }}>
-          {pfx}
-        </span>
-      )}
-      {workbookLine ? (
-        <WorkbookLine parsed={workbookLine} tone={tone} active={isActiveSearch} />
-      ) : (
-        <span style={{
-          flex: 1, paddingRight: 8,
-          whiteSpace: 'pre', fontSize,
-          overflow: 'hidden',
-          lineHeight: `${ROW_H}px`,
-          color: T.t0,
-          fontFamily: FONT_CODE,
-          minWidth: 0,
-        }}>
-          {showWhitespace && !charSpans
-            ? renderWithWhitespaceMark(content, T)
-            : <TokenText tokens={tokens} charSpans={charSpans} hlBg={hlBg} />}
-        </span>
-      )}
+      <Ln n={line.baseLineNo} T={T} active={isActiveSearch} />
+      <Ln n={line.mineLineNo} T={T} active={isActiveSearch} />
+      <span style={{
+        paddingLeft: 4, paddingRight: 3,
+        color: pfxTx, userSelect: 'none',
+        fontSize: FONT_SIZE.md, flexShrink: 0,
+        lineHeight: `${ROW_H}px`,
+        fontFamily: FONT_CODE,
+      }}>
+        {pfx}
+      </span>
+      <span style={{
+        flex: 1, paddingRight: 8,
+        whiteSpace: 'pre', fontSize,
+        overflow: 'hidden',
+        lineHeight: `${ROW_H}px`,
+        color: T.t0,
+        fontFamily: FONT_CODE,
+        minWidth: 0,
+      }}>
+        {showWhitespace && !charSpans
+          ? renderWithWhitespaceMark(content, T)
+          : <TokenText tokens={tokens} charSpans={charSpans} hlBg={hlBg} />}
+      </span>
       {hovered && (
         <button
           onClick={() => copyText(copyValue)}

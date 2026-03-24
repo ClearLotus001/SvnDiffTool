@@ -80,9 +80,7 @@ const WorkbookCanvasHoverTooltip = memo(({ hover }: WorkbookCanvasHoverTooltipPr
           boxShadow: '0 14px 30px rgba(0, 0, 0, 0.12)',
         }}>
         <WorkbookCompareTooltip
-          baseCell={hover.compareCell.baseCell}
-          mineCell={hover.compareCell.mineCell}
-          changed={hover.compareCell.changed}
+          compareCell={hover.compareCell}
         />
         <span
           style={{

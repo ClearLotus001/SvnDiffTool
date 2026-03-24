@@ -1,4 +1,5 @@
 import React from 'react';
+import { FONT_CODE, FONT_UI } from '../constants/typography';
 
 interface AppErrorBoundaryProps {
   children: React.ReactNode;
@@ -44,7 +45,7 @@ class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, AppErrorBo
           padding: 24,
           background: '#f4efe6',
           color: '#2c2418',
-          fontFamily: '"DM Sans", "Segoe UI", sans-serif',
+          fontFamily: FONT_UI,
         }}>
         <div
           style={{
@@ -66,7 +67,7 @@ class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, AppErrorBo
               fontSize: 12,
               lineHeight: 1.5,
               color: '#8b3f2f',
-              fontFamily: '"JetBrains Mono", "Consolas", monospace',
+              fontFamily: FONT_CODE,
               wordBreak: 'break-word',
             }}>
             {this.state.message}

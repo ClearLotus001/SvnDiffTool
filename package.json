@@ -1,7 +1,7 @@
 {
-  "name": "svn-excel-diff-tool",
+  "name": "svn-diff-tool",
   "version": "1.0.0",
-  "description": "SvnExcelDiffTool — Beyond Compare style SVN diff viewer for TortoiseSVN",
+  "description": "SvnDiffTool — TortoiseSVN external diff viewer for text and workbook files",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "tsx scripts/dev-app.ts",
@@ -22,12 +22,12 @@
   },
   "build": {
     "appId": "com.svnexceldifftool.app",
-    "productName": "SvnExcelDiffTool",
+    "productName": "SvnDiffTool",
     "artifactName": "${productName}-${version}.${ext}",
     "win": {
       "target": "portable",
       "icon": "assets/icon.ico",
-      "executableName": "SvnExcelDiffTool"
+      "executableName": "SvnDiffTool"
     },
     "files": [
       "dist/**/*",

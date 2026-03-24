@@ -66,6 +66,8 @@ const PerfBar = memo(({ metrics }: PerfBarProps) => {
         alignItems: 'center',
         gap: 8,
         padding: '8px 12px',
+        width: '100%',
+        minWidth: 0,
         background: `linear-gradient(180deg, ${T.bg1} 0%, ${T.bg0} 100%)`,
         borderBottom: `1px solid ${T.border}`,
         flexShrink: 0,

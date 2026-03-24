@@ -1,10 +1,12 @@
 /// <reference lib="webworker" />
 
+import type { WorkbookCompareMode } from '../types';
 import { computeSmartDiff } from '../engine/smartDiff';
 
 interface DiffWorkerRequest {
   baseText: string;
   mineText: string;
+  compareMode: WorkbookCompareMode;
 }
 
 interface DiffWorkerSuccess {
@@ -21,8 +23,8 @@ type DiffWorkerResponse = DiffWorkerSuccess | DiffWorkerFailure;
 
 self.onmessage = (event: MessageEvent<DiffWorkerRequest>) => {
   try {
-    const { baseText, mineText } = event.data;
-    const diffLines = computeSmartDiff(baseText, mineText);
+    const { baseText, mineText, compareMode } = event.data;
+    const diffLines = computeSmartDiff(baseText, mineText, compareMode);
     const response: DiffWorkerResponse = { ok: true, diffLines };
     self.postMessage(response);
   } catch (error) {

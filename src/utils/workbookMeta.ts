@@ -2,6 +2,7 @@ import { XMLParser } from 'fast-xml-parser';
 import { strFromU8, unzipSync } from 'fflate';
 import type {
   SplitRow,
+  WorkbookCompareMode,
   WorkbookMergeRange,
   WorkbookMetadataMap,
   WorkbookMetadataSource,
@@ -9,6 +10,7 @@ import type {
   WorkbookSheetPresentation,
 } from '../types';
 import { parseWorkbookDisplayLine } from './workbookDisplay';
+import { hasWorkbookCellContent } from './workbookCellContract';
 
 const ZIP_WORKBOOK_EXTENSIONS = new Set(['.xlsx', '.xlsm', '.xltx', '.xltm']);
 const xmlParser = new XMLParser({
@@ -201,7 +203,11 @@ export function resolveWorkbookMetadata(data: WorkbookMetadataSource): {
   };
 }
 
-function collectUsedColumns(rows: SplitRow[], side: 'base' | 'mine'): Set<number> {
+function collectUsedColumns(
+  rows: SplitRow[],
+  side: 'base' | 'mine',
+  compareMode: WorkbookCompareMode = 'strict',
+): Set<number> {
   const used = new Set<number>();
 
   rows.forEach(row => {
@@ -212,7 +218,7 @@ function collectUsedColumns(rows: SplitRow[], side: 'base' | 'mine'): Set<number
     if (!parsed || parsed.kind !== 'row') return;
 
     parsed.cells.forEach((cell, index) => {
-      if (cell.value.trim() || cell.formula.trim()) {
+      if (hasWorkbookCellContent(cell, compareMode)) {
         used.add(index);
       }
     });
@@ -240,6 +246,7 @@ export function buildWorkbookSheetPresentation(
   mineMetadata: WorkbookMetadataMap | null,
   fallbackColumnCount: number,
   includeHiddenColumns = false,
+  compareMode: WorkbookCompareMode = 'strict',
 ): WorkbookSheetPresentation {
   const baseSheet = baseMetadata?.sheets[sheetName] ?? null;
   const mineSheet = mineMetadata?.sheets[sheetName] ?? null;
@@ -248,8 +255,8 @@ export function buildWorkbookSheetPresentation(
 
   const candidateColumns = new Set<number>();
   [
-    collectUsedColumns(rows, 'base'),
-    collectUsedColumns(rows, 'mine'),
+    collectUsedColumns(rows, 'base', compareMode),
+    collectUsedColumns(rows, 'mine', compareMode),
     collectMergedColumns(baseSheet?.mergeRanges ?? []),
     collectMergedColumns(mineSheet?.mergeRanges ?? []),
   ].forEach(columnSet => {
