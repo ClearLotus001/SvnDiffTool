@@ -14,13 +14,22 @@ import {
   getWorkbookCanvasSpanRect,
   findWorkbookMergeRange,
 } from '../utils/workbookMergeLayout';
+import { resolveLineNumberColor } from '../utils/lineNumberTone';
 import {
   drawWorkbookCanvasSelectionFrame,
   getWorkbookSelectionOverlay,
   getWorkbookSelectionVisualState,
 } from '../utils/workbookSelectionVisual';
+import { buildWorkbookSelectionLookup } from '../utils/workbookSelectionState';
 import { useTheme } from '../context/theme';
-import type { SplitRow, WorkbookCompareMode, WorkbookSelectedCell } from '../types';
+import type {
+  SplitRow,
+  WorkbookCompareMode,
+  WorkbookSelectionMode,
+  WorkbookSelectedCell,
+  WorkbookSelectionRequest,
+  WorkbookSelectionState,
+} from '../types';
 import { ROW_H } from '../hooks/useVirtual';
 import type { WorkbookMergeRange } from '../utils/workbookMeta';
 import type { WorkbookCanvasHoverCell } from './WorkbookCanvasHoverTooltip';
@@ -44,8 +53,8 @@ interface WorkbookPaneCanvasStripProps {
   sheetName: string;
   versionLabel: string;
   headerRowNumber: number;
-  selectedCell: WorkbookSelectedCell | null;
-  onSelectCell: (cell: WorkbookSelectedCell | null) => void;
+  selection: WorkbookSelectionState;
+  onSelectionRequest: (request: WorkbookSelectionRequest) => void;
   onHoverChange?: (hover: WorkbookCanvasHoverCell | null) => void;
   fontSize: number;
   visibleColumns: number[];
@@ -60,6 +69,12 @@ function trimCellText(value: string) {
   return value.replace(/\u001F/g, ' ').replace(/\r\n/g, ' / ').replace(/\r/g, ' / ').replace(/\n/g, ' / ');
 }
 
+function getSelectionModeFromMouseEvent(event: Pick<React.MouseEvent<HTMLCanvasElement>, 'shiftKey' | 'ctrlKey' | 'metaKey'>): WorkbookSelectionMode {
+  if (event.shiftKey) return 'range';
+  if (event.ctrlKey || event.metaKey) return 'toggle';
+  return 'replace';
+}
+
 const WorkbookPaneCanvasStrip = memo(({
   rows,
   side,
@@ -70,8 +85,8 @@ const WorkbookPaneCanvasStrip = memo(({
   sheetName,
   versionLabel,
   headerRowNumber,
-  selectedCell,
-  onSelectCell,
+  selection,
+  onSelectionRequest,
   onHoverChange,
   fontSize,
   visibleColumns,
@@ -87,6 +102,8 @@ const WorkbookPaneCanvasStrip = memo(({
   const hoverKeyRef = useRef('');
   const sizes = useMemo(() => getWorkbookFontScale(fontSize), [fontSize]);
   const height = rows.length * ROW_H;
+  const selectionLookup = useMemo(() => buildWorkbookSelectionLookup(selection), [selection]);
+  const primarySelection = selection.primary;
 
   const renderRows = useMemo(() => rows.map((renderRow) => {
     const baseEntry = buildWorkbookRowEntry(renderRow.row, 'base', sheetName, versionLabel, visibleColumns);
@@ -170,10 +187,7 @@ const WorkbookPaneCanvasStrip = memo(({
         const rowNumber = renderRow.rowNumber;
         const selectionAccent = side === 'base' ? T.acc2 : T.acc;
         const isSelectedRow = Boolean(
-          selectedCell
-          && selectedCell.kind === 'row'
-          && selectedCell.sheetName === sheetName
-          && selectedCell.rowNumber === rowNumber,
+          selectionLookup.rowKeys.has(`${sheetName}:${rowNumber}`),
         );
 
         ctx.fillStyle = rowBg;
@@ -196,7 +210,9 @@ const WorkbookPaneCanvasStrip = memo(({
           ctx.lineWidth = 1;
         }
 
-        ctx.fillStyle = isSelectedRow ? selectionAccent : T.lnTx;
+        ctx.fillStyle = isSelectedRow
+          ? selectionAccent
+          : resolveLineNumberColor(T, side, renderRow.isActiveSearch);
         ctx.font = `${sizes.line}px ${FONT_CODE}`;
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
@@ -229,7 +245,7 @@ const WorkbookPaneCanvasStrip = memo(({
           const hasContent = hasWorkbookCellContent(cell, compareMode);
           const selectionRowNumber = mergeInfo.region?.range.startRow ?? cellRowNumber;
           const selectionColumn = mergeInfo.region?.range.startCol ?? column;
-          const selectionVisual = getWorkbookSelectionVisualState(T, selectedCell, sheetName, side, selectionRowNumber, selectionColumn);
+          const selectionVisual = getWorkbookSelectionVisualState(T, selectionLookup, sheetName, side, selectionRowNumber, selectionColumn);
           const cellVisual = resolveWorkbookCompareCellVisual({
             theme: T,
             compareCell,
@@ -329,7 +345,7 @@ const WorkbookPaneCanvasStrip = memo(({
       scroller?.removeEventListener('scroll', scheduleDraw);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [columnLayoutByColumn, contentWidth, freezeColumnCount, height, mergedRanges, renderColumns, renderRows, renderedRowNumbers, scrollRef, selectedCell, sheetName, side, sizes.line, sizes.ui, T, viewportWidth]);
+  }, [columnLayoutByColumn, contentWidth, freezeColumnCount, height, mergedRanges, renderColumns, renderRows, renderedRowNumbers, scrollRef, selectionLookup, sheetName, side, sizes.line, sizes.ui, T, viewportWidth]);
 
   const resolveHit = (
     x: number,
@@ -360,8 +376,8 @@ const WorkbookPaneCanvasStrip = memo(({
           side,
           versionLabel,
           rowNumber: entry.rowNumber,
-          colIndex: selectedCell?.colIndex ?? 0,
-          colLabel: selectedCell?.colLabel ?? 'A',
+          colIndex: primarySelection?.colIndex ?? 0,
+          colLabel: primarySelection?.colLabel ?? 'A',
           address: `${entry.rowNumber}`,
           value: '',
           formula: '',
@@ -463,7 +479,11 @@ const WorkbookPaneCanvasStrip = memo(({
     if (!hit) return;
     hoverKeyRef.current = '';
     onHoverChange?.(null);
-    onSelectCell(hit.selection);
+    onSelectionRequest({
+      target: hit.selection,
+      mode: getSelectionModeFromMouseEvent(event),
+      reason: 'click',
+    });
   };
 
   const handleMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -485,10 +505,34 @@ const WorkbookPaneCanvasStrip = memo(({
     onHoverChange?.(null);
   };
 
+  const handleContextMenu = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvasRect = event.currentTarget.getBoundingClientRect();
+    const hit = resolveHit(
+      event.clientX - canvasRect.left,
+      event.clientY - canvasRect.top,
+      canvasRect,
+    );
+    if (!hit) return;
+    event.preventDefault();
+    hoverKeyRef.current = '';
+    onHoverChange?.(null);
+    onSelectionRequest({
+      target: hit.selection,
+      mode: getSelectionModeFromMouseEvent(event),
+      reason: 'contextmenu',
+      preserveExistingIfTargetSelected: true,
+      clientPoint: {
+        x: event.clientX,
+        y: event.clientY,
+      },
+    });
+  };
+
   return (
     <canvas
       ref={canvasRef}
       onClick={handleClick}
+      onContextMenu={handleContextMenu}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       style={{

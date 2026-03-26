@@ -12,6 +12,11 @@ import {
   getWorkbookSelectionOverlay,
   getWorkbookSelectionVisualState,
 } from '../utils/workbookSelectionVisual';
+import { buildWorkbookSelectionLookup } from '../utils/workbookSelectionState';
+import {
+  resolveLineNumberColor,
+  resolveSharedWorkbookLineNumberTone,
+} from '../utils/lineNumberTone';
 import {
   findWorkbookMergeRange,
   getWorkbookCanvasSpanRect,
@@ -20,13 +25,22 @@ import {
   getWorkbookMergedCompareCell,
 } from '../utils/workbookMergeLayout';
 import { useTheme } from '../context/theme';
-import type { SplitRow, WorkbookCompareMode, WorkbookSelectedCell } from '../types';
+import type {
+  SplitRow,
+  WorkbookCompareMode,
+  WorkbookSelectionMode,
+  WorkbookSelectedCell,
+  WorkbookSelectionRequest,
+  WorkbookSelectionState,
+} from '../types';
 import { ROW_H } from '../hooks/useVirtual';
 import type { WorkbookMergeRange } from '../utils/workbookMeta';
+import type { WorkbookCompactRenderMode } from '../utils/workbookRowBehavior';
 import type { WorkbookCanvasHoverCell } from './WorkbookCanvasHoverTooltip';
 
 export interface WorkbookColumnsCanvasRow {
   row: SplitRow;
+  renderMode: WorkbookCompactRenderMode;
   isSearchMatch: boolean;
   isActiveSearch: boolean;
   isGuided: boolean;
@@ -44,8 +58,8 @@ interface WorkbookColumnsCanvasStripProps {
   baseVersion: string;
   mineVersion: string;
   headerRowNumber: number;
-  selectedCell: WorkbookSelectedCell | null;
-  onSelectCell: (cell: WorkbookSelectedCell | null) => void;
+  selection: WorkbookSelectionState;
+  onSelectionRequest: (request: WorkbookSelectionRequest) => void;
   onHoverChange?: (hover: WorkbookCanvasHoverCell | null) => void;
   fontSize: number;
   visibleColumns: number[];
@@ -62,6 +76,12 @@ function trimCellText(value: string) {
   return value.replace(/\u001F/g, ' ').replace(/\r\n/g, ' / ').replace(/\r/g, ' / ').replace(/\n/g, ' / ');
 }
 
+function getSelectionModeFromMouseEvent(event: Pick<React.MouseEvent<HTMLCanvasElement>, 'shiftKey' | 'ctrlKey' | 'metaKey'>): WorkbookSelectionMode {
+  if (event.shiftKey) return 'range';
+  if (event.ctrlKey || event.metaKey) return 'toggle';
+  return 'replace';
+}
+
 const WorkbookColumnsCanvasStrip = memo(({
   rows,
   viewportWidth,
@@ -72,8 +92,8 @@ const WorkbookColumnsCanvasStrip = memo(({
   baseVersion,
   mineVersion,
   headerRowNumber,
-  selectedCell,
-  onSelectCell,
+  selection,
+  onSelectionRequest,
   onHoverChange,
   fontSize,
   visibleColumns,
@@ -91,6 +111,8 @@ const WorkbookColumnsCanvasStrip = memo(({
   const hoverKeyRef = useRef('');
   const sizes = useMemo(() => getWorkbookFontScale(fontSize), [fontSize]);
   const height = rows.length * ROW_H;
+  const selectionLookup = useMemo(() => buildWorkbookSelectionLookup(selection), [selection]);
+  const primarySelection = selection.primary;
 
   const renderRows = useMemo(() => rows.map((renderRow) => {
     const baseEntry = buildWorkbookRowEntry(renderRow.row, 'base', sheetName, baseVersion, visibleColumns);
@@ -103,6 +125,7 @@ const WorkbookColumnsCanvasStrip = memo(({
     return {
       baseEntry,
       mineEntry,
+      renderMode: renderRow.renderMode,
       compareCells: rowDelta.cellDeltas,
       isSearchMatch: renderRow.isSearchMatch,
       isActiveSearch: renderRow.isActiveSearch,
@@ -179,12 +202,14 @@ const WorkbookColumnsCanvasStrip = memo(({
           : T.border;
         const rowNumber = renderRow.baseEntry?.rowNumber ?? renderRow.mineEntry?.rowNumber ?? 0;
 
-        const selectionAccent = selectedCell?.side === 'base' ? T.acc2 : T.acc;
+        const selectionAccent = primarySelection?.side === 'base' ? T.acc2 : T.acc;
         const isSelectedRow = Boolean(
-          selectedCell
-          && selectedCell.kind === 'row'
-          && selectedCell.sheetName === sheetName
-          && selectedCell.rowNumber === rowNumber,
+          selectionLookup.rowKeys.has(`${sheetName}:${rowNumber}`),
+        );
+        const compactSide: 'base' | 'mine' = renderRow.renderMode === 'single-mine' ? 'mine' : 'base';
+        const lineNumberTone = resolveSharedWorkbookLineNumberTone(
+          Boolean(renderRow.baseEntry),
+          Boolean(renderRow.mineEntry),
         );
 
         ctx.fillStyle = rowBg;
@@ -207,7 +232,9 @@ const WorkbookColumnsCanvasStrip = memo(({
           ctx.lineWidth = 1;
         }
 
-        ctx.fillStyle = isSelectedRow ? selectionAccent : T.lnTx;
+        ctx.fillStyle = isSelectedRow
+          ? selectionAccent
+          : resolveLineNumberColor(T, lineNumberTone, renderRow.isActiveSearch);
         ctx.font = `${sizes.line}px ${FONT_CODE}`;
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
@@ -216,11 +243,18 @@ const WorkbookColumnsCanvasStrip = memo(({
           side: 'base' | 'mine',
           columnEntry: HorizontalVirtualColumnEntry,
           drawX: number,
+          options?: {
+            spanMode?: 'paired-base' | 'paired-mine' | 'paired-shared';
+            cellWidth?: number;
+            defaultTextColor?: string;
+          },
         ) => {
-          if (drawX >= contentRight || drawX + columnEntry.width <= contentLeft) return;
+          const cellWidth = options?.cellWidth ?? columnEntry.width;
+          if (drawX >= contentRight || drawX + cellWidth <= contentLeft) return;
 
           const column = columnEntry.column;
           const entry = side === 'base' ? renderRow.baseEntry : renderRow.mineEntry;
+          if (!entry) return;
           const cellRowNumber = entry?.rowNumber ?? rowNumber;
           const mergedRanges = side === 'base' ? baseMergedRanges : mineMergedRanges;
           const renderedRowNumbers = side === 'base' ? baseRenderedRowNumbers : mineRenderedRowNumbers;
@@ -236,7 +270,7 @@ const WorkbookColumnsCanvasStrip = memo(({
             currentScrollLeft,
             freezeColumnCount,
             frozenWidth: frozenPairWidth,
-            mode: side === 'base' ? 'paired-base' : 'paired-mine',
+            mode: options?.spanMode ?? (side === 'base' ? 'paired-base' : 'paired-mine'),
           });
           if (mergeInfo.covered && !mergeInfo.region) return;
 
@@ -247,7 +281,7 @@ const WorkbookColumnsCanvasStrip = memo(({
           const hasContent = hasWorkbookCellContent(cell, compareMode);
           const selectionRowNumber = mergeInfo.region?.range.startRow ?? cellRowNumber;
           const selectionColumn = mergeInfo.region?.range.startCol ?? column;
-          const selectionVisual = getWorkbookSelectionVisualState(T, selectedCell, sheetName, side, selectionRowNumber, selectionColumn);
+          const selectionVisual = getWorkbookSelectionVisualState(T, selectionLookup, sheetName, side, selectionRowNumber, selectionColumn);
           const cellVisual = resolveWorkbookCompareCellVisual({
             theme: T,
             compareCell,
@@ -256,11 +290,11 @@ const WorkbookColumnsCanvasStrip = memo(({
             hasContent,
             hasBaseRow: Boolean(renderRow.baseEntry),
             hasMineRow: Boolean(renderRow.mineEntry),
-            defaultTextColor: side === 'mine' ? T.t0 : T.t1,
+            defaultTextColor: options?.defaultTextColor ?? (side === 'mine' ? T.t0 : T.t1),
           });
           const regionLeft = mergeInfo.region?.left ?? drawX;
           const regionTop = mergeInfo.region?.top ?? y;
-          const regionWidth = mergeInfo.region?.width ?? columnEntry.width;
+          const regionWidth = mergeInfo.region?.width ?? cellWidth;
           const regionHeight = mergeInfo.region?.height ?? ROW_H;
           const regionSegments = mergeInfo.region?.segments ?? [{ left: regionLeft, width: regionWidth }];
           const selectionSegments = regionSegments;
@@ -321,17 +355,32 @@ const WorkbookColumnsCanvasStrip = memo(({
           drawCell('base', columnEntry, drawX);
           drawCell('mine', columnEntry, drawX + columnEntry.width);
         };
+        const drawCompact = (columnEntry: HorizontalVirtualColumnEntry, drawX: number) => {
+          drawCell(compactSide, columnEntry, drawX, {
+            spanMode: 'paired-shared',
+            cellWidth: columnEntry.displayWidth,
+            defaultTextColor: compactSide === 'mine' ? T.t0 : T.t1,
+          });
+        };
 
         floatingEntries.forEach((columnEntry) => {
           const x = contentLeft + columnEntry.offset - currentScrollLeft;
           if (x + columnEntry.displayWidth < contentLeft + frozenPairWidth || x > contentRight) return;
-          drawPair(columnEntry, x);
+          if (renderRow.renderMode === 'double') {
+            drawPair(columnEntry, x);
+            return;
+          }
+          drawCompact(columnEntry, x);
         });
 
         frozenEntries.forEach((columnEntry) => {
           const x = contentLeft + columnEntry.offset;
           if (x > contentRight) return;
-          drawPair(columnEntry, x);
+          if (renderRow.renderMode === 'double') {
+            drawPair(columnEntry, x);
+            return;
+          }
+          drawCompact(columnEntry, x);
         });
       });
 
@@ -353,7 +402,7 @@ const WorkbookColumnsCanvasStrip = memo(({
       scroller?.removeEventListener('scroll', scheduleDraw);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [baseMergedRanges, baseRenderedRowNumbers, columnLayoutByColumn, contentWidth, freezeColumnCount, height, mineMergedRanges, mineRenderedRowNumbers, renderColumns, renderRows, scrollRef, selectedCell, sheetName, sizes.line, sizes.ui, T, viewportWidth]);
+  }, [baseMergedRanges, baseRenderedRowNumbers, columnLayoutByColumn, contentWidth, freezeColumnCount, height, mineMergedRanges, mineRenderedRowNumbers, primarySelection?.side, renderColumns, renderRows, scrollRef, selectionLookup, sheetName, sizes.line, sizes.ui, T, viewportWidth]);
 
   const resolveHit = (
     x: number,
@@ -376,15 +425,22 @@ const WorkbookColumnsCanvasStrip = memo(({
       headerRowNumber,
     });
     if (selectionKind === 'row') {
+      const rowSide: 'base' | 'mine' = renderRow.renderMode === 'single-mine'
+        ? 'mine'
+        : renderRow.renderMode === 'single-base'
+        ? 'base'
+        : (primarySelection?.side ?? 'base');
       return {
         selection: {
           kind: 'row',
           sheetName,
-          side: selectedCell?.side ?? 'base',
-          versionLabel: selectedCell?.versionLabel ?? baseVersion,
+          side: rowSide,
+          versionLabel: rowSide === 'mine'
+            ? (primarySelection?.side === 'mine' ? (primarySelection.versionLabel ?? mineVersion) : mineVersion)
+            : (primarySelection?.side === 'base' ? (primarySelection.versionLabel ?? baseVersion) : baseVersion),
           rowNumber,
-          colIndex: selectedCell?.colIndex ?? 0,
-          colLabel: selectedCell?.colLabel ?? 'A',
+          colIndex: primarySelection?.colIndex ?? 0,
+          colLabel: primarySelection?.colLabel ?? 'A',
           address: `${rowNumber}`,
           value: '',
           formula: '',
@@ -409,7 +465,11 @@ const WorkbookColumnsCanvasStrip = memo(({
       ? contentLeft + hitEntry.offset
       : contentLeft + hitEntry.offset - currentScrollLeft;
     const withinPairX = x - pairX;
-    const side: 'base' | 'mine' = withinPairX < hitEntry.width ? 'base' : 'mine';
+    const side: 'base' | 'mine' = renderRow.renderMode === 'single-mine'
+      ? 'mine'
+      : renderRow.renderMode === 'double'
+      ? (withinPairX < hitEntry.width ? 'base' : 'mine')
+      : 'base';
     const column = hitEntry.column;
     const entry = side === 'base' ? renderRow.baseEntry : renderRow.mineEntry;
     if (!entry) return null;
@@ -424,7 +484,9 @@ const WorkbookColumnsCanvasStrip = memo(({
       mergeRange?.startCol ?? column,
       mergeRange?.endCol ?? column,
       columnLayoutByColumn,
-      side === 'base' ? 'paired-base' : 'paired-mine',
+      renderRow.renderMode === 'double'
+        ? (side === 'base' ? 'paired-base' : 'paired-mine')
+        : 'paired-shared',
       freezeColumnCount,
     );
     const spanRect = bounds
@@ -433,8 +495,10 @@ const WorkbookColumnsCanvasStrip = memo(({
     const compareCell = mergeRange
       ? getWorkbookMergedCompareCell(anchorRenderRow.compareCells, mergeRange)
       : anchorRenderRow.compareCells.get(column);
-    const cellX = spanRect?.left ?? (side === 'base' ? pairX : pairX + hitEntry.width);
-    const cellWidth = spanRect?.width ?? hitEntry.width;
+    const cellX = spanRect?.left ?? (renderRow.renderMode === 'double'
+      ? (side === 'base' ? pairX : pairX + hitEntry.width)
+      : pairX);
+    const cellWidth = spanRect?.width ?? (renderRow.renderMode === 'double' ? hitEntry.width : hitEntry.displayWidth);
     const selected = buildWorkbookSelectedCell(anchorEntry, anchorColumn, mergedRanges);
 
     if (selectionKind === 'column') {
@@ -489,7 +553,11 @@ const WorkbookColumnsCanvasStrip = memo(({
     if (!hit) return;
     hoverKeyRef.current = '';
     onHoverChange?.(null);
-    onSelectCell(hit.selection);
+    onSelectionRequest({
+      target: hit.selection,
+      mode: getSelectionModeFromMouseEvent(event),
+      reason: 'click',
+    });
   };
 
   const handleMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -507,10 +575,30 @@ const WorkbookColumnsCanvasStrip = memo(({
     onHoverChange?.(null);
   };
 
+  const handleContextMenu = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const hit = resolveHit(event.clientX - rect.left, event.clientY - rect.top, rect);
+    if (!hit) return;
+    event.preventDefault();
+    hoverKeyRef.current = '';
+    onHoverChange?.(null);
+    onSelectionRequest({
+      target: hit.selection,
+      mode: getSelectionModeFromMouseEvent(event),
+      reason: 'contextmenu',
+      preserveExistingIfTargetSelected: true,
+      clientPoint: {
+        x: event.clientX,
+        y: event.clientY,
+      },
+    });
+  };
+
   return (
     <canvas
       ref={canvasRef}
       onClick={handleClick}
+      onContextMenu={handleContextMenu}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       style={{

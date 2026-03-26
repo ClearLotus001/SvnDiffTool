@@ -25,6 +25,65 @@ function parseWorkbookRow(line: string | null): WorkbookRowDisplayLine | null {
   return parsed?.kind === 'row' ? parsed : null;
 }
 
+interface CachedSplitRowParse {
+  base?: WorkbookRowDisplayLine | null;
+  mine?: WorkbookRowDisplayLine | null;
+  rowNumber?: number | null;
+}
+
+const splitRowParseCache = new WeakMap<SplitRow, CachedSplitRowParse>();
+
+function getCachedSplitRowParse(row: SplitRow): CachedSplitRowParse {
+  let cached = splitRowParseCache.get(row);
+  if (!cached) {
+    cached = {};
+    splitRowParseCache.set(row, cached);
+  }
+  return cached;
+}
+
+function parseWorkbookSplitRowSide(
+  row: SplitRow,
+  side: 'base' | 'mine',
+): WorkbookRowDisplayLine | null {
+  const cached = getCachedSplitRowParse(row);
+  const cachedParsed = side === 'base' ? cached.base : cached.mine;
+  if (cachedParsed !== undefined) return cachedParsed;
+
+  const parsed = side === 'base'
+    ? parseWorkbookRow(row.left?.base ?? null)
+    : parseWorkbookRow(row.right?.mine ?? null);
+
+  if (side === 'base') {
+    cached.base = parsed;
+  } else {
+    cached.mine = parsed;
+  }
+  return parsed;
+}
+
+export function getWorkbookSplitRowNumber(row: SplitRow): number | null {
+  const cached = getCachedSplitRowParse(row);
+  if (cached.rowNumber !== undefined) return cached.rowNumber;
+
+  const leftParsed = parseWorkbookRow(row.left?.base ?? row.left?.mine ?? null);
+  if (leftParsed) {
+    cached.rowNumber = leftParsed.rowNumber;
+    return leftParsed.rowNumber;
+  }
+
+  const rightParsed = parseWorkbookRow(row.right?.mine ?? row.right?.base ?? null);
+  cached.rowNumber = rightParsed?.rowNumber ?? null;
+  return cached.rowNumber;
+}
+
+export function getWorkbookSideRowNumber(
+  row: SplitRow,
+  side: 'base' | 'mine',
+): number | null {
+  return parseWorkbookSplitRowSide(row, side)?.rowNumber ?? null;
+}
+
 export function buildWorkbookRowEntry(
   row: SplitRow,
   side: 'base' | 'mine',
@@ -32,9 +91,7 @@ export function buildWorkbookRowEntry(
   versionLabel: string,
   visibleColumns: number[] = [],
 ): WorkbookRowEntry | null {
-  const parsed = side === 'base'
-    ? parseWorkbookRow(row.left?.base ?? null)
-    : parseWorkbookRow(row.right?.mine ?? null);
+  const parsed = parseWorkbookSplitRowSide(row, side);
 
   if (!parsed) return null;
 

@@ -18,31 +18,46 @@ import type {
   DiffPerformanceMetrics,
   ThemeKey,
   LayoutMode,
+  AppUpdateState,
   RevisionOptionsPayload,
   RevisionOptionsQuery,
   SvnRevisionInfo,
   WorkbookArtifactDiff,
   WorkbookCompareMode,
   WorkbookCompareLayoutSnapshot,
+  WorkbookContextMenuPoint,
   WorkbookCompareModePayload,
+  DiffSourceNoticeCode,
   WorkbookFreezeState,
+  WorkbookHiddenStateBySheet,
   WorkbookHorizontalLayoutSnapshot,
   WorkbookMetadataSource,
   WorkbookMoveDirection,
   WorkbookPrecomputedDeltaPayload,
+  TextDiffPresentation,
+  WorkbookSelectionRequest,
   WorkbookSelectedCell,
+  WorkbookSelectionState,
+  SvnDiffViewerScope,
+  SvnDiffViewerStatus,
 } from './types';
 import { THEMES } from './theme';
 import { useI18n } from './context/i18n';
 import { ThemeContext } from './context/theme';
 import { computeHunks } from './engine/diff';
+import { buildTextDiffPresentation } from './engine/textChangeAlignment';
 import { clearTokenCache } from './engine/tokenizer';
 import { buildSearchPattern, findMatches, navigateSearch } from './engine/search';
 import { FONT_UI } from './constants/typography';
-import { computeDiffAsync } from './utils/computeDiffAsync';
+import { computeTextDiffAsync } from './utils/computeTextDiffAsync';
+import { computeWorkbookDiffAsync } from './utils/computeWorkbookDiffAsync';
 import { resolveDisplayFileName, resolveVersionLabel } from './utils/diffMeta';
 import { isWorkbookFileName, resolveDiffTexts } from './utils/diffSource';
-import type { WorkbookMetadataMap } from './utils/workbookMeta';
+import { isWorkbookTextPair } from './engine/workbookDiff';
+import {
+  buildWorkbookSheetPresentation,
+  type WorkbookMetadataMap,
+} from './utils/workbookMeta';
 import { resolveWorkbookMetadataAsync } from './utils/resolveWorkbookMetadataAsync';
 import {
   buildWorkbookSectionRowIndex,
@@ -52,26 +67,62 @@ import {
   buildWorkbookDiffRegions,
   findWorkbookDiffRegionIndexForSelection,
 } from './utils/workbookDiffRegion';
+import {
+  applyWorkbookExpandedBlocksChange,
+  applyWorkbookLayoutSnapshot,
+  createEmptyWorkbookLayoutSnapshots,
+  getWorkbookSharedExpandedBlocks,
+  type WorkbookLayoutSnapshotsByMode,
+} from './utils/workbookLayoutState';
 import { findWorkbookSectionIndex, getWorkbookSections } from './utils/workbookSections';
 import { getStoredAppSettings, saveStoredAppSettings } from './utils/settings';
 import {
   clampWorkbookColumnWidth,
+  measureWorkbookAutoFitColumnWidth,
   type WorkbookColumnWidthBySheet,
 } from './utils/workbookColumnWidths';
+import { copyText } from './utils/clipboard';
+import {
+  getSelectedWorkbookColumns,
+  getSelectedWorkbookRows,
+  hideWorkbookColumns,
+  hideWorkbookRows,
+  revealWorkbookColumns,
+  revealWorkbookRows,
+  revealWorkbookSelection,
+} from './utils/workbookManualVisibility';
+import {
+  applyWorkbookSelection,
+  createWorkbookSelectionState,
+  getWorkbookSelectionCount,
+} from './utils/workbookSelectionState';
+import type { CollapseExpansionState } from './utils/collapseState';
+import {
+  applyWorkbookFreezePatch,
+  areWorkbookFreezeStatesEqual,
+  type WorkbookFreezeDefaults,
+  type WorkbookFreezePatch,
+} from './utils/workbookFreeze';
 import Toolbar        from './components/Toolbar';
-import DevLoadBar     from './components/DevLoadBar';
 import PerfBar       from './components/PerfBar';
 import SearchBar      from './components/SearchBar';
 import SplitHeader    from './components/SplitHeader';
+import HomeStartPanel from './components/HomeStartPanel';
+import DiffSourceNoticeBar from './components/DiffSourceNoticeBar';
 import WorkbookFormulaBar from './components/WorkbookFormulaBar';
 import WorkbookArtifactNoticeBar from './components/WorkbookArtifactNoticeBar';
 import WorkbookComparePanel from './components/WorkbookComparePanel';
+import WorkbookContextMenu, {
+  type WorkbookContextMenuSection,
+} from './components/WorkbookContextMenu';
 import WorkbookHorizontalPanel from './components/WorkbookHorizontalPanel';
 import UnifiedPanel   from './components/UnifiedPanel';
 import SplitPanel     from './components/SplitPanel';
 import StatsBar       from './components/StatsBar';
 import GotoLine       from './components/GotoLine';
 import ShortcutsPanel from './components/ShortcutsPanel';
+import AboutDialog from './components/AboutDialog';
+import SvnConfigDialog from './components/SvnConfigDialog';
 
 type WorkbookFreezeStateMap = Record<string, WorkbookFreezeState>;
 type LoadPhase = 'idle' | 'loading' | 'ready' | 'error';
@@ -85,18 +136,9 @@ interface CachedDiffResult {
   mineWorkbookMetadata: WorkbookMetadataMap | null;
 }
 
-interface WorkbookLayoutSnapshotsByMode {
-  unified: WorkbookCompareLayoutSnapshot | null;
-  'split-h': WorkbookHorizontalLayoutSnapshot | null;
-  'split-v': WorkbookCompareLayoutSnapshot | null;
-}
-
-function createEmptyWorkbookLayoutSnapshots(): WorkbookLayoutSnapshotsByMode {
-  return {
-    unified: null,
-    'split-h': null,
-    'split-v': null,
-  };
+interface WorkbookContextMenuState {
+  anchorPoint: WorkbookContextMenuPoint;
+  selection: WorkbookSelectionState;
 }
 
 function waitForNextPaint() {
@@ -245,6 +287,8 @@ export default function App() {
   const [showSearch, setShowSearch]         = useState(false);
   const [showGoto, setShowGoto]             = useState(false);
   const [showHelp, setShowHelp]             = useState(false);
+  const [showAbout, setShowAbout]           = useState(false);
+  const [showSvnConfig, setShowSvnConfig]   = useState(false);
   const [showWhitespace, setShowWhitespace] = useState(initialSettings.showWhitespace);
   const [showHiddenColumns, setShowHiddenColumns] = useState(initialSettings.showHiddenColumns);
   const [workbookCompareMode, setWorkbookCompareMode] = useState<WorkbookCompareMode>(initialSettings.workbookCompareMode);
@@ -256,17 +300,23 @@ export default function App() {
   const [activeSearchIdx, setActiveSearchIdx] = useState(-1);
   const [isElectron, setIsElectron]         = useState(false);
   const [isDevMode, setIsDevMode]           = useState(false);
+  const [usesNativeWindowControls, setUsesNativeWindowControls] = useState(false);
+  const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [isLoadingDiff, setIsLoadingDiff]   = useState(false);
   const [hasLoadedDiff, setHasLoadedDiff]   = useState(false);
   const [loadPhase, setLoadPhase]           = useState<LoadPhase>('idle');
   const [loadError, setLoadError]           = useState('');
   const [loadPerfMetrics, setLoadPerfMetrics] = useState<DiffPerformanceMetrics | null>(null);
-  const [selectedCell, setSelectedCell]     = useState<WorkbookSelectedCell | null>(null);
+  const [workbookSelection, setWorkbookSelection] = useState<WorkbookSelectionState>(() => createWorkbookSelectionState(null));
+  const [workbookHiddenStateBySheet, setWorkbookHiddenStateBySheet] = useState<WorkbookHiddenStateBySheet>({});
+  const [workbookContextMenu, setWorkbookContextMenu] = useState<WorkbookContextMenuState | null>(null);
   const [baseWorkbookMetadata, setBaseWorkbookMetadata] = useState<WorkbookMetadataMap | null>(null);
   const [mineWorkbookMetadata, setMineWorkbookMetadata] = useState<WorkbookMetadataMap | null>(null);
   const [precomputedWorkbookDelta, setPrecomputedWorkbookDelta] = useState<WorkbookPrecomputedDeltaPayload | null>(null);
   const [workbookArtifactDiff, setWorkbookArtifactDiff] = useState<WorkbookArtifactDiff | null>(null);
   const [artifactNoticeDismissed, setArtifactNoticeDismissed] = useState(false);
+  const [diffSourceNoticeCode, setDiffSourceNoticeCode] = useState<DiffSourceNoticeCode | null>(null);
+  const [diffSourceNoticeDismissed, setDiffSourceNoticeDismissed] = useState(false);
   const [revisionOptions, setRevisionOptions] = useState<SvnRevisionInfo[]>([]);
   const [revisionOptionsStatus, setRevisionOptionsStatus] = useState<RevisionOptionsStatus>('idle');
   const [revisionHasMore, setRevisionHasMore] = useState(false);
@@ -283,6 +333,11 @@ export default function App() {
   const [workbookColumnWidthBySheet, setWorkbookColumnWidthBySheet] = useState<WorkbookColumnWidthBySheet>({});
   const [activeWorkbookSheetName, setActiveWorkbookSheetName] = useState<string | null>(null);
   const [guidedPulseNonce, setGuidedPulseNonce] = useState(0);
+  const [appUpdateState, setAppUpdateState] = useState<AppUpdateState | null>(null);
+  const [svnDiffViewerStatus, setSvnDiffViewerStatus] = useState<SvnDiffViewerStatus | null>(null);
+  const [isLoadingSvnDiffViewerStatus, setIsLoadingSvnDiffViewerStatus] = useState(false);
+  const [applyingSvnDiffViewerScope, setApplyingSvnDiffViewerScope] = useState<SvnDiffViewerScope | null>(null);
+  const [svnDiffViewerError, setSvnDiffViewerError] = useState('');
   const loadSeqRef = useRef(0);
   const hasLoadedDiffRef = useRef(false);
   const workbookCompareModeRef = useRef<WorkbookCompareMode>(workbookCompareMode);
@@ -291,8 +346,10 @@ export default function App() {
   const workbookLayoutSnapshotsRef = useRef<WorkbookLayoutSnapshotsByMode>(
     createEmptyWorkbookLayoutSnapshots(),
   );
+  const workbookSharedExpandedBlocksRef = useRef<Map<string, CollapseExpansionState>>(new Map());
   const revisionOptionsRef = useRef<SvnRevisionInfo[]>([]);
   const revisionQuerySeqRef = useRef(0);
+  const updateAutoCheckRequestedRef = useRef(false);
 
   const T = THEMES[themeKey];
 
@@ -303,12 +360,22 @@ export default function App() {
     root.style.setProperty('--scroll-thumb-hover', T.scrollThumbHover);
     root.style.setProperty('--scroll-track', T.scrollTrack);
   }, [T]);
+
+  useEffect(() => {
+    if (!isElectron || !usesNativeWindowControls || !window.svnDiff?.setTitleBarOverlay) return;
+    window.svnDiff.setTitleBarOverlay({
+      color: T.bg1,
+      symbolColor: T.t0,
+      height: 44,
+    });
+  }, [T, isElectron, usesNativeWindowControls]);
   const displayBaseName = baseName || t('commonBase');
   const displayMineName = mineName || t('commonMine');
   const displayFileName = useMemo(
     () => resolveDisplayFileName(fileName, baseName, mineName),
     [fileName, baseName, mineName],
   );
+  const selectedCell = workbookSelection.primary;
   const baseVersionLabel = useMemo(
     () => resolveVersionLabel(displayBaseName, baseRevisionInfo, t('commonBase')),
     [baseRevisionInfo, displayBaseName, t],
@@ -348,6 +415,7 @@ export default function App() {
     mineRevisionInfo?.revision,
     workbookArtifactDiff,
   ]);
+  const diffSourceNoticeKey = diffSourceNoticeCode ?? '';
 
   // scrollToIndex exposed by the active panel — used by Goto and hunk nav
   const scrollToIndexRef = useRef<((idx: number, align?: 'start' | 'center') => void) | null>(null);
@@ -360,6 +428,9 @@ export default function App() {
   useEffect(() => {
     setArtifactNoticeDismissed(false);
   }, [artifactNoticeKey]);
+  useEffect(() => {
+    setDiffSourceNoticeDismissed(false);
+  }, [diffSourceNoticeKey]);
 
   // ── Load diff data ─────────────────────────────────────────────────────────
 
@@ -508,11 +579,14 @@ export default function App() {
         setBaseName(data.baseName || data.fileName || '');
         setMineName(data.mineName || data.fileName || '');
         setFileName(data.fileName || '');
-        setSelectedCell(null);
+        setWorkbookSelection(createWorkbookSelectionState(null));
+        setWorkbookHiddenStateBySheet({});
+        setWorkbookContextMenu(null);
         setWorkbookFreezeBySheet({});
         setWorkbookColumnWidthBySheet({});
         setActiveWorkbookSheetName(null);
         workbookLayoutSnapshotsRef.current = createEmptyWorkbookLayoutSnapshots();
+        workbookSharedExpandedBlocksRef.current = new Map();
         setPrecomputedWorkbookDelta(cachedResult.workbookDelta);
         setWorkbookArtifactDiff(data.workbookArtifactDiff ?? null);
         setBaseWorkbookMetadata(cachedResult.baseWorkbookMetadata ?? data.baseWorkbookMetadata ?? null);
@@ -530,6 +604,7 @@ export default function App() {
         setMineRevisionInfo(data.mineRevisionInfo ?? null);
         setCanSwitchRevisions(Boolean(data.canSwitchRevisions));
         setDiffLines(cachedResult.diffLines);
+        setDiffSourceNoticeCode(data.sourceNoticeCode ?? null);
         setHunkIdx(0);
         setHasLoadedDiff(true);
         setLoadPhase('ready');
@@ -594,7 +669,9 @@ export default function App() {
         const { baseText, mineText } = resolveDiffTexts(data);
         textResolveMs = getNow() - textStart;
         const diffStart = getNow();
-        nextDiffLines = await computeDiffAsync(baseText, mineText, compareMode);
+        nextDiffLines = isWorkbookTextPair(baseText, mineText)
+          ? await computeWorkbookDiffAsync(baseText, mineText, compareMode)
+          : await computeTextDiffAsync(baseText, mineText);
         diffDuration = getNow() - diffStart;
       }
       if (seq !== loadSeqRef.current) return;
@@ -604,11 +681,14 @@ export default function App() {
       setBaseName(data.baseName || data.fileName || '');
       setMineName(data.mineName || data.fileName || '');
       setFileName(data.fileName || '');
-      setSelectedCell(null);
+      setWorkbookSelection(createWorkbookSelectionState(null));
+      setWorkbookHiddenStateBySheet({});
+      setWorkbookContextMenu(null);
       setWorkbookFreezeBySheet({});
       setWorkbookColumnWidthBySheet({});
       setActiveWorkbookSheetName(null);
       workbookLayoutSnapshotsRef.current = createEmptyWorkbookLayoutSnapshots();
+      workbookSharedExpandedBlocksRef.current = new Map();
       setPrecomputedWorkbookDelta(selectedPrecomputedWorkbookDelta);
       setWorkbookArtifactDiff(data.workbookArtifactDiff ?? null);
       setBaseWorkbookMetadata(data.baseWorkbookMetadata ?? null);
@@ -626,6 +706,7 @@ export default function App() {
       setMineRevisionInfo(data.mineRevisionInfo ?? null);
       setCanSwitchRevisions(Boolean(data.canSwitchRevisions));
       setDiffLines(nextDiffLines);
+      setDiffSourceNoticeCode(data.sourceNoticeCode ?? null);
       setHunkIdx(0);
       setHasLoadedDiff(true);
       setLoadPhase('ready');
@@ -715,6 +796,7 @@ export default function App() {
         setBaseRevisionInfo(null);
         setMineRevisionInfo(null);
         setCanSwitchRevisions(false);
+        setDiffSourceNoticeCode(null);
         setHasLoadedDiff(false);
         setLoadPhase('error');
         setLoadPerfMetrics(null);
@@ -825,6 +907,50 @@ export default function App() {
     }
   }, [applyDiffData, beginDiffLoad, failDiffLoad]);
 
+  const handlePickWorkingCopyFile = useCallback(async () => {
+    if (!window.svnDiff?.pickDiffFile) return;
+    const nextFile = await window.svnDiff.pickDiffFile();
+    if (!nextFile?.path) return;
+    try {
+      await loadElectronWorkingCopyDiff(nextFile.path);
+    } catch {
+      // loadElectronWorkingCopyDiff already updates the UI error state.
+    }
+  }, [loadElectronWorkingCopyDiff]);
+
+  const loadSvnDiffViewerStatus = useCallback(async () => {
+    if (!window.svnDiff?.getSvnDiffViewerStatus) return;
+    setIsLoadingSvnDiffViewerStatus(true);
+    setSvnDiffViewerError('');
+    try {
+      const nextStatus = await window.svnDiff.getSvnDiffViewerStatus();
+      setSvnDiffViewerStatus(nextStatus);
+    } catch (error) {
+      setSvnDiffViewerError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoadingSvnDiffViewerStatus(false);
+    }
+  }, []);
+
+  const handleOpenSvnConfig = useCallback(() => {
+    setShowSvnConfig(true);
+    void loadSvnDiffViewerStatus();
+  }, [loadSvnDiffViewerStatus]);
+
+  const handleApplySvnDiffViewerScope = useCallback(async (scope: SvnDiffViewerScope) => {
+    if (!window.svnDiff?.configureSvnDiffViewer) return;
+    setApplyingSvnDiffViewerScope(scope);
+    setSvnDiffViewerError('');
+    try {
+      const nextStatus = await window.svnDiff.configureSvnDiffViewer(scope);
+      setSvnDiffViewerStatus(nextStatus);
+    } catch (error) {
+      setSvnDiffViewerError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setApplyingSvnDiffViewerScope(null);
+    }
+  }, []);
+
   const reloadCliDiffData = useCallback(async () => {
     if (!window.svnDiff?.getDiffData) return;
     const seq = await beginDiffLoad();
@@ -862,6 +988,12 @@ export default function App() {
         if (!cancelled) setIsDevMode(Boolean(devMode));
       } catch {
         if (!cancelled) setIsDevMode(false);
+      }
+      try {
+        const nativeWindowControls = await window.svnDiff.usesNativeWindowControls?.();
+        if (!cancelled) setUsesNativeWindowControls(Boolean(nativeWindowControls));
+      } catch {
+        if (!cancelled) setUsesNativeWindowControls(false);
       }
 
       let seq = 0;
@@ -902,6 +1034,7 @@ export default function App() {
           setRevisionQueryError('');
           setIsLoadingMoreRevisions(false);
           setIsSearchingRevisionDateTime(false);
+          setDiffSourceNoticeCode(null);
         }
       } catch (error) {
         if (!cancelled && seq === loadSeqRef.current) {
@@ -912,6 +1045,7 @@ export default function App() {
           revisionQuerySeqRef.current += 1;
           setRevisionOptionsStatus('error');
           setRevisionQueryError(error instanceof Error ? error.message : String(error));
+          setDiffSourceNoticeCode(null);
         }
       }
 
@@ -932,6 +1066,61 @@ export default function App() {
       void reloadCliDiffData();
     });
   }, [reloadCliDiffData]);
+
+  useEffect(() => {
+    if (!window.svnDiff?.getWindowFrameState || !window.svnDiff?.onWindowFrameStateChanged) return;
+
+    let cancelled = false;
+    const unsubscribe = window.svnDiff.onWindowFrameStateChanged((nextState) => {
+      if (cancelled) return;
+      setIsWindowMaximized(Boolean(nextState?.isMaximized));
+    });
+
+    void window.svnDiff.getWindowFrameState()
+      .then((state) => {
+        if (cancelled) return;
+        setIsWindowMaximized(Boolean(state?.isMaximized));
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setIsWindowMaximized(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!window.svnDiff?.getUpdateState || !window.svnDiff?.onAppUpdateState) return;
+
+    let cancelled = false;
+    const unsubscribe = window.svnDiff.onAppUpdateState((nextState) => {
+      if (cancelled) return;
+      setAppUpdateState(nextState);
+    });
+
+    void window.svnDiff.getUpdateState()
+      .then((state) => {
+        if (cancelled) return;
+        setAppUpdateState(state);
+        if (!state.supportsAutoUpdate || updateAutoCheckRequestedRef.current) return;
+        updateAutoCheckRequestedRef.current = true;
+        void window.svnDiff?.checkForAppUpdate?.({ manual: false });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAppUpdateState(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, []);
 
   useEffect(() => {
     if (!isElectron || revisionOptionsStatus !== 'idle' || !canSwitchRevisions) return;
@@ -1001,6 +1190,21 @@ export default function App() {
     );
   }, [queryRevisionOptionsPage]);
 
+  const handleCheckForAppUpdate = useCallback(() => {
+    void window.svnDiff?.checkForAppUpdate?.({ manual: true });
+  }, []);
+
+  const handleDownloadAppUpdate = useCallback(() => {
+    void window.svnDiff?.downloadAppUpdate?.();
+  }, []);
+
+  const handleInstallDownloadedUpdate = useCallback(() => {
+    if (!window.svnDiff?.installDownloadedUpdate) return;
+    const confirmed = window.confirm(t('toolbarUpdateInstallConfirm'));
+    if (!confirmed) return;
+    void window.svnDiff.installDownloadedUpdate();
+  }, [t]);
+
   useEffect(() => {
     saveStoredAppSettings({
       themeKey,
@@ -1016,6 +1220,10 @@ export default function App() {
   // ── Derived values ─────────────────────────────────────────────────────────
 
   const hunks         = useMemo(() => computeHunks(diffLines), [diffLines]);
+  const textDiffPresentation = useMemo<TextDiffPresentation>(
+    () => buildTextDiffPresentation(diffLines),
+    [diffLines],
+  );
   const hunkPositions = useMemo(() => hunks.map(h => h.startIdx), [hunks]);
   const totalHunks    = hunks.length;
 
@@ -1063,6 +1271,11 @@ export default function App() {
   const activeWorkbookDiffRegion = isWorkbookMode
     ? (workbookDiffRegions[hunkIdx] ?? null)
     : null;
+  const activeWorkbookSharedExpandedBlocks = getWorkbookSharedExpandedBlocks(
+    workbookSharedExpandedBlocksRef.current,
+    activeWorkbookSheetName,
+    activeWorkbookDiffRegion?.id ?? null,
+  );
   const activeWorkbookTargetCell = activeWorkbookDiffRegion?.anchorSelection ?? null;
   const activeWorkbookGuidedRange = useMemo(() => (
     activeWorkbookDiffRegion
@@ -1133,15 +1346,28 @@ export default function App() {
   const handleWorkbookLayoutSnapshotChange = useCallback((
     snapshot: WorkbookCompareLayoutSnapshot | WorkbookHorizontalLayoutSnapshot,
   ) => {
-    if (snapshot.layout === 'split-h') {
-      workbookLayoutSnapshotsRef.current['split-h'] = snapshot;
-      return;
-    }
-    if (snapshot.layout === 'unified') {
-      workbookLayoutSnapshotsRef.current.unified = snapshot;
-      return;
-    }
-    workbookLayoutSnapshotsRef.current['split-v'] = snapshot;
+    const nextState = applyWorkbookLayoutSnapshot(
+      workbookSharedExpandedBlocksRef.current,
+      workbookLayoutSnapshotsRef.current,
+      snapshot,
+    );
+    workbookSharedExpandedBlocksRef.current = nextState.sharedExpandedBlocksByContext;
+    workbookLayoutSnapshotsRef.current = nextState.snapshots;
+  }, []);
+  const handleWorkbookExpandedBlocksChange = useCallback((
+    sheetName: string | null,
+    activeRegionId: string | null,
+    expandedBlocks: CollapseExpansionState,
+  ) => {
+    const nextState = applyWorkbookExpandedBlocksChange(
+      workbookSharedExpandedBlocksRef.current,
+      workbookLayoutSnapshotsRef.current,
+      sheetName,
+      activeRegionId,
+      expandedBlocks,
+    );
+    workbookSharedExpandedBlocksRef.current = nextState.sharedExpandedBlocksByContext;
+    workbookLayoutSnapshotsRef.current = nextState.snapshots;
   }, []);
 
   const handleWorkbookNavigationReady = useCallback(
@@ -1156,14 +1382,30 @@ export default function App() {
     },
     [],
   );
-  const handleWorkbookSelectionChange = useCallback((nextSelection: WorkbookSelectedCell | null) => {
-    setSelectedCell(nextSelection);
-    if (!nextSelection || !isWorkbookMode || nextSelection.kind !== 'cell') return;
-    const regionIndex = findWorkbookDiffRegionIndexForSelection(workbookDiffRegions, nextSelection);
+  const handleWorkbookSelectionRequest = useCallback((request: WorkbookSelectionRequest) => {
+    const nextSelection = applyWorkbookSelection(workbookSelection, request.target, {
+      mode: request.mode,
+      preserveExistingIfTargetSelected: request.preserveExistingIfTargetSelected,
+    });
+
+    setWorkbookSelection(nextSelection);
+    setWorkbookHiddenStateBySheet((prev) => revealWorkbookSelection(prev, nextSelection.primary));
+    if (request.reason === 'contextmenu' && request.clientPoint) {
+      setWorkbookContextMenu({
+        anchorPoint: request.clientPoint,
+        selection: nextSelection,
+      });
+    } else {
+      setWorkbookContextMenu(null);
+    }
+
+    const nextPrimary = nextSelection.primary;
+    if (!nextPrimary || !isWorkbookMode || nextPrimary.kind !== 'cell') return;
+    const regionIndex = findWorkbookDiffRegionIndexForSelection(workbookDiffRegions, nextPrimary);
     if (regionIndex >= 0) {
       setHunkIdx(regionIndex);
     }
-  }, [isWorkbookMode, workbookDiffRegions]);
+  }, [isWorkbookMode, workbookDiffRegions, workbookSelection]);
 
   const handleRevisionCompareChange = useCallback(async (
     nextBaseRevisionId: string,
@@ -1190,45 +1432,96 @@ export default function App() {
     }
   }, [applyDiffData, beginDiffLoad, failDiffLoad]);
 
-  const patchWorkbookFreeze = useCallback((patch: WorkbookFreezeState | null) => {
-    if (!selectedCell) return;
+  const getWorkbookFreezeDefaults = useCallback((sheetName: string): WorkbookFreezeDefaults => {
+    const section = workbookSections.find((item) => item.name === sheetName);
+    return {
+      rowNumber: section?.firstDataRowNumber ?? 0,
+      colCount: 1,
+    };
+  }, [workbookSections]);
+
+  const updateWorkbookFreezeForSelection = useCallback((
+    target: WorkbookSelectedCell | null,
+    patch: WorkbookFreezePatch | null,
+  ) => {
+    if (!target) return;
+
+    const defaults = getWorkbookFreezeDefaults(target.sheetName);
+    const currentFreezeState = workbookFreezeBySheet[target.sheetName] ?? null;
+    const nextFreezeState = applyWorkbookFreezePatch(currentFreezeState, patch, defaults);
+    if (areWorkbookFreezeStatesEqual(currentFreezeState, nextFreezeState)) {
+      setWorkbookContextMenu(null);
+      return;
+    }
 
     setWorkbookFreezeBySheet((prev) => {
       const next = { ...prev };
-      if (!patch) {
-        delete next[selectedCell.sheetName];
-        return next;
+      if (!nextFreezeState) {
+        delete next[target.sheetName];
+      } else {
+        next[target.sheetName] = nextFreezeState;
       }
-
-      next[selectedCell.sheetName] = {
-        ...(prev[selectedCell.sheetName] ?? {}),
-        ...patch,
-      };
       return next;
     });
-  }, [selectedCell]);
+    setWorkbookContextMenu(null);
+  }, [
+    getWorkbookFreezeDefaults,
+    workbookFreezeBySheet,
+  ]);
+
+  const handleFreezeRowForSelection = useCallback((target: WorkbookSelectedCell | null) => {
+    if (!target || target.kind === 'column') return;
+    updateWorkbookFreezeForSelection(target, { rowNumber: target.rowNumber });
+  }, [updateWorkbookFreezeForSelection]);
+
+  const handleFreezeColumnForSelection = useCallback((target: WorkbookSelectedCell | null) => {
+    if (!target || target.kind === 'row') return;
+    updateWorkbookFreezeForSelection(target, { colCount: target.colIndex + 1 });
+  }, [updateWorkbookFreezeForSelection]);
+
+  const handleFreezePaneForSelection = useCallback((target: WorkbookSelectedCell | null) => {
+    if (!target || target.kind !== 'cell') return;
+    updateWorkbookFreezeForSelection(target, {
+      rowNumber: target.rowNumber,
+      colCount: target.colIndex + 1,
+    });
+  }, [updateWorkbookFreezeForSelection]);
+
+  const handleUnfreezeRowForSelection = useCallback((target: WorkbookSelectedCell | null) => {
+    updateWorkbookFreezeForSelection(target, { rowNumber: null });
+  }, [updateWorkbookFreezeForSelection]);
+
+  const handleUnfreezeColumnForSelection = useCallback((target: WorkbookSelectedCell | null) => {
+    updateWorkbookFreezeForSelection(target, { colCount: null });
+  }, [updateWorkbookFreezeForSelection]);
+
+  const handleResetFreezeForSelection = useCallback((target: WorkbookSelectedCell | null) => {
+    updateWorkbookFreezeForSelection(target, null);
+  }, [updateWorkbookFreezeForSelection]);
 
   const handleFreezeRow = useCallback(() => {
-    if (!selectedCell || selectedCell.kind === 'column') return;
-    patchWorkbookFreeze({ rowNumber: selectedCell.rowNumber });
-  }, [patchWorkbookFreeze, selectedCell]);
+    handleFreezeRowForSelection(selectedCell);
+  }, [handleFreezeRowForSelection, selectedCell]);
 
   const handleFreezeColumn = useCallback(() => {
-    if (!selectedCell || selectedCell.kind === 'row') return;
-    patchWorkbookFreeze({ colCount: selectedCell.colIndex + 1 });
-  }, [patchWorkbookFreeze, selectedCell]);
+    handleFreezeColumnForSelection(selectedCell);
+  }, [handleFreezeColumnForSelection, selectedCell]);
 
   const handleFreezePane = useCallback(() => {
-    if (!selectedCell || selectedCell.kind !== 'cell') return;
-    patchWorkbookFreeze({
-      rowNumber: selectedCell.rowNumber,
-      colCount: selectedCell.colIndex + 1,
-    });
-  }, [patchWorkbookFreeze, selectedCell]);
+    handleFreezePaneForSelection(selectedCell);
+  }, [handleFreezePaneForSelection, selectedCell]);
+
+  const handleUnfreezeRow = useCallback(() => {
+    handleUnfreezeRowForSelection(selectedCell);
+  }, [handleUnfreezeRowForSelection, selectedCell]);
+
+  const handleUnfreezeColumn = useCallback(() => {
+    handleUnfreezeColumnForSelection(selectedCell);
+  }, [handleUnfreezeColumnForSelection, selectedCell]);
 
   const handleResetFreeze = useCallback(() => {
-    patchWorkbookFreeze(null);
-  }, [patchWorkbookFreeze]);
+    handleResetFreezeForSelection(selectedCell);
+  }, [handleResetFreezeForSelection, selectedCell]);
 
   const handleWorkbookColumnWidthChange = useCallback((
     sheetName: string,
@@ -1247,6 +1540,270 @@ export default function App() {
       };
     });
   }, []);
+
+  const handleHideSelectedRows = useCallback(() => {
+    if (!selectedCell || selectedCell.kind !== 'row') return;
+    const section = workbookSections.find((item) => item.name === selectedCell.sheetName);
+    if (!section) return;
+    const freezeLimit = Math.max(
+      section.firstDataRowNumber ?? 0,
+      workbookFreezeBySheet[selectedCell.sheetName]?.rowNumber ?? 0,
+    );
+    const rowNumbers = getSelectedWorkbookRows(workbookSelection).filter((rowNumber) => rowNumber > freezeLimit);
+    if (rowNumbers.length === 0) return;
+    setWorkbookHiddenStateBySheet((prev) => hideWorkbookRows(prev, selectedCell.sheetName, rowNumbers));
+    setWorkbookSelection(createWorkbookSelectionState(null));
+    setWorkbookContextMenu(null);
+  }, [selectedCell, workbookFreezeBySheet, workbookSections, workbookSelection]);
+
+  const handleHideSelectedColumns = useCallback(() => {
+    if (!selectedCell || selectedCell.kind !== 'column') return;
+    const sectionRows = workbookSectionRowIndex.get(selectedCell.sheetName)?.rows ?? [];
+    const section = workbookSections.find((item) => item.name === selectedCell.sheetName);
+    if (!section) return;
+    const currentlyHiddenColumns = workbookHiddenStateBySheet[selectedCell.sheetName]?.hiddenColumns ?? [];
+    const visiblePresentation = buildWorkbookSheetPresentation(
+      sectionRows,
+      selectedCell.sheetName,
+      baseWorkbookMetadata,
+      mineWorkbookMetadata,
+      section.maxColumns ?? 1,
+      false,
+      workbookCompareMode,
+      currentlyHiddenColumns,
+    );
+    const nextColumns = getSelectedWorkbookColumns(workbookSelection)
+      .filter((column) => !currentlyHiddenColumns.includes(column));
+    if (nextColumns.length === 0 || nextColumns.length >= visiblePresentation.visibleColumns.length) return;
+    setShowHiddenColumns(false);
+    setWorkbookHiddenStateBySheet((prev) => hideWorkbookColumns(prev, selectedCell.sheetName, nextColumns));
+    setWorkbookSelection(createWorkbookSelectionState(null));
+    setWorkbookContextMenu(null);
+  }, [baseWorkbookMetadata, mineWorkbookMetadata, selectedCell, showHiddenColumns, workbookCompareMode, workbookHiddenStateBySheet, workbookSectionRowIndex, workbookSections, workbookSelection]);
+
+  const handleRevealAllHiddenRows = useCallback((sheetName: string) => {
+    const rowNumbers = workbookHiddenStateBySheet[sheetName]?.hiddenRows ?? [];
+    if (rowNumbers.length === 0) return;
+    setWorkbookHiddenStateBySheet((prev) => revealWorkbookRows(prev, sheetName, rowNumbers));
+    setWorkbookContextMenu(null);
+  }, [workbookHiddenStateBySheet]);
+
+  const handleRevealAllHiddenColumns = useCallback((sheetName: string) => {
+    const columns = workbookHiddenStateBySheet[sheetName]?.hiddenColumns ?? [];
+    if (columns.length === 0) return;
+    setWorkbookHiddenStateBySheet((prev) => revealWorkbookColumns(prev, sheetName, columns));
+    setWorkbookContextMenu(null);
+  }, [workbookHiddenStateBySheet]);
+
+  const handleAutoFitSelectedColumns = useCallback(() => {
+    if (!selectedCell || selectedCell.kind !== 'column') return;
+    const sectionRows = workbookSectionRowIndex.get(selectedCell.sheetName)?.rows ?? [];
+    const columns = getSelectedWorkbookColumns(workbookSelection);
+    if (columns.length === 0) return;
+    setWorkbookColumnWidthBySheet((prev) => {
+      const nextSheet = { ...(prev[selectedCell.sheetName] ?? {}) };
+      columns.forEach((column) => {
+        nextSheet[column] = measureWorkbookAutoFitColumnWidth(sectionRows, column, fontSize);
+      });
+      return {
+        ...prev,
+        [selectedCell.sheetName]: nextSheet,
+      };
+    });
+    setWorkbookContextMenu(null);
+  }, [fontSize, selectedCell, workbookSectionRowIndex, workbookSelection]);
+
+  const workbookContextMenuSections = useMemo<WorkbookContextMenuSection[]>(() => {
+    const menuSelection = workbookContextMenu?.selection ?? createWorkbookSelectionState(null);
+    const primary = menuSelection.primary;
+    if (!primary) return [];
+
+    const sections: WorkbookContextMenuSection[] = [];
+    const sheetName = primary.sheetName;
+    const sheetFreezeState = workbookFreezeBySheet[sheetName] ?? null;
+    const hasCustomRowFreeze = Boolean(sheetFreezeState?.rowNumber);
+    const hasCustomColumnFreeze = Boolean(sheetFreezeState?.colCount);
+    const hasCustomFreeze = hasCustomRowFreeze || hasCustomColumnFreeze;
+    const hiddenSheetState = workbookHiddenStateBySheet[sheetName] ?? {
+      hiddenRows: [],
+      hiddenColumns: [],
+    };
+    const selectionCount = getWorkbookSelectionCount(menuSelection);
+
+    if (primary.kind === 'cell') {
+      sections.push({
+        title: t('workbookContextSectionCopy'),
+        items: [
+          {
+            id: 'copy-value',
+            label: t('workbookContextCopyValue'),
+            onSelect: () => copyText(primary.value),
+          },
+          {
+            id: 'copy-formula',
+            label: t('workbookContextCopyFormula'),
+            onSelect: () => copyText(primary.formula),
+          },
+          {
+            id: 'copy-address',
+            label: t('workbookContextCopyAddress'),
+            onSelect: () => copyText(primary.address),
+          },
+        ],
+      });
+    }
+
+    if (primary.kind === 'row') {
+      const section = workbookSections.find((item) => item.name === sheetName);
+      const freezeLimit = Math.max(
+        section?.firstDataRowNumber ?? 0,
+        workbookFreezeBySheet[sheetName]?.rowNumber ?? 0,
+      );
+      const hideableRows = getSelectedWorkbookRows(menuSelection).filter((rowNumber) => rowNumber > freezeLimit);
+      sections.push({
+        title: t('workbookContextSectionRows'),
+        items: [
+          {
+            id: 'hide-rows',
+            label: t('workbookContextHideRows', { count: selectionCount }),
+            disabled: hideableRows.length === 0,
+            onSelect: handleHideSelectedRows,
+          },
+          {
+            id: 'reveal-rows',
+            label: t('workbookContextRevealAllRows'),
+            disabled: hiddenSheetState.hiddenRows.length === 0,
+            onSelect: () => handleRevealAllHiddenRows(sheetName),
+          },
+        ],
+      });
+    }
+
+    if (primary.kind === 'column') {
+      const section = workbookSections.find((item) => item.name === sheetName);
+      const sectionRows = workbookSectionRowIndex.get(sheetName)?.rows ?? [];
+      const visiblePresentation = buildWorkbookSheetPresentation(
+        sectionRows,
+        sheetName,
+        baseWorkbookMetadata,
+        mineWorkbookMetadata,
+        section?.maxColumns ?? 1,
+        false,
+        workbookCompareMode,
+        hiddenSheetState.hiddenColumns,
+      );
+      const hideableColumns = getSelectedWorkbookColumns(menuSelection)
+        .filter((column) => !hiddenSheetState.hiddenColumns.includes(column));
+      sections.push({
+        title: t('workbookContextSectionColumns'),
+        items: [
+          {
+            id: 'auto-fit-columns',
+            label: t('workbookContextAutoFitColumns', { count: selectionCount }),
+            disabled: getSelectedWorkbookColumns(menuSelection).length === 0,
+            onSelect: handleAutoFitSelectedColumns,
+          },
+          {
+            id: 'hide-columns',
+            label: t('workbookContextHideColumns', { count: selectionCount }),
+            disabled: hideableColumns.length === 0 || hideableColumns.length >= visiblePresentation.visibleColumns.length,
+            onSelect: handleHideSelectedColumns,
+          },
+          {
+            id: 'reveal-columns',
+            label: t('workbookContextRevealAllColumns'),
+            disabled: hiddenSheetState.hiddenColumns.length === 0,
+            onSelect: () => handleRevealAllHiddenColumns(sheetName),
+          },
+        ],
+      });
+    }
+
+    sections.push({
+      title: t('workbookContextSectionFreeze'),
+      items: [
+        {
+          id: 'freeze-row',
+          label: t('formulaFreezeRowAction'),
+          disabled: primary.kind === 'column',
+          onSelect: () => handleFreezeRowForSelection(primary),
+        },
+        {
+          id: 'freeze-column',
+          label: t('formulaFreezeColumnAction'),
+          disabled: primary.kind === 'row',
+          onSelect: () => handleFreezeColumnForSelection(primary),
+        },
+        {
+          id: 'freeze-pane',
+          label: t('formulaFreezePaneAction'),
+          disabled: primary.kind !== 'cell',
+          onSelect: () => handleFreezePaneForSelection(primary),
+        },
+        {
+          id: 'freeze-unfreeze-row',
+          label: t('formulaFreezeUnfreezeRowAction'),
+          disabled: !hasCustomRowFreeze,
+          onSelect: () => handleUnfreezeRowForSelection(primary),
+        },
+        {
+          id: 'freeze-unfreeze-column',
+          label: t('formulaFreezeUnfreezeColumnAction'),
+          disabled: !hasCustomColumnFreeze,
+          onSelect: () => handleUnfreezeColumnForSelection(primary),
+        },
+        {
+          id: 'freeze-reset',
+          label: t('formulaFreezeResetAction'),
+          disabled: !hasCustomFreeze,
+          onSelect: () => handleResetFreezeForSelection(primary),
+        },
+      ],
+    });
+
+    if (primary.kind === 'cell' && (hiddenSheetState.hiddenRows.length > 0 || hiddenSheetState.hiddenColumns.length > 0)) {
+      sections.push({
+        title: t('workbookContextSectionVisibility'),
+        items: [
+          {
+            id: 'reveal-all-rows',
+            label: t('workbookContextRevealAllRows'),
+            disabled: hiddenSheetState.hiddenRows.length === 0,
+            onSelect: () => handleRevealAllHiddenRows(sheetName),
+          },
+          {
+            id: 'reveal-all-columns',
+            label: t('workbookContextRevealAllColumns'),
+            disabled: hiddenSheetState.hiddenColumns.length === 0,
+            onSelect: () => handleRevealAllHiddenColumns(sheetName),
+          },
+        ],
+      });
+    }
+
+    return sections;
+  }, [
+    baseWorkbookMetadata,
+    handleAutoFitSelectedColumns,
+    handleHideSelectedColumns,
+    handleHideSelectedRows,
+    handleFreezeColumnForSelection,
+    handleFreezePaneForSelection,
+    handleFreezeRowForSelection,
+    handleResetFreezeForSelection,
+    handleRevealAllHiddenColumns,
+    handleRevealAllHiddenRows,
+    handleUnfreezeColumnForSelection,
+    handleUnfreezeRowForSelection,
+    mineWorkbookMetadata,
+    t,
+    workbookCompareMode,
+    workbookContextMenu,
+    workbookFreezeBySheet,
+    workbookHiddenStateBySheet,
+    workbookSectionRowIndex,
+    workbookSections,
+  ]);
 
   useEffect(() => {
     setHunkIdx((prev) => {
@@ -1367,7 +1924,7 @@ export default function App() {
         return;
       }
       if (e.key === 'Escape') {
-        setShowSearch(false); setShowGoto(false); setShowHelp(false); return;
+        setShowSearch(false); setShowGoto(false); setShowHelp(false); setShowAbout(false); setShowSvnConfig(false); setWorkbookContextMenu(null); return;
       }
       if (showSearchRef.current && e.key === 'F3') {
         e.preventDefault();
@@ -1381,12 +1938,12 @@ export default function App() {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [handleSearchNav, isWorkbookMode, navigationCount, selectedCell, showGoto, showHelp]);
+  }, [handleSearchNav, isWorkbookMode, navigationCount, selectedCell, showAbout, showGoto, showHelp, showSvnConfig]);
 
   // ── Shared panel props ─────────────────────────────────────────────────────
 
   const panelProps = {
-    diffLines, collapseCtx, activeHunkIdx: hunkIdx,
+    diffLines, textDiffPresentation, collapseCtx, activeHunkIdx: hunkIdx,
     searchMatches, activeSearchIdx, hunkPositions,
     showWhitespace, fontSize,
     guidedLineIdx: null,
@@ -1401,16 +1958,18 @@ export default function App() {
       const targetCell = activeWorkbookTargetCell;
       if (targetCell) {
         setActiveWorkbookSheetName((prev) => (prev === targetCell.sheetName ? prev : targetCell.sheetName));
-        setSelectedCell((prev) => (
-          prev
-          && prev.kind === targetCell.kind
-          && prev.sheetName === targetCell.sheetName
-          && prev.side === targetCell.side
-          && prev.rowNumber === targetCell.rowNumber
-          && prev.colIndex === targetCell.colIndex
+        setWorkbookSelection((prev) => (
+          prev.primary
+          && prev.primary.kind === targetCell.kind
+          && prev.primary.sheetName === targetCell.sheetName
+          && prev.primary.side === targetCell.side
+          && prev.primary.rowNumber === targetCell.rowNumber
+          && prev.primary.colIndex === targetCell.colIndex
             ? prev
-            : targetCell
+            : createWorkbookSelectionState(targetCell)
         ));
+        setWorkbookHiddenStateBySheet((prev) => revealWorkbookSelection(prev, targetCell));
+        setWorkbookContextMenu(null);
       }
       return;
     }
@@ -1436,7 +1995,8 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    setSelectedCell(null);
+    setWorkbookSelection(createWorkbookSelectionState(null));
+    setWorkbookContextMenu(null);
   }, [diffLines]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -1470,17 +2030,21 @@ export default function App() {
           workbookCompareMode={workbookCompareMode}
           setWorkbookCompareMode={handleWorkbookCompareModeChange}
           fontSize={fontSize}         setFontSize={setFontSize}
+          onPickFile={() => {
+            void handlePickWorkingCopyFile();
+          }}
           onGoto={() => setShowGoto(v => !v)}
           onHelp={() => setShowHelp(v => !v)}
+          onAbout={() => setShowAbout(v => !v)}
           isElectron={isElectron}
+          usesNativeWindowControls={usesNativeWindowControls}
+          isWindowMaximized={isWindowMaximized}
           isWorkbookMode={isWorkbookMode}
+          updateState={appUpdateState}
+          onCheckForUpdates={handleCheckForAppUpdate}
+          onDownloadUpdate={handleDownloadAppUpdate}
+          onInstallUpdate={handleInstallDownloadedUpdate}
         />
-
-        {isElectron && isDevMode && (
-          <DevLoadBar
-            onLoadWorkingCopyDiff={loadElectronWorkingCopyDiff}
-          />
-        )}
 
         {isDevMode && <PerfBar metrics={loadPerfMetrics} />}
 
@@ -1519,18 +2083,26 @@ export default function App() {
 
         {hasLoadedDiff && isWorkbookMode && (
           <WorkbookFormulaBar
-            selection={selectedCell}
+            selection={workbookSelection}
             fontSize={fontSize}
             freezeState={activeFreezeState}
             mergeRanges={activeSelectionMergeRanges}
             onFreezeRow={handleFreezeRow}
             onFreezeColumn={handleFreezeColumn}
             onFreezePane={handleFreezePane}
+            onUnfreezeRow={handleUnfreezeRow}
+            onUnfreezeColumn={handleUnfreezeColumn}
             onResetFreeze={handleResetFreeze}
           />
         )}
         {hasLoadedDiff && isWorkbookMode && workbookArtifactDiff?.hasArtifactOnlyDiff && !artifactNoticeDismissed && (
           <WorkbookArtifactNoticeBar onClose={() => setArtifactNoticeDismissed(true)} />
+        )}
+        {hasLoadedDiff && diffSourceNoticeCode && !diffSourceNoticeDismissed && (
+          <DiffSourceNoticeBar
+            code={diffSourceNoticeCode}
+            onClose={() => setDiffSourceNoticeDismissed(true)}
+          />
         )}
 
         {!hasLoadedDiff && loadPhase === 'loading' ? (
@@ -1567,34 +2139,14 @@ export default function App() {
             </div>
           </div>
         ) : !hasLoadedDiff ? (
-          <div
-            style={{
-              flex: 1,
-              width: '100%',
-              minWidth: 0,
-              minHeight: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 24,
-            }}>
-            <div
-              style={{
-                display: 'grid',
-                gap: 8,
-                justifyItems: 'center',
-                textAlign: 'center',
-                maxWidth: 520,
-                color: T.t1,
-              }}>
-              <span style={{ fontSize: 16, fontWeight: 700, color: T.t0 }}>
-                {loadPhase === 'error' ? t('appLoadErrorTitle') : t('appIdleTitle')}
-              </span>
-              <span style={{ fontSize: 12, color: loadError ? T.delTx : T.t2, lineHeight: 1.5 }}>
-                {loadError || (isDevMode ? t('devLoaderPendingWorkingCopy') : t('appIdleHintElectron'))}
-              </span>
-            </div>
-          </div>
+          <HomeStartPanel
+            error={loadError}
+            isElectron={isElectron}
+            onPickWorkingCopy={() => {
+              void handlePickWorkingCopyFile();
+            }}
+            onOpenSvnConfig={handleOpenSvnConfig}
+          />
         ) : (
           <div style={{ position: 'relative', flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0, minWidth: 0 }}>
             {!isWorkbookMode && layout === 'unified' && <UnifiedPanel {...panelProps} />}
@@ -1612,19 +2164,30 @@ export default function App() {
                       mineVersionLabel={mineVersionLabel}
                       mode="stacked"
                       activeDiffRegion={activeWorkbookDiffRegion}
-                      selectedCell={selectedCell}
-                      onSelectCell={handleWorkbookSelectionChange}
+                      selection={workbookSelection}
+                      onSelectionRequest={handleWorkbookSelectionRequest}
                       onWorkbookNavigationReady={handleWorkbookNavigationReady}
                       baseWorkbookMetadata={baseWorkbookMetadata}
                       mineWorkbookMetadata={mineWorkbookMetadata}
+                      workbookHiddenStateBySheet={workbookHiddenStateBySheet}
                       freezeStateBySheet={workbookFreezeBySheet}
                       columnWidthBySheet={workbookColumnWidthBySheet}
                       onColumnWidthChange={handleWorkbookColumnWidthChange}
+                      onRevealHiddenRows={(sheetName, rowNumbers) => {
+                        setWorkbookHiddenStateBySheet((prev) => revealWorkbookRows(prev, sheetName, rowNumbers));
+                        setWorkbookContextMenu(null);
+                      }}
+                      onRevealHiddenColumns={(sheetName, columns) => {
+                        setWorkbookHiddenStateBySheet((prev) => revealWorkbookColumns(prev, sheetName, columns));
+                        setWorkbookContextMenu(null);
+                      }}
                       workbookSections={workbookSections}
                       workbookSectionRowIndex={workbookSectionRowIndex}
                       activeWorkbookSheetName={activeWorkbookSheetName}
                       onActiveWorkbookSheetChange={setActiveWorkbookSheetName}
                       compareMode={workbookCompareMode}
+                      sharedExpandedBlocks={activeWorkbookSharedExpandedBlocks}
+                      onExpandedBlocksChange={handleWorkbookExpandedBlocksChange}
                       showPerfDebug={isDevMode}
                       showHiddenColumns={showHiddenColumns}
                       tooltipDisabled={isLoadingDiff}
@@ -1642,19 +2205,30 @@ export default function App() {
                       mineVersionLabel={mineVersionLabel}
                       mode="columns"
                       activeDiffRegion={activeWorkbookDiffRegion}
-                      selectedCell={selectedCell}
-                      onSelectCell={handleWorkbookSelectionChange}
+                      selection={workbookSelection}
+                      onSelectionRequest={handleWorkbookSelectionRequest}
                       onWorkbookNavigationReady={handleWorkbookNavigationReady}
                       baseWorkbookMetadata={baseWorkbookMetadata}
                       mineWorkbookMetadata={mineWorkbookMetadata}
+                      workbookHiddenStateBySheet={workbookHiddenStateBySheet}
                       freezeStateBySheet={workbookFreezeBySheet}
                       columnWidthBySheet={workbookColumnWidthBySheet}
                       onColumnWidthChange={handleWorkbookColumnWidthChange}
+                      onRevealHiddenRows={(sheetName, rowNumbers) => {
+                        setWorkbookHiddenStateBySheet((prev) => revealWorkbookRows(prev, sheetName, rowNumbers));
+                        setWorkbookContextMenu(null);
+                      }}
+                      onRevealHiddenColumns={(sheetName, columns) => {
+                        setWorkbookHiddenStateBySheet((prev) => revealWorkbookColumns(prev, sheetName, columns));
+                        setWorkbookContextMenu(null);
+                      }}
                       workbookSections={workbookSections}
                       workbookSectionRowIndex={workbookSectionRowIndex}
                       activeWorkbookSheetName={activeWorkbookSheetName}
                       onActiveWorkbookSheetChange={setActiveWorkbookSheetName}
                       compareMode={workbookCompareMode}
+                      sharedExpandedBlocks={activeWorkbookSharedExpandedBlocks}
+                      onExpandedBlocksChange={handleWorkbookExpandedBlocksChange}
                       showPerfDebug={isDevMode}
                       showHiddenColumns={showHiddenColumns}
                       tooltipDisabled={isLoadingDiff}
@@ -1671,19 +2245,30 @@ export default function App() {
                       baseVersionLabel={baseVersionLabel}
                       mineVersionLabel={mineVersionLabel}
                       activeDiffRegion={activeWorkbookDiffRegion}
-                      selectedCell={selectedCell}
-                      onSelectCell={handleWorkbookSelectionChange}
+                      selection={workbookSelection}
+                      onSelectionRequest={handleWorkbookSelectionRequest}
                       onWorkbookNavigationReady={handleWorkbookNavigationReady}
                       baseWorkbookMetadata={baseWorkbookMetadata}
                       mineWorkbookMetadata={mineWorkbookMetadata}
+                      workbookHiddenStateBySheet={workbookHiddenStateBySheet}
                       freezeStateBySheet={workbookFreezeBySheet}
                       columnWidthBySheet={workbookColumnWidthBySheet}
                       onColumnWidthChange={handleWorkbookColumnWidthChange}
+                      onRevealHiddenRows={(sheetName, rowNumbers) => {
+                        setWorkbookHiddenStateBySheet((prev) => revealWorkbookRows(prev, sheetName, rowNumbers));
+                        setWorkbookContextMenu(null);
+                      }}
+                      onRevealHiddenColumns={(sheetName, columns) => {
+                        setWorkbookHiddenStateBySheet((prev) => revealWorkbookColumns(prev, sheetName, columns));
+                        setWorkbookContextMenu(null);
+                      }}
                       workbookSections={workbookSections}
                       workbookSectionRowIndex={workbookSectionRowIndex}
                       activeWorkbookSheetName={activeWorkbookSheetName}
                       onActiveWorkbookSheetChange={setActiveWorkbookSheetName}
                       compareMode={workbookCompareMode}
+                      sharedExpandedBlocks={activeWorkbookSharedExpandedBlocks}
+                      onExpandedBlocksChange={handleWorkbookExpandedBlocksChange}
                       showPerfDebug={isDevMode}
                       showHiddenColumns={showHiddenColumns}
                       tooltipDisabled={isLoadingDiff}
@@ -1693,6 +2278,14 @@ export default function App() {
                   </div>
                 )}
               </div>
+            )}
+
+            {isWorkbookMode && (
+              <WorkbookContextMenu
+                anchorPoint={workbookContextMenu?.anchorPoint ?? null}
+                sections={workbookContextMenuSections}
+                onClose={() => setWorkbookContextMenu(null)}
+              />
             )}
 
             {isLoadingDiff && (
@@ -1740,7 +2333,7 @@ export default function App() {
         )}
 
         <StatsBar
-          diffLines={diffLines}
+          textDiffPresentation={textDiffPresentation}
           baseName={displayBaseName}
           mineName={displayMineName}
           fileName={displayFileName}
@@ -1753,9 +2346,14 @@ export default function App() {
         />
 
         {/* Modal backdrop */}
-        {(showGoto || showHelp) && (
+        {(showGoto || showHelp || showAbout || showSvnConfig) && (
           <div
-            onClick={() => { setShowGoto(false); setShowHelp(false); }}
+            onClick={() => {
+              setShowGoto(false);
+              setShowHelp(false);
+              setShowAbout(false);
+              setShowSvnConfig(false);
+            }}
             style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 99 }}
           />
         )}
@@ -1769,6 +2367,28 @@ export default function App() {
         )}
         {showHelp && (
           <ShortcutsPanel onClose={() => setShowHelp(false)} />
+        )}
+        {showAbout && (
+          <AboutDialog
+            updateState={appUpdateState}
+            onClose={() => setShowAbout(false)}
+            onCheckForUpdates={handleCheckForAppUpdate}
+            onDownloadUpdate={handleDownloadAppUpdate}
+            onInstallUpdate={handleInstallDownloadedUpdate}
+          />
+        )}
+        {showSvnConfig && (
+          <SvnConfigDialog
+            status={svnDiffViewerStatus}
+            loading={isLoadingSvnDiffViewerStatus}
+            applyingScope={applyingSvnDiffViewerScope}
+            error={svnDiffViewerError}
+            onApply={handleApplySvnDiffViewerScope}
+            onRefresh={() => {
+              void loadSvnDiffViewerStatus();
+            }}
+            onClose={() => setShowSvnConfig(false)}
+          />
         )}
         <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}@keyframes guidedPulse{0%{box-shadow:0 0 0 0 ${T.acc2}00,inset 0 0 0 2px ${T.acc2}f2}50%{box-shadow:0 0 0 8px ${T.acc2}26,inset 0 0 0 2px ${T.acc2}}100%{box-shadow:0 0 0 0 ${T.acc2}00,inset 0 0 0 2px ${T.acc2}b8}}@keyframes regionDashTravel{from{stroke-dashoffset:0}to{stroke-dashoffset:-100}}`}</style>
       </div>

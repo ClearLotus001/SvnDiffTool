@@ -4,7 +4,7 @@ import { FONT_SIZE, FONT_UI } from '../constants/typography';
 import { createPortal } from 'react-dom';
 import type { WorkbookCompareCellState } from '../utils/workbookCompare';
 import WorkbookCompareTooltip from './WorkbookCompareTooltip';
-import { computeTooltipLayout } from './Tooltip';
+import { computeTooltipLayout, getTooltipSurfaceBackground, TooltipArrow } from './Tooltip';
 
 export interface WorkbookCanvasHoverCell {
   key: string;
@@ -52,6 +52,7 @@ const WorkbookCanvasHoverTooltip = memo(({ hover }: WorkbookCanvasHoverTooltipPr
       'top',
     );
   }, [bubbleSize.height, bubbleSize.width, hover]);
+  const surfaceBackground = getTooltipSurfaceBackground(T);
 
   if (!hover || !layout || typeof document === 'undefined') return null;
 
@@ -72,7 +73,7 @@ const WorkbookCanvasHoverTooltip = memo(({ hover }: WorkbookCanvasHoverTooltipPr
           padding: '8px 10px',
           borderRadius: 12,
           border: `1px solid ${T.border}`,
-          background: `linear-gradient(180deg, ${T.bg2} 0%, ${T.bg1} 100%)`,
+          background: surfaceBackground,
           color: T.t0,
           fontSize: FONT_SIZE.sm,
           lineHeight: 1.35,
@@ -82,24 +83,11 @@ const WorkbookCanvasHoverTooltip = memo(({ hover }: WorkbookCanvasHoverTooltipPr
         <WorkbookCompareTooltip
           compareCell={hover.compareCell}
         />
-        <span
-          style={{
-            position: 'absolute',
-            left: layout.arrowOffset,
-            width: 12,
-            height: 12,
-            background: `linear-gradient(180deg, ${T.bg2} 0%, ${T.bg1} 100%)`,
-            borderLeft: `1px solid ${T.border}`,
-            borderTop: `1px solid ${T.border}`,
-            borderTopLeftRadius: 4,
-            transform: layout.actualPlacement === 'top'
-              ? 'translateX(-50%) rotate(225deg)'
-              : 'translateX(-50%) rotate(45deg)',
-            top: layout.actualPlacement === 'top' ? 'calc(100% - 5px)' : -5,
-            boxShadow: layout.actualPlacement === 'top'
-              ? '4px 4px 10px rgba(0, 0, 0, 0.06)'
-              : '-4px -4px 10px rgba(0, 0, 0, 0.06)',
-          }}
+        <TooltipArrow
+          actualPlacement={layout.actualPlacement}
+          left={layout.arrowOffset}
+          borderColor={T.border}
+          fillColor={layout.actualPlacement === 'top' ? T.bg1 : T.bg2}
         />
       </div>
     </div>,

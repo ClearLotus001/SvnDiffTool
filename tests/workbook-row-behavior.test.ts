@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import type { SplitRow } from '../src/types';
 import {
+  getWorkbookCompactRenderMode,
   shouldRenderSingleBaseStackedRow,
   shouldRenderSingleEqualStackedRow,
   shouldRenderSingleMineStackedRow,
@@ -104,4 +105,55 @@ test('shouldRenderSingleEqualStackedRow only matches identical equal workbook ro
 
   assert.equal(shouldRenderSingleEqualStackedRow(equalHeaderRow), true);
   assert.equal(shouldRenderSingleEqualStackedRow(diffHeaderRow), false);
+});
+
+test('getWorkbookCompactRenderMode reuses the compact render rules', () => {
+  const equalRow: SplitRow = {
+    left: {
+      type: 'equal',
+      base: '@@row\t8\t10001\tA',
+      mine: '@@row\t8\t10001\tA',
+      baseLineNo: 8,
+      mineLineNo: 8,
+      baseCharSpans: null,
+      mineCharSpans: null,
+    },
+    right: {
+      type: 'equal',
+      base: '@@row\t8\t10001\tA',
+      mine: '@@row\t8\t10001\tA',
+      baseLineNo: 8,
+      mineLineNo: 8,
+      baseCharSpans: null,
+      mineCharSpans: null,
+    },
+    lineIdx: 8,
+    lineIdxs: [8],
+  };
+
+  const modifiedRow: SplitRow = {
+    left: {
+      type: 'delete',
+      base: '@@row\t9\t10001\tA',
+      mine: null,
+      baseLineNo: 9,
+      mineLineNo: null,
+      baseCharSpans: null,
+      mineCharSpans: null,
+    },
+    right: {
+      type: 'add',
+      base: null,
+      mine: '@@row\t9\t10001\tB',
+      baseLineNo: null,
+      mineLineNo: 9,
+      baseCharSpans: null,
+      mineCharSpans: null,
+    },
+    lineIdx: 9,
+    lineIdxs: [9, 10],
+  };
+
+  assert.equal(getWorkbookCompactRenderMode(equalRow), 'single-equal');
+  assert.equal(getWorkbookCompactRenderMode(modifiedRow), 'double');
 });

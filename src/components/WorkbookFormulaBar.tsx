@@ -2,18 +2,21 @@ import { memo, useMemo } from 'react';
 import { FONT_CODE, FONT_UI, getWorkbookFontScale } from '../constants/typography';
 import { useI18n } from '../context/i18n';
 import { useTheme } from '../context/theme';
-import type { WorkbookFreezeState, WorkbookMergeRange, WorkbookSelectedCell } from '../types';
+import type { WorkbookFreezeState, WorkbookMergeRange, WorkbookSelectionState } from '../types';
 import { findWorkbookMergeRange } from '../utils/workbookMergeLayout';
 import { getWorkbookColumnLabel } from '../utils/workbookSections';
+import { getWorkbookSelectionCount } from '../utils/workbookSelectionState';
 
 interface WorkbookFormulaBarProps {
-  selection: WorkbookSelectedCell | null;
+  selection: WorkbookSelectionState;
   fontSize: number;
   freezeState?: WorkbookFreezeState | null;
   mergeRanges?: WorkbookMergeRange[];
   onFreezeRow: () => void;
   onFreezeColumn: () => void;
   onFreezePane: () => void;
+  onUnfreezeRow: () => void;
+  onUnfreezeColumn: () => void;
   onResetFreeze: () => void;
 }
 
@@ -31,36 +34,50 @@ const WorkbookFormulaBar = memo(({
   onFreezeRow,
   onFreezeColumn,
   onFreezePane,
+  onUnfreezeRow,
+  onUnfreezeColumn,
   onResetFreeze,
 }: WorkbookFormulaBarProps) => {
   const T = useTheme();
   const { t } = useI18n();
   const sizes = useMemo(() => getWorkbookFontScale(fontSize), [fontSize]);
-  const sideLabel = selection?.kind === 'row'
+  const primarySelection = selection.primary;
+  const selectionCount = getWorkbookSelectionCount(selection);
+  const sideLabel = primarySelection?.kind === 'row'
     ? t('formulaSelectionRow')
-    : selection?.kind === 'column'
+    : primarySelection?.kind === 'column'
     ? t('formulaSelectionColumn')
-    : selection?.side === 'base'
+    : primarySelection?.side === 'base'
     ? t('tooltipBaseLabel')
-    : selection?.side === 'mine'
+    : primarySelection?.side === 'mine'
     ? t('tooltipLocalLabel')
     : t('formulaBarHint');
-  const sideMeta = selection?.versionLabel
-    ? `${sideLabel} · ${selection.versionLabel}`
+  const sideMeta = primarySelection?.versionLabel
+    ? `${sideLabel} · ${primarySelection.versionLabel}`
     : sideLabel;
-  const sideAccent = selection?.side === 'base' ? T.acc2 : T.acc;
-  const mergeRange = selection?.kind === 'cell'
-    ? findWorkbookMergeRange(mergeRanges, selection.rowNumber, selection.colIndex)
+  const selectionSummary = selectionCount > 1
+    ? primarySelection?.kind === 'row'
+      ? t('formulaSelectionRowsCount', { count: selectionCount })
+      : primarySelection?.kind === 'column'
+      ? t('formulaSelectionColumnsCount', { count: selectionCount })
+      : t('formulaSelectionCellsCount', { count: selectionCount })
+    : '';
+  const sideAccent = primarySelection?.side === 'base' ? T.acc2 : T.acc;
+  const mergeRange = primarySelection?.kind === 'cell'
+    ? findWorkbookMergeRange(mergeRanges, primarySelection.rowNumber, primarySelection.colIndex)
     : null;
   const mergeRangeLabel = mergeRange ? formatMergeRange(mergeRange) : '';
-  const selectionAddress = selection?.kind === 'row'
-    ? `R${selection.rowNumber}`
-    : selection?.kind === 'column'
-    ? selection.colLabel
-    : (mergeRangeLabel || selection?.address || '—');
-  const canFreezeRow = Boolean(selection && selection.kind !== 'column');
-  const canFreezeColumn = Boolean(selection && selection.kind !== 'row');
-  const canFreezePane = Boolean(selection && selection.kind === 'cell');
+  const selectionAddress = primarySelection?.kind === 'row'
+    ? `R${primarySelection.rowNumber}`
+    : primarySelection?.kind === 'column'
+    ? primarySelection.colLabel
+    : (mergeRangeLabel || primarySelection?.address || '—');
+  const canFreezeRow = Boolean(primarySelection && primarySelection.kind !== 'column');
+  const canFreezeColumn = Boolean(primarySelection && primarySelection.kind !== 'row');
+  const canFreezePane = Boolean(primarySelection && primarySelection.kind === 'cell');
+  const canUnfreezeRow = Boolean(freezeState?.rowNumber);
+  const canUnfreezeColumn = Boolean(freezeState?.colCount);
+  const canResetFreeze = canUnfreezeRow || canUnfreezeColumn;
   const freezeSummary = [
     freezeState?.rowNumber ? t('formulaFreezeRows', { count: freezeState.rowNumber }) : '',
     freezeState?.colCount ? t('formulaFreezeCols', { count: freezeState.colCount }) : '',
@@ -151,13 +168,28 @@ const WorkbookFormulaBar = memo(({
           style={{
             width: 8,
             height: 8,
-            borderRadius: selection?.side === 'base' ? 2 : '50%',
-            transform: selection?.side === 'base' ? 'rotate(45deg)' : undefined,
+            borderRadius: primarySelection?.side === 'base' ? 2 : '50%',
+            transform: primarySelection?.side === 'base' ? 'rotate(45deg)' : undefined,
             background: sideAccent,
             flexShrink: 0,
           }}
         />
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sideMeta}</span>
+        {selectionSummary && (
+          <span
+            style={{
+              marginLeft: 'auto',
+              padding: '1px 8px',
+              borderRadius: 999,
+              background: `${sideAccent}14`,
+              color: sideAccent,
+              fontSize: sizes.meta,
+              fontWeight: 800,
+              whiteSpace: 'nowrap',
+            }}>
+            {selectionSummary}
+          </span>
+        )}
       </div>
 
       {mergeRangeLabel && (
@@ -213,7 +245,7 @@ const WorkbookFormulaBar = memo(({
             color: T.t0,
             fontWeight: 600,
           }}>
-          {selection?.value || t('formulaBarEmptyValue')}
+          {primarySelection?.value || t('formulaBarEmptyValue')}
         </span>
       </div>
 
@@ -246,12 +278,12 @@ const WorkbookFormulaBar = memo(({
             marginLeft: 10,
             fontFamily: FONT_CODE,
             fontSize: sizes.ui,
-            color: selection?.formula ? T.t0 : T.t2,
+            color: primarySelection?.formula ? T.t0 : T.t2,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
           }}>
-          {selection?.formula || t('formulaBarEmpty')}
+          {primarySelection?.formula || t('formulaBarEmpty')}
         </span>
       </div>
 
@@ -281,7 +313,19 @@ const WorkbookFormulaBar = memo(({
           active={Boolean(freezeState?.rowNumber || freezeState?.colCount)}
           disabled={!canFreezePane}
         />
-        <ActionButton label={t('formulaFreezeResetAction')} onClick={onResetFreeze} />
+        <ActionButton
+          label={t('formulaFreezeUnfreezeRowAction')}
+          onClick={onUnfreezeRow}
+          active={canUnfreezeRow}
+          disabled={!canUnfreezeRow}
+        />
+        <ActionButton
+          label={t('formulaFreezeUnfreezeColumnAction')}
+          onClick={onUnfreezeColumn}
+          active={canUnfreezeColumn}
+          disabled={!canUnfreezeColumn}
+        />
+        <ActionButton label={t('formulaFreezeResetAction')} onClick={onResetFreeze} disabled={!canResetFreeze} />
       </div>
     </div>
   );

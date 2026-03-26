@@ -72,8 +72,11 @@ const SplitHeader = memo(({
     if (isWorkbookMode && layout === 'unified') {
       return side === 'base' ? t('splitHeaderAxisTop') : t('splitHeaderAxisBottom');
     }
-    if (isWorkbookMode && layout === 'split-v') {
-      return side === 'base' ? t('splitHeaderAxisLeftColumn') : t('splitHeaderAxisRightColumn');
+    if (layout === 'split-v') {
+      if (isWorkbookMode) {
+        return side === 'base' ? t('splitHeaderAxisLeftColumn') : t('splitHeaderAxisRightColumn');
+      }
+      return side === 'base' ? t('splitHeaderAxisTop') : t('splitHeaderAxisBottom');
     }
     return side === 'base' ? t('splitHeaderAxisLeftPane') : t('splitHeaderAxisRightPane');
   };

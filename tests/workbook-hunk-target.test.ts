@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { computeHunks } from '../src/engine/diff';
-import { computeSmartDiff } from '../src/engine/smartDiff';
+import { computeWorkbookDiff } from '../src/engine/workbookDiff';
 import { createWorkbookRowLine, createWorkbookSheetLine } from '../src/utils/workbookDisplay';
 import { findWorkbookHunkTargetCell } from '../src/utils/workbookHunkTarget';
 import { buildWorkbookSectionRowIndex } from '../src/utils/workbookSheetIndex';
@@ -27,7 +27,7 @@ test('findWorkbookHunkTargetCell points to the changed workbook cell', () => {
     ['10002', 'Hi-Potion', 'Consumable'],
   ]);
 
-  const diffLines = computeSmartDiff(base, mine);
+  const diffLines = computeWorkbookDiff(base, mine);
   const hunks = computeHunks(diffLines);
   const sections = getWorkbookSections(diffLines);
   const rowIndex = buildWorkbookSectionRowIndex(diffLines, sections);

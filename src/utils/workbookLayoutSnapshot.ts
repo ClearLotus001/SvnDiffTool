@@ -26,6 +26,19 @@ export function shouldRestoreWorkbookLayoutSnapshot(
     && snapshot.sheetName === sheetName;
 }
 
+export function resolveWorkbookExpandedBlocksForContext(
+  snapshot: WorkbookLayoutSnapshot | null | undefined,
+  sharedExpandedBlocks: CollapseExpansionState | null | undefined,
+  activeRegionId: string | null,
+  sheetName: string | null,
+): CollapseExpansionState {
+  if (sharedExpandedBlocks) return sharedExpandedBlocks;
+  if (shouldRestoreWorkbookLayoutSnapshot(snapshot, activeRegionId, sheetName)) {
+    return snapshot?.expandedBlocks ?? {};
+  }
+  return {};
+}
+
 export function buildWorkbookCompareLayoutSnapshot(
   layout: WorkbookCompareLayoutSnapshot['layout'],
   sheetName: string | null,

@@ -2,12 +2,12 @@
 import { memo, useMemo } from 'react';
 import { FONT_CODE, FONT_SIZE, FONT_UI } from '../constants/typography';
 import { useI18n } from '../context/i18n';
-import type { DiffLine, WorkbookArtifactDiff, WorkbookCompareMode } from '../types';
+import type { TextDiffPresentation, WorkbookArtifactDiff, WorkbookCompareMode } from '../types';
 import { useTheme } from '../context/theme';
 import Tooltip from './Tooltip';
 
 interface StatsBarProps {
-  diffLines: DiffLine[];
+  textDiffPresentation: TextDiffPresentation;
   baseName: string;
   mineName: string;
   fileName: string;
@@ -66,7 +66,7 @@ const RoleBadge = ({ side, accent }: { side: 'base' | 'mine'; accent: string }) 
 };
 
 const StatsBar = memo(({
-  diffLines,
+  textDiffPresentation,
   baseName,
   mineName,
   fileName,
@@ -81,14 +81,8 @@ const StatsBar = memo(({
   const { t } = useI18n();
 
   const stats = useMemo(() => {
-    let add = 0, del = 0;
-    diffLines.forEach(l => {
-      if      (l.type === 'add')    add++;
-      else if (l.type === 'delete') del++;
-    });
-    const chg = Math.min(add, del);
-    return { add: add - chg, del: del - chg, chg };
-  }, [diffLines]);
+    return textDiffPresentation.stats;
+  }, [textDiffPresentation]);
 
   const metric = (color: string, value: string, label: string) => (
     <div style={{

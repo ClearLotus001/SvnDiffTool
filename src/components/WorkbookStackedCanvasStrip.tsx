@@ -19,8 +19,20 @@ import {
   getWorkbookSelectionOverlay,
   getWorkbookSelectionVisualState,
 } from '../utils/workbookSelectionVisual';
+import { buildWorkbookSelectionLookup } from '../utils/workbookSelectionState';
+import {
+  resolveLineNumberColor,
+  resolveSharedWorkbookLineNumberTone,
+} from '../utils/lineNumberTone';
 import { useTheme } from '../context/theme';
-import type { SplitRow, WorkbookCompareMode, WorkbookSelectedCell } from '../types';
+import type {
+  SplitRow,
+  WorkbookCompareMode,
+  WorkbookSelectionMode,
+  WorkbookSelectedCell,
+  WorkbookSelectionRequest,
+  WorkbookSelectionState,
+} from '../types';
 import { ROW_H } from '../hooks/useVirtual';
 import type { WorkbookMergeRange } from '../utils/workbookMeta';
 import type { WorkbookCanvasHoverCell } from './WorkbookCanvasHoverTooltip';
@@ -48,8 +60,8 @@ interface WorkbookStackedCanvasStripProps {
   baseVersion: string;
   mineVersion: string;
   headerRowNumber: number;
-  selectedCell: WorkbookSelectedCell | null;
-  onSelectCell: (cell: WorkbookSelectedCell | null) => void;
+  selection: WorkbookSelectionState;
+  onSelectionRequest: (request: WorkbookSelectionRequest) => void;
   onHoverChange?: (hover: WorkbookCanvasHoverCell | null) => void;
   fontSize: number;
   visibleColumns: number[];
@@ -73,11 +85,18 @@ interface CanvasBand {
   y: number;
   height: number;
   isGuided: boolean;
+  isActiveSearch: boolean;
   rowHighlightBg?: string | undefined;
 }
 
 function trimCellText(value: string) {
   return value.replace(/\u001F/g, ' ').replace(/\r\n/g, ' / ').replace(/\r/g, ' / ').replace(/\n/g, ' / ');
+}
+
+function getSelectionModeFromMouseEvent(event: Pick<React.MouseEvent<HTMLCanvasElement>, 'shiftKey' | 'ctrlKey' | 'metaKey'>): WorkbookSelectionMode {
+  if (event.shiftKey) return 'range';
+  if (event.ctrlKey || event.metaKey) return 'toggle';
+  return 'replace';
 }
 
 const WorkbookStackedCanvasStrip = memo(({
@@ -90,8 +109,8 @@ const WorkbookStackedCanvasStrip = memo(({
   baseVersion,
   mineVersion,
   headerRowNumber,
-  selectedCell,
-  onSelectCell,
+  selection,
+  onSelectionRequest,
   onHoverChange,
   fontSize,
   visibleColumns,
@@ -109,6 +128,8 @@ const WorkbookStackedCanvasStrip = memo(({
   const hoverKeyRef = useRef('');
   const sizes = useMemo(() => getWorkbookFontScale(fontSize), [fontSize]);
   const totalHeight = useMemo(() => rows.reduce((sum, row) => sum + row.height, 0), [rows]);
+  const selectionLookup = useMemo(() => buildWorkbookSelectionLookup(selection), [selection]);
+  const primarySelection = selection.primary;
 
   const renderBands = useMemo(() => {
     const bands: CanvasBand[] = [];
@@ -144,6 +165,7 @@ const WorkbookStackedCanvasStrip = memo(({
           y: cursorY,
           height: ROW_H,
           isGuided: renderRow.isGuided,
+          isActiveSearch: renderRow.isActiveSearch,
           rowHighlightBg,
         });
       } else if (renderRow.renderMode === 'single-mine') {
@@ -158,6 +180,7 @@ const WorkbookStackedCanvasStrip = memo(({
           y: cursorY,
           height: ROW_H,
           isGuided: renderRow.isGuided,
+          isActiveSearch: renderRow.isActiveSearch,
           rowHighlightBg,
         });
       } else if (renderRow.renderMode === 'single-equal') {
@@ -172,6 +195,7 @@ const WorkbookStackedCanvasStrip = memo(({
           y: cursorY,
           height: ROW_H,
           isGuided: renderRow.isGuided,
+          isActiveSearch: renderRow.isActiveSearch,
           rowHighlightBg,
         });
       } else {
@@ -186,6 +210,7 @@ const WorkbookStackedCanvasStrip = memo(({
           y: cursorY,
           height: ROW_H,
           isGuided: renderRow.isGuided,
+          isActiveSearch: renderRow.isActiveSearch,
           rowHighlightBg,
         });
         bands.push({
@@ -199,6 +224,7 @@ const WorkbookStackedCanvasStrip = memo(({
           y: cursorY + ROW_H,
           height: ROW_H,
           isGuided: renderRow.isGuided,
+          isActiveSearch: renderRow.isActiveSearch,
           rowHighlightBg,
         });
       }
@@ -285,11 +311,17 @@ const WorkbookStackedCanvasStrip = memo(({
         const bandRule = band.useSideAccentForChanges ? `${selectionAccent}66` : bandBorder;
         const cellTextColor = band.side === 'mine' ? T.t0 : T.t1;
         const isSelectedRow = Boolean(
-          selectedCell
-          && selectedCell.kind === 'row'
-          && selectedCell.sheetName === sheetName
-          && selectedCell.rowNumber === rowNumber,
+          selectionLookup.rowKeys.has(`${sheetName}:${rowNumber}`),
         );
+        const lineNumberTone = band.useSideAccentForChanges
+          ? band.side
+          : (
+            band.tone === 'delete'
+              ? 'base'
+              : band.tone === 'add'
+              ? 'mine'
+              : resolveSharedWorkbookLineNumberTone(band.hasBaseRow, band.hasMineRow)
+          );
 
         ctx.fillStyle = rowBg;
         ctx.fillRect(0, y, contentRight, h);
@@ -312,7 +344,9 @@ const WorkbookStackedCanvasStrip = memo(({
           ctx.lineWidth = 1;
         }
 
-        ctx.fillStyle = isSelectedRow ? selectionAccent : T.lnTx;
+        ctx.fillStyle = isSelectedRow
+          ? selectionAccent
+          : resolveLineNumberColor(T, lineNumberTone, band.isActiveSearch);
         ctx.font = `${sizes.line}px ${FONT_CODE}`;
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
@@ -349,7 +383,7 @@ const WorkbookStackedCanvasStrip = memo(({
           const hasContent = hasWorkbookCellContent(cell, compareMode);
           const selectionRowNumber = mergeInfo.region?.range.startRow ?? rowNumber;
           const selectionColumn = mergeInfo.region?.range.startCol ?? column;
-          const selectionVisual = getWorkbookSelectionVisualState(T, selectedCell, sheetName, band.side, selectionRowNumber, selectionColumn);
+          const selectionVisual = getWorkbookSelectionVisualState(T, selectionLookup, sheetName, band.side, selectionRowNumber, selectionColumn);
           const cellVisual = resolveWorkbookCompareCellVisual({
             theme: T,
             compareCell,
@@ -462,7 +496,7 @@ const WorkbookStackedCanvasStrip = memo(({
       scroller?.removeEventListener('scroll', scheduleDraw);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [bandPositionBySideRowNumber, baseMergedRanges, baseRenderedRowNumbers, columnLayoutByColumn, contentWidth, freezeColumnCount, mineMergedRanges, mineRenderedRowNumbers, renderBands, renderColumns, scrollRef, selectedCell, sheetName, sizes.line, sizes.ui, T, totalHeight, viewportWidth]);
+  }, [bandPositionBySideRowNumber, baseMergedRanges, baseRenderedRowNumbers, columnLayoutByColumn, contentWidth, freezeColumnCount, mineMergedRanges, mineRenderedRowNumbers, renderBands, renderColumns, scrollRef, selectionLookup, sheetName, sizes.line, sizes.ui, T, totalHeight, viewportWidth]);
 
   const resolveHit = (
     x: number,
@@ -523,8 +557,8 @@ const WorkbookStackedCanvasStrip = memo(({
             side,
             versionLabel: entry.versionLabel,
             rowNumber: entry.rowNumber,
-            colIndex: selectedCell?.colIndex ?? 0,
-            colLabel: selectedCell?.colLabel ?? 'A',
+            colIndex: primarySelection?.colIndex ?? 0,
+            colLabel: primarySelection?.colLabel ?? 'A',
             address: `${entry.rowNumber}`,
             value: '',
             formula: '',
@@ -652,7 +686,11 @@ const WorkbookStackedCanvasStrip = memo(({
     if (!hit) return;
     hoverKeyRef.current = '';
     onHoverChange?.(null);
-    onSelectCell(hit.selection);
+    onSelectionRequest({
+      target: hit.selection,
+      mode: getSelectionModeFromMouseEvent(event),
+      reason: 'click',
+    });
   };
 
   const handleMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -674,10 +712,34 @@ const WorkbookStackedCanvasStrip = memo(({
     onHoverChange?.(null);
   };
 
+  const handleContextMenu = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvasRect = event.currentTarget.getBoundingClientRect();
+    const hit = resolveHit(
+      event.clientX - canvasRect.left,
+      event.clientY - canvasRect.top,
+      canvasRect,
+    );
+    if (!hit) return;
+    event.preventDefault();
+    hoverKeyRef.current = '';
+    onHoverChange?.(null);
+    onSelectionRequest({
+      target: hit.selection,
+      mode: getSelectionModeFromMouseEvent(event),
+      reason: 'contextmenu',
+      preserveExistingIfTargetSelected: true,
+      clientPoint: {
+        x: event.clientX,
+        y: event.clientY,
+      },
+    });
+  };
+
   return (
     <canvas
       ref={canvasRef}
       onClick={handleClick}
+      onContextMenu={handleContextMenu}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       style={{

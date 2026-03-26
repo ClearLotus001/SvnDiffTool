@@ -1066,11 +1066,16 @@ const RevisionPicker = memo(({
             <div ref={listRef} onScroll={handleListScroll} style={{ maxHeight: UI.listMaxHeight, overflowY: 'auto', overflowX: 'hidden', border: `1px solid ${T.border}`, borderRadius: 14, background: T.bg1, scrollbarWidth: 'thin' }}>
               {filteredSpecialOptions.length > 0 && (
                 <>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: `1px solid ${T.border}`, background: `linear-gradient(180deg, ${T.bg2} 0%, ${T.bg1} 100%)` }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 12px', borderBottom: `1px solid ${T.border}`, background: `linear-gradient(180deg, ${T.bg2} 0%, ${T.bg1} 100%)` }}>
                     <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 999, background: `${accent}aa`, boxShadow: `0 0 0 4px ${accent}18` }} />
-                    <span style={{ color: T.t2, fontSize: UI.metaSize, fontWeight: 700, fontFamily: FONT_UI, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                      {t('revisionPickerPinnedSources')}
-                    </span>
+                    <div style={{ display: 'grid', gap: 2, minWidth: 0 }}>
+                      <span style={{ color: T.t2, fontSize: UI.metaSize, fontWeight: 700, fontFamily: FONT_UI, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                        {t('revisionPickerPinnedSources')}
+                      </span>
+                      <span style={{ color: T.t2, fontSize: FONT_SIZE.xs, fontFamily: FONT_UI, lineHeight: 1.4 }}>
+                        {t('revisionPickerPinnedSourcesHint')}
+                      </span>
+                    </div>
                   </div>
                   {filteredSpecialOptions.map((option) => renderOption(option))}
                 </>

@@ -7,11 +7,14 @@ import { useTheme } from '../context/theme';
 import { copyText } from '../utils/clipboard';
 import { tokenize } from '../engine/tokenizer';
 import { ROW_H } from '../hooks/useVirtual';
+import { LN_W } from '../constants/layout';
 import Ln from './Ln';
 import TokenText from './TokenText';
 
 interface DiffRowProps {
   line: DiffLine;
+  isReplacementPair?: boolean;
+  widthMode?: 'fill' | 'content';
   isSearchMatch: boolean;
   isActiveSearch: boolean;
   showWhitespace: boolean;
@@ -31,27 +34,40 @@ function renderWithWhitespaceMark(text: string, T: ReturnType<typeof useTheme>) 
   );
 }
 
-const DiffRow = memo(({ line, isSearchMatch, isActiveSearch, showWhitespace, fontSize }: DiffRowProps) => {
+const DiffRow = memo(({
+  line,
+  isReplacementPair = false,
+  widthMode = 'fill',
+  isSearchMatch,
+  isActiveSearch,
+  showWhitespace,
+  fontSize,
+}: DiffRowProps) => {
   const T       = useTheme();
   const { t } = useI18n();
   const content = line.base ?? line.mine ?? '';
   const tokens  = useMemo(() => tokenize(content), [content]);
   const [hovered, setHovered] = useState(false);
+  const isContentWidth = widthMode === 'content';
+  const gutterWidth = LN_W * 2;
 
   const isAdd = line.type === 'add';
   const isDel = line.type === 'delete';
+  const isModify = isReplacementPair;
 
-  const rowBg     = isAdd ? T.addBg  : isDel ? T.delBg  : 'transparent';
-  const brdL      = isAdd ? T.addBrd : isDel ? T.delBrd : 'transparent';
-  const pfxTx     = isAdd ? T.addTx  : isDel ? T.delTx  : T.t2;
+  const rowBg     = isModify ? T.chgBg  : isAdd ? T.addBg  : isDel ? T.delBg  : 'transparent';
+  const brdL      = isModify ? T.chgTx  : isAdd ? T.addBrd : isDel ? T.delBrd : 'transparent';
+  const pfxTx     = isModify ? T.chgTx  : isAdd ? T.addTx  : isDel ? T.delTx  : T.t2;
   const pfx       = isAdd ? '+' : isDel ? '-' : ' ';
-  const hlBg      = isDel ? T.delHl  : T.addHl;
+  const hlBg      = isModify ? `${T.chgTx}40` : isDel ? T.delHl  : T.addHl;
   const charSpans = isDel ? line.baseCharSpans : isAdd ? line.mineCharSpans : null;
   const searchBg  = isActiveSearch
     ? T.searchActiveBg
     : isSearchMatch
     ? `${T.searchHl}28`
     : undefined;
+  const bodyBg = searchBg;
+  const inlineBg = searchBg ? undefined : rowBg;
   const copyValue = content;
 
   return (
@@ -62,35 +78,70 @@ const DiffRow = memo(({ line, isSearchMatch, isActiveSearch, showWhitespace, fon
         height: ROW_H,
         display: 'flex',
         alignItems: 'stretch',
+        width: isContentWidth ? 'max-content' : undefined,
+        minWidth: isContentWidth ? 0 : undefined,
         borderLeft: `3px solid ${brdL}`,
-        background: searchBg ?? rowBg,
         outline: isActiveSearch ? `1px solid ${T.searchHl}` : undefined,
         position: 'relative',
+        isolation: 'isolate',
       }}>
-      <Ln n={line.baseLineNo} T={T} active={isActiveSearch} />
-      <Ln n={line.mineLineNo} T={T} active={isActiveSearch} />
-      <span style={{
-        paddingLeft: 4, paddingRight: 3,
-        color: pfxTx, userSelect: 'none',
-        fontSize: FONT_SIZE.md, flexShrink: 0,
-        lineHeight: `${ROW_H}px`,
-        fontFamily: FONT_CODE,
+      <div style={{
+        width: gutterWidth,
+        minWidth: gutterWidth,
+        display: 'flex',
+        flexShrink: 0,
+        position: 'sticky',
+        left: 0,
+        zIndex: 4,
+        background: T.lnBg,
+        boxShadow: `10px 0 14px -14px ${T.border2}`,
       }}>
-        {pfx}
-      </span>
-      <span style={{
-        flex: 1, paddingRight: 8,
-        whiteSpace: 'pre', fontSize,
-        overflow: 'hidden',
-        lineHeight: `${ROW_H}px`,
-        color: T.t0,
-        fontFamily: FONT_CODE,
-        minWidth: 0,
+        <Ln n={line.baseLineNo} T={T} active={isActiveSearch} tone="base" />
+        <Ln n={line.mineLineNo} T={T} active={isActiveSearch} tone="mine" />
+      </div>
+      <div style={{
+        flex: isContentWidth ? '0 0 auto' : 1,
+        display: 'flex',
+        minWidth: isContentWidth ? 'max-content' : 0,
+        background: bodyBg,
+        position: 'relative',
+        zIndex: 1,
       }}>
-        {showWhitespace && !charSpans
-          ? renderWithWhitespaceMark(content, T)
-          : <TokenText tokens={tokens} charSpans={charSpans} hlBg={hlBg} />}
-      </span>
+        <span style={{
+          paddingLeft: 4, paddingRight: 3,
+          color: pfxTx, userSelect: 'none',
+          fontSize: FONT_SIZE.md, flexShrink: 0,
+          lineHeight: `${ROW_H}px`,
+          fontFamily: FONT_CODE,
+          position: 'relative',
+          zIndex: 1,
+        }}>
+          {pfx}
+        </span>
+        <span style={{
+          flex: isContentWidth ? '0 0 auto' : 1,
+          paddingRight: 8,
+          whiteSpace: 'pre', fontSize,
+          lineHeight: `${ROW_H}px`,
+          color: T.t0,
+          fontFamily: FONT_CODE,
+          minWidth: isContentWidth ? 'max-content' : 0,
+          position: 'relative',
+          zIndex: 1,
+        }}
+        title={content || undefined}>
+          <span style={{
+            display: 'inline-block',
+            background: inlineBg,
+            padding: inlineBg ? '0 2px' : 0,
+            borderRadius: inlineBg ? 2 : 0,
+          }}>
+            {showWhitespace && !charSpans
+              ? renderWithWhitespaceMark(content, T)
+              : <TokenText tokens={tokens} charSpans={charSpans} hlBg={hlBg} />}
+          </span>
+        </span>
+      </div>
       {hovered && (
         <button
           onClick={() => copyText(copyValue)}

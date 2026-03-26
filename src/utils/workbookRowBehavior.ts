@@ -1,6 +1,8 @@
 import type { SplitRow } from '../types';
 import { parseWorkbookDisplayLine } from './workbookDisplay';
 
+export type WorkbookCompactRenderMode = 'single-base' | 'single-mine' | 'single-equal' | 'double';
+
 export function shouldRenderSingleMineStackedRow(row: SplitRow): boolean {
   return row.left == null && row.right?.type === 'add';
 }
@@ -22,10 +24,13 @@ export function shouldRenderSingleEqualStackedRow(row: SplitRow): boolean {
     && leftParsed.rowNumber === rightParsed.rowNumber;
 }
 
+export function getWorkbookCompactRenderMode(row: SplitRow): WorkbookCompactRenderMode {
+  if (shouldRenderSingleMineStackedRow(row)) return 'single-mine';
+  if (shouldRenderSingleBaseStackedRow(row)) return 'single-base';
+  if (shouldRenderSingleEqualStackedRow(row)) return 'single-equal';
+  return 'double';
+}
+
 export function getStackedWorkbookRowRenderHeight(row: SplitRow, defaultHeight: number, compactHeight: number): number {
-  return shouldRenderSingleMineStackedRow(row)
-    || shouldRenderSingleBaseStackedRow(row)
-    || shouldRenderSingleEqualStackedRow(row)
-    ? compactHeight
-    : defaultHeight;
+  return getWorkbookCompactRenderMode(row) === 'double' ? defaultHeight : compactHeight;
 }

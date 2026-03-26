@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { computeSmartDiff } from '../src/engine/smartDiff';
+import { computeWorkbookDiff } from '../src/engine/workbookDiff';
 import {
   buildWorkbookDiffRegions,
   findWorkbookDiffRegionIndexForSelection,
@@ -30,7 +30,7 @@ test('buildWorkbookDiffRegions splits disjoint workbook change islands into sepa
     ['10002', 'Hi-Potion', 'Epic Consumable', 'L', 'B', 'Beta', 'Keep'],
   ]);
 
-  const diffLines = computeSmartDiff(base, mine);
+  const diffLines = computeWorkbookDiff(base, mine);
   const sections = getWorkbookSections(diffLines);
   const rowIndex = buildWorkbookSectionRowIndex(diffLines, sections);
   const regions = buildWorkbookDiffRegions(
@@ -64,7 +64,7 @@ test('workbook diff regions expose region-level labels and selection lookup', ()
     ['10002', 'Hi-Potion', 'Consumable'],
   ]);
 
-  const diffLines = computeSmartDiff(base, mine);
+  const diffLines = computeWorkbookDiff(base, mine);
   const sections = getWorkbookSections(diffLines);
   const rowIndex = buildWorkbookSectionRowIndex(diffLines, sections);
   const regions = buildWorkbookDiffRegions(
@@ -95,7 +95,7 @@ test('buildWorkbookDiffRegions merges diagonal workbook cells into one normalize
     ['10002', 'Potion', 'Epic Consumable'],
   ]);
 
-  const diffLines = computeSmartDiff(base, mine);
+  const diffLines = computeWorkbookDiff(base, mine);
   const sections = getWorkbookSections(diffLines);
   const rowIndex = buildWorkbookSectionRowIndex(diffLines, sections);
   const regions = buildWorkbookDiffRegions(

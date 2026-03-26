@@ -1,6 +1,6 @@
 // src/components/UnifiedPanel.tsx  [v4 — typecheck clean]
 import { memo, useCallback, useEffect, useRef, useState, useMemo, RefObject, startTransition } from 'react';
-import type { DiffLine, SearchMatch, RenderItem, CollapseItem, LineItem } from '../types';
+import type { DiffLine, SearchMatch, RenderItem, CollapseItem, LineItem, TextDiffPresentation } from '../types';
 import { LN_W } from '../constants/layout';
 import { useTheme } from '../context/theme';
 import { useVirtual, ROW_H } from '../hooks/useVirtual';
@@ -38,6 +38,7 @@ type CollapseNavigationHandler = (direction: 'prev' | 'next') => void;
 
 interface UnifiedPanelProps {
   diffLines: DiffLine[];
+  textDiffPresentation: TextDiffPresentation;
   collapseCtx: boolean;
   activeHunkIdx: number;
   searchMatches: SearchMatch[];
@@ -50,7 +51,7 @@ interface UnifiedPanelProps {
 }
 
 const UnifiedPanel = memo(({
-  diffLines, collapseCtx, activeHunkIdx, searchMatches, activeSearchIdx,
+  diffLines, textDiffPresentation, collapseCtx, activeHunkIdx, searchMatches, activeSearchIdx,
   hunkPositions, showWhitespace, fontSize, onScrollerReady, onCollapseNavigationReady,
 }: UnifiedPanelProps) => {
   const T = useTheme();
@@ -364,6 +365,7 @@ const UnifiedPanel = memo(({
             const li = item as LineItem;
             return (
               <DiffRow key={key} line={li.line}
+                isReplacementPair={textDiffPresentation.replacementPairIndex.has(li.lineIdx)}
                 isSearchMatch={searchMatchSet.has(li.lineIdx)}
                 isActiveSearch={activeSearchLineIdx === li.lineIdx}
                 showWhitespace={showWhitespace}

@@ -18,6 +18,13 @@ export interface CollapsedRowTarget {
   targetIndex: number;
 }
 
+export interface CollapsedRowBlockDescriptor<RowT extends { lineIdx: number }> {
+  block: CollapsibleRowBlock<RowT>;
+  blockId: string;
+  hiddenRows: RowT[];
+  expandStep: number;
+}
+
 function buildCollapseBlockId<RowT extends { lineIdx: number }>(
   block: CollapsibleRowBlock<RowT>,
   blockIndex: number,
@@ -53,6 +60,119 @@ export function buildCollapsibleRowBlocks<RowT extends { lineIdx: number }>(
   }
 
   return blocks;
+}
+
+export function describeCollapsedRowBlocks<RowT extends { lineIdx: number }>(
+  blocks: CollapsibleRowBlock<RowT>[],
+  options: {
+    contextLines: number;
+    blockPrefix: string;
+  },
+): CollapsedRowBlockDescriptor<RowT>[] {
+  const descriptors: CollapsedRowBlockDescriptor<RowT>[] = [];
+
+  blocks.forEach((block, blockIndex) => {
+    if (block.kind !== 'equal' || block.rows.length <= options.contextLines * 2) {
+      return;
+    }
+
+    const hiddenRows = block.rows.slice(options.contextLines, block.rows.length - options.contextLines);
+    descriptors.push({
+      block,
+      blockId: buildCollapseBlockId(block, blockIndex, options.blockPrefix),
+      hiddenRows,
+      expandStep: getCollapseExpandStep(hiddenRows.length),
+    });
+  });
+
+  return descriptors;
+}
+
+function buildContiguousRanges(indexes: number[]) {
+  if (indexes.length === 0) return [];
+
+  const ranges: Array<{ start: number; end: number }> = [];
+  let start = indexes[0]!;
+  let previous = start;
+
+  for (let index = 1; index < indexes.length; index += 1) {
+    const current = indexes[index]!;
+    if (current === previous + 1) {
+      previous = current;
+      continue;
+    }
+    ranges.push({ start, end: previous });
+    start = current;
+    previous = current;
+  }
+
+  ranges.push({ start, end: previous });
+  return ranges;
+}
+
+export function remapExpandedBlocksForCollapsedRows<RowT extends { lineIdx: number }>(
+  expandedBlocks: CollapseExpansionState,
+  options: {
+    previousRows: RowT[];
+    nextRows: RowT[];
+    contextLines: number;
+    previousBlockPrefix: string;
+    nextBlockPrefix: string;
+    isEqualRow: (row: RowT) => boolean;
+    getRowKey?: (row: RowT) => string;
+  },
+): CollapseExpansionState {
+  const getRowKey = options.getRowKey ?? ((row: RowT) => String(row.lineIdx));
+  const previousBlocks = buildCollapsibleRowBlocks(options.previousRows, options.isEqualRow);
+
+  const previousRowKeys = new Set(options.previousRows.map((row) => getRowKey(row)));
+  const previousVisibleRowKeys = new Set(
+    buildCollapsedItems<RowT, RowT, null>(previousBlocks, true, expandedBlocks, {
+      contextLines: options.contextLines,
+      blockPrefix: options.previousBlockPrefix,
+      buildRowItem: (row) => row,
+      buildCollapseItem: () => null,
+    })
+      .filter((item): item is RowT => item != null)
+      .map((row) => getRowKey(row)),
+  );
+
+  const enteringRowKeys = new Set<string>();
+  options.nextRows.forEach((row) => {
+    const rowKey = getRowKey(row);
+    if (!previousRowKeys.has(rowKey)) {
+      enteringRowKeys.add(rowKey);
+    }
+  });
+
+  if (previousVisibleRowKeys.size === 0 && enteringRowKeys.size === 0) return {};
+
+  const nextDescriptors = describeCollapsedRowBlocks(
+    buildCollapsibleRowBlocks(options.nextRows, options.isEqualRow),
+    {
+      contextLines: options.contextLines,
+      blockPrefix: options.nextBlockPrefix,
+    },
+  );
+
+  const nextState: CollapseExpansionState = {};
+
+  nextDescriptors.forEach((descriptor) => {
+    const revealedIndexes: number[] = [];
+    descriptor.hiddenRows.forEach((row, index) => {
+      const rowKey = getRowKey(row);
+      if (previousVisibleRowKeys.has(rowKey) || enteringRowKeys.has(rowKey)) {
+        revealedIndexes.push(index);
+      }
+    });
+
+    const ranges = buildContiguousRanges(revealedIndexes);
+    if (ranges.length > 0) {
+      nextState[descriptor.blockId] = ranges;
+    }
+  });
+
+  return nextState;
 }
 
 export function buildCollapsedItems<RowT extends { lineIdx: number }, TRowItem, TCollapseItem>(

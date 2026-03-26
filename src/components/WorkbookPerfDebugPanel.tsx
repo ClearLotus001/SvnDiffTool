@@ -14,6 +14,9 @@ export interface WorkbookPerfDebugStats {
   frozenRows: number;
   frozenColumns: number;
   buildItemsMs: number;
+  collapseBuildMs: number;
+  hiddenOverlayMs: number;
+  hiddenRows: number;
   miniMapMs: number;
   rowWindowMs: number;
   rowWindowUpdates: number;
@@ -95,6 +98,8 @@ const WorkbookPerfDebugPanel = memo(({ stats }: WorkbookPerfDebugPanelProps) => 
       {chip(t('perfUiFreeze'), `${stats.frozenRows}R · ${stats.frozenColumns}C`, T.acc)}
       {chip(t('perfUiCollapse'), String(stats.collapseBlocks), T.acc2)}
       {chip(t('perfUiBuildItems'), formatMs(stats.buildItemsMs), T.acc)}
+      {chip(t('perfUiCollapseBuild'), formatMs(stats.collapseBuildMs), T.acc2)}
+      {chip(t('perfUiHiddenOverlay'), `${formatMs(stats.hiddenOverlayMs)} · ${stats.hiddenRows}`, T.acc)}
       {chip(t('perfUiMiniMap'), formatMs(stats.miniMapMs), T.acc2)}
       {chip(t('perfUiMiniMapClick'), `${formatMs(stats.miniMapClickMs)} · ${stats.miniMapClickCount}`, T.acc)}
       {chip(t('perfUiRowWindow'), `${formatMs(stats.rowWindowMs)} · ${stats.rowWindowUpdates}`, T.acc)}

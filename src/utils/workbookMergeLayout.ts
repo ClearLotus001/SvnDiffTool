@@ -5,6 +5,7 @@ import type { WorkbookMergeRange } from './workbookMeta';
 
 export type WorkbookColumnSpanMode =
   | 'single'
+  | 'paired-shared'
   | 'paired-base'
   | 'paired-mine'
   | 'compact-base'
@@ -114,7 +115,9 @@ export function getWorkbookColumnSpanBounds(
       let leftOffset = entry.offset;
       let rightOffset = entry.offset + entry.width;
 
-      if (mode === 'paired-mine') {
+      if (mode === 'paired-shared') {
+        rightOffset = entry.offset + entry.displayWidth;
+      } else if (mode === 'paired-mine') {
         leftOffset = entry.offset + entry.width;
         rightOffset = entry.offset + entry.displayWidth;
       } else if (mode === 'compact-base') {

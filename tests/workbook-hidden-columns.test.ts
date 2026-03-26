@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { buildWorkbookSheetPresentation, type WorkbookMetadataMap } from '../src/utils/workbookMeta';
 import { createWorkbookRowLine, createWorkbookSheetLine } from '../src/utils/workbookDisplay';
-import { computeSmartDiff } from '../src/engine/smartDiff';
+import { computeWorkbookDiff } from '../src/engine/workbookDiff';
 import { getWorkbookSections } from '../src/utils/workbookSections';
 import { buildWorkbookSectionRowIndex } from '../src/utils/workbookSheetIndex';
 
@@ -13,7 +13,7 @@ test('buildWorkbookSheetPresentation can include hidden columns when requested',
     createWorkbookRowLine(1, ['ID', '', 'Name']),
     createWorkbookRowLine(2, ['10001', '', 'A']),
   ].join('\n');
-  const diffLines = computeSmartDiff(base, base);
+  const diffLines = computeWorkbookDiff(base, base);
   const sections = getWorkbookSections(diffLines);
   const rows = buildWorkbookSectionRowIndex(diffLines, sections).get('Thing')?.rows ?? [];
 

@@ -30,6 +30,10 @@ export function isWorkbookText(text: string): boolean {
   return parsed?.kind === 'sheet' || parsed?.kind === 'row';
 }
 
+export function isWorkbookTextPair(baseText: string, mineText: string): boolean {
+  return isWorkbookText(baseText) && isWorkbookText(mineText);
+}
+
 function parseWorkbookDocument(
   text: string,
   compareMode: WorkbookCompareMode = 'strict',

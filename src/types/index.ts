@@ -34,6 +34,17 @@ export interface DiffLine {
   mineCharSpans: CharSpan[] | null;
 }
 
+export interface TextDiffStats {
+  add: number;
+  del: number;
+  chg: number;
+}
+
+export interface TextDiffPresentation {
+  replacementPairIndex: Map<number, number>;
+  stats: TextDiffStats;
+}
+
 /** A contiguous block of changes */
 export interface Hunk {
   /** Index of first DiffLine in this hunk */
@@ -98,6 +109,7 @@ export type RenderItem = LineItem | CollapseItem;
 export interface SplitRow {
   left: DiffLine | null;
   right: DiffLine | null;
+  isReplacementPair?: boolean;
   /** representative lineIdx for search/hunk logic */
   lineIdx: number;
   /** all underlying diff line indexes represented by this row */
@@ -150,6 +162,8 @@ export type LayoutMode = 'unified' | 'split-h' | 'split-v';
 export type WorkbookMoveDirection = 'up' | 'down' | 'left' | 'right';
 export type WorkbookSelectionKind = 'cell' | 'row' | 'column';
 export type WorkbookCompareMode = 'strict' | 'content';
+export type WorkbookSelectionRequestReason = 'click' | 'contextmenu' | 'keyboard' | 'programmatic';
+export type WorkbookSelectionMode = 'replace' | 'range' | 'toggle';
 
 export interface WorkbookSelectedCell {
   kind: WorkbookSelectionKind;
@@ -163,6 +177,41 @@ export interface WorkbookSelectedCell {
   value: string;
   formula: string;
 }
+
+export interface WorkbookSelectionState {
+  anchor: WorkbookSelectedCell | null;
+  primary: WorkbookSelectedCell | null;
+  items: WorkbookSelectedCell[];
+}
+
+export interface WorkbookContextMenuPoint {
+  x: number;
+  y: number;
+}
+
+export interface WorkbookSelectionRequest {
+  target: WorkbookSelectedCell | null;
+  mode?: WorkbookSelectionMode | undefined;
+  reason?: WorkbookSelectionRequestReason | undefined;
+  clientPoint?: WorkbookContextMenuPoint | undefined;
+  preserveExistingIfTargetSelected?: boolean | undefined;
+}
+
+export interface WorkbookHiddenColumnSegment {
+  startCol: number;
+  endCol: number;
+  columns: number[];
+  count: number;
+  beforeColumn: number | null;
+  afterColumn: number | null;
+}
+
+export interface WorkbookSheetHiddenState {
+  hiddenRows: number[];
+  hiddenColumns: number[];
+}
+
+export type WorkbookHiddenStateBySheet = Record<string, WorkbookSheetHiddenState>;
 
 export interface WorkbookDiffRegionPatch {
   startRowIndex: number;
@@ -243,7 +292,9 @@ export interface WorkbookMetadataMap {
 }
 
 export interface WorkbookSheetPresentation {
+  allColumns: number[];
   visibleColumns: number[];
+  hiddenColumnSegments: WorkbookHiddenColumnSegment[];
   baseMergeRanges: WorkbookMergeRange[];
   mineMergeRanges: WorkbookMergeRange[];
 }
@@ -375,6 +426,8 @@ export interface WorkbookArtifactDiff {
   mineBytes: number;
 }
 
+export type DiffSourceNoticeCode = 'unversioned-working-copy';
+
 export interface DiffData extends DiffMeta {
   baseContent: string | null;
   mineContent: string | null;
@@ -391,6 +444,7 @@ export interface DiffData extends DiffMeta {
   mineRevisionInfo?: SvnRevisionInfo | null;
   canSwitchRevisions?: boolean;
   workbookArtifactDiff?: WorkbookArtifactDiff | null;
+  sourceNoticeCode?: DiffSourceNoticeCode | null;
   perf?: DiffPerformanceMetrics | null;
 }
 
@@ -437,6 +491,52 @@ export interface LocalDiffFilePickResult {
   name: string;
 }
 
+export type AppUpdatePlatform = 'win32' | 'darwin' | 'linux' | 'unknown';
+
+export type AppUpdateStatus =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'upToDate'
+  | 'error'
+  | 'unsupported'
+  | 'disabled';
+
+export interface AppUpdateState {
+  status: AppUpdateStatus;
+  platform: AppUpdatePlatform;
+  supportsAutoUpdate: boolean;
+  currentVersion: string;
+  availableVersion: string | null;
+  downloadPercent: number;
+  releaseName: string | null;
+  releaseNotes: string | null;
+  publishedAt: string | null;
+  lastCheckedAt: string | null;
+  errorMessage: string | null;
+}
+
+export type SvnDiffViewerScope = 'all-files' | 'excel-only';
+export type SvnDiffViewerMode = SvnDiffViewerScope | 'mixed' | 'unconfigured' | 'unsupported';
+export type SvnDiffViewerAvailabilityReason = 'ready' | 'windows-only' | 'packaged-only';
+
+export interface SvnDiffViewerStatus {
+  available: boolean;
+  reason: SvnDiffViewerAvailabilityReason;
+  executablePath: string | null;
+  command: string | null;
+  currentMode: SvnDiffViewerMode;
+  globalDiffCommand: string | null;
+  workbookDiffCommands: Record<string, string | null>;
+  workbookExtensions: string[];
+}
+
+export interface WindowFrameState {
+  isMaximized: boolean;
+}
+
 // ── Electron IPC bridge (window.svnDiff) ─────────────────────────────────────
 
 export interface SvnDiffBridge {
@@ -451,7 +551,18 @@ export interface SvnDiffBridge {
   pickDiffFile(): Promise<LocalDiffFilePickResult | null>;
   loadDevWorkingCopyDiff(filePath: string, compareMode?: WorkbookCompareMode): Promise<DiffData>;
   loadLocalDiff(basePath: string, minePath: string, compareMode?: WorkbookCompareMode): Promise<DiffData>;
+  getSvnDiffViewerStatus(): Promise<SvnDiffViewerStatus>;
+  configureSvnDiffViewer(scope: SvnDiffViewerScope): Promise<SvnDiffViewerStatus>;
   getTheme(): Promise<'dark' | 'light'>;
+  usesNativeWindowControls(): Promise<boolean>;
+  getWindowFrameState(): Promise<WindowFrameState>;
+  onWindowFrameStateChanged?(listener: (state: WindowFrameState) => void): () => void;
+  setTitleBarOverlay?(options: { color: string; symbolColor: string; height: number }): void;
+  getUpdateState(): Promise<AppUpdateState>;
+  checkForAppUpdate(options?: { manual?: boolean }): Promise<void>;
+  downloadAppUpdate(): Promise<void>;
+  installDownloadedUpdate(): Promise<void>;
+  onAppUpdateState?(listener: (state: AppUpdateState) => void): () => void;
   writeClipboardText(text: string): void;
   debugLog?(message: string, payload?: unknown): void;
   windowMinimize(): void;

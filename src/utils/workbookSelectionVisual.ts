@@ -1,9 +1,11 @@
-import type { Theme, WorkbookSelectedCell } from '../types';
+import type { Theme } from '../types';
+import type { WorkbookSelectionLookup } from './workbookSelectionState';
 
 export interface WorkbookSelectionVisualState {
   accent: string;
   axisAccent: string;
-  isSelected: boolean;
+  isPrimarySelected: boolean;
+  isSecondarySelected: boolean;
   isMirroredSelection: boolean;
   isSelectedRow: boolean;
   isSelectedColumn: boolean;
@@ -14,55 +16,76 @@ export interface WorkbookSelectionVisualState {
   hasSelectionHighlight: boolean;
 }
 
+const EMPTY_LOOKUP: WorkbookSelectionLookup = {
+  anchor: null,
+  primary: null,
+  rowKeys: new Set<string>(),
+  columnKeys: new Set<string>(),
+  cellKeys: new Set<string>(),
+  mirroredCellKeys: new Set<string>(),
+};
+
+function buildAxisKey(sheetName: string, value: number): string {
+  return `${sheetName}:${value}`;
+}
+
+function buildCellKey(
+  sheetName: string,
+  side: 'base' | 'mine',
+  rowNumber: number,
+  column: number,
+): string {
+  return `${sheetName}:${side}:${rowNumber}:${column}`;
+}
+
 export function getWorkbookSelectionVisualState(
   T: Theme,
-  selectedCell: WorkbookSelectedCell | null | undefined,
+  selectionLookup: WorkbookSelectionLookup | null | undefined,
   sheetName: string,
   side: 'base' | 'mine',
   rowNumber: number,
   column: number,
 ): WorkbookSelectionVisualState {
-  const selectionKind = selectedCell?.kind ?? 'cell';
-  const isSameSheet = Boolean(selectedCell && selectedCell.sheetName === sheetName);
+  const lookup = selectionLookup ?? EMPTY_LOOKUP;
+  const primary = lookup.primary;
+  const selectionKind = primary?.kind ?? 'cell';
+  const isSameSheet = Boolean(primary && primary.sheetName === sheetName);
   const accent = side === 'base' ? T.acc2 : T.acc;
   const axisAccent = side === 'base' ? T.acc2 : T.acc;
-  const isSelected = Boolean(
+  const rowKey = buildAxisKey(sheetName, rowNumber);
+  const columnKey = buildAxisKey(sheetName, column);
+  const cellKey = buildCellKey(sheetName, side, rowNumber, column);
+  const isPrimarySelected = Boolean(
     isSameSheet
     && selectionKind === 'cell'
-    && selectedCell?.side === side
-    && selectedCell?.rowNumber === rowNumber
-    && selectedCell?.colIndex === column,
+    && primary?.side === side
+    && primary?.rowNumber === rowNumber
+    && primary?.colIndex === column,
+  );
+  const isSecondarySelected = Boolean(
+    !isPrimarySelected
+    && lookup.cellKeys.has(cellKey),
   );
   const isMirroredSelection = Boolean(
-    isSameSheet
-    && selectionKind === 'cell'
-    && selectedCell?.side !== side
-    && selectedCell?.rowNumber === rowNumber
-    && selectedCell?.colIndex === column,
+    !isPrimarySelected
+    && !isSecondarySelected
+    && lookup.mirroredCellKeys.has(cellKey),
   );
-  const isSelectedRow = Boolean(
-    isSameSheet
-    && selectionKind === 'row'
-    && selectedCell?.rowNumber === rowNumber,
-  );
-  const isSelectedColumn = Boolean(
-    isSameSheet
-    && selectionKind === 'column'
-    && selectedCell?.colIndex === column,
-  );
+  const isSelectedRow = lookup.rowKeys.has(rowKey);
+  const isSelectedColumn = lookup.columnKeys.has(columnKey);
   const isFocusedRowAnchor = Boolean(
     isSameSheet
     && selectionKind === 'row'
-    && selectedCell?.side === side
-    && selectedCell?.rowNumber === rowNumber
-    && selectedCell?.colIndex === column,
+    && primary?.side === side
+    && primary?.rowNumber === rowNumber
+    && primary?.colIndex === column,
   );
   const isFocusedColumnAnchor = Boolean(
     isSameSheet
     && selectionKind === 'column'
-    && selectedCell?.side === side
-    && selectedCell?.rowNumber === rowNumber
-    && selectedCell?.colIndex === column,
+    && primary?.side === side
+    && primary?.rowNumber === rowNumber
+    && primary?.colIndex === column,
   );
   const hasAxisSelection = isSelectedRow || isSelectedColumn;
   const hasFocusedAnchor = isFocusedRowAnchor || isFocusedColumnAnchor;
@@ -70,7 +93,8 @@ export function getWorkbookSelectionVisualState(
   return {
     accent,
     axisAccent,
-    isSelected,
+    isPrimarySelected,
+    isSecondarySelected,
     isMirroredSelection,
     isSelectedRow,
     isSelectedColumn,
@@ -78,14 +102,15 @@ export function getWorkbookSelectionVisualState(
     isFocusedColumnAnchor,
     hasAxisSelection,
     hasFocusedAnchor,
-    hasSelectionHighlight: isSelected || isMirroredSelection || hasAxisSelection,
+    hasSelectionHighlight: isPrimarySelected || isSecondarySelected || isMirroredSelection || hasAxisSelection,
   };
 }
 
 export function getWorkbookSelectionOverlay(
-  state: Pick<WorkbookSelectionVisualState, 'accent' | 'axisAccent' | 'hasAxisSelection' | 'isMirroredSelection' | 'isSelected'>,
+  state: Pick<WorkbookSelectionVisualState, 'accent' | 'axisAccent' | 'hasAxisSelection' | 'isMirroredSelection' | 'isPrimarySelected' | 'isSecondarySelected'>,
 ): string | null {
-  if (state.isSelected) return `${state.accent}2c`;
+  if (state.isPrimarySelected) return `${state.accent}2c`;
+  if (state.isSecondarySelected) return `${state.accent}18`;
   if (state.isMirroredSelection) return `${state.accent}18`;
   if (state.hasAxisSelection) return `${state.axisAccent}12`;
   return null;
@@ -127,11 +152,15 @@ export function drawWorkbookCanvasSelectionFrame(
     ctx.strokeRect(x + 0.5, y + 0.5, outerWidth, outerHeight);
   }
 
-  if (state.isSelected) {
+  if (state.isPrimarySelected) {
     ctx.strokeStyle = `${state.accent}48`;
     ctx.lineWidth = 1;
     ctx.strokeRect(x + 0.5, y + 0.5, outerWidth, outerHeight);
     ctx.strokeStyle = state.accent;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x + 1, y + 1, innerWidth, innerHeight);
+  } else if (state.isSecondarySelected) {
+    ctx.strokeStyle = `${state.accent}82`;
     ctx.lineWidth = 2;
     ctx.strokeRect(x + 1, y + 1, innerWidth, innerHeight);
   } else if (state.isMirroredSelection) {

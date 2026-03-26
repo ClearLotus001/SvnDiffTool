@@ -2,7 +2,7 @@
 import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { FONT_CODE, FONT_SIZE, FONT_UI } from '../constants/typography';
 import { useI18n } from '../context/i18n';
-import type { ThemeKey, LayoutMode, WorkbookCompareMode } from '../types';
+import type { AppUpdateState, ThemeKey, LayoutMode, WorkbookCompareMode } from '../types';
 import { THEMES } from '../theme';
 import { useTheme } from '../context/theme';
 import Tooltip from './Tooltip';
@@ -12,6 +12,7 @@ type IconName =
   | 'layoutUnified'
   | 'layoutSplit'
   | 'layoutVertical'
+  | 'layoutTopBottom'
   | 'prev'
   | 'next'
   | 'search'
@@ -24,20 +25,50 @@ type IconName =
   | 'file'
   | 'help'
   | 'brand'
+  | 'update'
+  | 'download'
+  | 'install'
+  | 'info'
   | 'chevronDown'
   | 'windowMinimize'
   | 'windowMaximize'
+  | 'windowRestore'
   | 'windowClose';
 
 const LAYOUT_OPTIONS: {
   id: LayoutMode;
-  labelKey: 'toolbarLayoutUnified' | 'toolbarLayoutSplit' | 'toolbarLayoutVertical';
-  icon: IconName;
 }[] = [
-  { id: 'unified', labelKey: 'toolbarLayoutUnified', icon: 'layoutUnified' },
-  { id: 'split-h', labelKey: 'toolbarLayoutSplit', icon: 'layoutSplit' },
-  { id: 'split-v', labelKey: 'toolbarLayoutVertical', icon: 'layoutVertical' },
+  { id: 'unified' },
+  { id: 'split-h' },
+  { id: 'split-v' },
 ];
+
+type LayoutLabelKey =
+  | 'toolbarLayoutUnified'
+  | 'toolbarLayoutSplit'
+  | 'toolbarLayoutVertical'
+  | 'toolbarLayoutWorkbookUnified'
+  | 'toolbarLayoutWorkbookColumns';
+
+function getLayoutLabelKey(layout: LayoutMode, isWorkbookMode: boolean): LayoutLabelKey {
+  if (layout === 'unified') {
+    return isWorkbookMode ? 'toolbarLayoutWorkbookUnified' : 'toolbarLayoutUnified';
+  }
+  if (layout === 'split-v') {
+    return isWorkbookMode ? 'toolbarLayoutWorkbookColumns' : 'toolbarLayoutVertical';
+  }
+  return 'toolbarLayoutSplit';
+}
+
+function getLayoutIconName(layout: LayoutMode, isWorkbookMode: boolean): IconName {
+  if (layout === 'split-v') {
+    return isWorkbookMode ? 'layoutVertical' : 'layoutTopBottom';
+  }
+  if (layout === 'split-h') {
+    return 'layoutSplit';
+  }
+  return 'layoutUnified';
+}
 
 interface ToolbarProps {
   fileName: string;
@@ -62,10 +93,18 @@ interface ToolbarProps {
   setWorkbookCompareMode: (mode: WorkbookCompareMode) => void;
   fontSize: number;
   setFontSize: React.Dispatch<React.SetStateAction<number>>;
+  onPickFile: () => void;
   onGoto: () => void;
   onHelp: () => void;
+  onAbout: () => void;
   isElectron: boolean;
+  usesNativeWindowControls: boolean;
+  isWindowMaximized: boolean;
   isWorkbookMode: boolean;
+  updateState: AppUpdateState | null;
+  onCheckForUpdates: () => void;
+  onDownloadUpdate: () => void;
+  onInstallUpdate: () => void;
 }
 
 function Icon({ name, size = 12 }: { name: IconName; size?: number }) {
@@ -103,6 +142,13 @@ function Icon({ name, size = 12 }: { name: IconName; size?: number }) {
           <rect x="2.5" y="3" width="11" height="10" rx="2" />
           <path d="M6 3.5v9" />
           <path d="M10 3.5v9" />
+        </svg>
+      );
+    case 'layoutTopBottom':
+      return (
+        <svg {...common}>
+          <rect x="2.5" y="3" width="11" height="10" rx="2" />
+          <path d="M3 8h10" />
         </svg>
       );
     case 'prev':
@@ -203,6 +249,41 @@ function Icon({ name, size = 12 }: { name: IconName; size?: number }) {
           <path d="m11.5 6.5 2 2-2 2" stroke="#fff" />
         </svg>
       );
+    case 'update':
+      return (
+        <svg {...common}>
+          <path d="M12.5 5.5V3h-2.5" />
+          <path d="M3.8 6.7A4.8 4.8 0 0 1 12.1 5" />
+          <path d="M3.5 10.5V13h2.5" />
+          <path d="M12.2 9.3A4.8 4.8 0 0 1 3.9 11" />
+        </svg>
+      );
+    case 'download':
+      return (
+        <svg {...common}>
+          <path d="M8 3.5v6" />
+          <path d="m5.5 7.5 2.5 2.5 2.5-2.5" />
+          <path d="M3.5 12.5h9" />
+        </svg>
+      );
+    case 'install':
+      return (
+        <svg {...common}>
+          <path d="M8 3.5v6" />
+          <path d="m5.5 7.5 2.5 2.5 2.5-2.5" />
+          <path d="M4 12.5h8" />
+          <path d="M5 12.5v1" />
+          <path d="M11 12.5v1" />
+        </svg>
+      );
+    case 'info':
+      return (
+        <svg {...common}>
+          <circle cx="8" cy="8" r="5.5" />
+          <path d="M8 7.2v3.1" />
+          <path d="M8 4.7h.01" />
+        </svg>
+      );
     case 'chevronDown':
       return (
         <svg {...common}>
@@ -219,6 +300,14 @@ function Icon({ name, size = 12 }: { name: IconName; size?: number }) {
       return (
         <svg {...common}>
           <rect x="4" y="4" width="8" height="8" rx="1.5" />
+        </svg>
+      );
+    case 'windowRestore':
+      return (
+        <svg {...common}>
+          <path d="M6 4h5v5" />
+          <path d="M6 4 4 6" />
+          <rect x="4" y="6" width="7" height="6" rx="1.2" />
         </svg>
       );
     case 'windowClose':
@@ -242,7 +331,9 @@ const Toolbar = memo((props: ToolbarProps) => {
     showWhitespace, setShowWhitespace, showHiddenColumns, setShowHiddenColumns,
     workbookCompareMode, setWorkbookCompareMode,
     fontSize, setFontSize,
-    onGoto, onHelp, isElectron, isWorkbookMode,
+    onPickFile,
+    onGoto, onHelp, onAbout, isElectron, usesNativeWindowControls, isWindowMaximized, isWorkbookMode,
+    updateState, onCheckForUpdates, onDownloadUpdate, onInstallUpdate,
   } = props;
 
   const T = useTheme();
@@ -295,6 +386,7 @@ const Toolbar = memo((props: ToolbarProps) => {
   const showActionText = responsiveMode === 'regular';
   const showFileMeta = responsiveMode === 'regular';
   const showFileChip = responsiveMode !== 'tight';
+  const showFileActionText = responsiveMode !== 'tight';
   const showHunkTarget = (responsiveMode === 'regular' || responsiveMode === 'condensed') && !isWorkbookMode;
   const showThemeLabel = responsiveMode === 'regular' || responsiveMode === 'condensed';
   const showViewLabel = true;
@@ -302,6 +394,97 @@ const Toolbar = memo((props: ToolbarProps) => {
   const compactFileMaxWidth = responsiveMode === 'compact' ? 148 : responsiveMode === 'condensed' ? 180 : 220;
   const groupGap = responsiveMode === 'tight' ? 2 : 3;
   const groupPadding = responsiveMode === 'tight' ? 1 : 2;
+  const showUpdateLabel = responsiveMode !== 'tight';
+  const nativeWindowControlsInset = usesNativeWindowControls ? 138 : 0;
+  const windowMaximizeTooltip = isWindowMaximized ? t('toolbarWindowRestoreTitle') : t('toolbarWindowMaximizeTitle');
+  const fileActionLabel = fileName ? t('toolbarSwitchFileLabel') : t('toolbarPickFileLabel');
+  const fileActionTooltip = fileName ? t('toolbarSwitchFileTitle') : t('toolbarPickFileTitle');
+  const updateAction = useMemo(() => {
+    if (!isElectron || !updateState) return null;
+
+    switch (updateState.status) {
+      case 'checking':
+        return {
+          label: t('toolbarUpdateChecking'),
+          icon: 'update' as const,
+          onClick: onCheckForUpdates,
+          disabled: true,
+          active: false,
+        };
+      case 'available':
+        return {
+          label: t('toolbarUpdateDownload'),
+          icon: 'download' as const,
+          onClick: onDownloadUpdate,
+          disabled: false,
+          active: true,
+        };
+      case 'downloading':
+        return {
+          label: `${t('toolbarUpdateDownloading')} ${Math.round(updateState.downloadPercent)}%`,
+          icon: 'download' as const,
+          onClick: onDownloadUpdate,
+          disabled: true,
+          active: true,
+        };
+      case 'downloaded':
+        return {
+          label: t('toolbarUpdateInstall'),
+          icon: 'install' as const,
+          onClick: onInstallUpdate,
+          disabled: false,
+          active: true,
+        };
+      case 'upToDate':
+        return {
+          label: t('toolbarUpdateUpToDate'),
+          icon: 'update' as const,
+          onClick: onCheckForUpdates,
+          disabled: true,
+          active: false,
+        };
+      case 'error':
+        return {
+          label: t('toolbarUpdateRetry'),
+          icon: 'update' as const,
+          onClick: onCheckForUpdates,
+          disabled: false,
+          active: true,
+        };
+      case 'disabled':
+        return {
+          label: t('toolbarUpdateDisabled'),
+          icon: 'update' as const,
+          onClick: onCheckForUpdates,
+          disabled: true,
+          active: false,
+        };
+      case 'unsupported':
+        return {
+          label: t('toolbarUpdateUnsupported'),
+          icon: 'update' as const,
+          onClick: onCheckForUpdates,
+          disabled: true,
+          active: false,
+        };
+      case 'idle':
+      default:
+        return {
+          label: t('toolbarUpdateCheck'),
+          icon: 'update' as const,
+          onClick: onCheckForUpdates,
+          disabled: false,
+          active: false,
+        };
+    }
+  }, [
+    isElectron,
+    onCheckForUpdates,
+    onDownloadUpdate,
+    onInstallUpdate,
+    t,
+    updateState,
+  ]);
 
   const Btn = ({
     active = false, onClick, children, tooltip = '', compact = false, disabled = false,
@@ -314,7 +497,7 @@ const Toolbar = memo((props: ToolbarProps) => {
     disabled?: boolean;
   }) => {
     const button = (
-      <button type="button" onClick={onClick} disabled={disabled} aria-label={tooltip || undefined} style={{
+      <button className="svn-toolbar-btn" type="button" onClick={onClick} disabled={disabled} aria-label={tooltip || undefined} style={{
       background: active ? `${T.acc}22` : 'transparent',
       border: `1px solid ${active ? `${T.acc}66` : 'transparent'}`,
       color: active ? T.acc : T.t0,
@@ -335,6 +518,7 @@ const Toolbar = memo((props: ToolbarProps) => {
       lineHeight: 1,
       opacity: disabled ? 0.45 : 1,
       cursor: disabled ? 'not-allowed' : 'pointer',
+      transition: 'background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease, box-shadow 160ms ease',
       ...noDragStyle,
     }}>
       {children}
@@ -359,20 +543,6 @@ const Toolbar = memo((props: ToolbarProps) => {
     </div>
   );
 
-  const windowButtonStyle = {
-    background: 'transparent',
-    border: 'none',
-    color: T.t1,
-    width: 28,
-    height: 28,
-    cursor: 'pointer',
-    borderRadius: 8,
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...noDragStyle,
-  } as const;
-
   const ThemeMenu = () => (
     <div
       ref={themeMenuRef}
@@ -382,6 +552,7 @@ const Toolbar = memo((props: ToolbarProps) => {
       }}>
       <Tooltip content={getThemeLabel(themeKey)} anchorStyle={noDragAnchorStyle}>
         <button
+          className="svn-toolbar-btn"
           type="button"
           aria-haspopup="menu"
           aria-expanded={themeMenuOpen}
@@ -402,6 +573,7 @@ const Toolbar = memo((props: ToolbarProps) => {
             cursor: 'pointer',
             whiteSpace: 'nowrap',
             boxSizing: 'border-box',
+            transition: 'background 160ms ease, border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease',
             ...noDragStyle,
           }}>
           <span
@@ -442,6 +614,7 @@ const Toolbar = memo((props: ToolbarProps) => {
             const active = themeKey === k;
             return (
               <button
+                className="svn-toolbar-btn"
                 key={k}
                 type="button"
                 role="menuitemradio"
@@ -466,6 +639,7 @@ const Toolbar = memo((props: ToolbarProps) => {
                   gap: 10,
                   cursor: 'pointer',
                   textAlign: 'left',
+                  transition: 'background 160ms ease, border-color 160ms ease, transform 160ms ease',
                   ...noDragStyle,
                 }}>
                 <span>{getThemeLabel(k)}</span>
@@ -496,7 +670,7 @@ const Toolbar = memo((props: ToolbarProps) => {
       alignItems: 'center',
       flexWrap: 'nowrap',
       gap: 8,
-      padding: '6px 8px',
+      padding: `6px ${8 + nativeWindowControlsInset}px 6px 8px`,
       minHeight: 44,
       flexShrink: 0,
       minWidth: 0,
@@ -582,17 +756,31 @@ const Toolbar = memo((props: ToolbarProps) => {
           </Tooltip>
         )}
 
-        <Group>
-          {LAYOUT_OPTIONS.map((option) => (
-            <Btn
-              key={option.id}
-              active={layout === option.id}
-              onClick={() => setLayout(option.id)}
-              tooltip={t(option.labelKey)}>
-              <Icon name={option.icon} />
-              {showLayoutText && <span>{t(option.labelKey)}</span>}
+        {isElectron && Boolean(fileName) && (
+          <Group>
+            <Btn onClick={onPickFile} tooltip={fileActionTooltip}>
+              <Icon name="file" />
+              {showFileActionText && <span>{fileActionLabel}</span>}
             </Btn>
-          ))}
+          </Group>
+        )}
+
+        <Group>
+          {LAYOUT_OPTIONS.map((option) => {
+            const labelKey = getLayoutLabelKey(option.id, isWorkbookMode);
+            const iconName = getLayoutIconName(option.id, isWorkbookMode);
+
+            return (
+              <Btn
+                key={option.id}
+                active={layout === option.id}
+                onClick={() => setLayout(option.id)}
+                tooltip={t(labelKey)}>
+                <Icon name={iconName} />
+                {showLayoutText && <span>{t(labelKey)}</span>}
+              </Btn>
+            );
+          })}
         </Group>
 
         <Group>
@@ -674,12 +862,28 @@ const Toolbar = memo((props: ToolbarProps) => {
         marginLeft: 8,
         ...noDragStyle,
       }}>
+        {updateAction && (
+          <Group>
+            <Btn
+              active={updateAction.active}
+              onClick={updateAction.onClick}
+              tooltip={updateState?.errorMessage || updateAction.label}
+              disabled={updateAction.disabled}>
+              <Icon name={updateAction.icon} />
+              {showUpdateLabel && <span>{updateAction.label}</span>}
+            </Btn>
+          </Group>
+        )}
+
         <Group>
-          <Btn onClick={() => setLocale(nextLocale)} tooltip={t('toolbarLanguageTitle')}>
-            <Icon name="language" />
-            {showLanguageText && (
-              <span>{locale === 'zh-CN' ? t('toolbarLanguageEn') : t('toolbarLanguageZh')}</span>
-            )}
+            <Btn onClick={() => setLocale(nextLocale)} tooltip={t('toolbarLanguageTitle')}>
+              <Icon name="language" />
+              {showLanguageText && (
+                <span>{locale === 'zh-CN' ? t('toolbarLanguageEn') : t('toolbarLanguageZh')}</span>
+              )}
+            </Btn>
+          <Btn onClick={onAbout} tooltip={t('toolbarAboutTitle')} compact>
+            <Icon name="info" />
           </Btn>
           <Btn onClick={onHelp} tooltip={t('toolbarShortcutsTitle')} compact>
             <Icon name="help" />
@@ -688,40 +892,29 @@ const Toolbar = memo((props: ToolbarProps) => {
 
         <ThemeMenu />
 
-        {isElectron && (
+        {isElectron && !usesNativeWindowControls && (
           <Group>
-            <Tooltip content={t('toolbarWindowMinimizeTitle')} anchorStyle={noDragAnchorStyle}>
-              <button
-                type="button"
-                onClick={() => window.svnDiff!.windowMinimize()}
-                aria-label={t('toolbarWindowMinimizeTitle')}
-                style={windowButtonStyle}>
-                <Icon name="windowMinimize" />
-              </button>
-            </Tooltip>
-            <Tooltip content={t('toolbarWindowMaximizeTitle')} anchorStyle={noDragAnchorStyle}>
-              <button
-                type="button"
-                onClick={() => window.svnDiff!.windowMaximize()}
-                aria-label={t('toolbarWindowMaximizeTitle')}
-                style={windowButtonStyle}>
-                <Icon name="windowMaximize" />
-              </button>
-            </Tooltip>
-            <Tooltip content={t('toolbarWindowCloseTitle')} anchorStyle={noDragAnchorStyle}>
-              <button
-                type="button"
-                onClick={() => window.svnDiff!.windowClose()}
-                aria-label={t('toolbarWindowCloseTitle')}
-                onMouseEnter={e => (e.currentTarget.style.background = '#c42b1c')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                style={windowButtonStyle}>
-                <Icon name="windowClose" />
-              </button>
-            </Tooltip>
+            <Btn onClick={() => window.svnDiff!.windowMinimize()} tooltip={t('toolbarWindowMinimizeTitle')} compact>
+              <Icon name="windowMinimize" />
+            </Btn>
+            <Btn onClick={() => window.svnDiff!.windowMaximize()} tooltip={windowMaximizeTooltip} compact>
+              <Icon name={isWindowMaximized ? 'windowRestore' : 'windowMaximize'} />
+            </Btn>
+            <Btn onClick={() => window.svnDiff!.windowClose()} tooltip={t('toolbarWindowCloseTitle')} compact>
+              <Icon name="windowClose" />
+            </Btn>
           </Group>
         )}
       </div>
+
+      <style>{`
+        .svn-toolbar-btn:not(:disabled):hover {
+          transform: translateY(-1px);
+          background: ${T.bg3};
+          border-color: ${T.border2};
+          box-shadow: 0 8px 18px -16px ${T.border2};
+        }
+      `}</style>
     </div>
   );
 });

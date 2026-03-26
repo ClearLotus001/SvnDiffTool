@@ -9,10 +9,12 @@ import type {
 } from '../types';
 import { useTheme } from '../context/theme';
 import { buildSplitRows } from '../engine/diff';
+import { useVariableVirtual } from '../hooks/useVariableVirtual';
 import { useVirtual, ROW_H } from '../hooks/useVirtual';
 import { LN_W } from '../constants/layout';
 import { parseWorkbookDisplayLine, WORKBOOK_CELL_WIDTH } from '../utils/workbookDisplay';
 import { extractVersionLabel } from '../utils/diffMeta';
+import { getTextVerticalRenderMode } from '../utils/splitRowBehavior';
 import {
   findWorkbookSectionIndex,
   getWorkbookColumnLabels,
@@ -42,11 +44,13 @@ import {
   resolveActiveCollapsePosition,
 } from '../utils/collapseNavigation';
 import SplitCell from './SplitCell';
+import DiffRow from './DiffRow';
 import CollapseBar from './CollapseBar';
 import CollapseJumpButton from './CollapseJumpButton';
 import MiniMap from './MiniMap';
 
 const CONTEXT_LINES = 3;
+const DOUBLE_ROW_H = (ROW_H * 2) + 1;
 type CollapseNavigationHandler = (direction: 'prev' | 'next') => void;
 
 // Fully typed — no `as any` casts
@@ -149,13 +153,30 @@ const SplitPanel = memo(({
     }),
     [blockPrefix, collapseCtx, expandedBlocks, rowBlocks],
   );
-  const rowHeight = vertical ? (ROW_H * 2) + 1 : ROW_H;
-
-  const { totalH, startIdx, endIdx, scrollToIndex } = useVirtual(
+  const itemHeights = useMemo(
+    () => items.map((item) => {
+      if (item.kind === 'split-collapse') return ROW_H;
+      if (!vertical) return ROW_H;
+      return getTextVerticalRenderMode(item.row) === 'double' ? DOUBLE_ROW_H : ROW_H;
+    }),
+    [items, vertical],
+  );
+  const constantVirtual = useVirtual(
     items.length,
     scrollRef as RefObject<HTMLDivElement>,
-    rowHeight,
+    vertical ? DOUBLE_ROW_H : ROW_H,
   );
+  const variableVirtual = useVariableVirtual(
+    itemHeights,
+    scrollRef as RefObject<HTMLDivElement>,
+    { overscanMin: 80, overscanFactor: 3 },
+  );
+  const activeVirtual = vertical ? variableVirtual : constantVirtual;
+  const { totalH, startIdx, endIdx, scrollToIndex } = activeVirtual;
+  const rowWindowOffsetTop = vertical ? variableVirtual.offsetTop : startIdx * ROW_H;
+  const textRowLayoutStyle = isWorkbookMode
+    ? { width: 'max-content' as const, minWidth: '100%' as const }
+    : { width: 'max-content' as const, minWidth: '100%' as const };
 
   const revealLineIfCollapsed = useCallback((lineIdx: number) => {
     const target = findCollapsedRowTarget(rowBlocks, expandedBlocks, lineIdx, {
@@ -259,10 +280,10 @@ const SplitPanel = memo(({
   }, [items]);
 
   const workbookFrozenRowHeight = frozenRow
-    ? (vertical ? (ROW_H * 2) + 1 : ROW_H)
+    ? (vertical ? DOUBLE_ROW_H : ROW_H)
     : 0;
   const workbookHeaderHeight = isWorkbookMode
-    ? (vertical ? ((ROW_H * 2) + 1) : ROW_H) + workbookFrozenRowHeight
+    ? (vertical ? DOUBLE_ROW_H : ROW_H) + workbookFrozenRowHeight
     : 0;
   const collapseIndexes = useMemo(
     () => getCollapseIndexes(items, (item) => item.kind === 'split-collapse'),
@@ -404,7 +425,7 @@ const SplitPanel = memo(({
     return (
       <div
         style={{
-          height: vertical ? (ROW_H * 2) + 1 : ROW_H,
+          height: vertical ? DOUBLE_ROW_H : ROW_H,
           display: 'flex',
           flexDirection: vertical ? 'column' : 'row',
           width: 'max-content',
@@ -414,6 +435,9 @@ const SplitPanel = memo(({
         <SplitCell
           line={frozenRow.left}
           side="left"
+          widthMode={vertical ? 'content' : 'fill'}
+          lineNumberLayout={vertical ? 'paired' : 'single'}
+          isReplacementPair={Boolean(frozenRow.isReplacementPair)}
           isSearchMatch={false}
           isActiveSearch={false}
           showWhitespace={showWhitespace}
@@ -432,6 +456,9 @@ const SplitPanel = memo(({
         <SplitCell
           line={frozenRow.right}
           side="right"
+          widthMode={vertical ? 'content' : 'fill'}
+          lineNumberLayout={vertical ? 'paired' : 'single'}
+          isReplacementPair={Boolean(frozenRow.isReplacementPair)}
           isSearchMatch={false}
           isActiveSearch={false}
           showWhitespace={showWhitespace}
@@ -517,7 +544,9 @@ const SplitPanel = memo(({
             </div>
           )}
 
-          <div style={{ position: 'absolute', top: workbookHeaderHeight + (startIdx * rowHeight), left: 0, minWidth: '100%' }}>
+          <div style={isWorkbookMode
+            ? { position: 'absolute', top: workbookHeaderHeight + rowWindowOffsetTop, left: 0, minWidth: '100%' }
+            : { position: 'absolute', top: workbookHeaderHeight + rowWindowOffsetTop, left: 0, width: 'max-content', minWidth: '100%' }}>
           {items.slice(startIdx, endIdx).map((item) => {
             const key = item.kind === 'split-collapse'
               ? `${item.blockId}-${item.hiddenStart}-${item.hiddenEnd}`
@@ -528,7 +557,7 @@ const SplitPanel = memo(({
                 <CollapseBar key={key} count={item.count} expandCount={Math.min(item.count, item.expandStep)}
                   onExpand={() => startTransition(() => {
                     const revealCount = Math.min(item.count, item.expandStep);
-                    pendingScrollAdjustRef.current += getCollapseLeadingRevealCount(item.count, revealCount) * rowHeight;
+                    pendingScrollAdjustRef.current += getCollapseLeadingRevealCount(item.count, revealCount) * ROW_H;
                     setExpandedBlocks(prev => expandCollapseBlock(
                       prev,
                       item.blockId,
@@ -549,18 +578,48 @@ const SplitPanel = memo(({
             }
 
             // item.kind === 'split-line' — fully typed
+            const renderMode = vertical ? getTextVerticalRenderMode(item.row) : 'double';
+            const isSearchMatch = item.row.lineIdxs.some(idx => searchMatchSet.has(idx));
+            const isActiveSearch = item.row.lineIdxs.includes(activeSearchLineIdx);
+            const singleLine = renderMode === 'single-left'
+              ? item.row.left
+              : renderMode === 'single-right'
+              ? item.row.right
+              : renderMode === 'single-equal'
+              ? (item.row.left ?? item.row.right)
+              : null;
+
+            if (vertical && singleLine) {
+              return (
+                <div key={key} style={{ ...textRowLayoutStyle, height: ROW_H }}>
+                  <DiffRow
+                    line={singleLine}
+                    isReplacementPair={Boolean(item.row.isReplacementPair)}
+                    widthMode="content"
+                    isSearchMatch={isSearchMatch}
+                    isActiveSearch={isActiveSearch}
+                    showWhitespace={showWhitespace}
+                    fontSize={fontSize}
+                  />
+                </div>
+              );
+            }
+
+            const rowHeight = vertical && renderMode === 'double' ? DOUBLE_ROW_H : ROW_H;
             return (
               <div key={key} style={{
                 height: rowHeight,
                 display: 'flex',
                 flexDirection: vertical ? 'column' : 'row',
-                width: 'max-content',
-                minWidth: '100%',
+                ...textRowLayoutStyle,
               }}>
                 <SplitCell
                   line={item.row.left} side="left"
-                  isSearchMatch={item.row.lineIdxs.some(idx => searchMatchSet.has(idx))}
-                  isActiveSearch={item.row.lineIdxs.includes(activeSearchLineIdx)}
+                  widthMode={vertical ? 'content' : 'fill'}
+                  lineNumberLayout={vertical ? 'paired' : 'single'}
+                  isReplacementPair={Boolean(item.row.isReplacementPair)}
+                  isSearchMatch={isSearchMatch}
+                  isActiveSearch={isActiveSearch}
                   showWhitespace={showWhitespace}
                    fontSize={fontSize}
                    sheetName={activeWorkbookSection?.name ?? ''}
@@ -575,8 +634,11 @@ const SplitPanel = memo(({
                      : { width: 1, background: T.border, flexShrink: 0 }} />
                 <SplitCell
                   line={item.row.right} side="right"
-                  isSearchMatch={item.row.lineIdxs.some(idx => searchMatchSet.has(idx))}
-                  isActiveSearch={item.row.lineIdxs.includes(activeSearchLineIdx)}
+                  widthMode={vertical ? 'content' : 'fill'}
+                  lineNumberLayout={vertical ? 'paired' : 'single'}
+                  isReplacementPair={Boolean(item.row.isReplacementPair)}
+                  isSearchMatch={isSearchMatch}
+                  isActiveSearch={isActiveSearch}
                   showWhitespace={showWhitespace}
                    fontSize={fontSize}
                    sheetName={activeWorkbookSection?.name ?? ''}

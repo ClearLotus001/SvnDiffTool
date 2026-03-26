@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { computeSmartDiff } from '../src/engine/smartDiff';
+import { computeWorkbookDiff } from '../src/engine/workbookDiff';
 import { createWorkbookRowLine, createWorkbookSheetLine } from '../src/utils/workbookDisplay';
 import { getWorkbookSections } from '../src/utils/workbookSections';
 import { buildWorkbookSectionRowIndex } from '../src/utils/workbookSheetIndex';
@@ -14,7 +14,7 @@ function buildWorkbook(rows: Array<Array<string>>, sheetName = 'Thing') {
   ].join('\n');
 }
 
-function getSectionRows(diffLines: ReturnType<typeof computeSmartDiff>, sheetName = 'Thing') {
+function getSectionRows(diffLines: ReturnType<typeof computeWorkbookDiff>, sheetName = 'Thing') {
   const sections = getWorkbookSections(diffLines);
   const rowIndex = buildWorkbookSectionRowIndex(diffLines, sections);
   return rowIndex.get(sheetName)?.rows ?? [];
@@ -35,7 +35,7 @@ test('workbook-native diff keeps rows aligned after insertion', () => {
     ['10003', 'C'],
   ]);
 
-  const diffLines = computeSmartDiff(base, mine);
+  const diffLines = computeWorkbookDiff(base, mine);
   const sections = getWorkbookSections(diffLines).filter(section => section.name === 'Thing');
   const rows = getSectionRows(diffLines);
   const preview = rows.map((row) => ({
@@ -67,7 +67,7 @@ test('workbook-native diff pairs changed rows at the same logical position', () 
     ['10002', 'X'],
   ]);
 
-  const diffLines = computeSmartDiff(base, mine);
+  const diffLines = computeWorkbookDiff(base, mine);
   const rows = getSectionRows(diffLines);
   const changedRow = rows.find((row) => {
     const left = parseWorkbookRowLine(row.left);
@@ -91,7 +91,7 @@ test('workbook-native diff keeps whitespace-only cell changes visible to compare
     ['10001', ''],
   ]);
 
-  const diffLines = computeSmartDiff(base, mine);
+  const diffLines = computeWorkbookDiff(base, mine);
   assert.equal(diffLines.some((line) => line.type === 'delete' && line.baseLineNo === 2), true);
   assert.equal(diffLines.some((line) => line.type === 'add' && line.mineLineNo === 2), true);
 
@@ -119,7 +119,7 @@ test('workbook content mode ignores whitespace-only cell diffs consistently', ()
     ['10001', ''],
   ]);
 
-  const diffLines = computeSmartDiff(base, mine, 'content');
+  const diffLines = computeWorkbookDiff(base, mine, 'content');
   assert.equal(diffLines.every((line) => line.type === 'equal'), true);
 
   const rows = getSectionRows(diffLines);
@@ -142,7 +142,7 @@ test('workbook-native diff does not degrade large workbooks into duplicated shee
     ...baseRows,
   ];
 
-  const diffLines = computeSmartDiff(buildWorkbook(baseRows), buildWorkbook(mineRows));
+  const diffLines = computeWorkbookDiff(buildWorkbook(baseRows), buildWorkbook(mineRows));
   const sections = getWorkbookSections(diffLines).filter(section => section.name === 'Thing');
   const rows = getSectionRows(diffLines);
   const insertedRow = rows.find((row) => (

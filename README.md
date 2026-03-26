@@ -1,39 +1,77 @@
 # SvnDiffTool
 
-SvnDiffTool 是一个面向 TortoiseSVN 的外部 Diff 查看器，用更直观的 Electron 界面替代系统默认文本比较窗口。  
-它不局限于 Excel，既适合常见文本文件，也支持部分工作簿文件的差异查看。  
-界面风格参考 Beyond Compare，适合在代码审查、版本回溯和日常 SVN 对比时更快看清差异。
+[中文](./README.md) | [英文](./README.en.md)
 
-当前版本更适合 `.js`、`.ts`、`.tsx`、`.json`、`.xml`、`.py`、`.java`、`.txt` 这类文本文件。  
-如果你需要真正的 Excel 单元格级对比，当前实现还不属于“表格语义 diff”工具。
+> 一个面向 TortoiseSVN 的 Windows 外部差异查看工具，使用 Electron + React + Rust 提供更清晰的文本与工作簿对比体验。
 
-## 功能概览
+`SvnDiffTool` 用来替代 TortoiseSVN 默认的差异窗口。它保留外部对比工具的接入方式，同时提供更现代的界面、更强的导航与搜索能力，以及面向工作簿文件的专用对比视图。
 
-- 统一视图、左右分栏、上下分栏三种布局
-- 行级 diff + 字符级高亮
-- 折叠未变化区域，减少长文件干扰
-- 搜索栏支持普通搜索、正则、大小写匹配
-- 行号跳转
-- 空白字符可视化
-- 字体大小调节
-- 一键复制 Base / Mine 全量内容
-- 界面支持中文 / English，默认中文
-- Dark / Light / High Contrast 三套主题
-- 开发模式下可直接选择一个 SVN 工作副本文件，默认按同文件不同 revision 进入对比
+如果你的核心诉求是“更舒服地看 SVN 差异”，这就是它的目标；如果你的诉求是“完整办公文档语义级比对与合并”，它目前还不是那类重型工具。
 
 ## 适用场景
 
-- 替换 TortoiseSVN 默认外部对比体验
-- 阅读较大的文本差异文件
-- 快速跳转 diff hunk、搜索关键字、复制完整文件内容
-- 在深色主题下做代码评审
+| 场景 | 适配度 | 说明 |
+|------|--------|------|
+| TortoiseSVN 日常文件对比 | 很适合 | 可直接作为外部对比工具接入 |
+| 文本类文件审阅 | 很适合 | 行级差异、字符级高亮、搜索、跳转、折叠都已覆盖 |
+| 工作簿差异浏览 | 适合 | 支持工作表、行列、单元格维度的可视化对比 |
+| 超大文本文件阅读 | 适合 | 内置虚拟滚动、折叠和性能保护策略 |
+| 办公文档全语义比对或合并 | 有边界 | 不是专门做批注、样式、图表、宏合并的工具 |
+
+## 核心能力
+
+### 文本对比
+
+- 支持统一视图、左右分栏、上下分栏三种布局
+- 支持行级差异与字符级高亮
+- 支持折叠未变化区域，减少长文件干扰
+- 支持普通搜索、正则、大小写匹配
+- 支持行号跳转、差异块跳转和快捷键导航
+- 支持空白字符可视化、字体缩放、整份文本复制
+
+### SVN 集成
+
+- 兼容 TortoiseSVN 外部对比参数传递
+- 支持同一 SVN 文件的版本切换与重新加载
+- 开发模式下可直接选择工作副本文件进行本地调试
+
+### 工作簿对比
+
+- 针对工作簿文件提供独立对比面板，而不是简单把内容压平成纯文本
+- 支持工作表切换、差异区域定位、单元格级变化高亮
+- 支持严格模式与内容模式两种对比模式
+- 支持公式栏、冻结区域、行列隐藏与恢复、选择同步等交互能力
+- 使用 Rust 工作簿解析链路提升复杂文件和大文件场景下的稳定性
+
+### 桌面体验
+
+- 内置中文和英文界面
+- 提供浅色、深色、高对比三套主题
+- Windows 安装版支持基于 GitHub 发布页的自动更新
+
+## 技术栈
+
+- 前端：React 18 + TypeScript
+- 桌面容器：Electron 28
+- 构建：Vite
+- 工作簿解析与差异计算：Rust + `calamine` + `quick-xml`
+- 测试：Node.js 自带测试运行器 + `tsx`
 
 ## 环境要求
 
+### 运行安装版
+
 - Windows
-- Node.js 18+（建议，用于本地开发和打包）
+- TortoiseSVN（仅当你需要把它接成外部对比工具时）
+
+### 从源码开发或构建
+
+- Windows
+- Node.js 18+
 - npm
-- TortoiseSVN（如果你要把它作为外部 Diff 工具接入）
+- Rust 稳定版与 `cargo`
+
+> 注意：`npm run build` 会同时构建前端、Electron 主进程和 Rust 解析器，因此本地打包时需要可用的 Rust 工具链。
 
 ## 快速开始
 
@@ -43,41 +81,39 @@ npm run typecheck
 npm run dev:app
 ```
 
-常用命令：
+如果你不是通过 TortoiseSVN 传参启动，而是直接运行开发环境，应用会进入开发态。此时可以：
 
-```bash
-# 开发模式
-npm run dev:app
+- 选择一个 SVN 工作副本文件做本地对比调试
+- 使用内置示例数据观察界面行为
 
-# 类型检查
-npm run typecheck
+## 常用命令
 
-# 生产构建
-npm run build
+| 命令 | 说明 |
+|------|------|
+| `npm run dev:app` | 启动 Vite、Electron，以及主进程 TypeScript 监听编译 |
+| `npm run typecheck` | 执行前端、主进程和脚本三部分类型检查 |
+| `npm run test:workbook` | 运行仓库中的测试集，包含工作簿相关回归测试 |
+| `npm run verify:single-instance-cache` | 验证单实例与缓存相关逻辑 |
+| `npm run build` | 构建前端、Electron 主进程与 Rust 产物 |
+| `npm run build:win` | 生成 Windows NSIS 安装包 |
 
-# 打包 Windows 便携版
-npm run build:win
-```
-
-打包完成后，输出文件位于：
+本地打包完成后，安装包默认输出到：
 
 ```text
-release/SvnDiffTool-1.0.0.exe
+release/SvnDiffTool-<version>.exe
 ```
-
-这是 portable 形式，可直接分发和使用，无需安装；文件名现在默认不再带空格。
 
 ## 接入 TortoiseSVN
 
 1. 打开 `TortoiseSVN -> Settings -> Diff Viewer`
 2. 勾选 `External`
-3. 将外部 Diff 命令设置为：
+3. 将外部对比命令设置为：
 
 ```text
-"C:\Path\To\SvnDiffTool.exe" %base %mine %bname %yname %yurl %fn
+"C:\Path\To\SvnDiffTool.exe" %base %mine %bname %yname %yurl %fname
 ```
 
-参数含义：
+参数说明：
 
 | 参数 | 说明 |
 |------|------|
@@ -86,126 +122,150 @@ release/SvnDiffTool-1.0.0.exe
 | `%bname` | 旧版本显示名称 |
 | `%yname` | 新版本显示名称 |
 | `%yurl` | SVN 仓库 URL |
-| `%fn` | 当前文件名 |
+| `%fname` | 当前文件名 |
 
-建议：
+接入时建议注意：
 
-- 路径里如果有空格，务必保留双引号
-- 参数顺序不要改，主进程按这个顺序解析
-- 可以在 `Advanced...` 里按扩展名单独配置，例如 `.ts`、`.tsx`、`.js`、`.json`、`.xml`
+- 可执行文件路径如果包含空格，请保留双引号
+- 参数顺序不要调整，主进程按固定顺序解析
+- 可以在 `Advanced...` 中按扩展名单独指定，例如 `.ts`、`.tsx`、`.js`、`.json`、`.xml`
 
-## 日常使用
+## 支持的文件类型与能力边界
 
-通过 TortoiseSVN 打开差异后，你可以直接在工具栏完成常见操作：
+### 文本类文件
 
-- 切换布局：`Unified` / `Split` / `Vertical`
-- 切换是否折叠未变化区域
-- 搜索内容，支持正则和大小写匹配
-- 调整字体大小
-- 显示或隐藏空白字符
-- 复制 Base 或 Mine 的完整文本
-- 切换主题
+当前版本最适合：
 
-## 开发调试
+- `.js`
+- `.ts`
+- `.tsx`
+- `.json`
+- `.xml`
+- `.py`
+- `.java`
+- `.txt`
+- 以及其他以文本方式查看差异的文件
 
-推荐直接运行：
+### 工作簿文件
 
-```bash
-npm run dev:app
-```
+工作簿对比是这个项目的重点能力之一。
 
-开发模式下建议优先使用应用内的“开发测试”栏：
+- OpenXML 系列文件如 `.xlsx`、`.xlsm`、`.xltx`、`.xltm` 有明确支持
+- `.xls`、`.xlsb` 等格式可进入 Rust 工作簿解析链路，实际效果取决于文件内容与解析兼容性
+- 当前更偏向“结构化查看差异”，而不是“完整办公文档语义合并”
 
-- 选择一个 SVN 工作副本文件
-- 应用会默认按“同一个文件的不同 revision”加载对比
-- 后续可以继续使用顶部版本切换下拉调试同文件的 revision 组合
+这意味着它擅长的是：
 
-“加载示例”仅作为 UI 演示和兜底数据，不是主调试路径。
+- 看哪些工作表、行、列、单元格发生了变化
+- 辅助代码审查、数据回溯、版本检查
 
-## 键盘快捷键
+它暂时不以这些能力为目标：
+
+- 批注、图表、样式、宏、透视表等办公文档全量语义合并
+- 作为 Excel 编辑器直接修改并回写文件
+
+## 常用快捷键
 
 | 快捷键 | 功能 |
 |--------|------|
 | `F7` | 下一个差异块 |
 | `Shift+F7` | 上一个差异块 |
-| `Ctrl+F` | 打开 / 关闭搜索栏 |
+| `Ctrl+F` | 打开或关闭搜索栏 |
 | `Enter` / `F3` | 下一个搜索结果 |
 | `Shift+Enter` | 上一个搜索结果 |
 | `Ctrl+G` | 跳转到指定行 |
 | `Ctrl+]` | 增大字体 |
 | `Ctrl+[` | 减小字体 |
 | `Ctrl+\` | 切换空白字符显示 |
-| `Escape` | 关闭搜索栏 / 对话框 |
+| `Escape` | 关闭搜索栏或对话框 |
 | `?` | 打开快捷键帮助面板 |
+
+## 自动更新
+
+- 当前只有 Windows 安装版支持自动更新
+- 应用会从 GitHub 发布页检查稳定版更新
+- 发现新版本后会提示你手动下载
+- 下载完成后可从应用内触发安装
+
+## 发布流程
+
+本仓库已经内置 GitHub 发布工作流：
+
+- 触发条件：推送 `v*` 格式的版本标签
+- 持续集成环境：`windows-latest`
+- 构建内容：Node.js 依赖、Rust 解析器、Electron 安装包
+- 发布方式：`electron-builder --publish always`
+
+典型发版流程：
+
+```bash
+# 更新版本号
+npm version 1.1.0
+
+# 推送代码
+git push origin main
+
+# 推送版本标签，触发 GitHub 发布流程
+git push origin v1.1.0
+```
 
 ## 项目结构
 
 ```text
 SvnDiffTool/
-├── electron/
-│   ├── main.ts              # Electron 主进程入口
-│   └── preload.ts           # 预加载桥接层
+├── .github/workflows/        # GitHub 发布工作流
+├── assets/                   # 图标等静态资源
+├── electron/                 # Electron 主进程、预加载与自动更新逻辑
+├── rust/                     # 工作簿解析与差异计算链路
+├── scripts/                  # 开发与构建脚本
 ├── src/
-│   ├── App.tsx              # 应用入口与状态编排
-│   ├── main.tsx             # React 挂载入口
-│   ├── theme.ts             # 主题定义与 token 配色
-│   ├── components/          # UI 组件
-│   ├── context/
-│   │   ├── i18n.tsx         # 语言上下文与 JSON 词典加载
-│   │   └── theme.ts         # ThemeContext / useTheme
-│   ├── constants/
-│   │   └── layout.ts        # 布局常量
-│   ├── engine/              # diff / search / tokenizer 核心逻辑
-│   ├── hooks/               # 自定义 hooks
-│   ├── locales/             # 中英文 JSON 文案配置
-│   ├── types/               # 全局类型定义
-│   └── utils/
-│       └── clipboard.ts     # 剪贴板工具
+│   ├── components/           # 界面组件
+│   ├── context/              # 主题与国际化上下文
+│   ├── engine/               # 差异计算、搜索和分词核心逻辑
+│   ├── hooks/                # 自定义 Hook
+│   ├── locales/              # 中英文文案
+│   ├── types/                # 共享类型
+│   └── utils/                # 工作簿、缓存、设置等工具逻辑
+├── tests/                    # 回归、性能与工作簿相关测试
 ├── package.json
-├── tsconfig.electron.json
-├── tsconfig.json
-└── vite.config.ts
+└── vite.config.mts
 ```
-
-## 技术说明
-
-- 前端：React 18 + TypeScript
-- 容器：Electron
-- 构建：Vite
-- Diff 计算：行级 diff + 字符级高亮
-- 性能策略：虚拟滚动、token 缓存、大文件回退策略
 
 ## 常见问题
 
-### 1. 点击 Diff 没有打开工具
+### 1. 点击差异对比没有打开工具
 
-优先检查：
+优先检查这三项：
 
 - `SvnDiffTool.exe` 路径是否正确
-- 路径是否加了双引号
-- 外部命令参数是否仍然是 `%base %mine %bname %yname %yurl %fn`
+- 外部命令路径是否带双引号
+- 参数顺序是否仍然是 `%base %mine %bname %yname %yurl %fname`
 
-### 2. 打开后内容为空
+### 2. 直接启动应用后没有内容
 
-如果你是手动启动 exe 或在开发模式直接启动 app，而不是由 TortoiseSVN 传参启动，应用会进入开发态等待选择工作副本文件；如果你点击了“加载示例”，则会显示 demo 数据。这不是故障。
+这通常不是故障。直接运行开发环境或手动启动可执行文件时，如果没有收到 TortoiseSVN 传入的文件参数，应用会进入开发态，等待你选择工作副本文件或加载示例数据。
 
-### 3. 为什么某些文件看起来不像“表格语义 diff”
+### 3. 严格模式和内容模式有什么区别
 
-当前工具本质上是文本差异查看器，更适合文本类文件。  
-对于二进制 `.xls` / `.xlsx`，如果需要按工作表、单元格、公式来比较，需要额外的 Excel 解析与渲染能力。
+- 严格模式：对空白、公式文本等更敏感，适合精确比对
+- 内容模式：更偏向内容归一化后的比较，适合弱化某些“严格但不重要”的差异
 
-### 4. 超大文件打不开
+### 4. `npm run build` 报找不到 `cargo`
 
-当前版本已经取消固定的 50 MB 读取门槛。  
-如果你打开的是特别大的文本文件，差异计算和渲染时间仍然可能变长，这属于性能问题，不再是硬性拦截。
+这是因为构建流程会一起编译 Rust 解析器。安装 Rust 稳定版，并确保 `cargo` 在 `PATH` 中即可。
 
-## 开发说明
+### 5. 超大文件会不会打不开
 
-开发时推荐流程：
+当前实现已经为大文本与复杂工作簿加入了虚拟滚动、缓存和性能保护策略，但超大文件仍然可能增加初次解析和渲染时间。这属于性能边界，不是固定大小的硬性拦截。
+
+## 开发建议
+
+推荐的本地开发节奏：
 
 ```bash
 npm install
 npm run typecheck
+npm run test:workbook
 npm run dev:app
 ```
 
@@ -215,4 +275,4 @@ npm run dev:app
 npm run build
 ```
 
-这样可以同时覆盖 TypeScript 检查和前端打包流程。
+这样可以同时覆盖类型检查、前端构建和 Rust 解析器构建链路。

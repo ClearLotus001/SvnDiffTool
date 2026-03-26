@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { zipSync, strToU8 } from 'fflate';
 
-import { computeSmartDiff } from '../src/engine/smartDiff';
+import { computeWorkbookDiff } from '../src/engine/workbookDiff';
 import { workbookBytesToText } from '../src/utils/diffSource';
 import { getWorkbookCellChangeKind, isWorkbookStrictOnlyDifference } from '../src/utils/workbookCellContract';
 import { parseWorkbookDisplayLine } from '../src/utils/workbookDisplay';
@@ -87,7 +87,7 @@ test('workbookBytesToText preserves shared-string whitespace instead of XML attr
 test('js workbook fallback keeps shared-string whitespace-only cells as strict diffs', () => {
   const baseText = workbookBytesToText(buildSharedStringWorkbook(' '), 'strict-space-base.xlsx');
   const mineText = workbookBytesToText(buildSharedStringWorkbook(null), 'strict-space-mine.xlsx');
-  const diffLines = computeSmartDiff(baseText, mineText);
+  const diffLines = computeWorkbookDiff(baseText, mineText);
 
   assert.equal(diffLines.some((line) => line.type === 'delete' && line.baseLineNo === 2), true);
   assert.equal(diffLines.some((line) => line.type === 'add' && line.mineLineNo === 2), true);
@@ -109,7 +109,7 @@ test('js workbook fallback keeps shared-string whitespace-only cells as strict d
 test('js workbook fallback content mode folds whitespace-only cells into equality', () => {
   const baseText = workbookBytesToText(buildSharedStringWorkbook(' '), 'content-space-base.xlsx');
   const mineText = workbookBytesToText(buildSharedStringWorkbook(null), 'content-space-mine.xlsx');
-  const diffLines = computeSmartDiff(baseText, mineText, 'content');
+  const diffLines = computeWorkbookDiff(baseText, mineText, 'content');
 
   assert.equal(diffLines.every((line) => line.type === 'equal'), true);
 

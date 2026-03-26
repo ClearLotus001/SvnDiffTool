@@ -6,7 +6,11 @@ import { performance } from 'node:perf_hooks';
 import * as path from 'node:path';
 import { promisify } from 'node:util';
 import { XMLParser } from 'fast-xml-parser';
+import { configureSvnDiffViewer, getSvnDiffViewerStatus, type SvnDiffViewerScope } from './svnDiffViewerConfig';
 import { detectWorkbookArtifactOnlyDiff, type WorkbookArtifactDiffSummary } from './workbookArtifactDiff';
+import { ensureLegacyUserDataMigration } from './userDataMigration';
+import { createPlatformUpdater } from './updater';
+import type { AppUpdateState } from './updater/types';
 
 interface CliArgs {
   basePath: string;
@@ -65,6 +69,7 @@ interface DiffData {
   mineRevisionInfo: SvnRevisionInfo | null;
   canSwitchRevisions: boolean;
   workbookArtifactDiff: WorkbookArtifactDiffSummary | null;
+  sourceNoticeCode: 'unversioned-working-copy' | null;
   perf: DiffPerformanceMetrics | null;
 }
 
@@ -106,6 +111,12 @@ interface WorkbookMetadataPayload {
   base: WorkbookMetadataMap | null;
   mine: WorkbookMetadataMap | null;
   perf: Pick<DiffPerformanceMetrics, 'metadataMs'> | null;
+}
+
+interface TitleBarOverlayPayload {
+  color?: unknown;
+  symbolColor?: unknown;
+  height?: unknown;
 }
 
 function logDebugTiming(message: string, payload?: unknown) {
@@ -239,6 +250,7 @@ const AUTO_EXIT_AFTER_LOAD_MS = Number(process.env.SVN_DIFF_AUTO_EXIT_AFTER_LOAD
 const FILE_EQUALITY_CACHE_LIMIT = 24;
 const DEFAULT_REVISION_QUERY_LIMIT = 50;
 const MAX_REVISION_QUERY_LIMIT = 100;
+const USE_NATIVE_WINDOW_CONTROLS = process.env.SVN_DIFF_NATIVE_WINDOW_CONTROLS === '1';
 
 let mainWindow: BrowserWindow | null = null;
 let cachedSvnTarget: string | null | undefined;
@@ -271,6 +283,23 @@ const workbookMetadataCache = new Map<string, {
   payload: WorkbookMetadataPayload;
 }>();
 const workbookMetadataInFlight = new Map<string, Promise<WorkbookMetadataPayload>>();
+const appUpdater = createPlatformUpdater({ app });
+
+function notifyAppUpdateState(state: AppUpdateState) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send('app-update-state-changed', state);
+}
+
+function notifyWindowFrameState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send('window-frame-state-changed', {
+    isMaximized: mainWindow.isMaximized(),
+  });
+}
+
+appUpdater.subscribe((state) => {
+  notifyAppUpdateState(state);
+});
 
 interface FilePayloadMetrics {
   readMs: number;
@@ -1331,6 +1360,23 @@ async function resolveSvnTarget(): Promise<string> {
   return target;
 }
 
+async function detectLocalSvnVersioningStatus(filePath: string): Promise<'versioned' | 'unversioned' | 'unknown'> {
+  const candidate = filePath.trim();
+  if (!candidate) return 'unknown';
+
+  const result = await runSvnUtf8(['status', candidate]);
+  if (!result.ok) return 'unknown';
+
+  const firstLine = result.stdout
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .find(Boolean);
+
+  if (!firstLine) return 'versioned';
+  if (firstLine.startsWith('?') || firstLine.startsWith('I')) return 'unversioned';
+  return 'versioned';
+}
+
 function parseLogEntries(xmlText: string): SvnRevisionInfo[] {
   if (!xmlText.trim()) return [];
 
@@ -1367,10 +1413,10 @@ function buildSpecialRevisionEntries(): SvnRevisionInfo[] {
     entries.push({
       id: SPECIAL_BASE_ID,
       revision: extractRevisionToken(args.baseName) || 'BASE',
-      title: '基线文件',
+      title: '基线输入文件',
       author: '',
       date: '',
-      message: '当前基线文件',
+      message: '当前输入的基线文件（不是 SVN 提交版本）',
       kind: 'input-file',
     });
   }
@@ -1379,10 +1425,10 @@ function buildSpecialRevisionEntries(): SvnRevisionInfo[] {
     entries.push({
       id: SPECIAL_MINE_ID,
       revision: extractRevisionToken(args.mineName) || 'LOCAL',
-      title: '本地文件',
+      title: '本地工作副本',
       author: '',
       date: '',
-      message: '当前本地文件',
+      message: '当前本地工作副本（不是 SVN 提交版本）',
       kind: 'working-copy',
     });
   }
@@ -1858,6 +1904,7 @@ async function buildDiffData(options: BuildDiffDataOptions = {}): Promise<DiffDa
     mineRevisionInfo,
     canSwitchRevisions: Boolean(target),
     workbookArtifactDiff,
+    sourceNoticeCode: null,
     perf: {
       source: baseRevisionId || mineRevisionId ? 'revision-switch' : 'cli',
       mainLoadMs: performance.now() - buildStart,
@@ -1923,6 +1970,7 @@ async function buildDevWorkingCopyDiffData(
   setActiveCliArgs(buildDevWorkingCopyCliArgs(resolvedPath));
   const revisionOptions = await getRevisionOptions();
   const { baseRevisionId, mineRevisionId } = resolveDefaultDevRevisionPair(revisionOptions);
+  const versioningStatus = await detectLocalSvnVersioningStatus(resolvedPath);
   const data = await buildDiffData({
     baseRevisionId,
     mineRevisionId,
@@ -1933,6 +1981,7 @@ async function buildDevWorkingCopyDiffData(
 
   return {
     ...data,
+    sourceNoticeCode: versioningStatus === 'unversioned' ? 'unversioned-working-copy' : null,
     perf: data.perf
       ? {
           ...data.perf,
@@ -1997,6 +2046,7 @@ async function buildLocalDiffData(
     mineRevisionInfo: null,
     canSwitchRevisions: false,
     workbookArtifactDiff,
+    sourceNoticeCode: null,
     perf: {
       source: 'local-dev',
       mainLoadMs: performance.now() - buildStart,
@@ -2168,6 +2218,13 @@ async function loadWorkbookMetadataData(
 
 function createWindow() {
   const iconPath = resolveIconPath();
+  const titleBarOverlay = USE_NATIVE_WINDOW_CONTROLS
+    ? {
+        color: '#f2efe6',
+        symbolColor: '#141413',
+        height: 44,
+      }
+    : undefined;
 
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -2181,6 +2238,7 @@ function createWindow() {
     thickFrame: true,
     frame: false,
     titleBarStyle: 'hidden',
+    ...(titleBarOverlay ? { titleBarOverlay } : {}),
     backgroundColor: '#f4efe6',
     title: 'SvnDiffTool',
     webPreferences: {
@@ -2201,8 +2259,16 @@ function createWindow() {
     void mainWindow.loadFile(path.join(RENDERER_DIST, 'index.html'));
   }
 
+  mainWindow.on('maximize', notifyWindowFrameState);
+  mainWindow.on('unmaximize', notifyWindowFrameState);
+  mainWindow.on('restore', notifyWindowFrameState);
+
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    notifyWindowFrameState();
   });
 
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
@@ -2260,13 +2326,6 @@ ipcMain.handle('pick-diff-file', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: 'Select working copy file',
     properties: ['openFile'],
-    filters: [
-      { name: 'All files', extensions: ['*'] },
-      {
-        name: 'Supported files',
-        extensions: ['xlsx', 'xlsm', 'xltx', 'xltm', 'xlsb', 'xls', 'csv', 'tsv', 'txt', 'json', 'js', 'ts', 'jsx', 'tsx', 'xml', 'lua', 'yaml', 'yml', 'ini', 'cfg', 'conf', 'md'],
-      },
-    ],
   });
 
   const selectedPath = result.canceled ? '' : (result.filePaths[0] ?? '');
@@ -2289,12 +2348,41 @@ ipcMain.handle('load-local-diff', async (_, payload: {
 } | undefined) => (
   buildLocalDiffData(payload?.basePath ?? '', payload?.minePath ?? '', payload?.compareMode ?? 'strict')
 ));
+ipcMain.handle('get-svn-diff-viewer-status', async () => getSvnDiffViewerStatus());
+ipcMain.handle('configure-svn-diff-viewer', async (_, payload: {
+  scope?: SvnDiffViewerScope;
+} | undefined) => (
+  configureSvnDiffViewer(payload?.scope ?? 'excel-only')
+));
 ipcMain.handle('get-theme', () => (nativeTheme.shouldUseDarkColors ? 'dark' : 'light'));
+ipcMain.handle('uses-native-window-controls', () => USE_NATIVE_WINDOW_CONTROLS);
+ipcMain.handle('get-window-frame-state', () => ({
+  isMaximized: Boolean(mainWindow?.isMaximized()),
+}));
+ipcMain.handle('get-update-state', () => appUpdater.getState());
+ipcMain.handle('check-app-update', async (_, payload: { manual?: boolean } | undefined) => (
+  appUpdater.checkForUpdates({ manual: payload?.manual ?? false })
+));
+ipcMain.handle('download-app-update', async () => appUpdater.downloadUpdate());
+ipcMain.handle('install-downloaded-update', async () => appUpdater.installUpdate());
 
 ipcMain.on('clipboard-write-text', (_, text: unknown) => {
   if (typeof text === 'string') {
     clipboard.writeText(text);
   }
+});
+
+ipcMain.on('set-title-bar-overlay', (_, payload: TitleBarOverlayPayload | undefined) => {
+  if (!USE_NATIVE_WINDOW_CONTROLS || !mainWindow || mainWindow.isDestroyed()) return;
+  const color = typeof payload?.color === 'string' ? payload.color : '#f2efe6';
+  const symbolColor = typeof payload?.symbolColor === 'string' ? payload.symbolColor : '#141413';
+  const rawHeight = typeof payload?.height === 'number' ? payload.height : Number(payload?.height);
+  const height = Number.isFinite(rawHeight) && rawHeight > 0 ? rawHeight : 44;
+  mainWindow.setTitleBarOverlay({
+    color,
+    symbolColor,
+    height,
+  });
 });
 
 ipcMain.on('debug-log', (_, payload: unknown) => {
@@ -2347,8 +2435,12 @@ if (!gotSingleInstanceLock) {
     focusMainWindow();
   });
 
+  ensureLegacyUserDataMigration();
   configureDevelopmentPaths();
-  void app.whenReady().then(createWindow);
+  void app.whenReady().then(() => {
+    appUpdater.initialize();
+    createWindow();
+  });
 }
 
 app.on('window-all-closed', () => {

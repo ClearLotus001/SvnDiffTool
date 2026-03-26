@@ -21,8 +21,7 @@ const WorkbookSheetTabs = memo(({
   const scrollRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-
-  if (sections.length === 0) return null;
+  const hasSections = sections.length > 0;
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -47,6 +46,8 @@ const WorkbookSheetTabs = memo(({
     window.addEventListener('mousedown', handlePointerDown);
     return () => window.removeEventListener('mousedown', handlePointerDown);
   }, [menuOpen]);
+
+  if (!hasSections) return null;
 
   return (
     <div

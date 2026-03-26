@@ -3,6 +3,7 @@ import { strFromU8, unzipSync } from 'fflate';
 import type {
   SplitRow,
   WorkbookCompareMode,
+  WorkbookHiddenColumnSegment,
   WorkbookMergeRange,
   WorkbookMetadataMap,
   WorkbookMetadataSource,
@@ -11,6 +12,7 @@ import type {
 } from '../types';
 import { parseWorkbookDisplayLine } from './workbookDisplay';
 import { hasWorkbookCellContent } from './workbookCellContract';
+import { buildWorkbookHiddenColumnSegments } from './workbookManualVisibility';
 
 const ZIP_WORKBOOK_EXTENSIONS = new Set(['.xlsx', '.xlsm', '.xltx', '.xltm']);
 const xmlParser = new XMLParser({
@@ -24,15 +26,30 @@ const xmlParser = new XMLParser({
 });
 
 export type {
+  WorkbookHiddenColumnSegment,
   WorkbookMergeRange,
   WorkbookMetadataMap,
   WorkbookSheetMetadata,
   WorkbookSheetPresentation,
 };
 
+const sheetPresentationCache = new WeakMap<SplitRow[], Map<string, WorkbookSheetPresentation>>();
+const cacheObjectIds = new WeakMap<object, number>();
+let nextCacheObjectId = 1;
+
 function asArray<T>(value: T | T[] | null | undefined): T[] {
   if (value == null) return [];
   return Array.isArray(value) ? value : [value];
+}
+
+function getCacheObjectId(value: object | null | undefined): number {
+  if (!value) return 0;
+  const existing = cacheObjectIds.get(value);
+  if (existing) return existing;
+  const nextId = nextCacheObjectId;
+  nextCacheObjectId += 1;
+  cacheObjectIds.set(value, nextId);
+  return nextId;
 }
 
 function getFileExtension(name: string): string {
@@ -247,11 +264,31 @@ export function buildWorkbookSheetPresentation(
   fallbackColumnCount: number,
   includeHiddenColumns = false,
   compareMode: WorkbookCompareMode = 'strict',
+  manualHiddenColumns: number[] = [],
 ): WorkbookSheetPresentation {
   const baseSheet = baseMetadata?.sheets[sheetName] ?? null;
   const mineSheet = mineMetadata?.sheets[sheetName] ?? null;
+  let rowsCache = sheetPresentationCache.get(rows);
+  if (!rowsCache) {
+    rowsCache = new Map<string, WorkbookSheetPresentation>();
+    sheetPresentationCache.set(rows, rowsCache);
+  }
+
+  const cacheKey = [
+    sheetName,
+    fallbackColumnCount,
+    includeHiddenColumns ? '1' : '0',
+    compareMode,
+    manualHiddenColumns.join(','),
+    getCacheObjectId(baseSheet),
+    getCacheObjectId(mineSheet),
+  ].join('::');
+  const cachedPresentation = rowsCache.get(cacheKey);
+  if (cachedPresentation) return cachedPresentation;
+
   const baseHidden = new Set(baseSheet?.hiddenColumns ?? []);
   const mineHidden = new Set(mineSheet?.hiddenColumns ?? []);
+  const manualHidden = new Set(manualHiddenColumns);
 
   const candidateColumns = new Set<number>();
   [
@@ -274,15 +311,28 @@ export function buildWorkbookSheetPresentation(
     }
   }
 
-  let visibleColumns = [...candidateColumns]
-    .sort((left, right) => left - right)
-    .filter(column => includeHiddenColumns || !(baseHidden.has(column) && mineHidden.has(column)));
+  const allColumns = [...candidateColumns].sort((left, right) => left - right);
+
+  let visibleColumns = allColumns
+    .filter(column => (
+      includeHiddenColumns
+      || (
+        !(baseHidden.has(column) && mineHidden.has(column))
+        && !manualHidden.has(column)
+      )
+    ));
 
   if (visibleColumns.length === 0) visibleColumns = [0];
 
-  return {
+  const presentation: WorkbookSheetPresentation = {
+    allColumns,
     visibleColumns,
+    hiddenColumnSegments: includeHiddenColumns
+      ? []
+      : buildWorkbookHiddenColumnSegments(allColumns, manualHiddenColumns),
     baseMergeRanges: baseSheet?.mergeRanges ?? [],
     mineMergeRanges: mineSheet?.mergeRanges ?? [],
   };
+  rowsCache.set(cacheKey, presentation);
+  return presentation;
 }

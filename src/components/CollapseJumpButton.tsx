@@ -58,8 +58,7 @@ const CollapseJumpButton = memo(({
   const [dockedHorizontal, setDockedHorizontal] = useState<'left' | 'right' | null>(null);
   const [snapPreview, setSnapPreview] = useState<SnapPreview>({ horizontal: null, vertical: null });
   const [snapPulseNonce, setSnapPulseNonce] = useState(0);
-
-  if (totalCount <= 0) return null;
+  const hasCollapses = totalCount > 0;
 
   const clampPosition = (
     next: FloatingPosition,
@@ -360,6 +359,8 @@ const CollapseJumpButton = memo(({
     cursor: 'pointer',
     lineHeight: 1,
   } as const;
+
+  if (!hasCollapses) return null;
 
   return (
     <div

@@ -23,7 +23,30 @@ contextBridge.exposeInMainWorld('svnDiff', {
   pickDiffFile: () => ipcRenderer.invoke('pick-diff-file'),
   loadDevWorkingCopyDiff: (filePath: string, compareMode?: 'strict' | 'content') => ipcRenderer.invoke('load-dev-working-copy-diff', { filePath, compareMode }),
   loadLocalDiff: (basePath: string, minePath: string, compareMode?: 'strict' | 'content') => ipcRenderer.invoke('load-local-diff', { basePath, minePath, compareMode }),
+  getSvnDiffViewerStatus: () => ipcRenderer.invoke('get-svn-diff-viewer-status'),
+  configureSvnDiffViewer: (scope: 'all-files' | 'excel-only') => ipcRenderer.invoke('configure-svn-diff-viewer', { scope }),
   getTheme: () => ipcRenderer.invoke('get-theme'),
+  usesNativeWindowControls: () => ipcRenderer.invoke('uses-native-window-controls'),
+  getWindowFrameState: () => ipcRenderer.invoke('get-window-frame-state'),
+  onWindowFrameStateChanged: (listener: (state: unknown) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, state: unknown) => listener(state);
+    ipcRenderer.on('window-frame-state-changed', wrapped);
+    return () => {
+      ipcRenderer.removeListener('window-frame-state-changed', wrapped);
+    };
+  },
+  setTitleBarOverlay: (options: { color: string; symbolColor: string; height: number }) => ipcRenderer.send('set-title-bar-overlay', options),
+  getUpdateState: () => ipcRenderer.invoke('get-update-state'),
+  checkForAppUpdate: (options?: { manual?: boolean }) => ipcRenderer.invoke('check-app-update', options),
+  downloadAppUpdate: () => ipcRenderer.invoke('download-app-update'),
+  installDownloadedUpdate: () => ipcRenderer.invoke('install-downloaded-update'),
+  onAppUpdateState: (listener: (state: unknown) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, state: unknown) => listener(state);
+    ipcRenderer.on('app-update-state-changed', wrapped);
+    return () => {
+      ipcRenderer.removeListener('app-update-state-changed', wrapped);
+    };
+  },
   windowMinimize: () => ipcRenderer.send('window-minimize'),
   windowMaximize: () => ipcRenderer.send('window-maximize'),
   windowClose: () => ipcRenderer.send('window-close'),

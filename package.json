@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "description": "SvnDiffTool — TortoiseSVN external diff viewer for text and workbook files",
   "main": "dist-electron/main.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ClearLotus001/SvnDiffTool.git"
+  },
   "scripts": {
     "dev": "tsx scripts/dev-app.ts",
     "dev:app": "tsx scripts/dev-app.ts",
@@ -12,7 +16,8 @@
     "build:renderer": "vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
     "build:rust": "tsx scripts/build-rust.ts",
-    "build:win": "npm run build && electron-builder --win",
+    "build:win": "npm run build && electron-builder --win nsis",
+    "build:win:release": "npm run build && electron-builder --win nsis",
     "typecheck": "npm run typecheck:renderer && npm run typecheck:electron && npm run typecheck:scripts",
     "typecheck:renderer": "tsc --noEmit",
     "typecheck:electron": "tsc -p tsconfig.electron.json --noEmit",
@@ -26,10 +31,18 @@
     "productName": "SvnDiffTool",
     "artifactName": "${productName}-${version}.${ext}",
     "win": {
-      "target": "portable",
+      "target": "nsis",
       "icon": "assets/icon.ico",
       "executableName": "SvnDiffTool"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ClearLotus001",
+        "repo": "SvnDiffTool",
+        "releaseType": "release"
+      }
+    ],
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
@@ -61,6 +74,7 @@
     "wait-on": "^7.2.0"
   },
   "dependencies": {
+    "electron-updater": "^6.3.9",
     "fast-xml-parser": "^5.5.6",
     "fflate": "^0.8.2"
   }

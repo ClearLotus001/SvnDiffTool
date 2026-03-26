@@ -1,13 +1,31 @@
-import { memo, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import type { HorizontalVirtualColumnEntry } from '../hooks/useHorizontalVirtualColumns';
 import { LN_W } from '../constants/layout';
 import { FONT_CODE, getWorkbookFontScale } from '../constants/typography';
+import { useI18n } from '../context/i18n';
 import { useTheme } from '../context/theme';
-import type { WorkbookSelectedCell } from '../types';
+import type {
+  WorkbookContextMenuPoint,
+  WorkbookHiddenColumnSegment,
+  WorkbookSelectionMode,
+  WorkbookSelectionRequestReason,
+  WorkbookSelectionState,
+} from '../types';
 import { ROW_H } from '../hooks/useVirtual';
 import { getWorkbookColumnLabel } from '../utils/workbookSections';
+import { buildWorkbookSelectionLookup } from '../utils/workbookSelectionState';
+import WorkbookAnchorTooltip, { type WorkbookAnchorTooltipState } from './WorkbookAnchorTooltip';
 
 type WorkbookCanvasHeaderMode = 'single' | 'paired-wide' | 'paired-compact';
+const HIDDEN_MARKER_MIN_WIDTH = 24;
+const HIDDEN_MARKER_HEIGHT = 18;
+
+interface ColumnSelectionRequestMeta {
+  mode?: WorkbookSelectionMode;
+  reason?: WorkbookSelectionRequestReason;
+  clientPoint?: WorkbookContextMenuPoint;
+  preserveExistingIfTargetSelected?: boolean;
+}
 
 interface WorkbookCanvasHeaderStripProps {
   mode: WorkbookCanvasHeaderMode;
@@ -16,20 +34,26 @@ interface WorkbookCanvasHeaderStripProps {
   freezeColumnCount: number;
   contentWidth: number;
   sheetName: string;
-  selectedCell: WorkbookSelectedCell | null;
+  selection: WorkbookSelectionState;
   fontSize: number;
   renderColumns: HorizontalVirtualColumnEntry[];
+  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
   fixedSide?: 'base' | 'mine';
   showFixedSideAccent?: boolean;
-  onSelectColumn: (column: number, side: 'base' | 'mine') => void;
+  hiddenColumnSegments?: WorkbookHiddenColumnSegment[];
+  onSelectColumn: (column: number, side: 'base' | 'mine', meta?: ColumnSelectionRequestMeta) => void;
+  onRevealHiddenColumns?: ((columns: number[]) => void) | undefined;
   onColumnWidthChange?: ((column: number, width: number) => void) | undefined;
   onAutoFitColumn?: ((column: number) => void) | undefined;
 }
 
 interface HeaderHitTarget {
-  kind: 'column' | 'resize';
+  kind: 'column' | 'resize' | 'hidden-segment';
   column: number;
   side: 'base' | 'mine';
+  columns?: number[];
+  count?: number;
+  anchorRect?: WorkbookAnchorTooltipState['anchorRect'];
 }
 
 function getCompactSplit(width: number) {
@@ -40,6 +64,12 @@ function getCompactSplit(width: number) {
   };
 }
 
+function getSelectionModeFromMouseEvent(event: Pick<React.MouseEvent<HTMLCanvasElement>, 'shiftKey' | 'ctrlKey' | 'metaKey'>): WorkbookSelectionMode {
+  if (event.shiftKey) return 'range';
+  if (event.ctrlKey || event.metaKey) return 'toggle';
+  return 'replace';
+}
+
 const WorkbookCanvasHeaderStrip = memo(({
   mode,
   viewportWidth,
@@ -47,28 +77,113 @@ const WorkbookCanvasHeaderStrip = memo(({
   freezeColumnCount,
   contentWidth,
   sheetName,
-  selectedCell,
+  selection,
   fontSize,
   renderColumns,
+  columnLayoutByColumn,
   fixedSide = 'base',
   showFixedSideAccent = true,
+  hiddenColumnSegments = [],
   onSelectColumn,
+  onRevealHiddenColumns,
   onColumnWidthChange,
   onAutoFitColumn,
 }: WorkbookCanvasHeaderStripProps) => {
   const T = useTheme();
+  const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef(0);
   const sizes = useMemo(() => getWorkbookFontScale(fontSize), [fontSize]);
   const suppressClickRef = useRef(false);
   const [cursor, setCursor] = useState<'default' | 'pointer' | 'col-resize'>('default');
+  const [hiddenColumnHover, setHiddenColumnHover] = useState<WorkbookAnchorTooltipState | null>(null);
+  const selectionLookup = useMemo(() => buildWorkbookSelectionLookup(selection), [selection]);
+  const primarySelection = selection.primary;
 
-  const resolveHit = (x: number): HeaderHitTarget | null => {
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return undefined;
+    const handleScroll = () => setHiddenColumnHover(null);
+    scroller.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      scroller.removeEventListener('scroll', handleScroll);
+    };
+  }, [scrollRef]);
+
+  const resolveHiddenIndicatorLayouts = (currentScrollLeft: number) => {
+    const contentLeft = LN_W + 3;
+    const contentRight = Math.min(viewportWidth, contentWidth);
+
+    return hiddenColumnSegments.flatMap((segment) => {
+      const afterEntry = segment.afterColumn != null
+        ? columnLayoutByColumn.get(segment.afterColumn) ?? null
+        : null;
+      const beforeEntry = segment.beforeColumn != null
+        ? columnLayoutByColumn.get(segment.beforeColumn) ?? null
+        : null;
+
+      let boundaryX: number | null = null;
+      if (afterEntry) {
+        boundaryX = afterEntry.position < freezeColumnCount
+          ? contentLeft + afterEntry.offset
+          : contentLeft + afterEntry.offset - currentScrollLeft;
+      } else if (beforeEntry) {
+        const beforeLeft = beforeEntry.position < freezeColumnCount
+          ? contentLeft + beforeEntry.offset
+          : contentLeft + beforeEntry.offset - currentScrollLeft;
+        boundaryX = beforeLeft + beforeEntry.displayWidth;
+      }
+
+      if (boundaryX == null) return [];
+
+      const width = Math.max(HIDDEN_MARKER_MIN_WIDTH, 14 + (String(segment.count).length * 7));
+      if (boundaryX < contentLeft - width || boundaryX > contentRight + width) return [];
+
+      const left = Math.max(
+        contentLeft,
+        Math.min(boundaryX - (width / 2), contentRight - width),
+      );
+
+      return [{
+        segment,
+        left,
+        top: Math.floor((ROW_H - HIDDEN_MARKER_HEIGHT) / 2),
+        width,
+        height: HIDDEN_MARKER_HEIGHT,
+      }];
+    });
+  };
+
+  const resolveHit = (x: number, canvasRect?: DOMRect): HeaderHitTarget | null => {
     const contentHitRight = Math.min(viewportWidth, contentWidth);
     if (x < LN_W + 3 || x >= contentHitRight) return null;
 
     const contentLeft = LN_W + 3;
     const currentScrollLeft = scrollRef.current?.scrollLeft ?? 0;
+    const hiddenIndicator = resolveHiddenIndicatorLayouts(currentScrollLeft).find((indicator) => (
+      x >= indicator.left && x <= indicator.left + indicator.width
+    ));
+    if (hiddenIndicator) {
+      const baseHit: HeaderHitTarget = {
+        kind: 'hidden-segment',
+        column: hiddenIndicator.segment.startCol,
+        side: fixedSide,
+        columns: hiddenIndicator.segment.columns,
+        count: hiddenIndicator.segment.count,
+      };
+      if (!canvasRect) return baseHit;
+      return {
+        ...baseHit,
+        anchorRect: {
+          left: canvasRect.left + hiddenIndicator.left,
+          top: canvasRect.top + hiddenIndicator.top,
+          width: hiddenIndicator.width,
+          height: hiddenIndicator.height,
+          right: canvasRect.left + hiddenIndicator.left + hiddenIndicator.width,
+          bottom: canvasRect.top + hiddenIndicator.top + hiddenIndicator.height,
+        },
+      };
+    }
 
     for (const entry of renderColumns) {
       const pairWidth = mode === 'single'
@@ -159,13 +274,15 @@ const WorkbookCanvasHeaderStrip = memo(({
         const column = entry.column;
         const label = getWorkbookColumnLabel(column);
         const isSelectedColumn = Boolean(
-          selectedCell
-          && selectedCell.kind !== 'row'
-          && selectedCell.sheetName === sheetName
-          && selectedCell.colIndex === column,
+          selectionLookup.columnKeys.has(`${sheetName}:${column}`)
+          || selection.items.some(item => (
+            item.kind === 'cell'
+            && item.sheetName === sheetName
+            && item.colIndex === column
+          ))
         );
-        const isBaseFocused = isSelectedColumn && selectedCell?.side === 'base';
-        const isMineFocused = isSelectedColumn && selectedCell?.side === 'mine';
+        const isBaseFocused = isSelectedColumn && primarySelection?.side === 'base';
+        const isMineFocused = isSelectedColumn && primarySelection?.side === 'mine';
         const shadowBoundary = entry.position === freezeColumnCount - 1;
 
         if (mode === 'single') {
@@ -216,7 +333,7 @@ const WorkbookCanvasHeaderStrip = memo(({
           ctx.strokeStyle = T.border;
           ctx.strokeRect(drawX + 0.5, 0.5, pairWidth - 1, height - 1);
           if (isSelectedColumn) {
-            const focusAccent = selectedCell?.side === 'base' ? T.acc2 : T.acc;
+            const focusAccent = primarySelection?.side === 'base' ? T.acc2 : T.acc;
             ctx.strokeStyle = `${focusAccent}96`;
             ctx.lineWidth = 2;
             ctx.strokeRect(drawX + 1, 1, pairWidth - 2, height - 2);
@@ -243,6 +360,21 @@ const WorkbookCanvasHeaderStrip = memo(({
         }
       });
 
+      resolveHiddenIndicatorLayouts(currentScrollLeft).forEach((indicator) => {
+        ctx.fillStyle = T.bg0;
+        ctx.strokeStyle = T.acc2;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(indicator.left, indicator.top, indicator.width, indicator.height, 999);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = T.acc2;
+        ctx.font = `${Math.max(10, sizes.header - 1)}px ${FONT_CODE}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`+${indicator.segment.count}`, indicator.left + (indicator.width / 2), indicator.top + (indicator.height / 2));
+      });
+
       ctx.restore();
     };
 
@@ -263,14 +395,17 @@ const WorkbookCanvasHeaderStrip = memo(({
     contentWidth,
     cursor,
     fixedSide,
-    fontSize,
     freezeColumnCount,
+    hiddenColumnSegments,
+    columnLayoutByColumn,
     mode,
     onAutoFitColumn,
     onColumnWidthChange,
+    primarySelection?.side,
     renderColumns,
     scrollRef,
-    selectedCell,
+    selection,
+    selectionLookup.columnKeys,
     sheetName,
     showFixedSideAccent,
     sizes.header,
@@ -320,8 +455,17 @@ const WorkbookCanvasHeaderStrip = memo(({
     if (suppressClickRef.current) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const hit = resolveHit(event.clientX - rect.left);
-    if (!hit || hit.kind !== 'column') return;
-    onSelectColumn(hit.column, hit.side);
+    if (!hit) return;
+    if (hit.kind === 'hidden-segment') {
+      onRevealHiddenColumns?.(hit.columns ?? []);
+      setHiddenColumnHover(null);
+      return;
+    }
+    if (hit.kind !== 'column') return;
+    onSelectColumn(hit.column, hit.side, {
+      mode: getSelectionModeFromMouseEvent(event),
+      reason: 'click',
+    });
   };
 
   const handleDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -335,33 +479,75 @@ const WorkbookCanvasHeaderStrip = memo(({
 
   const handleMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    const hit = resolveHit(event.clientX - rect.left);
+    const hit = resolveHit(event.clientX - rect.left, rect);
     const nextCursor = hit?.kind === 'resize'
       ? 'col-resize'
-      : hit?.kind === 'column'
+      : hit?.kind === 'column' || hit?.kind === 'hidden-segment'
       ? 'pointer'
       : 'default';
     if (cursor !== nextCursor) setCursor(nextCursor);
+    if (hit?.kind === 'hidden-segment' && hit.anchorRect && hit.count != null) {
+      const anchorRect = hit.anchorRect;
+      const count = hit.count;
+      const nextHoverKey = `${sheetName}:${hit.column}:${hit.count}`;
+      const nextHover: WorkbookAnchorTooltipState = {
+        key: nextHoverKey,
+        text: t('workbookHiddenColumnsTooltip', { count }),
+        anchorRect,
+      };
+      if (
+        !hiddenColumnHover
+        || hiddenColumnHover.key !== nextHoverKey
+        || hiddenColumnHover.anchorRect.left !== anchorRect.left
+        || hiddenColumnHover.anchorRect.top !== anchorRect.top
+      ) {
+        setHiddenColumnHover(nextHover);
+      }
+    } else if (hiddenColumnHover) {
+      setHiddenColumnHover(null);
+    }
   };
 
   const handleMouseLeave = () => {
     if (cursor !== 'default') setCursor('default');
+    setHiddenColumnHover(null);
+  };
+
+  const handleContextMenu = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const hit = resolveHit(event.clientX - rect.left, rect);
+    if (!hit || hit.kind !== 'column') return;
+    event.preventDefault();
+    setHiddenColumnHover(null);
+    onSelectColumn(hit.column, hit.side, {
+      mode: getSelectionModeFromMouseEvent(event),
+      reason: 'contextmenu',
+      preserveExistingIfTargetSelected: true,
+      clientPoint: {
+        x: event.clientX,
+        y: event.clientY,
+      },
+    });
   };
 
   return (
-    <canvas
-      ref={canvasRef}
-      onPointerDown={handlePointerDown}
-      onClick={handleClick}
-      onDoubleClick={handleDoubleClick}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-      style={{
-        display: 'block',
-        cursor,
-        backfaceVisibility: 'hidden',
-      }}
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        onPointerDown={handlePointerDown}
+        onClick={handleClick}
+        onContextMenu={handleContextMenu}
+        onDoubleClick={handleDoubleClick}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        style={{
+          display: 'block',
+          cursor,
+          backfaceVisibility: 'hidden',
+        }}
+      />
+      <WorkbookAnchorTooltip hover={hiddenColumnHover} />
+    </>
   );
 });
 

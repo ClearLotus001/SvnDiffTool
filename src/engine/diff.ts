@@ -6,9 +6,14 @@
 
 import type { DiffLine, SplitRow } from '../types';
 import { computeCharDiff } from './myers';
+import { alignTextChangeBlock } from './textChangeAlignment';
 
-const MAX_LINES_FOR_DIFF    = 50_000;
-const CHAR_DIFF_LINE_LIMIT  = 1000;
+const MAX_LINES_FOR_DIFF = 50_000;
+const MAX_LCS_CANDIDATE_PAIRS = 4_000_000;
+const CHAR_DIFF_LINE_LIMIT = 1000;
+const MAX_CHAR_DIFF_PAIRS_PER_BLOCK = 240;
+const MAX_TOTAL_CHAR_DIFF_PAIRS = 1_500;
+const MAX_TOTAL_CHAR_DIFF_CHARS = 250_000;
 
 // ── Patience LCS ──────────────────────────────────────────────────────────────
 
@@ -19,6 +24,11 @@ interface LCSNode {
 }
 
 interface LCSEntry { biIdx: number; miIdx: number; }
+
+interface CharDiffBudget {
+  remainingPairs: number;
+  remainingChars: number;
+}
 
 function patienceLCS(a: string[], b: string[]): LCSEntry[] {
   if (a.length === 0 || b.length === 0) return [];
@@ -38,9 +48,11 @@ function patienceLCS(a: string[], b: string[]): LCSEntry[] {
     const rawPositions = bIndex.get(a[bi]!);
     if (!rawPositions) continue;
 
-    const positions = rawPositions.slice().sort((x, y) => x - y);
-
-    for (const mi of positions) {
+    // `rawPositions` is already collected in ascending order, so we only need
+    // to traverse it backwards to avoid chaining multiple matches from the same
+    // source line into the LIS state.
+    for (let pi = rawPositions.length - 1; pi >= 0; pi -= 1) {
+      const mi = rawPositions[pi]!;
       let lo = 0, hi = tails.length;
       while (lo < hi) {
         const mid = (lo + hi) >> 1;
@@ -71,19 +83,203 @@ function patienceLCS(a: string[], b: string[]): LCSEntry[] {
   return result;
 }
 
+function exceedsLcsCandidatePairBudget(a: string[], b: string[]): boolean {
+  if (a.length === 0 || b.length === 0) return false;
+
+  const [countSource, probeSource] = a.length <= b.length
+    ? [a, b]
+    : [b, a];
+  const counts = new Map<string, number>();
+  countSource.forEach((line) => {
+    counts.set(line, (counts.get(line) ?? 0) + 1);
+  });
+
+  let candidatePairs = 0;
+  for (const line of probeSource) {
+    candidatePairs += counts.get(line) ?? 0;
+    if (candidatePairs > MAX_LCS_CANDIDATE_PAIRS) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function buildAnchoredReplacementDiff(
+  baseLines: string[],
+  mineLines: string[],
+  baseOffset = 0,
+  mineOffset = 0,
+): DiffLine[] {
+  const result: DiffLine[] = [];
+  const sharedPrefixCount = Math.min(baseLines.length, mineLines.length);
+  let prefixCount = 0;
+
+  while (prefixCount < sharedPrefixCount && baseLines[prefixCount] === mineLines[prefixCount]) {
+    result.push(makeLine(
+      'equal',
+      baseLines[prefixCount]!,
+      mineLines[prefixCount]!,
+      baseOffset + prefixCount + 1,
+      mineOffset + prefixCount + 1,
+    ));
+    prefixCount += 1;
+  }
+
+  let baseIdx = baseLines.length - 1;
+  let mineIdx = mineLines.length - 1;
+  const suffix: DiffLine[] = [];
+
+  while (baseIdx >= prefixCount && mineIdx >= prefixCount && baseLines[baseIdx] === mineLines[mineIdx]) {
+    suffix.push(makeLine(
+      'equal',
+      baseLines[baseIdx]!,
+      mineLines[mineIdx]!,
+      baseOffset + baseIdx + 1,
+      mineOffset + mineIdx + 1,
+    ));
+    baseIdx -= 1;
+    mineIdx -= 1;
+  }
+
+  for (let i = prefixCount; i <= baseIdx; i += 1) {
+    result.push(makeLine('delete', baseLines[i]!, null, baseOffset + i + 1, null));
+  }
+
+  for (let i = prefixCount; i <= mineIdx; i += 1) {
+    result.push(makeLine('add', null, mineLines[i]!, null, mineOffset + i + 1));
+  }
+
+  suffix.reverse();
+  result.push(...suffix);
+  return result;
+}
+
+function longestIncreasingAnchors(candidates: LCSEntry[]): LCSEntry[] {
+  if (candidates.length === 0) return [];
+
+  const piles: number[] = [];
+  const previous = new Array<number>(candidates.length).fill(-1);
+
+  for (let index = 0; index < candidates.length; index += 1) {
+    const candidate = candidates[index]!;
+    let lo = 0;
+    let hi = piles.length;
+
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (candidates[piles[mid]!]!.miIdx < candidate.miIdx) lo = mid + 1;
+      else hi = mid;
+    }
+
+    if (lo > 0) previous[index] = piles[lo - 1]!;
+    piles[lo] = index;
+  }
+
+  const result: LCSEntry[] = [];
+  let currentIndex = piles[piles.length - 1] ?? -1;
+  while (currentIndex >= 0) {
+    result.unshift(candidates[currentIndex]!);
+    currentIndex = previous[currentIndex]!;
+  }
+
+  return result;
+}
+
+function findUniqueCommonAnchors(baseLines: string[], mineLines: string[]): LCSEntry[] {
+  if (baseLines.length === 0 || mineLines.length === 0) return [];
+
+  const baseCounts = new Map<string, number>();
+  const mineCounts = new Map<string, number>();
+
+  baseLines.forEach((line) => {
+    baseCounts.set(line, (baseCounts.get(line) ?? 0) + 1);
+  });
+  mineLines.forEach((line) => {
+    mineCounts.set(line, (mineCounts.get(line) ?? 0) + 1);
+  });
+
+  const uniqueMinePositions = new Map<string, number>();
+  mineLines.forEach((line, index) => {
+    if ((mineCounts.get(line) ?? 0) === 1) {
+      uniqueMinePositions.set(line, index);
+    }
+  });
+
+  const candidates: LCSEntry[] = [];
+  baseLines.forEach((line, index) => {
+    if ((baseCounts.get(line) ?? 0) !== 1) return;
+    if ((mineCounts.get(line) ?? 0) !== 1) return;
+
+    const mineIndex = uniqueMinePositions.get(line);
+    if (mineIndex == null) return;
+    candidates.push({ biIdx: index, miIdx: mineIndex });
+  });
+
+  return longestIncreasingAnchors(candidates);
+}
+
+function buildFallbackDiff(baseLines: string[], mineLines: string[]): DiffLine[] {
+  const anchors = findUniqueCommonAnchors(baseLines, mineLines);
+  if (anchors.length === 0) {
+    return buildAnchoredReplacementDiff(baseLines, mineLines);
+  }
+
+  const result: DiffLine[] = [];
+  let baseStart = 0;
+  let mineStart = 0;
+
+  anchors.forEach((anchor) => {
+    result.push(...buildAnchoredReplacementDiff(
+      baseLines.slice(baseStart, anchor.biIdx),
+      mineLines.slice(mineStart, anchor.miIdx),
+      baseStart,
+      mineStart,
+    ));
+    result.push(makeLine(
+      'equal',
+      baseLines[anchor.biIdx]!,
+      mineLines[anchor.miIdx]!,
+      anchor.biIdx + 1,
+      anchor.miIdx + 1,
+    ));
+    baseStart = anchor.biIdx + 1;
+    mineStart = anchor.miIdx + 1;
+  });
+
+  result.push(...buildAnchoredReplacementDiff(
+    baseLines.slice(baseStart),
+    mineLines.slice(mineStart),
+    baseStart,
+    mineStart,
+  ));
+
+  return result;
+}
+
 // ── Main diff ─────────────────────────────────────────────────────────────────
 
 export function computeDiff(baseText: string, mineText: string): DiffLine[] {
-  const baseLines = splitLines(baseText);
-  const mineLines = splitLines(mineText);
-  const result: DiffLine[] = [];
-
-  if (baseLines.length > MAX_LINES_FOR_DIFF || mineLines.length > MAX_LINES_FOR_DIFF) {
-    baseLines.forEach((line, i) => result.push(makeLine('delete', line, null, i + 1, null)));
-    mineLines.forEach((line, i) => result.push(makeLine('add', null, line, null, i + 1)));
-    return result;
+  if (baseText === mineText) {
+    return splitLines(baseText).map((line, index) => makeLine('equal', line, line, index + 1, index + 1));
   }
 
+  const baseLines = splitLines(baseText);
+  const mineLines = splitLines(mineText);
+  const charDiffBudget: CharDiffBudget = {
+    remainingPairs: MAX_TOTAL_CHAR_DIFF_PAIRS,
+    remainingChars: MAX_TOTAL_CHAR_DIFF_CHARS,
+  };
+
+  if (
+    baseLines.length > MAX_LINES_FOR_DIFF
+    || mineLines.length > MAX_LINES_FOR_DIFF
+    || exceedsLcsCandidatePairBudget(baseLines, mineLines)
+  ) {
+    return buildFallbackDiff(baseLines, mineLines);
+  }
+
+  const result: DiffLine[] = [];
   const lcs = patienceLCS(baseLines, mineLines);
   let bi = 0, mi = 0, li = 0;
 
@@ -100,7 +296,14 @@ export function computeDiff(baseText: string, mineText: string): DiffLine[] {
       const safeDelEnd = Math.max(bi, delEnd);
       const safeAddEnd = Math.max(mi, addEnd);
 
-      emitChangeBlock(result, baseLines.slice(bi, safeDelEnd), mineLines.slice(mi, safeAddEnd), bi, mi);
+      emitChangeBlock(
+        result,
+        baseLines.slice(bi, safeDelEnd),
+        mineLines.slice(mi, safeAddEnd),
+        bi,
+        mi,
+        charDiffBudget,
+      );
       bi = safeDelEnd;
       mi = safeAddEnd;
     }
@@ -115,28 +318,36 @@ function emitChangeBlock(
   addLines: string[],
   biBase: number,
   miBase: number,
+  charDiffBudget: CharDiffBudget,
 ): void {
-  const pairCount = Math.min(delLines.length, addLines.length);
-  const pairedCharSpans = Array.from({ length: pairCount }, () => ({
-    baseSpans: null as DiffLine['baseCharSpans'],
-    mineSpans: null as DiffLine['mineCharSpans'],
-  }));
+  const deleteCharSpans = Array.from(
+    { length: delLines.length },
+    () => null as DiffLine['baseCharSpans'],
+  );
+  const addCharSpans = Array.from(
+    { length: addLines.length },
+    () => null as DiffLine['mineCharSpans'],
+  );
+  const alignedPairs = alignTextChangeBlock(delLines, addLines);
+  let replacementPairIndex = 0;
 
-  for (let i = 0; i < pairCount; i++) {
-    // i < pairCount <= delLines.length and addLines.length — guaranteed in-bounds
-    const baseLine = delLines[i]!;
-    const mineLine = addLines[i]!;
+  alignedPairs.forEach((pair) => {
+    if (!pair.isReplacement || pair.deleteIndex == null || pair.addIndex == null) return;
 
-    if (baseLine.length <= CHAR_DIFF_LINE_LIMIT && mineLine.length <= CHAR_DIFF_LINE_LIMIT) {
-      const r = computeCharDiff(baseLine, mineLine);
-      if (r) {
-        pairedCharSpans[i] = {
-          baseSpans: r.baseSpans,
-          mineSpans: r.mineSpans,
-        };
-      }
+    const baseLine = delLines[pair.deleteIndex]!;
+    const mineLine = addLines[pair.addIndex]!;
+    if (!shouldComputeCharDiff(baseLine, mineLine, replacementPairIndex, charDiffBudget)) {
+      replacementPairIndex += 1;
+      return;
     }
-  }
+
+    const diff = computeCharDiff(baseLine, mineLine);
+    if (diff) {
+      deleteCharSpans[pair.deleteIndex] = diff.baseSpans;
+      addCharSpans[pair.addIndex] = diff.mineSpans;
+    }
+    replacementPairIndex += 1;
+  });
 
   for (let i = 0; i < delLines.length; i++) {
     result.push({
@@ -145,7 +356,7 @@ function emitChangeBlock(
       mine: null,
       baseLineNo: biBase + i + 1,
       mineLineNo: null,
-      baseCharSpans: pairedCharSpans[i]?.baseSpans ?? null,
+      baseCharSpans: deleteCharSpans[i] ?? null,
       mineCharSpans: null,
     });
   }
@@ -158,9 +369,26 @@ function emitChangeBlock(
       baseLineNo: null,
       mineLineNo: miBase + i + 1,
       baseCharSpans: null,
-      mineCharSpans: pairedCharSpans[i]?.mineSpans ?? null,
+      mineCharSpans: addCharSpans[i] ?? null,
     });
   }
+}
+
+function shouldComputeCharDiff(
+  baseLine: string,
+  mineLine: string,
+  pairIndex: number,
+  budget: CharDiffBudget,
+): boolean {
+  if (pairIndex >= MAX_CHAR_DIFF_PAIRS_PER_BLOCK) return false;
+  if (baseLine.length > CHAR_DIFF_LINE_LIMIT || mineLine.length > CHAR_DIFF_LINE_LIMIT) return false;
+
+  const charCost = baseLine.length + mineLine.length;
+  if (budget.remainingPairs <= 0 || budget.remainingChars < charCost) return false;
+
+  budget.remainingPairs -= 1;
+  budget.remainingChars -= charCost;
+  return true;
 }
 
 function makeLine(
@@ -230,22 +458,26 @@ export function buildSplitRows(diffLines: DiffLine[]): SplitRow[] {
 
     const delLines = diffLines.slice(blockStart, addStart);
     const addLines = diffLines.slice(addStart, i);
-    const maxLen   = Math.max(delLines.length, addLines.length);
+    const alignedPairs = alignTextChangeBlock(
+      delLines.map((line) => line.base ?? ''),
+      addLines.map((line) => line.mine ?? ''),
+    );
 
-    for (let j = 0; j < maxLen; j++) {
-      const left = delLines[j] ?? null;
-      const right = addLines[j] ?? null;
-      const leftLineIdx = left ? blockStart + j : null;
-      const rightLineIdx = right ? addStart + j : null;
+    alignedPairs.forEach((pair) => {
+      const left = pair.deleteIndex != null ? (delLines[pair.deleteIndex] ?? null) : null;
+      const right = pair.addIndex != null ? (addLines[pair.addIndex] ?? null) : null;
+      const leftLineIdx = pair.deleteIndex != null ? blockStart + pair.deleteIndex : null;
+      const rightLineIdx = pair.addIndex != null ? addStart + pair.addIndex : null;
       const lineIdxs = [leftLineIdx, rightLineIdx].filter((idx): idx is number => idx != null);
 
       rows.push({
         left,
         right,
+        isReplacementPair: pair.isReplacement,
         lineIdx: lineIdxs[0] ?? blockStart,
         lineIdxs,
       });
-    }
+    });
 
     if (i === blockStart) i++; // infinite-loop guard
   }
