@@ -252,6 +252,7 @@ const FILE_EQUALITY_MAX_BYTES = 32 * 1024 * 1024;
 const DEFAULT_REVISION_QUERY_LIMIT = 50;
 const MAX_REVISION_QUERY_LIMIT = 100;
 const USE_NATIVE_WINDOW_CONTROLS = process.env.SVN_DIFF_NATIVE_WINDOW_CONTROLS === '1';
+const DEFAULT_LAUNCH_MAXIMIZED = true;
 
 let mainWindow: BrowserWindow | null = null;
 let cachedSvnTarget: string | null | undefined;
@@ -2328,6 +2329,7 @@ function createWindow() {
     height: 900,
     minWidth: 900,
     minHeight: 500,
+    show: false,
     resizable: true,
     minimizable: true,
     maximizable: true,
@@ -2362,6 +2364,15 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  mainWindow.once('ready-to-show', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (DEFAULT_LAUNCH_MAXIMIZED) {
+      mainWindow.maximize();
+    }
+    mainWindow.show();
+    notifyWindowFrameState();
   });
 
   mainWindow.webContents.on('did-finish-load', () => {
