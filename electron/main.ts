@@ -248,6 +248,7 @@ const WORKBOOK_METADATA_CACHE_LIMIT = 16;
 const DEV_PROFILE_ROOT = process.env.ELECTRON_DEV_PROFILE_DIR?.trim() || '';
 const AUTO_EXIT_AFTER_LOAD_MS = Number(process.env.SVN_DIFF_AUTO_EXIT_AFTER_LOAD_MS ?? '0');
 const FILE_EQUALITY_CACHE_LIMIT = 24;
+const FILE_EQUALITY_MAX_BYTES = 32 * 1024 * 1024;
 const DEFAULT_REVISION_QUERY_LIMIT = 50;
 const MAX_REVISION_QUERY_LIMIT = 100;
 const USE_NATIVE_WINDOW_CONTROLS = process.env.SVN_DIFF_NATIVE_WINDOW_CONTROLS === '1';
@@ -256,8 +257,8 @@ let mainWindow: BrowserWindow | null = null;
 let cachedSvnTarget: string | null | undefined;
 let activeCliArgs: CliArgs = { ...cliArgs };
 const cachedRevisionOptionPages = new Map<string, RevisionOptionsPayload>();
-const filePayloadCache = new Map<string, { mtimeMs: number; size: number; payload: FilePayload; memoryBytes: number }>();
-const revisionPayloadCache = new Map<string, { payload: FilePayload; memoryBytes: number }>();
+const filePayloadCache = new Map<string, FilePayloadCacheEntry>();
+const revisionPayloadCache = new Map<string, RevisionPayloadCacheEntry>();
 const fileEqualityCache = new Map<string, {
   leftPath: string;
   rightPath: string;
@@ -313,6 +314,26 @@ interface FilePayload {
   bytes: Uint8Array | null;
   metadata: WorkbookMetadataMap | null;
   perf: FilePayloadMetrics;
+}
+
+interface WorkbookPayloadCoverage {
+  text: boolean;
+  bytes: boolean;
+  metadata: boolean;
+}
+
+interface FilePayloadCacheEntry {
+  mtimeMs: number;
+  size: number;
+  payload: FilePayload;
+  memoryBytes: number;
+  coverage: WorkbookPayloadCoverage;
+}
+
+interface RevisionPayloadCacheEntry {
+  payload: FilePayload;
+  memoryBytes: number;
+  coverage: WorkbookPayloadCoverage;
 }
 
 interface RustDiffLinePayload {
@@ -376,6 +397,66 @@ function rememberCacheEntry<T extends { memoryBytes: number }>(
   cache.set(key, value);
   trimCacheByBudget(cache, limit, maxBytes);
   return value;
+}
+
+function getRequestedWorkbookPayloadCoverage(
+  options: ReadFilePayloadOptions = {},
+): WorkbookPayloadCoverage {
+  return {
+    text: options.includeWorkbookText !== false,
+    bytes: options.includeWorkbookBytes !== false,
+    metadata: options.includeWorkbookMetadata !== false,
+  };
+}
+
+function canSatisfyWorkbookPayloadRequest(
+  coverage: WorkbookPayloadCoverage,
+  options: ReadFilePayloadOptions = {},
+): boolean {
+  const requested = getRequestedWorkbookPayloadCoverage(options);
+  return (
+    (!requested.text || coverage.text)
+    && (!requested.bytes || coverage.bytes)
+    && (!requested.metadata || coverage.metadata)
+  );
+}
+
+function projectWorkbookPayloadForOptions(
+  payload: FilePayload,
+  options: ReadFilePayloadOptions = {},
+): FilePayload {
+  return {
+    ...payload,
+    content: options.includeWorkbookText === false ? null : payload.content,
+    bytes: options.includeWorkbookBytes === false ? null : payload.bytes,
+    metadata: options.includeWorkbookMetadata === false ? null : payload.metadata,
+  };
+}
+
+function mergeWorkbookPayload(
+  existing: FilePayload | null,
+  incoming: FilePayload,
+  incomingCoverage: WorkbookPayloadCoverage,
+): FilePayload {
+  if (!existing) return incoming;
+
+  return {
+    content: incomingCoverage.text ? incoming.content : existing.content,
+    bytes: incomingCoverage.bytes ? incoming.bytes : existing.bytes,
+    metadata: incomingCoverage.metadata ? incoming.metadata : existing.metadata,
+    perf: incoming.perf,
+  };
+}
+
+function mergeWorkbookPayloadCoverage(
+  existing: WorkbookPayloadCoverage | null,
+  incoming: WorkbookPayloadCoverage,
+): WorkbookPayloadCoverage {
+  return {
+    text: Boolean(existing?.text || incoming.text),
+    bytes: Boolean(existing?.bytes || incoming.bytes),
+    metadata: Boolean(existing?.metadata || incoming.metadata),
+  };
 }
 
 function asArray<T>(value: T | T[] | null | undefined): T[] {
@@ -1170,21 +1251,8 @@ async function readFilePayload(filePath: string, options: ReadFilePayloadOptions
     const cachedPayload = filePayloadCache.get(filePath);
     if (cachedPayload && cachedPayload.mtimeMs === stat.mtimeMs && cachedPayload.size === stat.size) {
       if (isWorkbookFile(filePath)) {
-        const needsWorkbookText = options.includeWorkbookText !== false;
-        const needsWorkbookBytes = options.includeWorkbookBytes !== false;
-        const needsWorkbookMetadata = options.includeWorkbookMetadata !== false;
-        const hasRequestedText = !needsWorkbookText || cachedPayload.payload.content != null;
-        const hasRequestedBytes = !needsWorkbookBytes || cachedPayload.payload.bytes != null;
-        const hasRequestedMetadata = !needsWorkbookMetadata || cachedPayload.payload.metadata != null;
-        if (!hasRequestedText || !hasRequestedBytes || !hasRequestedMetadata) {
-          // Rehydrate workbook payload from disk when the cached entry intentionally omitted heavy fields.
-        } else {
-          return {
-            ...cachedPayload.payload,
-            content: options.includeWorkbookText === false ? null : cachedPayload.payload.content,
-            bytes: options.includeWorkbookBytes === false ? null : cachedPayload.payload.bytes,
-            metadata: options.includeWorkbookMetadata === false ? null : cachedPayload.payload.metadata,
-          };
+        if (canSatisfyWorkbookPayloadRequest(cachedPayload.coverage, options)) {
+          return projectWorkbookPayloadForOptions(cachedPayload.payload, options);
         }
       } else {
         return {
@@ -1226,6 +1294,7 @@ async function readFilePayload(filePath: string, options: ReadFilePayloadOptions
           byteLength: workbookBytes?.length ?? stat.size,
         },
       };
+      const requestedCoverage = getRequestedWorkbookPayloadCoverage(options);
       const cachePayload: FilePayload = {
         ...payload,
         bytes: null,
@@ -1235,6 +1304,10 @@ async function readFilePayload(filePath: string, options: ReadFilePayloadOptions
         size: stat.size,
         payload: cachePayload,
         memoryBytes: estimatePayloadMemoryBytes(cachePayload),
+        coverage: {
+          ...requestedCoverage,
+          bytes: false,
+        },
       }, FILE_PAYLOAD_CACHE_LIMIT, FILE_PAYLOAD_CACHE_MAX_BYTES);
 
       return payload;
@@ -1259,6 +1332,11 @@ async function readFilePayload(filePath: string, options: ReadFilePayloadOptions
       size: stat.size,
       payload,
       memoryBytes: estimatePayloadMemoryBytes(payload),
+      coverage: {
+        text: true,
+        bytes: false,
+        metadata: false,
+      },
     }, FILE_PAYLOAD_CACHE_LIMIT, FILE_PAYLOAD_CACHE_MAX_BYTES);
     return payload;
   } catch (error) {
@@ -1692,6 +1770,7 @@ async function haveSameLocalFileContents(leftPath: string, rightPath: string): P
       fs.promises.stat(rightPath),
     ]);
     if (leftStat.size !== rightStat.size) return false;
+    if (leftStat.size > FILE_EQUALITY_MAX_BYTES) return false;
 
     const cacheKey = buildFileEqualityCacheKey(leftPath, rightPath);
     const cached = fileEqualityCache.get(cacheKey);
@@ -1764,7 +1843,11 @@ async function readRevisionPayload(
   const revisionCacheKey = `${target}::${fileName}::${source.id}`;
   const cachedPayload = revisionPayloadCache.get(revisionCacheKey);
   if (cachedPayload) {
-    return cachedPayload.payload;
+    if (!isWorkbookFile(fileName) || canSatisfyWorkbookPayloadRequest(cachedPayload.coverage, options)) {
+      return isWorkbookFile(fileName)
+        ? projectWorkbookPayloadForOptions(cachedPayload.payload, options)
+        : cachedPayload.payload;
+    }
   }
 
   if (!target) {
@@ -1788,11 +1871,25 @@ async function readRevisionPayload(
   }
 
   const payload = await buildPayloadFromBuffer(result.stdout, fileName, options);
+  const requestedCoverage = getRequestedWorkbookPayloadCoverage(options);
+  const mergedPayload = isWorkbookFile(fileName)
+    ? mergeWorkbookPayload(cachedPayload?.payload ?? null, payload, requestedCoverage)
+    : payload;
+  const mergedCoverage = isWorkbookFile(fileName)
+    ? mergeWorkbookPayloadCoverage(cachedPayload?.coverage ?? null, requestedCoverage)
+    : {
+        text: true,
+        bytes: false,
+        metadata: false,
+      };
   rememberCacheEntry(revisionPayloadCache, revisionCacheKey, {
-    payload,
-    memoryBytes: estimatePayloadMemoryBytes(payload),
+    payload: mergedPayload,
+    memoryBytes: estimatePayloadMemoryBytes(mergedPayload),
+    coverage: mergedCoverage,
   }, REVISION_PAYLOAD_CACHE_LIMIT, REVISION_PAYLOAD_CACHE_MAX_BYTES);
-  return payload;
+  return isWorkbookFile(fileName)
+    ? projectWorkbookPayloadForOptions(mergedPayload, options)
+    : mergedPayload;
 }
 
 function makeSideDisplayName(fileName: string, info: SvnRevisionInfo, fallback: string): string {

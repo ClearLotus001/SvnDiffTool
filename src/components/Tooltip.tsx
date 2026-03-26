@@ -25,6 +25,7 @@ interface TooltipLayout {
 const VIEWPORT_PADDING = 12;
 const TOOLTIP_GAP = 8;
 const ARROW_SAFE_PADDING = 18;
+const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
 export function getTooltipSurfaceBackground(T: Theme): string {
   return `linear-gradient(180deg, ${T.bg2} 0%, ${T.bg1} 100%)`;
@@ -152,7 +153,7 @@ const Tooltip = memo(({
     };
   }, [open]);
 
-  useLayoutEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     if (!open) return;
     const bubble = bubbleRef.current;
     if (!bubble) return;

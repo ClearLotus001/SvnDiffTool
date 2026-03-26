@@ -567,9 +567,15 @@ export default function App() {
       };
       const hasMetadataFromPayload = data.baseWorkbookMetadata != null || data.mineWorkbookMetadata != null;
       const canLoadMetadataRemotely = Boolean(window.svnDiff?.loadWorkbookMetadata && isWorkbookFileName(data.fileName || data.baseName || data.mineName));
-      const shouldLoadMetadata = shouldResolveWorkbookMetadata(metadataInput) || canLoadMetadataRemotely;
-      if (!shouldResolveWorkbookMetadata(metadataInput) && (hasBytePayload(metadataInput.baseBytes) || hasBytePayload(metadataInput.mineBytes))) {
-        console.warn('[workbook-metadata] skipped for large workbook payload');
+      const canResolveMetadataLocally = shouldResolveWorkbookMetadata(metadataInput);
+      const shouldLoadMetadata = canResolveMetadataLocally || canLoadMetadataRemotely;
+      if (!canResolveMetadataLocally && (hasBytePayload(metadataInput.baseBytes) || hasBytePayload(metadataInput.mineBytes))) {
+        debugLog('metadata:skip-large-payload', {
+          compareMode,
+          fileName: data.fileName,
+          baseBytes: hasBytePayload(metadataInput.baseBytes) ? metadataInput.baseBytes.byteLength : 0,
+          mineBytes: hasBytePayload(metadataInput.mineBytes) ? metadataInput.mineBytes.byteLength : 0,
+        });
       }
       if (cachedResult) {
         diffResultCacheRef.current.delete(cacheKey);
@@ -747,7 +753,11 @@ export default function App() {
             const message = metadataResult.error instanceof Error
               ? metadataResult.error.message
               : String(metadataResult.error);
-            console.warn('[workbook-metadata]', message);
+            debugLog('metadata:failed', {
+              compareMode,
+              message,
+              durationMs: Number(metadataResult.duration.toFixed(1)),
+            });
             setLoadPerfMetrics((prev) => (prev ? {
               ...prev,
               metadataMs: metadataResult.duration,
