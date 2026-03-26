@@ -16,11 +16,16 @@ const readyResources = [
 ];
 const devProfileHash = createHash('sha1').update(rootDir).digest('hex').slice(0, 10);
 const devProfileDir = path.join(os.tmpdir(), 'SvnExcelDiffTool-dev', devProfileHash);
+const EARLY_EXIT_WINDOW_MS = 5_000;
+const MAX_EARLY_EXIT_RETRIES = 3;
+const EARLY_EXIT_RETRY_DELAY_MS = 800;
 
 let electronProcess: ChildProcess | null = null;
 let shutdownRequested = false;
 let restartQueued = false;
 let restartTimer: NodeJS.Timeout | null = null;
+let stableLaunchTimer: NodeJS.Timeout | null = null;
+let earlyExitRetryCount = 0;
 
 async function waitForBundles() {
   while (!shutdownRequested) {
@@ -55,6 +60,7 @@ function startElectron() {
   if (shutdownRequested) return;
 
   fs.mkdirSync(devProfileDir, { recursive: true });
+  const launchStartedAt = Date.now();
 
   const childEnv: NodeJS.ProcessEnv = {
     ...process.env,
@@ -69,8 +75,24 @@ function startElectron() {
     env: childEnv,
   });
 
+  if (stableLaunchTimer) {
+    clearTimeout(stableLaunchTimer);
+    stableLaunchTimer = null;
+  }
+  stableLaunchTimer = setTimeout(() => {
+    earlyExitRetryCount = 0;
+    stableLaunchTimer = null;
+  }, EARLY_EXIT_WINDOW_MS);
+
   electronProcess.on('exit', (code) => {
+    if (stableLaunchTimer) {
+      clearTimeout(stableLaunchTimer);
+      stableLaunchTimer = null;
+    }
+
     const shouldRestart = restartQueued && !shutdownRequested;
+    const normalizedCode = code ?? 0;
+    const exitedEarly = (Date.now() - launchStartedAt) < EARLY_EXIT_WINDOW_MS;
     electronProcess = null;
 
     if (shouldRestart) {
@@ -79,8 +101,32 @@ function startElectron() {
       return;
     }
 
+    if (!shutdownRequested && normalizedCode === 0 && exitedEarly) {
+      earlyExitRetryCount += 1;
+      if (earlyExitRetryCount <= MAX_EARLY_EXIT_RETRIES) {
+        console.warn(
+          `[dev-electron-runner] Electron exited too early (attempt ${earlyExitRetryCount}/${MAX_EARLY_EXIT_RETRIES}). ` +
+          'Retrying startup; this is often caused by a stale dev instance holding the single-instance lock.',
+        );
+        setTimeout(() => {
+          if (!shutdownRequested && !electronProcess) {
+            void bootElectron();
+          }
+        }, EARLY_EXIT_RETRY_DELAY_MS);
+        return;
+      }
+
+      console.warn(
+        '[dev-electron-runner] Electron kept exiting immediately. ' +
+        'A previous SvnDiffTool dev instance may still be running in the background. ' +
+        'Close old Electron windows/processes, then save a file or restart `pnpm dev:app`.',
+      );
+      return;
+    }
+
+    earlyExitRetryCount = 0;
     if (!shutdownRequested) {
-      process.exit(code ?? 0);
+      process.exit(normalizedCode);
     }
   });
 }
@@ -121,6 +167,10 @@ function cleanupAndExit(exitCode = 0) {
   if (restartTimer) {
     clearTimeout(restartTimer);
     restartTimer = null;
+  }
+  if (stableLaunchTimer) {
+    clearTimeout(stableLaunchTimer);
+    stableLaunchTimer = null;
   }
 
   if (!electronProcess) {

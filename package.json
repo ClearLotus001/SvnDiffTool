@@ -18,6 +18,7 @@
     "typecheck:electron": "tsc -p tsconfig.electron.json --noEmit",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit",
     "test:workbook": "tsx --test tests/*.test.ts",
+    "verify:single-instance-cache": "tsx scripts/verify-single-instance-cache.ts",
     "preview": "vite preview"
   },
   "build": {

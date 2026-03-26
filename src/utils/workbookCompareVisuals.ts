@@ -16,16 +16,36 @@ export interface WorkbookCompareBadgeVisual {
   textColor: string;
 }
 
+function getWorkbookStrictOnlyVisual(theme: Theme): WorkbookCompareCellVisual {
+  return {
+    background: `${theme.acc2}16`,
+    border: `${theme.acc2}66`,
+    textColor: theme.acc2,
+    maskOverlay: null,
+  };
+}
+
 interface ResolveWorkbookCompareCellVisualOptions {
   theme: Theme;
   compareCell: WorkbookCompareCellState | undefined;
   compareMode?: WorkbookCompareMode;
   side: 'base' | 'mine';
+  modifyColorMode?: 'semantic' | 'side-accent';
   hasEntry: boolean;
   hasContent: boolean;
   hasBaseRow: boolean;
   hasMineRow: boolean;
   defaultTextColor: string;
+}
+
+function getWorkbookSideAccentVisual(theme: Theme, side: 'base' | 'mine'): WorkbookCompareCellVisual {
+  const accent = side === 'base' ? theme.acc2 : theme.acc;
+  return {
+    background: `${accent}12`,
+    border: `${accent}66`,
+    textColor: accent,
+    maskOverlay: null,
+  };
 }
 
 export function getWorkbookCompareBadgeVisual(
@@ -58,6 +78,7 @@ export function resolveWorkbookCompareCellVisual({
   compareCell,
   compareMode = 'strict',
   side,
+  modifyColorMode = 'semantic',
   hasEntry,
   hasContent,
   hasBaseRow,
@@ -71,6 +92,10 @@ export function resolveWorkbookCompareCellVisual({
       textColor: defaultTextColor,
       maskOverlay: compareCell?.masked && hasContent ? `${T.bg1}22` : null,
     };
+  }
+
+  if (compareCell.strictOnly) {
+    return getWorkbookStrictOnlyVisual(T);
   }
 
   const kind = compareCell.kind ?? (
@@ -106,6 +131,10 @@ export function resolveWorkbookCompareCellVisual({
       textColor: isAddSide ? T.addTx : T.delTx,
       maskOverlay: null,
     };
+  }
+
+  if (modifyColorMode === 'side-accent') {
+    return getWorkbookSideAccentVisual(T, side);
   }
 
   return {

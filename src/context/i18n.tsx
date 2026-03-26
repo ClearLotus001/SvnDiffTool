@@ -29,6 +29,8 @@ const SHORTCUT_DEFS: { key: string; labelKey: TranslationKey }[] = [
   { key: 'Ctrl+G', labelKey: 'shortcutGoto' },
   { key: 'Ctrl+]', labelKey: 'shortcutIncreaseFont' },
   { key: 'Ctrl+[', labelKey: 'shortcutDecreaseFont' },
+  { key: 'Alt+[', labelKey: 'shortcutPrevCollapse' },
+  { key: 'Alt+]', labelKey: 'shortcutNextCollapse' },
   { key: 'Ctrl+\\', labelKey: 'shortcutToggleWhitespace' },
   { key: 'F1', labelKey: 'shortcutTogglePanel' },
 ];

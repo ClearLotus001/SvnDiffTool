@@ -56,7 +56,6 @@ const PerfBar = memo(({ metrics }: PerfBarProps) => {
     cli: t('perfSource_cli'),
     'revision-switch': t('perfSource_revision-switch'),
     'local-dev': t('perfSource_local-dev'),
-    demo: t('perfSource_demo'),
   }[metrics.source];
 
   return (

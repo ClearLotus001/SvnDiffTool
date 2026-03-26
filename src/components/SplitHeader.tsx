@@ -4,6 +4,9 @@ import { FONT_CODE, FONT_SIZE, FONT_UI } from '../constants/typography';
 import { useI18n } from '../context/i18n';
 import { useTheme } from '../context/theme';
 import { extractDisplayName, extractVersionLabel } from '../utils/diffMeta';
+import RevisionPicker from './RevisionPicker';
+import RevisionLogHoverCard from './RevisionLogHoverCard';
+import Tooltip from './Tooltip';
 
 interface SplitHeaderProps {
   baseName: string;
@@ -14,14 +17,24 @@ interface SplitHeaderProps {
   mineRevisionInfo?: SvnRevisionInfo | null;
   revisionOptions?: SvnRevisionInfo[] | null;
   canSwitchRevisions?: boolean;
+  isLoadingRevisionOptions?: boolean;
   isSwitchingRevisions?: boolean;
+  revisionHasMore?: boolean;
+  revisionQueryDateTime?: string;
+  revisionQueryError?: string;
+  isLoadingMoreRevisions?: boolean;
+  isSearchingRevisionDateTime?: boolean;
   onRevisionChange?: ((baseRevisionId: string, mineRevisionId: string) => void) | undefined;
+  onLoadMoreRevisions?: (() => void) | undefined;
+  onRevisionDateTimeQuery?: ((value: string) => void) | undefined;
 }
 
-function buildRevisionOptionLabel(option: SvnRevisionInfo) {
-  if (option.message) return `${option.revision} · ${option.message}`;
-  if (option.title && option.title !== option.revision) return `${option.revision} · ${option.title}`;
-  return option.revision;
+function buildRevisionLogText(info: SvnRevisionInfo | null) {
+  const message = info?.message?.trim() ?? '';
+  if (message) return message;
+  const title = info?.title?.trim() ?? '';
+  if (title && title !== info?.revision) return title;
+  return '';
 }
 
 const SplitHeader = memo(({
@@ -33,11 +46,22 @@ const SplitHeader = memo(({
   mineRevisionInfo = null,
   revisionOptions = null,
   canSwitchRevisions = false,
+  isLoadingRevisionOptions = false,
   isSwitchingRevisions = false,
+  revisionHasMore = false,
+  revisionQueryDateTime = '',
+  revisionQueryError = '',
+  isLoadingMoreRevisions = false,
+  isSearchingRevisionDateTime = false,
   onRevisionChange,
+  onLoadMoreRevisions,
+  onRevisionDateTimeQuery,
 }: SplitHeaderProps) => {
   const T = useTheme();
   const { t } = useI18n();
+  const headerPillHeight = 28;
+  const headerPillPadding = '0 10px';
+  const headerPillRadius = 999;
   const baseVersion = baseRevisionInfo?.revision || extractVersionLabel(baseName) || t('commonBase');
   const mineVersion = mineRevisionInfo?.revision || extractVersionLabel(mineName) || t('commonMine');
   const baseDisplayName = extractDisplayName(baseName);
@@ -97,115 +121,98 @@ const SplitHeader = memo(({
     );
   };
 
-  const renderMeta = (info: SvnRevisionInfo | null) => {
-    const parts = [info?.author, info?.date].filter(Boolean);
-    const secondary = parts.join(' · ');
-    const primary = info?.message?.trim() || info?.title?.trim() || '';
-    if (!primary && !secondary) return null;
+  const renderMeta = (info: SvnRevisionInfo | null, fallbackText: string, accent: string) => {
+    const primaryLog = buildRevisionLogText(info);
+    const primary = primaryLog || fallbackText.trim();
+    if (!primary) return null;
 
     return (
-      <div
-        style={{
-          display: 'grid',
-          gap: 2,
-          justifyItems: 'center',
-          minWidth: 0,
-          maxWidth: '100%',
-        }}>
-        {primary && (
-          <span
-            style={{
-              maxWidth: '100%',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              color: T.t0,
-              fontSize: FONT_SIZE.sm,
-              fontFamily: FONT_UI,
-              fontWeight: 600,
-            }}>
-            {primary}
-          </span>
-        )}
-        {secondary && (
-          <span
-            style={{
-              maxWidth: '100%',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              color: T.t2,
-              fontSize: FONT_SIZE.xs,
-              fontFamily: FONT_UI,
-            }}>
-            {secondary}
-          </span>
-        )}
-      </div>
+      <RevisionLogHoverCard
+        accent={accent}
+        displayText={primary}
+        detailText={primaryLog}
+        author={info?.author ?? ''}
+        date={info?.date ?? ''}
+        revision={info?.revision ?? ''}
+        muted={!primaryLog}
+      />
     );
   };
 
-  const renderRevisionSelect = (
-    side: 'base' | 'mine',
-    info: SvnRevisionInfo | null,
-    fallbackLabel: string,
-  ) => {
-    const currentId = info?.id ?? '';
-    const otherId = side === 'base' ? mineRevisionInfo?.id ?? '' : baseRevisionInfo?.id ?? '';
-
-    if (!canSwitchRevisions || options.length === 0 || !onRevisionChange) {
-      return (
+  const renderStaticVersion = (label: string, accent: string) => (
+    <Tooltip content={label} maxWidth={320}>
+      <span
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 8,
+          maxWidth: '100%',
+          minWidth: 0,
+          padding: headerPillPadding,
+          height: headerPillHeight,
+          borderRadius: headerPillRadius,
+          border: `1px solid ${T.border}`,
+          background: T.bg2,
+          flexShrink: 0,
+        }}>
         <span
           style={{
+            color: accent,
+            fontSize: FONT_SIZE.xs,
+            fontWeight: 700,
+            fontFamily: FONT_UI,
+            whiteSpace: 'nowrap',
+          }}>
+          {t('splitHeaderVersionLabel')}
+        </span>
+        <span
+          style={{
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
             color: T.t0,
             fontSize: FONT_SIZE.sm,
             fontWeight: 700,
             fontFamily: FONT_CODE,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            maxWidth: '100%',
           }}>
-          {fallbackLabel}
-        </span>
-      );
-    }
+            {label}
+          </span>
+      </span>
+    </Tooltip>
+  );
+
+  const renderRevisionSelect = (
+    side: 'base' | 'mine',
+    info: SvnRevisionInfo | null,
+  ) => {
+    const otherId = side === 'base' ? mineRevisionInfo?.id ?? '' : baseRevisionInfo?.id ?? '';
 
     return (
-      <select
-        aria-label={side === 'base' ? t('splitHeaderBaseTitle') : t('splitHeaderMineTitle')}
-        value={currentId}
+      <RevisionPicker
+        align={side === 'base' ? 'left' : 'right'}
+        accent={side === 'base' ? T.acc2 : T.acc}
+        title={side === 'base' ? t('splitHeaderBaseTitle') : t('splitHeaderMineTitle')}
+        value={info}
+        options={options}
         disabled={isSwitchingRevisions}
-        onChange={(event) => {
-          const nextId = event.currentTarget.value;
+        isLoading={isLoadingRevisionOptions && options.length === 0}
+        hasMore={revisionHasMore}
+        isLoadingMore={isLoadingMoreRevisions}
+        queryDateTime={revisionQueryDateTime}
+        queryError={revisionQueryError}
+        isSearchingDateTime={isSearchingRevisionDateTime}
+        onChange={(nextId) => {
           if (!nextId) return;
           if (side === 'base') {
-            onRevisionChange(nextId, otherId || mineRevisionInfo?.id || nextId);
+            onRevisionChange?.(nextId, otherId || mineRevisionInfo?.id || nextId);
             return;
           }
-          onRevisionChange(otherId || baseRevisionInfo?.id || nextId, nextId);
+          onRevisionChange?.(otherId || baseRevisionInfo?.id || nextId, nextId);
         }}
-        style={{
-          width: 'min(100%, 360px)',
-          minWidth: 180,
-          height: 30,
-          padding: '0 30px 0 10px',
-          borderRadius: 8,
-          border: `1px solid ${T.border}`,
-          background: T.bg1,
-          color: T.t0,
-          fontSize: FONT_SIZE.sm,
-          fontFamily: FONT_CODE,
-          fontWeight: 700,
-          outline: 'none',
-          boxShadow: isSwitchingRevisions ? `inset 0 0 0 1px ${T.border}` : 'none',
-        }}>
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {buildRevisionOptionLabel(option)}
-          </option>
-        ))}
-      </select>
+        onLoadMore={onLoadMoreRevisions}
+        onQueryDateTime={onRevisionDateTimeQuery}
+      />
     );
   };
 
@@ -219,43 +226,121 @@ const SplitHeader = memo(({
     divider = false,
   ) => {
     const accent = side === 'base' ? T.acc2 : T.acc;
-    const fallbackLabel = [name.trim(), version.trim()].filter(Boolean).join(' · ') || title;
+    const hasRevisionSwitch = canSwitchRevisions && Boolean(onRevisionChange);
+    const normalizedVersion = version.trim();
+    const staticVersionLabel = (
+      normalizedVersion
+      && normalizedVersion !== t('commonBase')
+      && normalizedVersion !== t('commonMine')
+    )
+      ? normalizedVersion
+      : t('splitHeaderVersionUnknown');
 
     return (
       <div
         style={{
           display: 'grid',
           gap: 6,
-          justifyItems: 'center',
-          alignContent: 'center',
           minWidth: 0,
-          padding: '8px 14px 10px',
-          minHeight: 66,
-          background: `linear-gradient(180deg, ${T.bg1} 0%, ${T.bg0} 100%)`,
+          padding: '8px 14px 9px',
+          minHeight: 58,
+          background: 'transparent',
           borderLeft: divider ? `1px solid ${T.border}` : 'none',
           borderTop: `1px solid ${T.border}`,
         }}>
-        <span
+        <div
           style={{
-            display: 'inline-flex',
+            display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            gap: 6,
-            color: accent,
-            fontFamily: FONT_UI,
-            fontSize: FONT_SIZE.xs,
-            fontWeight: 700,
-            letterSpacing: 0.2,
-            whiteSpace: 'nowrap',
+            justifyContent: 'space-between',
+            gap: 12,
+            minWidth: 0,
+            flexWrap: 'wrap',
           }}>
-          {renderRoleBadge(side)}
-          <span>{axis}</span>
-          <span style={{ color: T.t2 }}>·</span>
-          <span>{title}</span>
-        </span>
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              minWidth: 0,
+              flexWrap: 'wrap',
+            }}>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                height: headerPillHeight,
+                padding: headerPillPadding,
+                borderRadius: headerPillRadius,
+                border: `1px solid ${T.border}`,
+                background: T.bg2,
+                color: accent,
+                fontFamily: FONT_UI,
+                fontSize: FONT_SIZE.sm,
+                fontWeight: 700,
+                whiteSpace: 'nowrap',
+              }}>
+              {renderRoleBadge(side)}
+              {title}
+            </span>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                height: headerPillHeight,
+                padding: headerPillPadding,
+                borderRadius: headerPillRadius,
+                border: `1px solid ${T.border}`,
+                background: T.bg2,
+                color: T.t2,
+                fontFamily: FONT_UI,
+                fontSize: FONT_SIZE.xs,
+                fontWeight: 600,
+                whiteSpace: 'nowrap',
+              }}>
+                {axis}
+            </span>
+          </div>
+          {hasRevisionSwitch
+            ? renderRevisionSelect(side, info)
+            : renderStaticVersion(staticVersionLabel, accent)}
+        </div>
 
-        {renderRevisionSelect(side, info, fallbackLabel)}
-        {renderMeta(info)}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            minWidth: 0,
+          }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              minWidth: 0,
+              flex: '1 1 auto',
+              minHeight: headerPillHeight,
+              paddingLeft: 4,
+            }}>
+            {renderMeta(info, name || title, accent) ?? (
+              <Tooltip content={name || title} maxWidth={320}>
+                <span
+                  style={{
+                    minWidth: 0,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    color: T.t2,
+                    fontSize: FONT_SIZE.xs,
+                    fontFamily: FONT_UI,
+                  }}>
+                  {name || title}
+                </span>
+              </Tooltip>
+            )}
+          </div>
+        </div>
       </div>
     );
   };
@@ -269,7 +354,7 @@ const SplitHeader = memo(({
         padding: 0,
         width: '100%',
         minWidth: 0,
-        background: '#faf9f5',
+        background: `linear-gradient(180deg, ${T.bg1} 0%, ${T.bg0} 100%)`,
         borderBottom: `1px solid ${T.border}`,
         flexShrink: 0,
       }}>

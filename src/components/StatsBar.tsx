@@ -2,7 +2,7 @@
 import { memo, useMemo } from 'react';
 import { FONT_CODE, FONT_SIZE, FONT_UI } from '../constants/typography';
 import { useI18n } from '../context/i18n';
-import type { DiffLine, WorkbookCompareMode } from '../types';
+import type { DiffLine, WorkbookArtifactDiff, WorkbookCompareMode } from '../types';
 import { useTheme } from '../context/theme';
 import Tooltip from './Tooltip';
 
@@ -16,6 +16,7 @@ interface StatsBarProps {
   mineVersionLabel: string;
   isWorkbookMode?: boolean;
   workbookCompareMode?: WorkbookCompareMode;
+  workbookArtifactDiff?: WorkbookArtifactDiff | null;
 }
 
 const Dot = ({ c }: { c: string }) => (
@@ -74,6 +75,7 @@ const StatsBar = memo(({
   mineVersionLabel,
   isWorkbookMode = false,
   workbookCompareMode = 'strict',
+  workbookArtifactDiff = null,
 }: StatsBarProps) => {
   const T = useTheme();
   const { t } = useI18n();
@@ -191,6 +193,43 @@ const StatsBar = memo(({
               {workbookCompareMode === 'strict'
                 ? t('toolbarCompareModeStatusStrict')
                 : t('toolbarCompareModeStatusContent')}
+            </span>
+          </div>
+        </Tooltip>
+      )}
+      {isWorkbookMode && workbookArtifactDiff?.hasArtifactOnlyDiff && (
+        <Tooltip
+          content={(
+            <>
+              <div>{t('statsArtifactOnlyDiffHintPrimary')}</div>
+              <div style={{ marginTop: 6, color: T.t2 }}>
+                {t('statsArtifactOnlyDiffHintSecondary')}
+              </div>
+            </>
+          )}
+          maxWidth={360}>
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              minWidth: 0,
+              padding: '2px 8px',
+              borderRadius: 999,
+              background: T.bg2,
+              border: `1px solid ${T.border2}`,
+              flexShrink: 0,
+            }}>
+            <Dot c={T.t2} />
+            <span
+              style={{
+                fontSize: FONT_SIZE.xs,
+                color: T.t2,
+                fontWeight: 700,
+                whiteSpace: 'nowrap',
+                fontFamily: FONT_UI,
+              }}>
+              {t('statsArtifactOnlyDiffLabel')}
             </span>
           </div>
         </Tooltip>

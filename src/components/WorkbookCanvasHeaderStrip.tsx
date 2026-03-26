@@ -20,6 +20,7 @@ interface WorkbookCanvasHeaderStripProps {
   fontSize: number;
   renderColumns: HorizontalVirtualColumnEntry[];
   fixedSide?: 'base' | 'mine';
+  showFixedSideAccent?: boolean;
   onSelectColumn: (column: number, side: 'base' | 'mine') => void;
   onColumnWidthChange?: ((column: number, width: number) => void) | undefined;
   onAutoFitColumn?: ((column: number) => void) | undefined;
@@ -50,6 +51,7 @@ const WorkbookCanvasHeaderStrip = memo(({
   fontSize,
   renderColumns,
   fixedSide = 'base',
+  showFixedSideAccent = true,
   onSelectColumn,
   onColumnWidthChange,
   onAutoFitColumn,
@@ -174,8 +176,10 @@ const WorkbookCanvasHeaderStrip = memo(({
             ? `${accent}16`
             : T.bg1;
           ctx.fillRect(drawX, 0, entry.width, height);
-          ctx.fillStyle = accent;
-          ctx.fillRect(drawX, 0, 3, height);
+          if (showFixedSideAccent) {
+            ctx.fillStyle = accent;
+            ctx.fillRect(drawX, 0, 3, height);
+          }
           ctx.strokeStyle = isSelectedColumn ? `${accent}88` : T.border;
           ctx.strokeRect(drawX + 0.5, 0.5, entry.width - 1, height - 1);
           ctx.fillStyle = isBaseFocused || isMineFocused ? T.t0 : T.t1;
@@ -268,6 +272,7 @@ const WorkbookCanvasHeaderStrip = memo(({
     scrollRef,
     selectedCell,
     sheetName,
+    showFixedSideAccent,
     sizes.header,
     T,
     viewportWidth,

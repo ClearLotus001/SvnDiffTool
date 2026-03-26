@@ -2,19 +2,12 @@ import { memo } from 'react';
 import { FONT_CODE, FONT_SIZE, FONT_UI } from '../constants/typography';
 import { useI18n } from '../context/i18n';
 import { useTheme } from '../context/theme';
-import {
-  hasWorkbookCellRawContent,
-} from '../utils/workbookCellContract';
 import type { WorkbookCompareCellState } from '../utils/workbookCompare';
 import { getWorkbookCompareBadgeVisual } from '../utils/workbookCompareVisuals';
 import type { WorkbookCellDisplay } from '../utils/workbookDisplay';
 
 interface WorkbookCompareTooltipProps {
   compareCell: WorkbookCompareCellState;
-}
-
-function hasContent(cell: WorkbookCompareCellState['baseCell']) {
-  return hasWorkbookCellRawContent(cell);
 }
 
 function getInvisiblePreview(value: string): string | null {
@@ -34,8 +27,6 @@ const WorkbookCompareTooltip = memo(({
   const T = useTheme();
   const { t } = useI18n();
   const { baseCell, mineCell, changed, kind, strictOnly } = compareCell;
-  const showBase = hasContent(baseCell);
-  const showMine = hasContent(mineCell);
   const showWhitespaceSensitiveHint = changed && strictOnly;
   const showClearedHint = changed && kind === 'delete';
   const showAddedHint = changed && kind === 'add';
@@ -167,15 +158,6 @@ const WorkbookCompareTooltip = memo(({
     </div>
   );
 
-  if (!showBase || !showMine) {
-    return renderPane(
-      showBase ? t('tooltipBaseLabel') : t('tooltipLocalLabel'),
-      showBase ? T.acc2 : T.acc,
-      showBase ? baseCell : mineCell,
-      true,
-    );
-  }
-
   return (
     <div
       style={{
@@ -264,8 +246,8 @@ const WorkbookCompareTooltip = memo(({
           gap: 12,
           minWidth: 320,
         }}>
-      {renderPane(t('tooltipBaseLabel'), T.acc2, baseCell)}
-      {renderPane(t('tooltipLocalLabel'), T.acc, mineCell)}
+        {renderPane(t('tooltipBaseLabel'), T.acc2, baseCell)}
+        {renderPane(t('tooltipLocalLabel'), T.acc, mineCell)}
       </div>
     </div>
   );

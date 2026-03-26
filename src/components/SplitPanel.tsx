@@ -26,18 +26,33 @@ import {
 import {
   type CollapseExpansionState,
   expandCollapseBlock,
-  getExpandedHiddenCount,
+  expandCollapseBlockFully,
+  getCollapseLeadingRevealCount,
+  revealCollapsedLine,
 } from '../utils/collapseState';
+import {
+  buildCollapsedItems,
+  buildCollapsibleRowBlocks,
+  findCollapsedRowTarget,
+} from '../utils/collapsibleRows';
+import {
+  countRemainingCollapses,
+  findCyclicCollapseIndex,
+  getCollapseIndexes,
+  resolveActiveCollapsePosition,
+} from '../utils/collapseNavigation';
 import SplitCell from './SplitCell';
 import CollapseBar from './CollapseBar';
+import CollapseJumpButton from './CollapseJumpButton';
 import MiniMap from './MiniMap';
 
 const CONTEXT_LINES = 3;
+type CollapseNavigationHandler = (direction: 'prev' | 'next') => void;
 
 // Fully typed — no `as any` casts
 type SplitItem =
   | { kind: 'split-line';     row: SplitRow; lineIdx: number }
-  | { kind: 'split-collapse'; count: number; blockId: string; fromIdx: number; toIdx: number };
+  | { kind: 'split-collapse'; count: number; blockId: string; fromIdx: number; toIdx: number; hiddenStart: number; hiddenEnd: number; expandStep: number };
 
 function isEqualSplitRow(row: SplitRow): boolean {
   return row.left?.type === 'equal' && row.right?.type === 'equal';
@@ -51,69 +66,6 @@ function splitRowTouchesOrAfter(row: SplitRow, lineIdx: number): boolean {
   return row.lineIdxs.some(idx => idx >= lineIdx);
 }
 
-function buildSplitItems(
-  splitRows: SplitRow[],
-  collapseCtx: boolean,
-  expandedBlocks: CollapseExpansionState,
-): SplitItem[] {
-  if (!collapseCtx) {
-    return splitRows.map((row) => ({ kind: 'split-line' as const, row, lineIdx: row.lineIdx }));
-  }
-
-  const result: SplitItem[] = [];
-  let i = 0;
-
-  while (i < splitRows.length) {
-    // i < splitRows.length — guaranteed
-    const row = splitRows[i]!;
-    const isEqual = isEqualSplitRow(row);
-
-    if (!isEqual) {
-      result.push({ kind: 'split-line', row, lineIdx: row.lineIdx });
-      i++;
-      continue;
-    }
-
-    const eqStart = i;
-    while (i < splitRows.length && isEqualSplitRow(splitRows[i]!)) i++;
-    const count = i - eqStart;
-
-    if (count <= CONTEXT_LINES * 2) {
-      for (let k = eqStart; k < i; k++) {
-        result.push({ kind: 'split-line', row: splitRows[k]!, lineIdx: splitRows[k]!.lineIdx });
-      }
-    } else {
-    const blockId = `s-${eqStart}-${i}`;
-    const hiddenCount = count - CONTEXT_LINES * 2;
-    const expandedHiddenCount = Math.min(hiddenCount, getExpandedHiddenCount(expandedBlocks, blockId));
-    if (expandedHiddenCount >= hiddenCount) {
-      for (let k = eqStart; k < i; k++) {
-        result.push({ kind: 'split-line', row: splitRows[k]!, lineIdx: splitRows[k]!.lineIdx });
-      }
-    } else {
-      for (let k = eqStart; k < eqStart + CONTEXT_LINES; k++) {
-        result.push({ kind: 'split-line', row: splitRows[k]!, lineIdx: splitRows[k]!.lineIdx });
-      }
-      for (let k = eqStart + CONTEXT_LINES; k < eqStart + CONTEXT_LINES + expandedHiddenCount; k++) {
-        result.push({ kind: 'split-line', row: splitRows[k]!, lineIdx: splitRows[k]!.lineIdx });
-      }
-      result.push({
-        kind: 'split-collapse',
-        count: hiddenCount - expandedHiddenCount,
-        blockId,
-        fromIdx: splitRows[eqStart + CONTEXT_LINES + expandedHiddenCount]!.lineIdx,
-        toIdx: splitRows[i - CONTEXT_LINES - 1]!.lineIdx,
-      });
-        for (let k = i - CONTEXT_LINES; k < i; k++) {
-          result.push({ kind: 'split-line', row: splitRows[k]!, lineIdx: splitRows[k]!.lineIdx });
-        }
-      }
-    }
-  }
-
-  return result;
-}
-
 interface SplitPanelProps {
   diffLines: DiffLine[];
   collapseCtx: boolean;
@@ -125,6 +77,7 @@ interface SplitPanelProps {
   fontSize: number;
   vertical: boolean;
   onScrollerReady: (scrollToIndex: (idx: number, align?: 'start' | 'center') => void) => void;
+  onCollapseNavigationReady?: ((navigate: CollapseNavigationHandler | null) => void) | undefined;
   baseName?: string;
   mineName?: string;
   selectedCell?: WorkbookSelectedCell | null;
@@ -134,13 +87,16 @@ interface SplitPanelProps {
 
 const SplitPanel = memo(({
   diffLines, collapseCtx, activeHunkIdx, searchMatches, activeSearchIdx,
-  hunkPositions, showWhitespace, fontSize, vertical, onScrollerReady,
+  hunkPositions, showWhitespace, fontSize, vertical, onScrollerReady, onCollapseNavigationReady,
   baseName = '', mineName = '', selectedCell = null, onSelectCell, onWorkbookNavigationReady,
 }: SplitPanelProps) => {
   const T         = useTheme();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pendingScrollAdjustRef = useRef(0);
+  const lastCollapseJumpIndexRef = useRef<number | null>(null);
   const [expandedBlocks, setExpandedBlocks] = useState<CollapseExpansionState>({});
   const [activeWorkbookSectionIdx, setActiveWorkbookSectionIdx] = useState(0);
+  const [pendingScrollTarget, setPendingScrollTarget] = useState<{ lineIdx: number; align: 'start' | 'center' } | null>(null);
   const baseVersion = useMemo(() => extractVersionLabel(baseName) || baseName, [baseName]);
   const mineVersion = useMemo(() => extractVersionLabel(mineName) || mineName, [mineName]);
 
@@ -167,10 +123,32 @@ const SplitPanel = memo(({
       && parseWorkbookDisplayLine(row.left?.base ?? row.right?.mine ?? '')?.kind !== 'sheet'
     ));
   }, [activeWorkbookSection, hiddenLineIdxSet, splitRows]);
-  const items     = useMemo(() => {
-    if (isWorkbookMode) return buildSplitItems(visibleSplitRows, collapseCtx, expandedBlocks);
-    return buildSplitItems(splitRows, collapseCtx, expandedBlocks);
-  }, [collapseCtx, expandedBlocks, isWorkbookMode, splitRows, visibleSplitRows]);
+  const collapsedSourceRows = isWorkbookMode ? visibleSplitRows : splitRows;
+  const blockPrefix = isWorkbookMode
+    ? `split-${activeWorkbookSection?.name ?? 'workbook'}`
+    : 'split-text';
+  const rowBlocks = useMemo(
+    () => buildCollapsibleRowBlocks(collapsedSourceRows, isEqualSplitRow),
+    [collapsedSourceRows],
+  );
+  const items = useMemo<SplitItem[]>(
+    () => buildCollapsedItems(rowBlocks, collapseCtx, expandedBlocks, {
+      contextLines: CONTEXT_LINES,
+      blockPrefix,
+      buildRowItem: (row): SplitItem => ({ kind: 'split-line', row, lineIdx: row.lineIdx }),
+      buildCollapseItem: ({ blockId, count, fromIdx, toIdx, hiddenStart, hiddenEnd, expandStep }): SplitItem => ({
+        kind: 'split-collapse',
+        count,
+        blockId,
+        fromIdx,
+        toIdx,
+        hiddenStart,
+        hiddenEnd,
+        expandStep,
+      }),
+    }),
+    [blockPrefix, collapseCtx, expandedBlocks, rowBlocks],
+  );
   const rowHeight = vertical ? (ROW_H * 2) + 1 : ROW_H;
 
   const { totalH, startIdx, endIdx, scrollToIndex } = useVirtual(
@@ -179,14 +157,51 @@ const SplitPanel = memo(({
     rowHeight,
   );
 
+  const revealLineIfCollapsed = useCallback((lineIdx: number) => {
+    const target = findCollapsedRowTarget(rowBlocks, expandedBlocks, lineIdx, {
+      contextLines: CONTEXT_LINES,
+      blockPrefix,
+      rowHasLineIdx: splitRowHasLineIdx,
+    });
+    if (!target) return false;
+    startTransition(() => {
+      setExpandedBlocks((prev) => revealCollapsedLine(
+        prev,
+        target.blockId,
+        target.hiddenStart,
+        target.hiddenEnd,
+        target.targetIndex,
+      ));
+    });
+    return true;
+  }, [blockPrefix, expandedBlocks, rowBlocks]);
+
+  const scrollToResolvedLine = useCallback((lineIdx: number, align: 'start' | 'center' = 'center') => {
+    const exactIndex = items.findIndex((item) => item.kind === 'split-line' && splitRowHasLineIdx(item.row, lineIdx));
+    if (exactIndex >= 0) {
+      scrollToIndex(exactIndex, align);
+      setPendingScrollTarget((prev) => (
+        prev && prev.lineIdx === lineIdx && prev.align === align ? null : prev
+      ));
+      return true;
+    }
+    if (revealLineIfCollapsed(lineIdx)) {
+      setPendingScrollTarget({ lineIdx, align });
+      return false;
+    }
+    const nearestIndex = items.findIndex((item) => item.kind === 'split-line' && splitRowTouchesOrAfter(item.row, lineIdx));
+    if (nearestIndex >= 0) {
+      scrollToIndex(nearestIndex, align);
+      return true;
+    }
+    return false;
+  }, [items, revealLineIfCollapsed, scrollToIndex]);
+
   useEffect(() => {
     onScrollerReady((lineIdx, align) => {
-      const itemIndex = items.findIndex(it => it.kind === 'split-line' && splitRowTouchesOrAfter(it.row, lineIdx));
-      if (itemIndex >= 0) {
-        scrollToIndex(itemIndex, align);
-      }
+      scrollToResolvedLine(lineIdx, align ?? 'center');
     });
-  }, [items, onScrollerReady, scrollToIndex]);
+  }, [onScrollerReady, scrollToResolvedLine]);
 
   const searchMatchSet      = useMemo(() => new Set(searchMatches.map(m => m.lineIdx)), [searchMatches]);
   const activeSearchLineIdx = activeSearchIdx >= 0
@@ -220,9 +235,28 @@ const SplitPanel = memo(({
 
   useEffect(() => {
     if (activeSearchLineIdx < 0) return;
-    const idx = items.findIndex(it => it.kind === 'split-line' && splitRowHasLineIdx(it.row, activeSearchLineIdx));
-    if (idx >= 0) scrollToIndex(idx, 'center');
-  }, [activeSearchLineIdx, items, scrollToIndex]);
+    scrollToResolvedLine(activeSearchLineIdx, 'center');
+  }, [activeSearchLineIdx, scrollToResolvedLine]);
+
+  useEffect(() => {
+    if (!pendingScrollTarget) return;
+    if (scrollToResolvedLine(pendingScrollTarget.lineIdx, pendingScrollTarget.align)) {
+      setPendingScrollTarget(null);
+    }
+  }, [items, pendingScrollTarget, scrollToResolvedLine]);
+
+  useEffect(() => {
+    lastCollapseJumpIndexRef.current = null;
+  }, [activeWorkbookSection?.name, diffLines]);
+
+  useEffect(() => {
+    const scrollAdjust = pendingScrollAdjustRef.current;
+    if (!scrollAdjust) return;
+    pendingScrollAdjustRef.current = 0;
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = Math.max(0, el.scrollTop + scrollAdjust);
+  }, [items]);
 
   const workbookFrozenRowHeight = frozenRow
     ? (vertical ? (ROW_H * 2) + 1 : ROW_H)
@@ -230,6 +264,40 @@ const SplitPanel = memo(({
   const workbookHeaderHeight = isWorkbookMode
     ? (vertical ? ((ROW_H * 2) + 1) : ROW_H) + workbookFrozenRowHeight
     : 0;
+  const collapseIndexes = useMemo(
+    () => getCollapseIndexes(items, (item) => item.kind === 'split-collapse'),
+    [items],
+  );
+  const totalCollapseCount = useMemo(
+    () => countRemainingCollapses(items, 0, (item) => item.kind === 'split-collapse'),
+    [items],
+  );
+  const activeCollapsePosition = useMemo(
+    () => resolveActiveCollapsePosition(collapseIndexes, lastCollapseJumpIndexRef.current, startIdx),
+    [collapseIndexes, startIdx],
+  );
+  const handleJumpToNextCollapse = useCallback(() => {
+    const nextCollapseIndex = findCyclicCollapseIndex(
+      collapseIndexes,
+      lastCollapseJumpIndexRef.current,
+      endIdx,
+      'next',
+    );
+    if (nextCollapseIndex < 0) return;
+    lastCollapseJumpIndexRef.current = nextCollapseIndex;
+    scrollToIndex(nextCollapseIndex, 'start');
+  }, [collapseIndexes, endIdx, scrollToIndex]);
+  const handleJumpToPreviousCollapse = useCallback(() => {
+    const previousCollapseIndex = findCyclicCollapseIndex(
+      collapseIndexes,
+      lastCollapseJumpIndexRef.current,
+      startIdx,
+      'prev',
+    );
+    if (previousCollapseIndex < 0) return;
+    lastCollapseJumpIndexRef.current = previousCollapseIndex;
+    scrollToIndex(previousCollapseIndex, 'start');
+  }, [collapseIndexes, scrollToIndex, startIdx]);
   const columnLabels = getWorkbookColumnLabels(activeWorkbookSection?.maxColumns ?? 0);
   const singleGridWidth = (LN_W + 3) + (columnLabels.length * WORKBOOK_CELL_WIDTH);
   const workbookNavigationRows = useMemo(() => {
@@ -259,6 +327,17 @@ const SplitPanel = memo(({
     onWorkbookNavigationReady?.(handleWorkbookMove);
     return () => onWorkbookNavigationReady?.(null);
   }, [handleWorkbookMove, onWorkbookNavigationReady]);
+
+  useEffect(() => {
+    onCollapseNavigationReady?.((direction) => {
+      if (direction === 'prev') {
+        handleJumpToPreviousCollapse();
+        return;
+      }
+      handleJumpToNextCollapse();
+    });
+    return () => onCollapseNavigationReady?.(null);
+  }, [handleJumpToNextCollapse, handleJumpToPreviousCollapse, onCollapseNavigationReady]);
 
   useEffect(() => {
     if (!isWorkbookMode || !selectedCell || !activeWorkbookSection) return;
@@ -369,7 +448,7 @@ const SplitPanel = memo(({
 
   return (
     <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
+      <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
         {isWorkbookMode && activeWorkbookSection && (
           <div style={{
             display: 'flex',
@@ -441,17 +520,29 @@ const SplitPanel = memo(({
           <div style={{ position: 'absolute', top: workbookHeaderHeight + (startIdx * rowHeight), left: 0, minWidth: '100%' }}>
           {items.slice(startIdx, endIdx).map((item) => {
             const key = item.kind === 'split-collapse'
-              ? item.blockId
+              ? `${item.blockId}-${item.hiddenStart}-${item.hiddenEnd}`
               : `row-${item.lineIdx}`;
 
             if (item.kind === 'split-collapse') {
               return (
-                <CollapseBar key={key} count={item.count}
+                <CollapseBar key={key} count={item.count} expandCount={Math.min(item.count, item.expandStep)}
                   onExpand={() => startTransition(() => {
+                    const revealCount = Math.min(item.count, item.expandStep);
+                    pendingScrollAdjustRef.current += getCollapseLeadingRevealCount(item.count, revealCount) * rowHeight;
                     setExpandedBlocks(prev => expandCollapseBlock(
                       prev,
                       item.blockId,
-                      item.count + getExpandedHiddenCount(prev, item.blockId),
+                      item.hiddenStart,
+                      item.hiddenEnd,
+                      revealCount,
+                    ));
+                  })}
+                  onExpandAll={() => startTransition(() => {
+                    setExpandedBlocks(prev => expandCollapseBlockFully(
+                      prev,
+                      item.blockId,
+                      item.hiddenStart,
+                      item.hiddenEnd,
                     ));
                   })} />
               );
@@ -499,6 +590,13 @@ const SplitPanel = memo(({
           })}
         </div>
         </div>
+        <CollapseJumpButton
+          onPrev={handleJumpToPreviousCollapse}
+          onNext={handleJumpToNextCollapse}
+          currentIndex={activeCollapsePosition >= 0 ? activeCollapsePosition + 1 : 0}
+          totalCount={totalCollapseCount}
+          storageKey={vertical ? 'text-split-v' : 'text-split-h'}
+        />
       </div>
       <MiniMap
         diffLines={diffLines}

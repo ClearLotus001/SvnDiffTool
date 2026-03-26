@@ -13,7 +13,7 @@ const changedCell = {
   masked: false,
 };
 
-test('paired workbook changes use the shared change palette', () => {
+test('paired workbook changes use the yellow modify palette', () => {
   const visual = resolveWorkbookCompareCellVisual({
     theme: THEMES.light,
     compareCell: changedCell,
@@ -29,6 +29,74 @@ test('paired workbook changes use the shared change palette', () => {
     background: THEMES.light.chgBg,
     border: THEMES.light.chgTx,
     textColor: THEMES.light.chgTx,
+    maskOverlay: null,
+  });
+});
+
+test('stacked paired workbook changes can use the base side accent palette', () => {
+  const visual = resolveWorkbookCompareCellVisual({
+    theme: THEMES.light,
+    compareCell: changedCell,
+    side: 'base',
+    modifyColorMode: 'side-accent',
+    hasEntry: true,
+    hasContent: true,
+    hasBaseRow: true,
+    hasMineRow: true,
+    defaultTextColor: THEMES.light.t1,
+  });
+
+  assert.deepEqual(visual, {
+    background: `${THEMES.light.acc2}12`,
+    border: `${THEMES.light.acc2}66`,
+    textColor: THEMES.light.acc2,
+    maskOverlay: null,
+  });
+});
+
+test('stacked paired workbook changes can use the mine side accent palette', () => {
+  const visual = resolveWorkbookCompareCellVisual({
+    theme: THEMES.light,
+    compareCell: changedCell,
+    side: 'mine',
+    modifyColorMode: 'side-accent',
+    hasEntry: true,
+    hasContent: true,
+    hasBaseRow: true,
+    hasMineRow: true,
+    defaultTextColor: THEMES.light.t0,
+  });
+
+  assert.deepEqual(visual, {
+    background: `${THEMES.light.acc}12`,
+    border: `${THEMES.light.acc}66`,
+    textColor: THEMES.light.acc,
+    maskOverlay: null,
+  });
+});
+
+test('strict-only workbook changes use the blue whitespace palette', () => {
+  const visual = resolveWorkbookCompareCellVisual({
+    theme: THEMES.light,
+    compareCell: {
+      ...changedCell,
+      baseCell: { value: ' ', formula: '' },
+      mineCell: { value: '', formula: '' },
+      strictOnly: true,
+      kind: 'delete',
+    },
+    side: 'base',
+    hasEntry: true,
+    hasContent: true,
+    hasBaseRow: true,
+    hasMineRow: true,
+    defaultTextColor: THEMES.light.t1,
+  });
+
+  assert.deepEqual(visual, {
+    background: `${THEMES.light.acc2}16`,
+    border: `${THEMES.light.acc2}66`,
+    textColor: THEMES.light.acc2,
     maskOverlay: null,
   });
 });

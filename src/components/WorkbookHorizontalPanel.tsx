@@ -1,14 +1,16 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject, startTransition } from 'react';
 import type {
-  DiffLine,
-  Hunk,
-  SearchMatch,
-  SplitRow,
-  WorkbookCompareMode,
-  WorkbookFreezeState,
-  WorkbookMoveDirection,
-  WorkbookSelectedCell,
-} from '../types';
+    DiffLine,
+    Hunk,
+    SearchMatch,
+    SplitRow,
+    WorkbookCompareMode,
+    WorkbookDiffRegion,
+    WorkbookFreezeState,
+    WorkbookHorizontalLayoutSnapshot,
+    WorkbookMoveDirection,
+    WorkbookSelectedCell,
+  } from '../types';
 import { useTheme } from '../context/theme';
 import { useVirtual, ROW_H } from '../hooks/useVirtual';
 import { useHorizontalVirtualColumns } from '../hooks/useHorizontalVirtualColumns';
@@ -26,6 +28,8 @@ import {
 } from '../utils/workbookNavigation';
 import type { IndexedWorkbookSectionRows } from '../utils/workbookSheetIndex';
 import {
+  getWorkbookCanvasSpanGeometry,
+  getWorkbookColumnSpanBounds,
   getWorkbookSelectionSpanForSelection,
 } from '../utils/workbookMergeLayout';
 import { buildWorkbookSplitRowCompareState } from '../utils/workbookCompare';
@@ -36,15 +40,33 @@ import {
 } from '../utils/workbookColumnWidths';
 import {
   expandCollapseBlock,
-  getExpandedHiddenCount,
+  expandCollapseBlockFully,
+  getCollapseLeadingRevealCount,
+  revealCollapsedLine,
   type CollapseExpansionState,
 } from '../utils/collapseState';
-import { buildCollapsedItems, buildCollapsibleRowBlocks } from '../utils/collapsibleRows';
+import {
+  buildCollapsedItems,
+  buildCollapsibleRowBlocks,
+  findCollapsedRowTarget,
+} from '../utils/collapsibleRows';
 import {
   buildWorkbookSheetPresentation,
   type WorkbookMetadataMap,
 } from '../utils/workbookMeta';
+import {
+  buildWorkbookHorizontalLayoutSnapshot,
+  cloneCollapseExpansionState,
+  shouldRestoreWorkbookLayoutSnapshot,
+} from '../utils/workbookLayoutSnapshot';
+import {
+  countRemainingCollapses,
+  findCyclicCollapseIndex,
+  getCollapseIndexes,
+  resolveActiveCollapsePosition,
+} from '../utils/collapseNavigation';
 import CollapseBar from './CollapseBar';
+import CollapseJumpButton from './CollapseJumpButton';
 import WorkbookMiniMap, {
   type WorkbookMiniMapDebugStats,
   type WorkbookMiniMapSegment,
@@ -55,6 +77,10 @@ import WorkbookCanvasHeaderStrip from './WorkbookCanvasHeaderStrip';
 import WorkbookPaneCanvasStrip, { type WorkbookPaneCanvasRow } from './WorkbookPaneCanvasStrip';
 import WorkbookPerfDebugPanel, { type WorkbookPerfDebugStats } from './WorkbookPerfDebugPanel';
 import WorkbookSheetTabs from './WorkbookSheetTabs';
+import WorkbookDiffRegionOverlay, {
+  mergeWorkbookDiffRegionOverlayBoxes,
+  type WorkbookDiffRegionOverlayBox,
+} from './WorkbookDiffRegionOverlay';
 
 const CONTEXT_LINES = 3;
 
@@ -94,6 +120,10 @@ function rowTouchesGuidedHunk(row: SplitRow, guidedHunkRange: Hunk | null): bool
   return row.lineIdxs.some(idx => idx >= guidedHunkRange.startIdx && idx <= guidedHunkRange.endIdx);
 }
 
+function getWorkbookHorizontalRowKey(row: SplitRow): string {
+  return row.lineIdxs.length > 0 ? row.lineIdxs.join(':') : String(row.lineIdx);
+}
+
 function buildSelectionAutoScrollKey(
   sheetName: string,
   selection: WorkbookSelectedCell | null,
@@ -110,7 +140,7 @@ function buildSelectionAutoScrollKey(
 
 type WorkbookHorizontalRenderItem =
   | { kind: 'split-line'; row: SplitRow; lineIdx: number }
-  | { kind: 'split-collapse'; blockId: string; count: number; fromIdx: number; toIdx: number };
+  | { kind: 'split-collapse'; blockId: string; count: number; fromIdx: number; toIdx: number; hiddenStart: number; hiddenEnd: number; expandStep: number };
 
 interface WorkbookHorizontalPanelProps {
   diffLines: DiffLine[];
@@ -126,9 +156,11 @@ interface WorkbookHorizontalPanelProps {
   onScrollerReady: (scrollToIndex: (idx: number, align?: 'start' | 'center') => void) => void;
   baseVersionLabel: string;
   mineVersionLabel: string;
+  activeDiffRegion: WorkbookDiffRegion | null;
   selectedCell: WorkbookSelectedCell | null;
   onSelectCell: (cell: WorkbookSelectedCell | null) => void;
   onWorkbookNavigationReady?: ((navigate: ((direction: WorkbookMoveDirection) => void) | null) => void) | undefined;
+  onCollapseNavigationReady?: ((navigate: ((direction: 'prev' | 'next') => void) | null) => void) | undefined;
   baseWorkbookMetadata: WorkbookMetadataMap | null;
   mineWorkbookMetadata: WorkbookMetadataMap | null;
   freezeStateBySheet: Record<string, WorkbookFreezeState>;
@@ -143,6 +175,8 @@ interface WorkbookHorizontalPanelProps {
   showPerfDebug?: boolean;
   showHiddenColumns?: boolean;
   tooltipDisabled?: boolean;
+  layoutSnapshot?: WorkbookHorizontalLayoutSnapshot | null;
+  onLayoutSnapshotChange?: ((snapshot: WorkbookHorizontalLayoutSnapshot) => void) | undefined;
 }
 
 function getNow() {
@@ -161,9 +195,11 @@ const WorkbookHorizontalPanel = memo(({
   onScrollerReady,
   baseVersionLabel,
   mineVersionLabel,
+  activeDiffRegion,
   selectedCell,
   onSelectCell,
   onWorkbookNavigationReady,
+  onCollapseNavigationReady,
   baseWorkbookMetadata,
   mineWorkbookMetadata,
   freezeStateBySheet,
@@ -178,15 +214,24 @@ const WorkbookHorizontalPanel = memo(({
   showPerfDebug = false,
   showHiddenColumns = false,
   tooltipDisabled = false,
+  layoutSnapshot = null,
+  onLayoutSnapshotChange,
 }: WorkbookHorizontalPanelProps) => {
   const T = useTheme();
   const leftScrollRef = useRef<HTMLDivElement>(null);
   const rightScrollRef = useRef<HTMLDivElement>(null);
+  const pendingScrollAdjustRef = useRef(0);
+  const lastCollapseJumpIndexRef = useRef<number | null>(null);
   const syncOwnerRef = useRef<'left' | 'right' | null>(null);
   const scrollSyncCountRef = useRef(0);
   const miniMapDebugRef = useRef<WorkbookMiniMapDebugStats | null>({ clickCount: 0, lastClickMs: 0 });
+  const snapshotEmitRafRef = useRef(0);
+  const restoreRafRef = useRef(0);
+  const lastRestoredSnapshotKeyRef = useRef('');
   const [hoveredCanvasCell, setHoveredCanvasCell] = useState<WorkbookCanvasHoverCell | null>(null);
+  const [scrollLeft, setScrollLeft] = useState(0);
   const [expandedBlocks, setExpandedBlocks] = useState<CollapseExpansionState>({});
+  const [pendingScrollTarget, setPendingScrollTarget] = useState<{ lineIdx: number; align: 'start' | 'center' } | null>(null);
   const visibleRowsCacheRef = useRef(new Map<string, SplitRow[]>());
   const rowBlocksCacheRef = useRef(new Map<string, ReturnType<typeof buildCollapsibleRowBlocks<SplitRow>>>());
   const itemsCacheRef = useRef(new WeakMap<CollapseExpansionState, Map<string, { value: WorkbookHorizontalRenderItem[]; duration: number }>>());
@@ -280,14 +325,17 @@ const WorkbookHorizontalPanel = memo(({
     const start = getNow();
     const value = buildCollapsedItems(rowBlocks, collapseCtx, expandedBlocks, {
       contextLines: CONTEXT_LINES,
-      blockPrefix: 'wh',
+      blockPrefix: `wh-${activeSheetCacheKey}`,
       buildRowItem: (row) => ({ kind: 'split-line' as const, row, lineIdx: row.lineIdx }),
-      buildCollapseItem: ({ blockId, count, fromIdx, toIdx }) => ({
+      buildCollapseItem: ({ blockId, count, fromIdx, toIdx, hiddenStart, hiddenEnd, expandStep }) => ({
         kind: 'split-collapse' as const,
         blockId,
         count,
         fromIdx,
         toIdx,
+        hiddenStart,
+        hiddenEnd,
+        expandStep,
       }),
     });
     const nextResult = {
@@ -421,30 +469,90 @@ const WorkbookHorizontalPanel = memo(({
     flushRows();
     return segments;
   }, [activeSearchLineIdx, endIdx, guidedHunkRange, items, searchMatchSet, startIdx]);
-  const guidedBlocks = useMemo(() => {
-    const slice = items.slice(startIdx, endIdx);
-    const blocks: Array<{ top: number; height: number }> = [];
-    let cursorTop = 0;
-    let blockStart: number | null = null;
+  const sectionRowIndexByKey = useMemo(
+    () => new Map(sectionRows.map((row, index) => [getWorkbookHorizontalRowKey(row), index])),
+    [sectionRows],
+  );
+  const activeRegionOverlayBoxesBySide = useMemo<Record<'left' | 'right', WorkbookDiffRegionOverlayBox[]>>(() => {
+    const empty = { left: [] as WorkbookDiffRegionOverlayBox[], right: [] as WorkbookDiffRegionOverlayBox[] };
+    if (!activeDiffRegion || activeDiffRegion.sheetName !== activeWorkbookSection?.name) return empty;
 
-    slice.forEach((item) => {
-      const isGuided = item.kind === 'split-line' && rowTouchesGuidedHunk(item.row, guidedHunkRange);
-      if (isGuided) {
-        if (blockStart == null) {
-          blockStart = cursorTop;
+    const visibleRowFrames = new Map<number, { top: number; height: number }>();
+    let frozenCursorTop = ROW_H;
+    frozenRows.forEach((row) => {
+      const rowIndex = sectionRowIndexByKey.get(getWorkbookHorizontalRowKey(row));
+      if (rowIndex == null) return;
+      visibleRowFrames.set(rowIndex, { top: frozenCursorTop, height: ROW_H });
+      frozenCursorTop += ROW_H;
+    });
+    bodySegments.forEach((segment) => {
+      if (segment.kind !== 'rows') return;
+      let cursorTop = stickyHeaderHeight + segment.top;
+      segment.rows.forEach((renderRow) => {
+        const rowIndex = sectionRowIndexByKey.get(getWorkbookHorizontalRowKey(renderRow.row));
+        if (rowIndex == null) {
+          cursorTop += ROW_H;
+          return;
         }
-      } else if (blockStart != null) {
-        blocks.push({ top: blockStart, height: cursorTop - blockStart });
-        blockStart = null;
-      }
-      cursorTop += ROW_H;
+        visibleRowFrames.set(rowIndex, { top: cursorTop, height: ROW_H });
+        cursorTop += ROW_H;
+      });
     });
 
-    if (blockStart != null) {
-      blocks.push({ top: blockStart, height: cursorTop - blockStart });
-    }
-    return blocks;
-  }, [endIdx, guidedHunkRange, items, startIdx]);
+    const contentLeft = LN_W + 3;
+    const buildSideBoxes = (side: 'left' | 'right', regionSide: 'base' | 'mine') => {
+      const boxes = activeDiffRegion.patches.flatMap((patch, patchIndex) => {
+        const hasSide = regionSide === 'base' ? patch.hasBaseSide : patch.hasMineSide;
+        if (!hasSide) return [];
+
+        const visibleRows = Array.from(visibleRowFrames.entries())
+          .filter(([rowIndex]) => rowIndex >= patch.startRowIndex && rowIndex <= patch.endRowIndex)
+          .sort((left, right) => left[0] - right[0]);
+        if (visibleRows.length === 0) return [];
+
+        const top = Math.min(...visibleRows.map(([, frame]) => frame.top));
+        const bottom = Math.max(...visibleRows.map(([, frame]) => frame.top + frame.height));
+        const bounds = getWorkbookColumnSpanBounds(
+          patch.startCol,
+          patch.endCol,
+          virtualColumns.columnLayoutByColumn,
+          'single',
+          freezeColumnCount,
+        );
+        const geometry = bounds
+          ? getWorkbookCanvasSpanGeometry(bounds, contentLeft, scrollLeft, virtualColumns.frozenWidth)
+          : null;
+        if (!geometry) return [];
+
+        return [{
+          key: `${activeDiffRegion.id}:${side}:${patchIndex}`,
+          top: Math.max(0, top - 2),
+          left: Math.max(0, geometry.left - 2),
+          width: Math.max(0, geometry.right - geometry.left + 4),
+          height: Math.max(0, bottom - top + 4),
+        }];
+      });
+
+      return mergeWorkbookDiffRegionOverlayBoxes(boxes)
+        .filter((box) => box.width > 6 && box.height > 6);
+    };
+
+    return {
+      left: buildSideBoxes('left', 'base'),
+      right: buildSideBoxes('right', 'mine'),
+    };
+  }, [
+    activeDiffRegion,
+    activeWorkbookSection?.name,
+    bodySegments,
+    freezeColumnCount,
+    frozenRows,
+    scrollLeft,
+    sectionRowIndexByKey,
+    stickyHeaderHeight,
+    virtualColumns.columnLayoutByColumn,
+    virtualColumns.frozenWidth,
+  ]);
 
   const workbookNavigationRows = useMemo(() => {
     if (!activeWorkbookSection || !selectedCell) return [];
@@ -493,32 +601,160 @@ const WorkbookHorizontalPanel = memo(({
     () => getNow() < userScrollPauseUntilRef.current,
     [],
   );
+  const emitLayoutSnapshot = useCallback(() => {
+    if (!active || !onLayoutSnapshotChange) return;
+    onLayoutSnapshotChange(buildWorkbookHorizontalLayoutSnapshot(
+      activeWorkbookSection?.name ?? null,
+      activeDiffRegion?.id ?? null,
+      leftScrollRef.current?.scrollTop ?? 0,
+      leftScrollRef.current?.scrollLeft ?? 0,
+      rightScrollRef.current?.scrollTop ?? 0,
+      rightScrollRef.current?.scrollLeft ?? 0,
+      expandedBlocks,
+    ));
+  }, [active, activeDiffRegion?.id, activeWorkbookSection?.name, expandedBlocks, onLayoutSnapshotChange]);
+  const scheduleLayoutSnapshot = useCallback(() => {
+    if (!active || !onLayoutSnapshotChange) return;
+    if (snapshotEmitRafRef.current) cancelAnimationFrame(snapshotEmitRafRef.current);
+    snapshotEmitRafRef.current = requestAnimationFrame(() => {
+      snapshotEmitRafRef.current = 0;
+      emitLayoutSnapshot();
+    });
+  }, [active, emitLayoutSnapshot, onLayoutSnapshotChange]);
   const handlePaneScroll = useCallback((source: 'left' | 'right') => {
+    const nextScrollLeft = source === 'left'
+      ? (leftScrollRef.current?.scrollLeft ?? 0)
+      : (rightScrollRef.current?.scrollLeft ?? 0);
+    setScrollLeft((prev) => (Math.abs(prev - nextScrollLeft) < 0.5 ? prev : nextScrollLeft));
+    scheduleLayoutSnapshot();
     const now = getNow();
     if (now >= programmaticScrollUntilRef.current[source]) {
       userScrollPauseUntilRef.current = now + 260;
     }
     syncScrollPosition(source);
-  }, [syncScrollPosition]);
+  }, [scheduleLayoutSnapshot, syncScrollPosition]);
+
+  const revealLineIfCollapsed = useCallback((lineIdx: number) => {
+    const target = findCollapsedRowTarget(rowBlocks, expandedBlocks, lineIdx, {
+      contextLines: CONTEXT_LINES,
+      blockPrefix: `wh-${activeSheetCacheKey}`,
+      rowHasLineIdx: splitRowHasLineIdx,
+    });
+    if (!target) return false;
+    startTransition(() => {
+      setExpandedBlocks((prev) => revealCollapsedLine(
+        prev,
+        target.blockId,
+        target.hiddenStart,
+        target.hiddenEnd,
+        target.targetIndex,
+      ));
+    });
+    return true;
+  }, [activeSheetCacheKey, expandedBlocks, rowBlocks]);
+
+  const scrollToResolvedLine = useCallback((lineIdx: number, align: 'start' | 'center' = 'center') => {
+    const exactIndex = items.findIndex((item) => item.kind === 'split-line' && splitRowHasLineIdx(item.row, lineIdx));
+    if (exactIndex >= 0) {
+      markProgrammaticScroll('left', 420);
+      scrollToIndex(exactIndex, align);
+      requestAnimationFrame(() => syncScrollPosition('left'));
+      setPendingScrollTarget((prev) => (
+        prev && prev.lineIdx === lineIdx && prev.align === align ? null : prev
+      ));
+      return true;
+    }
+    if (revealLineIfCollapsed(lineIdx)) {
+      setPendingScrollTarget({ lineIdx, align });
+      return false;
+    }
+    const nearestIndex = items.findIndex((item) => item.kind === 'split-line' && splitRowTouchesOrAfter(item.row, lineIdx));
+    if (nearestIndex >= 0) {
+      markProgrammaticScroll('left', 420);
+      scrollToIndex(nearestIndex, align);
+      requestAnimationFrame(() => syncScrollPosition('left'));
+      return true;
+    }
+    return false;
+  }, [items, markProgrammaticScroll, revealLineIfCollapsed, scrollToIndex, syncScrollPosition]);
 
   useEffect(() => {
     if (!active) return;
     onScrollerReady((lineIdx, align) => {
-      const itemIndex = items.findIndex(item => item.kind === 'split-line' && splitRowTouchesOrAfter(item.row, lineIdx));
-      if (itemIndex < 0) return;
-      markProgrammaticScroll('left', 420);
-      scrollToIndex(itemIndex, align);
-      requestAnimationFrame(() => syncScrollPosition('left'));
+      scrollToResolvedLine(lineIdx, align ?? 'center');
     });
     return () => {
       onScrollerReady(() => {});
     };
-  }, [active, items, markProgrammaticScroll, onScrollerReady, scrollToIndex, syncScrollPosition]);
+  }, [active, onScrollerReady, scrollToResolvedLine]);
 
   useEffect(() => {
     if (!tooltipDisabled) return;
     setHoveredCanvasCell(null);
   }, [tooltipDisabled]);
+
+  useEffect(() => {
+    scheduleLayoutSnapshot();
+  }, [activeDiffRegion?.id, activeWorkbookSection?.name, expandedBlocks, scheduleLayoutSnapshot]);
+
+  useEffect(() => {
+    if (!active) return;
+    if (!layoutSnapshot || !shouldRestoreWorkbookLayoutSnapshot(
+      layoutSnapshot,
+      activeDiffRegion?.id ?? null,
+      activeWorkbookSection?.name ?? null,
+    )) {
+      lastRestoredSnapshotKeyRef.current = '';
+      return;
+    }
+
+    const left = leftScrollRef.current;
+    const right = rightScrollRef.current;
+    if (!left || !right) return;
+    const snapshot = layoutSnapshot;
+
+    const restoreKey = [
+      snapshot.layout,
+      snapshot.activeRegionId,
+      snapshot.sheetName,
+      snapshot.leftScrollTop,
+      snapshot.leftScrollLeft,
+      snapshot.rightScrollTop,
+      snapshot.rightScrollLeft,
+    ].join(':');
+    if (lastRestoredSnapshotKeyRef.current === restoreKey) return;
+    lastRestoredSnapshotKeyRef.current = restoreKey;
+    setExpandedBlocks(cloneCollapseExpansionState(snapshot.expandedBlocks));
+
+    const raf1 = requestAnimationFrame(() => {
+      const raf2 = requestAnimationFrame(() => {
+        markProgrammaticScroll('left', 420);
+        markProgrammaticScroll('right', 420);
+        left.scrollTop = snapshot.leftScrollTop;
+        left.scrollLeft = snapshot.leftScrollLeft;
+        right.scrollTop = snapshot.rightScrollTop;
+        right.scrollLeft = snapshot.rightScrollLeft;
+        setScrollLeft(snapshot.leftScrollLeft);
+      });
+      restoreRafRef.current = raf2;
+    });
+
+    return () => {
+      cancelAnimationFrame(raf1);
+      if (restoreRafRef.current) cancelAnimationFrame(restoreRafRef.current);
+    };
+  }, [
+    active,
+    activeDiffRegion?.id,
+    activeWorkbookSection?.name,
+    layoutSnapshot,
+    markProgrammaticScroll,
+  ]);
+
+  useEffect(() => () => {
+    if (snapshotEmitRafRef.current) cancelAnimationFrame(snapshotEmitRafRef.current);
+    if (restoreRafRef.current) cancelAnimationFrame(restoreRafRef.current);
+  }, []);
 
   useEffect(() => {
     setHoveredCanvasCell(null);
@@ -527,17 +763,35 @@ const WorkbookHorizontalPanel = memo(({
   useEffect(() => {
     lastAutoRowKeyRef.current = '';
     lastAutoCellKeyRef.current = '';
+    lastCollapseJumpIndexRef.current = null;
   }, [activeWorkbookSection?.name, diffLines]);
 
   useEffect(() => {
     if (!active) return;
     if (activeSearchLineIdx < 0) return;
-    const idx = items.findIndex(item => item.kind === 'split-line' && splitRowHasLineIdx(item.row, activeSearchLineIdx));
-    if (idx >= 0) {
-      markProgrammaticScroll('left', 420);
-      scrollToIndex(idx, 'center');
+    scrollToResolvedLine(activeSearchLineIdx, 'center');
+  }, [active, activeSearchLineIdx, scrollToResolvedLine]);
+
+  useEffect(() => {
+    if (!pendingScrollTarget) return;
+    if (scrollToResolvedLine(pendingScrollTarget.lineIdx, pendingScrollTarget.align)) {
+      setPendingScrollTarget(null);
     }
-  }, [active, activeSearchLineIdx, items, markProgrammaticScroll, scrollToIndex]);
+  }, [items, pendingScrollTarget, scrollToResolvedLine]);
+
+  useEffect(() => {
+    const scrollAdjust = pendingScrollAdjustRef.current;
+    if (!scrollAdjust) return;
+    pendingScrollAdjustRef.current = 0;
+    const left = leftScrollRef.current;
+    const right = rightScrollRef.current;
+    if (!left || !right) return;
+    const nextTop = Math.max(0, left.scrollTop + scrollAdjust);
+    markProgrammaticScroll('left', 180);
+    markProgrammaticScroll('right', 180);
+    left.scrollTop = nextTop;
+    right.scrollTop = nextTop;
+  }, [items, markProgrammaticScroll]);
 
   const handleWorkbookMove = useCallback((direction: WorkbookMoveDirection) => {
     const nextSelection = moveWorkbookSelection(workbookNavigationRows, selectedCell, direction, {
@@ -654,6 +908,18 @@ const WorkbookHorizontalPanel = memo(({
     };
   }, [compareMode, frozenRows, items, searchMatchSet, sheetPresentation.visibleColumns]);
   const miniMapSegments = miniMapMeasured.value;
+  const collapseIndexes = useMemo(
+    () => getCollapseIndexes(items, (item) => item.kind === 'split-collapse'),
+    [items],
+  );
+  const totalCollapseCount = useMemo(
+    () => countRemainingCollapses(items, 0, (item) => item.kind === 'split-collapse'),
+    [items],
+  );
+  const activeCollapsePosition = useMemo(
+    () => resolveActiveCollapsePosition(collapseIndexes, lastCollapseJumpIndexRef.current, startIdx),
+    [collapseIndexes, startIdx],
+  );
   const perfStats = useMemo<WorkbookPerfDebugStats>(() => ({
     panel: 'horizontal',
     sheetName: activeWorkbookSection?.name ?? '',
@@ -700,17 +966,64 @@ const WorkbookHorizontalPanel = memo(({
   const pinnedCollapseWidth = virtualColumns.debug.viewportWidth > 0
     ? virtualColumns.debug.viewportWidth
     : '100%';
-  const handleExpandCollapseBlock = useCallback((blockId: string, remainingCount: number) => {
+  const handleExpandCollapseBlock = useCallback((
+    blockId: string,
+    hiddenStart: number,
+    hiddenEnd: number,
+    revealCount: number,
+    mode: 'partial' | 'full' = 'partial',
+  ) => {
     userScrollPauseUntilRef.current = Math.max(userScrollPauseUntilRef.current, getNow() + 900);
+    if (mode === 'partial' && revealCount > 0) {
+      const segmentLength = hiddenEnd - hiddenStart + 1;
+      pendingScrollAdjustRef.current += getCollapseLeadingRevealCount(segmentLength, revealCount) * ROW_H;
+    }
     startTransition(() => {
-      setExpandedBlocks(prev => expandCollapseBlock(
-        prev,
-        blockId,
-        remainingCount + getExpandedHiddenCount(prev, blockId),
+      setExpandedBlocks((prev) => (
+        mode === 'full'
+          ? expandCollapseBlockFully(prev, blockId, hiddenStart, hiddenEnd)
+          : expandCollapseBlock(prev, blockId, hiddenStart, hiddenEnd, revealCount)
       ));
     });
   }, []);
-  const renderPinnedCollapseBar = useCallback((count: number, onExpand: () => void) => (
+  const handleJumpToNextCollapse = useCallback(() => {
+    const nextCollapseIndex = findCyclicCollapseIndex(
+      collapseIndexes,
+      lastCollapseJumpIndexRef.current,
+      endIdx,
+      'next',
+    );
+    if (nextCollapseIndex < 0) return;
+    lastCollapseJumpIndexRef.current = nextCollapseIndex;
+    markProgrammaticScroll('left', 360);
+    scrollToIndex(nextCollapseIndex, 'start');
+    requestAnimationFrame(() => syncScrollPosition('left'));
+  }, [collapseIndexes, endIdx, markProgrammaticScroll, scrollToIndex, syncScrollPosition]);
+  const handleJumpToPreviousCollapse = useCallback(() => {
+    const previousCollapseIndex = findCyclicCollapseIndex(
+      collapseIndexes,
+      lastCollapseJumpIndexRef.current,
+      startIdx,
+      'prev',
+    );
+    if (previousCollapseIndex < 0) return;
+    lastCollapseJumpIndexRef.current = previousCollapseIndex;
+    markProgrammaticScroll('left', 360);
+    scrollToIndex(previousCollapseIndex, 'start');
+    requestAnimationFrame(() => syncScrollPosition('left'));
+  }, [collapseIndexes, markProgrammaticScroll, scrollToIndex, startIdx, syncScrollPosition]);
+  useEffect(() => {
+    if (!active) return;
+    onCollapseNavigationReady?.((direction) => {
+      if (direction === 'prev') {
+        handleJumpToPreviousCollapse();
+        return;
+      }
+      handleJumpToNextCollapse();
+    });
+    return () => onCollapseNavigationReady?.(null);
+  }, [active, handleJumpToNextCollapse, handleJumpToPreviousCollapse, onCollapseNavigationReady]);
+  const renderPinnedCollapseBar = useCallback((count: number, expandCount: number, onExpand: () => void, onExpandAll: () => void) => (
     <div
       style={{
         position: 'sticky',
@@ -720,7 +1033,7 @@ const WorkbookHorizontalPanel = memo(({
         overflow: 'hidden',
         zIndex: 5,
       }}>
-      <CollapseBar count={count} onExpand={onExpand} />
+      <CollapseBar count={count} expandCount={expandCount} onExpand={onExpand} onExpandAll={onExpandAll} />
     </div>
   ), [pinnedCollapseWidth]);
 
@@ -833,10 +1146,23 @@ const WorkbookHorizontalPanel = memo(({
             {bodySegments.map((segment) => {
                 if (segment.kind === 'collapse') {
                   return (
-                    <div key={`${side}-collapse-${segment.item.blockId}`} style={{ position: 'absolute', top: segment.top, left: 0, minWidth: '100%' }}>
+                    <div key={`${side}-collapse-${segment.item.blockId}-${segment.item.hiddenStart}-${segment.item.hiddenEnd}`} style={{ position: 'absolute', top: segment.top, left: 0, minWidth: '100%' }}>
                       {renderPinnedCollapseBar(
                         segment.item.count,
-                        () => handleExpandCollapseBlock(segment.item.blockId, segment.item.count),
+                        Math.min(segment.item.count, segment.item.expandStep),
+                        () => handleExpandCollapseBlock(
+                          segment.item.blockId,
+                          segment.item.hiddenStart,
+                          segment.item.hiddenEnd,
+                          Math.min(segment.item.count, segment.item.expandStep),
+                        ),
+                        () => handleExpandCollapseBlock(
+                          segment.item.blockId,
+                          segment.item.hiddenStart,
+                          segment.item.hiddenEnd,
+                          segment.item.count,
+                          'full',
+                        ),
                       )}
                     </div>
                   );
@@ -879,36 +1205,29 @@ const WorkbookHorizontalPanel = memo(({
                   </div>
                 );
               })}
-            {guidedBlocks.length > 0 && (
+            {activeRegionOverlayBoxesBySide[side].length > 0 && (
               <div
-                aria-hidden="true"
                 style={{
                   position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: singleGridWidth,
-                  minWidth: singleGridWidth,
+                  inset: 0,
                   pointerEvents: 'none',
                   zIndex: 6,
                 }}>
-                {guidedBlocks.map((block, index) => (
-                  <div
-                    key={`${side}-guided-block-${guidedPulseNonce}-${block.top}-${block.height}-${index}`}
-                    style={{
-                      position: 'absolute',
-                      top: block.top,
-                      left: 0,
-                      width: singleGridWidth,
-                      height: block.height,
-                      boxSizing: 'border-box',
-                      border: `2px solid ${T.acc2}`,
-                      borderRadius: 8,
-                      background: `${T.acc2}08`,
-                      boxShadow: `0 0 0 1px ${T.acc2}1c`,
-                      animation: 'guidedPulse 0.8s ease-out 1',
-                    }}
+                <div
+                  style={{
+                    position: 'sticky',
+                    left: 0,
+                    width: virtualColumns.debug.viewportWidth,
+                    overflow: 'hidden',
+                    pointerEvents: 'none',
+                  }}>
+                  <WorkbookDiffRegionOverlay
+                    boxes={activeRegionOverlayBoxesBySide[side].map((box) => ({
+                      ...box,
+                      key: `${guidedPulseNonce}:${box.key}`,
+                    }))}
                   />
-                ))}
+                </div>
               </div>
             )}
           </div>
@@ -921,12 +1240,19 @@ const WorkbookHorizontalPanel = memo(({
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
       {showPerfDebug && <WorkbookPerfDebugPanel stats={perfStats} />}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
+        <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
           <div style={{ flex: 1, display: 'flex', minWidth: 0, minHeight: 0 }}>
             {renderPane(leftScrollRef, 'left', () => handlePaneScroll('left'))}
             <div style={{ width: 1, background: T.border, boxShadow: `0 0 0 1px ${T.border}` }} />
             {renderPane(rightScrollRef, 'right', () => handlePaneScroll('right'))}
           </div>
+          <CollapseJumpButton
+            onPrev={handleJumpToPreviousCollapse}
+            onNext={handleJumpToNextCollapse}
+            currentIndex={activeCollapsePosition >= 0 ? activeCollapsePosition + 1 : 0}
+            totalCount={totalCollapseCount}
+            storageKey="workbook-split-h"
+          />
         </div>
 
         <WorkbookMiniMap

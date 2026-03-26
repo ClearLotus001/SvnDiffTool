@@ -3,6 +3,8 @@
 // All shared TypeScript interfaces and types for SvnExcelDiffTool
 // ─────────────────────────────────────────────────────────────────────────────
 
+import type { CollapseExpansionState } from '../utils/collapseState';
+
 // ── Diff engine ──────────────────────────────────────────────────────────────
 
 export type LineType = 'equal' | 'add' | 'delete';
@@ -81,6 +83,9 @@ export interface CollapseItem {
   /** number of hidden lines */
   count: number;
   blockId: string;
+  hiddenStart: number;
+  hiddenEnd: number;
+  expandStep: number;
   /** first hidden DiffLine index */
   fromIdx: number;
   /** last hidden DiffLine index + 1 */
@@ -111,6 +116,9 @@ export interface SplitCollapseItem {
   kind: 'split-collapse';
   count: number;
   blockId: string;
+  hiddenStart: number;
+  hiddenEnd: number;
+  expandStep: number;
   fromIdx: number;
   toIdx: number;
 }
@@ -155,6 +163,60 @@ export interface WorkbookSelectedCell {
   value: string;
   formula: string;
 }
+
+export interface WorkbookDiffRegionPatch {
+  startRowIndex: number;
+  endRowIndex: number;
+  startCol: number;
+  endCol: number;
+  baseRowStart: number | null;
+  baseRowEnd: number | null;
+  mineRowStart: number | null;
+  mineRowEnd: number | null;
+  hasBaseSide: boolean;
+  hasMineSide: boolean;
+  lineIdxs: number[];
+}
+
+export interface WorkbookDiffRegion {
+  id: string;
+  sheetName: string;
+  startRowIndex: number;
+  endRowIndex: number;
+  startCol: number;
+  endCol: number;
+  rowNumberStart: number;
+  rowNumberEnd: number;
+  lineStartIdx: number;
+  lineEndIdx: number;
+  anchorLineIdx: number;
+  hasBaseSide: boolean;
+  hasMineSide: boolean;
+  anchorSelection: WorkbookSelectedCell | null;
+  patches: WorkbookDiffRegionPatch[];
+}
+
+export interface WorkbookCompareLayoutSnapshot {
+  layout: 'unified' | 'split-v';
+  sheetName: string | null;
+  activeRegionId: string | null;
+  scrollTop: number;
+  scrollLeft: number;
+  expandedBlocks: CollapseExpansionState;
+}
+
+export interface WorkbookHorizontalLayoutSnapshot {
+  layout: 'split-h';
+  sheetName: string | null;
+  activeRegionId: string | null;
+  leftScrollTop: number;
+  leftScrollLeft: number;
+  rightScrollTop: number;
+  rightScrollLeft: number;
+  expandedBlocks: CollapseExpansionState;
+}
+
+export type WorkbookLayoutSnapshot = WorkbookCompareLayoutSnapshot | WorkbookHorizontalLayoutSnapshot;
 
 export interface WorkbookFreezeState {
   rowNumber?: number;
@@ -289,7 +351,29 @@ export interface SvnRevisionInfo {
   date: string;
   message: string;
   kind: SvnRevisionSourceKind;
- }
+}
+
+export interface RevisionOptionsQuery {
+  limit?: number;
+  beforeRevisionId?: string;
+  anchorDateTime?: string;
+  includeSpecials?: boolean;
+}
+
+export interface RevisionOptionsPayload {
+  items: SvnRevisionInfo[];
+  hasMore: boolean;
+  nextBeforeRevisionId: string | null;
+  anchorRevisionId: string | null;
+  queryDateTime: string | null;
+}
+
+export interface WorkbookArtifactDiff {
+  hasArtifactOnlyDiff: true;
+  kind: 'binary-only';
+  baseBytes: number;
+  mineBytes: number;
+}
 
 export interface DiffData extends DiffMeta {
   baseContent: string | null;
@@ -306,7 +390,21 @@ export interface DiffData extends DiffMeta {
   baseRevisionInfo?: SvnRevisionInfo | null;
   mineRevisionInfo?: SvnRevisionInfo | null;
   canSwitchRevisions?: boolean;
+  workbookArtifactDiff?: WorkbookArtifactDiff | null;
   perf?: DiffPerformanceMetrics | null;
+}
+
+export interface WorkbookCompareModePayload {
+  compareMode: WorkbookCompareMode;
+  diffLines: DiffLine[] | null;
+  workbookDelta: WorkbookPrecomputedDeltaPayload | null;
+  perf?: Pick<DiffPerformanceMetrics, 'rustDiffMs'> | null;
+}
+
+export interface WorkbookMetadataPayload {
+  base: WorkbookMetadataMap | null;
+  mine: WorkbookMetadataMap | null;
+  perf?: Pick<DiffPerformanceMetrics, 'metadataMs'> | null;
 }
 
 export interface WorkbookMetadataSource {
@@ -318,7 +416,7 @@ export interface WorkbookMetadataSource {
 }
 
 export interface DiffPerformanceMetrics {
-  source: 'cli' | 'revision-switch' | 'local-dev' | 'demo';
+  source: 'cli' | 'revision-switch' | 'local-dev';
   mainLoadMs?: number;
   baseReadMs?: number;
   mineReadMs?: number;
@@ -342,14 +440,20 @@ export interface LocalDiffFilePickResult {
 // ── Electron IPC bridge (window.svnDiff) ─────────────────────────────────────
 
 export interface SvnDiffBridge {
-  getDiffData(): Promise<DiffData>;
-  loadRevisionDiff(baseRevisionId: string, mineRevisionId: string): Promise<DiffData>;
+  getDiffData(compareMode?: WorkbookCompareMode): Promise<DiffData>;
+  loadRevisionDiff(baseRevisionId: string, mineRevisionId: string, compareMode?: WorkbookCompareMode): Promise<DiffData>;
+  getRevisionOptions(): Promise<SvnRevisionInfo[]>;
+  queryRevisionOptions(query?: RevisionOptionsQuery): Promise<RevisionOptionsPayload>;
+  loadWorkbookCompareMode(compareMode: WorkbookCompareMode, baseRevisionId?: string, mineRevisionId?: string): Promise<WorkbookCompareModePayload>;
+  loadWorkbookMetadata(baseRevisionId?: string, mineRevisionId?: string): Promise<WorkbookMetadataPayload>;
+  onCliArgsUpdated?(listener: () => void): () => void;
   isDevMode(): Promise<boolean>;
   pickDiffFile(): Promise<LocalDiffFilePickResult | null>;
-  loadDevWorkingCopyDiff(filePath: string): Promise<DiffData>;
-  loadLocalDiff(basePath: string, minePath: string): Promise<DiffData>;
+  loadDevWorkingCopyDiff(filePath: string, compareMode?: WorkbookCompareMode): Promise<DiffData>;
+  loadLocalDiff(basePath: string, minePath: string, compareMode?: WorkbookCompareMode): Promise<DiffData>;
   getTheme(): Promise<'dark' | 'light'>;
   writeClipboardText(text: string): void;
+  debugLog?(message: string, payload?: unknown): void;
   windowMinimize(): void;
   windowMaximize(): void;
   windowClose(): void;

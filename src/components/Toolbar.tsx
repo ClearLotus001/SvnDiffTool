@@ -6,6 +6,7 @@ import type { ThemeKey, LayoutMode, WorkbookCompareMode } from '../types';
 import { THEMES } from '../theme';
 import { useTheme } from '../context/theme';
 import Tooltip from './Tooltip';
+import ToolbarViewMenu from './ToolbarViewMenu';
 
 type IconName =
   | 'layoutUnified'
@@ -33,8 +34,8 @@ const LAYOUT_OPTIONS: {
   labelKey: 'toolbarLayoutUnified' | 'toolbarLayoutSplit' | 'toolbarLayoutVertical';
   icon: IconName;
 }[] = [
-  { id: 'unified', labelKey: 'toolbarLayoutUnified',  icon: 'layoutUnified' },
-  { id: 'split-h', labelKey: 'toolbarLayoutSplit',    icon: 'layoutSplit' },
+  { id: 'unified', labelKey: 'toolbarLayoutUnified', icon: 'layoutUnified' },
+  { id: 'split-h', labelKey: 'toolbarLayoutSplit', icon: 'layoutSplit' },
   { id: 'split-v', labelKey: 'toolbarLayoutVertical', icon: 'layoutVertical' },
 ];
 
@@ -58,7 +59,7 @@ interface ToolbarProps {
   showHiddenColumns: boolean;
   setShowHiddenColumns: React.Dispatch<React.SetStateAction<boolean>>;
   workbookCompareMode: WorkbookCompareMode;
-  setWorkbookCompareMode: React.Dispatch<React.SetStateAction<WorkbookCompareMode>>;
+  setWorkbookCompareMode: (mode: WorkbookCompareMode) => void;
   fontSize: number;
   setFontSize: React.Dispatch<React.SetStateAction<number>>;
   onGoto: () => void;
@@ -247,8 +248,8 @@ const Toolbar = memo((props: ToolbarProps) => {
   const T = useTheme();
   const { getThemeLabel, locale, setLocale, t } = useI18n();
   const nextLocale = locale === 'zh-CN' ? 'en-US' : 'zh-CN';
-  const noDragStyle = isElectron ? { WebkitAppRegion: 'no-drag' as const } : undefined;
-  const noDragAnchorStyle = noDragStyle as CSSProperties | undefined;
+  const noDragStyle = (isElectron ? { WebkitAppRegion: 'no-drag' as const } : undefined) as CSSProperties | undefined;
+  const noDragAnchorStyle = noDragStyle;
   const rootRef = useRef<HTMLDivElement | null>(null);
   const themeMenuRef = useRef<HTMLDivElement | null>(null);
   const [toolbarWidth, setToolbarWidth] = useState(1600);
@@ -292,13 +293,12 @@ const Toolbar = memo((props: ToolbarProps) => {
   }, [toolbarWidth]);
   const showLayoutText = responsiveMode === 'regular';
   const showActionText = responsiveMode === 'regular';
-  const showWhitespaceText = responsiveMode === 'regular' || responsiveMode === 'condensed';
-  const showCompareModeText = responsiveMode !== 'tight';
-  const showCompareModeStatusText = responsiveMode === 'regular' || responsiveMode === 'condensed';
   const showFileMeta = responsiveMode === 'regular';
   const showFileChip = responsiveMode !== 'tight';
+  const showHunkTarget = (responsiveMode === 'regular' || responsiveMode === 'condensed') && !isWorkbookMode;
   const showThemeLabel = responsiveMode === 'regular' || responsiveMode === 'condensed';
-  const showLanguageText = responsiveMode !== 'tight';
+  const showViewLabel = true;
+  const showLanguageText = responsiveMode === 'regular' || responsiveMode === 'condensed';
   const compactFileMaxWidth = responsiveMode === 'compact' ? 148 : responsiveMode === 'condensed' ? 180 : 220;
   const groupGap = responsiveMode === 'tight' ? 2 : 3;
   const groupPadding = responsiveMode === 'tight' ? 1 : 2;
@@ -314,7 +314,7 @@ const Toolbar = memo((props: ToolbarProps) => {
     disabled?: boolean;
   }) => {
     const button = (
-      <button onClick={onClick} disabled={disabled} aria-label={tooltip || undefined} style={{
+      <button type="button" onClick={onClick} disabled={disabled} aria-label={tooltip || undefined} style={{
       background: active ? `${T.acc}22` : 'transparent',
       border: `1px solid ${active ? `${T.acc}66` : 'transparent'}`,
       color: active ? T.acc : T.t0,
@@ -402,6 +402,7 @@ const Toolbar = memo((props: ToolbarProps) => {
             cursor: 'pointer',
             whiteSpace: 'nowrap',
             boxSizing: 'border-box',
+            ...noDragStyle,
           }}>
           <span
             aria-hidden="true"
@@ -435,6 +436,7 @@ const Toolbar = memo((props: ToolbarProps) => {
             flexDirection: 'column',
             gap: 4,
             zIndex: 80,
+            ...noDragStyle,
           }}>
           {(Object.keys(THEMES) as ThemeKey[]).map((k) => {
             const active = themeKey === k;
@@ -464,6 +466,7 @@ const Toolbar = memo((props: ToolbarProps) => {
                   gap: 10,
                   cursor: 'pointer',
                   textAlign: 'left',
+                  ...noDragStyle,
                 }}>
                 <span>{getThemeLabel(k)}</span>
                 <span
@@ -580,10 +583,14 @@ const Toolbar = memo((props: ToolbarProps) => {
         )}
 
         <Group>
-          {LAYOUT_OPTIONS.map(l => (
-            <Btn key={l.id} active={layout === l.id} onClick={() => setLayout(l.id)} tooltip={t(l.labelKey)}>
-              <Icon name={l.icon} />
-              {showLayoutText && <span>{t(l.labelKey)}</span>}
+          {LAYOUT_OPTIONS.map((option) => (
+            <Btn
+              key={option.id}
+              active={layout === option.id}
+              onClick={() => setLayout(option.id)}
+              tooltip={t(option.labelKey)}>
+              <Icon name={option.icon} />
+              {showLayoutText && <span>{t(option.labelKey)}</span>}
             </Btn>
           ))}
         </Group>
@@ -595,11 +602,11 @@ const Toolbar = memo((props: ToolbarProps) => {
           <span style={{ fontSize: FONT_SIZE.sm, color: T.t1, fontFamily: FONT_CODE, minWidth: 42, textAlign: 'center', lineHeight: 1, ...noDragStyle }}>
             {totalHunks > 0 ? `${hunkIdx + 1}/${totalHunks}` : '–/–'}
           </span>
-          {hunkTargetLabel && (
+          {showHunkTarget && hunkTargetLabel && (
             <Tooltip content={hunkTargetLabel} anchorStyle={noDragAnchorStyle}>
               <span
                 style={{
-                  maxWidth: responsiveMode === 'tight' ? 88 : 136,
+                  maxWidth: 132,
                   height: 24,
                   padding: '0 8px',
                   borderRadius: 999,
@@ -635,83 +642,24 @@ const Toolbar = memo((props: ToolbarProps) => {
             <Icon name="goto" />
             {showActionText && <span>{t('toolbarGotoLabel')}</span>}
           </Btn>
-          <Btn active={collapseCtx} onClick={() => setCollapseCtx(v => !v)} tooltip={t('toolbarCollapseTitle')}>
-            <Icon name={collapseCtx ? 'expand' : 'collapse'} />
-            {showActionText && <span>{collapseCtx ? t('toolbarExpandAllLabel') : t('toolbarCollapseLabel')}</span>}
-          </Btn>
-          <Btn active={showWhitespace} onClick={() => setShowWhitespace(v => !v)} tooltip={t('toolbarWhitespaceTitle')}>
-            <Icon name="whitespace" />
-            {showWhitespaceText && <span>{t('toolbarWhitespaceLabel')}</span>}
-          </Btn>
-          <Btn
-            active={showHiddenColumns}
-            onClick={() => setShowHiddenColumns(v => !v)}
-            tooltip={t('toolbarHiddenColumnsTitle')}
-            disabled={!isWorkbookMode}>
-            <Icon name="hiddenColumns" />
-            {showWhitespaceText && <span>{t('toolbarHiddenColumnsLabel')}</span>}
-          </Btn>
         </Group>
 
-        {isWorkbookMode && (
-          <Group>
-            <Btn
-              active={workbookCompareMode === 'content'}
-              onClick={() => setWorkbookCompareMode('content')}
-              tooltip={t('toolbarCompareModeContentTitle')}
-              compact={!showCompareModeText}>
-              <span>{showCompareModeText ? t('toolbarCompareModeContent') : t('toolbarCompareModeContentShort')}</span>
-            </Btn>
-            <Btn
-              active={workbookCompareMode === 'strict'}
-              onClick={() => setWorkbookCompareMode('strict')}
-              tooltip={t('toolbarCompareModeStrictTitle')}
-              compact={!showCompareModeText}>
-              <span>{showCompareModeText ? t('toolbarCompareModeStrict') : t('toolbarCompareModeStrictShort')}</span>
-            </Btn>
-            <Tooltip
-              content={workbookCompareMode === 'strict'
-                ? t('toolbarCompareModeStatusStrictHint')
-                : t('toolbarCompareModeStatusContentHint')}
-              anchorStyle={noDragAnchorStyle}>
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  height: 24,
-                  padding: showCompareModeStatusText ? '0 8px' : '0 6px',
-                  borderRadius: 999,
-                  border: `1px solid ${workbookCompareMode === 'strict' ? `${T.acc2}44` : `${T.border2}`}`,
-                  background: workbookCompareMode === 'strict' ? `${T.acc2}12` : T.bg1,
-                  color: workbookCompareMode === 'strict' ? T.acc2 : T.t1,
-                  fontSize: FONT_SIZE.xs,
-                  fontWeight: 700,
-                  fontFamily: FONT_UI,
-                  whiteSpace: 'nowrap',
-                  lineHeight: 1,
-                  ...noDragStyle,
-                }}>
-                {showCompareModeStatusText
-                  ? (workbookCompareMode === 'strict'
-                    ? t('toolbarCompareModeStatusStrict')
-                    : t('toolbarCompareModeStatusContent'))
-                  : (workbookCompareMode === 'strict'
-                    ? t('toolbarCompareModeStrictShort')
-                    : t('toolbarCompareModeContentShort'))}
-              </span>
-            </Tooltip>
-          </Group>
-        )}
-
-        <Group>
-          <Btn onClick={() => setFontSize(s => Math.max(10, s - 1))} tooltip={t('toolbarDecreaseFontTitle')} compact>
-            A-
-          </Btn>
-          <span style={{ fontSize: FONT_SIZE.sm, color: T.t1, minWidth: 22, textAlign: 'center', fontFamily: FONT_CODE, lineHeight: 1, ...noDragStyle }}>{fontSize}</span>
-          <Btn onClick={() => setFontSize(s => Math.min(20, s + 1))} tooltip={t('toolbarIncreaseFontTitle')} compact>
-            A+
-          </Btn>
-        </Group>
+        <ToolbarViewMenu
+          collapseCtx={collapseCtx}
+          setCollapseCtx={setCollapseCtx}
+          showWhitespace={showWhitespace}
+          setShowWhitespace={setShowWhitespace}
+          showHiddenColumns={showHiddenColumns}
+          setShowHiddenColumns={setShowHiddenColumns}
+          workbookCompareMode={workbookCompareMode}
+          setWorkbookCompareMode={setWorkbookCompareMode}
+          fontSize={fontSize}
+          setFontSize={setFontSize}
+          isWorkbookMode={isWorkbookMode}
+          showLabel={showViewLabel}
+          noDragStyle={noDragStyle}
+          anchorStyle={noDragAnchorStyle}
+        />
 
       </div>
 
@@ -733,20 +681,18 @@ const Toolbar = memo((props: ToolbarProps) => {
               <span>{locale === 'zh-CN' ? t('toolbarLanguageEn') : t('toolbarLanguageZh')}</span>
             )}
           </Btn>
-        </Group>
-
-        <ThemeMenu />
-
-        <Group>
           <Btn onClick={onHelp} tooltip={t('toolbarShortcutsTitle')} compact>
             <Icon name="help" />
           </Btn>
         </Group>
 
+        <ThemeMenu />
+
         {isElectron && (
           <Group>
             <Tooltip content={t('toolbarWindowMinimizeTitle')} anchorStyle={noDragAnchorStyle}>
               <button
+                type="button"
                 onClick={() => window.svnDiff!.windowMinimize()}
                 aria-label={t('toolbarWindowMinimizeTitle')}
                 style={windowButtonStyle}>
@@ -755,6 +701,7 @@ const Toolbar = memo((props: ToolbarProps) => {
             </Tooltip>
             <Tooltip content={t('toolbarWindowMaximizeTitle')} anchorStyle={noDragAnchorStyle}>
               <button
+                type="button"
                 onClick={() => window.svnDiff!.windowMaximize()}
                 aria-label={t('toolbarWindowMaximizeTitle')}
                 style={windowButtonStyle}>
@@ -763,6 +710,7 @@ const Toolbar = memo((props: ToolbarProps) => {
             </Tooltip>
             <Tooltip content={t('toolbarWindowCloseTitle')} anchorStyle={noDragAnchorStyle}>
               <button
+                type="button"
                 onClick={() => window.svnDiff!.windowClose()}
                 aria-label={t('toolbarWindowCloseTitle')}
                 onMouseEnter={e => (e.currentTarget.style.background = '#c42b1c')}

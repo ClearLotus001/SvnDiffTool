@@ -1,5 +1,5 @@
 // src/components/UnifiedPanel.tsx  [v4 — typecheck clean]
-import { memo, useEffect, useRef, useState, useMemo, RefObject, startTransition } from 'react';
+import { memo, useCallback, useEffect, useRef, useState, useMemo, RefObject, startTransition } from 'react';
 import type { DiffLine, SearchMatch, RenderItem, CollapseItem, LineItem } from '../types';
 import { LN_W } from '../constants/layout';
 import { useTheme } from '../context/theme';
@@ -13,75 +13,28 @@ import {
 import {
   type CollapseExpansionState,
   expandCollapseBlock,
-  getExpandedHiddenCount,
+  expandCollapseBlockFully,
+  getCollapseLeadingRevealCount,
+  revealCollapsedLine,
 } from '../utils/collapseState';
+import {
+  buildCollapsedItems,
+  buildCollapsibleRowBlocks,
+  findCollapsedRowTarget,
+} from '../utils/collapsibleRows';
+import {
+  countRemainingCollapses,
+  findCyclicCollapseIndex,
+  getCollapseIndexes,
+  resolveActiveCollapsePosition,
+} from '../utils/collapseNavigation';
 import DiffRow from './DiffRow';
 import CollapseBar from './CollapseBar';
+import CollapseJumpButton from './CollapseJumpButton';
 import MiniMap from './MiniMap';
 
 const CONTEXT_LINES = 3;
-
-function buildRenderItems(
-  diffLines: DiffLine[],
-  collapseCtx: boolean,
-  expandedBlocks: CollapseExpansionState,
-  lineIdxOffset = 0,
-): RenderItem[] {
-  if (!collapseCtx) {
-    return diffLines.map((line, i): LineItem => ({ kind: 'line', line, lineIdx: lineIdxOffset + i }));
-  }
-
-  const result: RenderItem[] = [];
-  let i = 0;
-
-  while (i < diffLines.length) {
-    // i < diffLines.length — guaranteed in-bounds
-    const cur = diffLines[i]!;
-    if (cur.type !== 'equal') {
-      result.push({ kind: 'line', line: cur, lineIdx: lineIdxOffset + i });
-      i++;
-      continue;
-    }
-
-    const eqStart = i;
-    while (i < diffLines.length && diffLines[i]!.type === 'equal') i++;
-    const count = i - eqStart;
-
-    if (count <= CONTEXT_LINES * 2) {
-      for (let k = eqStart; k < i; k++) {
-        result.push({ kind: 'line', line: diffLines[k]!, lineIdx: k });
-      }
-    } else {
-      const blockId = `${lineIdxOffset + eqStart}-${lineIdxOffset + i}`;
-      const hiddenCount = count - CONTEXT_LINES * 2;
-      const expandedHiddenCount = Math.min(hiddenCount, getExpandedHiddenCount(expandedBlocks, blockId));
-      if (expandedHiddenCount >= hiddenCount) {
-        for (let k = eqStart; k < i; k++) {
-          result.push({ kind: 'line', line: diffLines[k]!, lineIdx: lineIdxOffset + k });
-        }
-      } else {
-        for (let k = eqStart; k < eqStart + CONTEXT_LINES; k++) {
-          result.push({ kind: 'line', line: diffLines[k]!, lineIdx: lineIdxOffset + k });
-        }
-        for (let k = eqStart + CONTEXT_LINES; k < eqStart + CONTEXT_LINES + expandedHiddenCount; k++) {
-          result.push({ kind: 'line', line: diffLines[k]!, lineIdx: lineIdxOffset + k });
-        }
-        result.push({
-          kind: 'collapse',
-          count: hiddenCount - expandedHiddenCount,
-          blockId,
-          fromIdx: lineIdxOffset + eqStart + CONTEXT_LINES + expandedHiddenCount,
-          toIdx: lineIdxOffset + i - CONTEXT_LINES,
-        } as CollapseItem);
-        for (let k = i - CONTEXT_LINES; k < i; k++) {
-          result.push({ kind: 'line', line: diffLines[k]!, lineIdx: lineIdxOffset + k });
-        }
-      }
-    }
-  }
-
-  return result;
-}
+type CollapseNavigationHandler = (direction: 'prev' | 'next') => void;
 
 interface UnifiedPanelProps {
   diffLines: DiffLine[];
@@ -93,16 +46,20 @@ interface UnifiedPanelProps {
   showWhitespace: boolean;
   fontSize: number;
   onScrollerReady: (scrollToIndex: (idx: number, align?: 'start' | 'center') => void) => void;
+  onCollapseNavigationReady?: ((navigate: CollapseNavigationHandler | null) => void) | undefined;
 }
 
 const UnifiedPanel = memo(({
   diffLines, collapseCtx, activeHunkIdx, searchMatches, activeSearchIdx,
-  hunkPositions, showWhitespace, fontSize, onScrollerReady,
+  hunkPositions, showWhitespace, fontSize, onScrollerReady, onCollapseNavigationReady,
 }: UnifiedPanelProps) => {
   const T = useTheme();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pendingScrollAdjustRef = useRef(0);
+  const lastCollapseJumpIndexRef = useRef<number | null>(null);
   const [expandedBlocks, setExpandedBlocks] = useState<CollapseExpansionState>({});
   const [activeWorkbookSectionIdx, setActiveWorkbookSectionIdx] = useState(0);
+  const [pendingScrollTarget, setPendingScrollTarget] = useState<{ lineIdx: number; align: 'start' | 'center' } | null>(null);
   const workbookSections = useMemo(() => getWorkbookSections(diffLines), [diffLines]);
   const isWorkbookMode = workbookSections.length > 0;
   const activeWorkbookSection = workbookSections[activeWorkbookSectionIdx] ?? workbookSections[0];
@@ -110,17 +67,37 @@ const UnifiedPanel = memo(({
     if (!activeWorkbookSection) return diffLines;
     return diffLines.slice(activeWorkbookSection.startLineIdx, activeWorkbookSection.endLineIdx + 1);
   }, [activeWorkbookSection, diffLines]);
-
-  const items = useMemo(
-    () => (isWorkbookMode
-      ? buildRenderItems(
-        visibleDiffLines,
-        collapseCtx,
-        expandedBlocks,
-        activeWorkbookSection?.startLineIdx ?? 0,
-      )
-      : buildRenderItems(diffLines, collapseCtx, expandedBlocks)),
-    [activeWorkbookSection, collapseCtx, diffLines, expandedBlocks, isWorkbookMode, visibleDiffLines],
+  const visibleLineItems = useMemo(() => {
+    if (isWorkbookMode) {
+      const offset = activeWorkbookSection?.startLineIdx ?? 0;
+      return visibleDiffLines.map((line, index) => ({ line, lineIdx: offset + index }));
+    }
+    return diffLines.map((line, index) => ({ line, lineIdx: index }));
+  }, [activeWorkbookSection?.startLineIdx, diffLines, isWorkbookMode, visibleDiffLines]);
+  const blockPrefix = isWorkbookMode
+    ? `unified-${activeWorkbookSection?.name ?? activeWorkbookSection?.startLineIdx ?? 0}`
+    : 'unified-text';
+  const rowBlocks = useMemo(
+    () => buildCollapsibleRowBlocks(visibleLineItems, (item) => item.line.type === 'equal'),
+    [visibleLineItems],
+  );
+  const items = useMemo<RenderItem[]>(
+    () => buildCollapsedItems(rowBlocks, collapseCtx, expandedBlocks, {
+      contextLines: CONTEXT_LINES,
+      blockPrefix,
+      buildRowItem: (item): LineItem => ({ kind: 'line', line: item.line, lineIdx: item.lineIdx }),
+      buildCollapseItem: ({ blockId, count, fromIdx, toIdx, hiddenStart, hiddenEnd, expandStep }): CollapseItem => ({
+        kind: 'collapse',
+        count,
+        blockId,
+        fromIdx,
+        toIdx,
+        hiddenStart,
+        hiddenEnd,
+        expandStep,
+      }),
+    }),
+    [blockPrefix, collapseCtx, expandedBlocks, rowBlocks],
   );
 
   const { totalH, startIdx, endIdx, scrollToIndex } = useVirtual(
@@ -128,14 +105,50 @@ const UnifiedPanel = memo(({
     scrollRef as RefObject<HTMLDivElement>,
   );
 
+  const revealLineIfCollapsed = useCallback((lineIdx: number) => {
+    const target = findCollapsedRowTarget(rowBlocks, expandedBlocks, lineIdx, {
+      contextLines: CONTEXT_LINES,
+      blockPrefix,
+    });
+    if (!target) return false;
+    startTransition(() => {
+      setExpandedBlocks((prev) => revealCollapsedLine(
+        prev,
+        target.blockId,
+        target.hiddenStart,
+        target.hiddenEnd,
+        target.targetIndex,
+      ));
+    });
+    return true;
+  }, [blockPrefix, expandedBlocks, rowBlocks]);
+
+  const scrollToResolvedLine = useCallback((lineIdx: number, align: 'start' | 'center' = 'center') => {
+    const exactIndex = items.findIndex((item) => item.kind === 'line' && item.lineIdx === lineIdx);
+    if (exactIndex >= 0) {
+      scrollToIndex(exactIndex, align);
+      setPendingScrollTarget((prev) => (
+        prev && prev.lineIdx === lineIdx && prev.align === align ? null : prev
+      ));
+      return true;
+    }
+    if (revealLineIfCollapsed(lineIdx)) {
+      setPendingScrollTarget({ lineIdx, align });
+      return false;
+    }
+    const nearestIndex = items.findIndex((item) => item.kind === 'line' && item.lineIdx > lineIdx);
+    if (nearestIndex >= 0) {
+      scrollToIndex(nearestIndex, align);
+      return true;
+    }
+    return false;
+  }, [items, revealLineIfCollapsed, scrollToIndex]);
+
   useEffect(() => {
     onScrollerReady((lineIdx, align) => {
-      const itemIndex = items.findIndex(item => item.kind === 'line' && item.lineIdx >= lineIdx);
-      if (itemIndex >= 0) {
-        scrollToIndex(itemIndex, align);
-      }
+      scrollToResolvedLine(lineIdx, align ?? 'center');
     });
-  }, [items, onScrollerReady, scrollToIndex]);
+  }, [onScrollerReady, scrollToResolvedLine]);
 
   const searchMatchSet      = useMemo(() => new Set(searchMatches.map(m => m.lineIdx)), [searchMatches]);
   const activeSearchLineIdx = activeSearchIdx >= 0
@@ -163,18 +176,80 @@ const UnifiedPanel = memo(({
 
   useEffect(() => {
     if (activeSearchLineIdx < 0) return;
-    const idx = items.findIndex(
-      it => it.kind === 'line' && (it as LineItem).lineIdx === activeSearchLineIdx,
-    );
-    if (idx >= 0) scrollToIndex(idx, 'center');
-  }, [activeSearchLineIdx, items, scrollToIndex]);
+    scrollToResolvedLine(activeSearchLineIdx, 'center');
+  }, [activeSearchLineIdx, scrollToResolvedLine]);
+
+  useEffect(() => {
+    if (!pendingScrollTarget) return;
+    if (scrollToResolvedLine(pendingScrollTarget.lineIdx, pendingScrollTarget.align)) {
+      setPendingScrollTarget(null);
+    }
+  }, [items, pendingScrollTarget, scrollToResolvedLine]);
+
+  useEffect(() => {
+    lastCollapseJumpIndexRef.current = null;
+  }, [diffLines, activeWorkbookSection?.name]);
+
+  useEffect(() => {
+    const scrollAdjust = pendingScrollAdjustRef.current;
+    if (!scrollAdjust) return;
+    pendingScrollAdjustRef.current = 0;
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = Math.max(0, el.scrollTop + scrollAdjust);
+  }, [items]);
 
   const workbookHeaderHeight = isWorkbookMode ? ROW_H : 0;
   const columnLabels = getWorkbookColumnLabels(activeWorkbookSection?.maxColumns ?? 0);
+  const collapseIndexes = useMemo(
+    () => getCollapseIndexes(items, (item) => item.kind === 'collapse'),
+    [items],
+  );
+  const totalCollapseCount = useMemo(
+    () => countRemainingCollapses(items, 0, (item) => item.kind === 'collapse'),
+    [items],
+  );
+  const activeCollapsePosition = useMemo(
+    () => resolveActiveCollapsePosition(collapseIndexes, lastCollapseJumpIndexRef.current, startIdx),
+    [collapseIndexes, startIdx],
+  );
+  const handleJumpToNextCollapse = useCallback(() => {
+    const nextCollapseIndex = findCyclicCollapseIndex(
+      collapseIndexes,
+      lastCollapseJumpIndexRef.current,
+      endIdx,
+      'next',
+    );
+    if (nextCollapseIndex < 0) return;
+    lastCollapseJumpIndexRef.current = nextCollapseIndex;
+    scrollToIndex(nextCollapseIndex, 'start');
+  }, [collapseIndexes, endIdx, scrollToIndex]);
+  const handleJumpToPreviousCollapse = useCallback(() => {
+    const previousCollapseIndex = findCyclicCollapseIndex(
+      collapseIndexes,
+      lastCollapseJumpIndexRef.current,
+      startIdx,
+      'prev',
+    );
+    if (previousCollapseIndex < 0) return;
+    lastCollapseJumpIndexRef.current = previousCollapseIndex;
+    scrollToIndex(previousCollapseIndex, 'start');
+  }, [collapseIndexes, scrollToIndex, startIdx]);
+
+  useEffect(() => {
+    onCollapseNavigationReady?.((direction) => {
+      if (direction === 'prev') {
+        handleJumpToPreviousCollapse();
+        return;
+      }
+      handleJumpToNextCollapse();
+    });
+    return () => onCollapseNavigationReady?.(null);
+  }, [handleJumpToNextCollapse, handleJumpToPreviousCollapse, onCollapseNavigationReady]);
 
   return (
     <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
+      <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
         {isWorkbookMode && activeWorkbookSection && (
           <div style={{
             display: 'flex',
@@ -259,17 +334,29 @@ const UnifiedPanel = memo(({
           <div style={{ position: 'absolute', top: workbookHeaderHeight + (startIdx * ROW_H), left: 0, minWidth: '100%' }}>
           {items.slice(startIdx, endIdx).map((item) => {
             const key = item.kind === 'collapse'
-              ? item.blockId
+              ? `${item.blockId}-${item.hiddenStart}-${item.hiddenEnd}`
               : `line-${item.lineIdx}`;
             if (item.kind === 'collapse') {
               const ci = item as CollapseItem;
               return (
-                <CollapseBar key={key} count={ci.count}
+                <CollapseBar key={key} count={ci.count} expandCount={Math.min(ci.count, ci.expandStep)}
                   onExpand={() => startTransition(() => {
+                    const revealCount = Math.min(ci.count, ci.expandStep);
+                    pendingScrollAdjustRef.current += getCollapseLeadingRevealCount(ci.count, revealCount) * ROW_H;
                     setExpandedBlocks(prev => expandCollapseBlock(
                       prev,
                       ci.blockId,
-                      ci.count + getExpandedHiddenCount(prev, ci.blockId),
+                      ci.hiddenStart,
+                      ci.hiddenEnd,
+                      revealCount,
+                    ));
+                  })}
+                  onExpandAll={() => startTransition(() => {
+                    setExpandedBlocks(prev => expandCollapseBlockFully(
+                      prev,
+                      ci.blockId,
+                      ci.hiddenStart,
+                      ci.hiddenEnd,
                     ));
                   })} />
               );
@@ -285,6 +372,13 @@ const UnifiedPanel = memo(({
           })}
         </div>
         </div>
+        <CollapseJumpButton
+          onPrev={handleJumpToPreviousCollapse}
+          onNext={handleJumpToNextCollapse}
+          currentIndex={activeCollapsePosition >= 0 ? activeCollapsePosition + 1 : 0}
+          totalCount={totalCollapseCount}
+          storageKey="text-unified"
+        />
       </div>
       <MiniMap
         diffLines={diffLines}

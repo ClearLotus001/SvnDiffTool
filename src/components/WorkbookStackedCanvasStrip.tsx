@@ -66,6 +66,7 @@ interface CanvasBand {
   entry: WorkbookRowEntry | null;
   side: 'base' | 'mine';
   tone: 'neutral' | 'add' | 'delete';
+  useSideAccentForChanges: boolean;
   compareCells: ReturnType<typeof buildWorkbookSplitRowCompareState>['cellDeltas'];
   hasBaseRow: boolean;
   hasMineRow: boolean;
@@ -136,6 +137,7 @@ const WorkbookStackedCanvasStrip = memo(({
           entry: baseEntry,
           side: 'base',
           tone: 'delete',
+          useSideAccentForChanges: false,
           compareCells: rowDelta.cellDeltas,
           hasBaseRow,
           hasMineRow,
@@ -149,6 +151,7 @@ const WorkbookStackedCanvasStrip = memo(({
           entry: mineEntry,
           side: 'mine',
           tone: 'add',
+          useSideAccentForChanges: false,
           compareCells: rowDelta.cellDeltas,
           hasBaseRow,
           hasMineRow,
@@ -162,6 +165,7 @@ const WorkbookStackedCanvasStrip = memo(({
           entry: baseEntry,
           side: 'base',
           tone: 'neutral',
+          useSideAccentForChanges: false,
           compareCells: rowDelta.cellDeltas,
           hasBaseRow,
           hasMineRow,
@@ -175,6 +179,7 @@ const WorkbookStackedCanvasStrip = memo(({
           entry: baseEntry,
           side: 'base',
           tone: renderRow.row.left?.type === 'delete' ? 'delete' : 'neutral',
+          useSideAccentForChanges: true,
           compareCells: rowDelta.cellDeltas,
           hasBaseRow,
           hasMineRow,
@@ -187,6 +192,7 @@ const WorkbookStackedCanvasStrip = memo(({
           entry: mineEntry,
           side: 'mine',
           tone: renderRow.row.right?.type === 'add' ? 'add' : 'neutral',
+          useSideAccentForChanges: true,
           compareCells: rowDelta.cellDeltas,
           hasBaseRow,
           hasMineRow,
@@ -271,46 +277,48 @@ const WorkbookStackedCanvasStrip = memo(({
         const entry = band.entry;
         const y = band.y;
         const h = band.height;
-      const rowNumber = entry?.rowNumber ?? 0;
-      const rowBg = band.rowHighlightBg ?? T.bg0;
-      const bandBorder = band.tone === 'add' ? T.addBrd : band.tone === 'delete' ? T.delBrd : T.border2;
-      const cellTextColor = band.side === 'mine' ? T.t0 : T.t1;
-      const selectionAccent = band.side === 'base' ? T.acc2 : T.acc;
-      const isSelectedRow = Boolean(
-        selectedCell
-        && selectedCell.kind === 'row'
-        && selectedCell.sheetName === sheetName
-        && selectedCell.rowNumber === rowNumber,
-      );
+        const rowNumber = entry?.rowNumber ?? 0;
+        const rowBg = band.rowHighlightBg ?? T.bg0;
+        const selectionAccent = band.side === 'base' ? T.acc2 : T.acc;
+        const semanticBorder = band.tone === 'add' ? T.addBrd : band.tone === 'delete' ? T.delBrd : T.border2;
+        const bandBorder = band.useSideAccentForChanges ? selectionAccent : semanticBorder;
+        const bandRule = band.useSideAccentForChanges ? `${selectionAccent}66` : bandBorder;
+        const cellTextColor = band.side === 'mine' ? T.t0 : T.t1;
+        const isSelectedRow = Boolean(
+          selectedCell
+          && selectedCell.kind === 'row'
+          && selectedCell.sheetName === sheetName
+          && selectedCell.rowNumber === rowNumber,
+        );
 
-      ctx.fillStyle = rowBg;
-      ctx.fillRect(0, y, contentRight, h);
+        ctx.fillStyle = rowBg;
+        ctx.fillRect(0, y, contentRight, h);
 
-      ctx.fillStyle = isSelectedRow ? `${selectionAccent}26` : T.lnBg;
-      ctx.fillRect(3, y, LN_W, h);
-      ctx.fillStyle = bandBorder;
-      ctx.fillRect(0, y, 3, h);
-      ctx.strokeStyle = bandBorder;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(0, y + 0.5);
-      ctx.lineTo(contentRight, y + 0.5);
-      ctx.stroke();
-
-      if (isSelectedRow) {
-        ctx.strokeStyle = `${selectionAccent}a6`;
-        ctx.lineWidth = 2;
-        ctx.strokeRect(4, y + 1, LN_W - 2, h - 2);
+        ctx.fillStyle = isSelectedRow ? `${selectionAccent}26` : T.lnBg;
+        ctx.fillRect(3, y, LN_W, h);
+        ctx.fillStyle = bandBorder;
+        ctx.fillRect(0, y, 3, h);
+        ctx.strokeStyle = bandRule;
         ctx.lineWidth = 1;
-      }
+        ctx.beginPath();
+        ctx.moveTo(0, y + 0.5);
+        ctx.lineTo(contentRight, y + 0.5);
+        ctx.stroke();
 
-      ctx.fillStyle = isSelectedRow ? selectionAccent : T.lnTx;
-      ctx.font = `${sizes.line}px ${FONT_CODE}`;
-      ctx.textAlign = 'right';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(String(rowNumber || ''), LN_W - 8, y + (h / 2));
-      const frozenEntries = renderColumns.filter(column => column.position < freezeColumnCount);
-      const floatingEntries = renderColumns.filter(column => column.position >= freezeColumnCount);
+        if (isSelectedRow) {
+          ctx.strokeStyle = `${selectionAccent}a6`;
+          ctx.lineWidth = 2;
+          ctx.strokeRect(4, y + 1, LN_W - 2, h - 2);
+          ctx.lineWidth = 1;
+        }
+
+        ctx.fillStyle = isSelectedRow ? selectionAccent : T.lnTx;
+        ctx.font = `${sizes.line}px ${FONT_CODE}`;
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(rowNumber || ''), LN_W - 8, y + (h / 2));
+        const frozenEntries = renderColumns.filter(column => column.position < freezeColumnCount);
+        const floatingEntries = renderColumns.filter(column => column.position >= freezeColumnCount);
 
         const drawCell = (entryMeta: HorizontalVirtualColumnEntry, drawX: number) => {
           if (!entry || drawX >= contentRight || drawX + entryMeta.width <= contentLeft) return;

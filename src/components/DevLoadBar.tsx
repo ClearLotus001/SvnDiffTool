@@ -4,7 +4,6 @@ import { useI18n } from '../context/i18n';
 import { useTheme } from '../context/theme';
 
 interface DevLoadBarProps {
-  onLoadDemo: () => Promise<void>;
   onLoadWorkingCopyDiff: (filePath: string) => Promise<void>;
 }
 
@@ -14,7 +13,6 @@ type LocalSelection = {
 };
 
 const DevLoadBar = memo(({
-  onLoadDemo,
   onLoadWorkingCopyDiff,
 }: DevLoadBarProps) => {
   const T = useTheme();
@@ -75,6 +73,7 @@ const DevLoadBar = memo(({
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
         <button
+          type="button"
           onClick={async () => {
             if (!window.svnDiff?.pickDiffFile) return;
             const nextFile = await window.svnDiff.pickDiffFile();
@@ -93,26 +92,6 @@ const DevLoadBar = memo(({
             cursor: 'pointer',
           }}>
           {t('devLoaderWorkingCopyLabel')}: {workingCopyFile?.name ?? t('devLoaderChooseWorkingCopy')}
-        </button>
-        <button
-          onClick={() => {
-            setWorkingCopyFile(null);
-            setError('');
-            void onLoadDemo();
-          }}
-          style={{
-            height: 30,
-            padding: '0 12px',
-            borderRadius: 10,
-            border: `1px solid ${T.acc}44`,
-            background: `${T.acc}18`,
-            color: T.acc,
-            fontFamily: FONT_UI,
-            fontSize: FONT_SIZE.sm,
-            fontWeight: 700,
-            cursor: 'pointer',
-          }}>
-          {t('devLoaderLoadDemo')}
         </button>
       </div>
     </div>

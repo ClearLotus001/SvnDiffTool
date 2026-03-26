@@ -2,7 +2,7 @@
 // src/App.tsx  —  SvnExcelDiffTool root
 //
 // This file is now a thin orchestrator:
-//   - Loads diff data (Electron IPC or demo)
+//   - Loads diff data (Electron IPC)
 //   - Manages all top-level state
 //   - Handles keyboard shortcuts
 //   - Renders the layout, delegating visuals to components/
@@ -18,9 +18,15 @@ import type {
   DiffPerformanceMetrics,
   ThemeKey,
   LayoutMode,
+  RevisionOptionsPayload,
+  RevisionOptionsQuery,
   SvnRevisionInfo,
+  WorkbookArtifactDiff,
   WorkbookCompareMode,
+  WorkbookCompareLayoutSnapshot,
+  WorkbookCompareModePayload,
   WorkbookFreezeState,
+  WorkbookHorizontalLayoutSnapshot,
   WorkbookMetadataSource,
   WorkbookMoveDirection,
   WorkbookPrecomputedDeltaPayload,
@@ -35,14 +41,17 @@ import { buildSearchPattern, findMatches, navigateSearch } from './engine/search
 import { FONT_UI } from './constants/typography';
 import { computeDiffAsync } from './utils/computeDiffAsync';
 import { resolveDisplayFileName, resolveVersionLabel } from './utils/diffMeta';
-import { resolveDiffTexts } from './utils/diffSource';
+import { isWorkbookFileName, resolveDiffTexts } from './utils/diffSource';
 import type { WorkbookMetadataMap } from './utils/workbookMeta';
 import { resolveWorkbookMetadataAsync } from './utils/resolveWorkbookMetadataAsync';
 import {
   buildWorkbookSectionRowIndex,
   buildWorkbookSectionRowIndexFromPrecomputedDelta,
 } from './utils/workbookSheetIndex';
-import { findWorkbookHunkTargetCell } from './utils/workbookHunkTarget';
+import {
+  buildWorkbookDiffRegions,
+  findWorkbookDiffRegionIndexForSelection,
+} from './utils/workbookDiffRegion';
 import { findWorkbookSectionIndex, getWorkbookSections } from './utils/workbookSections';
 import { getStoredAppSettings, saveStoredAppSettings } from './utils/settings';
 import {
@@ -55,6 +64,7 @@ import PerfBar       from './components/PerfBar';
 import SearchBar      from './components/SearchBar';
 import SplitHeader    from './components/SplitHeader';
 import WorkbookFormulaBar from './components/WorkbookFormulaBar';
+import WorkbookArtifactNoticeBar from './components/WorkbookArtifactNoticeBar';
 import WorkbookComparePanel from './components/WorkbookComparePanel';
 import WorkbookHorizontalPanel from './components/WorkbookHorizontalPanel';
 import UnifiedPanel   from './components/UnifiedPanel';
@@ -65,6 +75,7 @@ import ShortcutsPanel from './components/ShortcutsPanel';
 
 type WorkbookFreezeStateMap = Record<string, WorkbookFreezeState>;
 type LoadPhase = 'idle' | 'loading' | 'ready' | 'error';
+type RevisionOptionsStatus = 'idle' | 'loading' | 'loaded' | 'error';
 const DIFF_RESULT_CACHE_LIMIT = 8;
 
 interface CachedDiffResult {
@@ -72,6 +83,20 @@ interface CachedDiffResult {
   workbookDelta: WorkbookPrecomputedDeltaPayload | null;
   baseWorkbookMetadata: WorkbookMetadataMap | null;
   mineWorkbookMetadata: WorkbookMetadataMap | null;
+}
+
+interface WorkbookLayoutSnapshotsByMode {
+  unified: WorkbookCompareLayoutSnapshot | null;
+  'split-h': WorkbookHorizontalLayoutSnapshot | null;
+  'split-v': WorkbookCompareLayoutSnapshot | null;
+}
+
+function createEmptyWorkbookLayoutSnapshots(): WorkbookLayoutSnapshotsByMode {
+  return {
+    unified: null,
+    'split-h': null,
+    'split-v': null,
+  };
 }
 
 function waitForNextPaint() {
@@ -86,6 +111,10 @@ function waitForNextPaint() {
 
 function getNow() {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
+function debugLog(message: string, payload?: unknown) {
+  window.svnDiff?.debugLog?.(message, payload);
 }
 
 function cycleHunkIndex(current: number, total: number, direction: -1 | 1): number {
@@ -108,6 +137,56 @@ function buildDiffCacheKey(data: DiffData, compareMode: WorkbookCompareMode): st
   ].join('::');
 }
 
+function getPrecomputedDiffLinesForMode(
+  data: DiffData,
+  compareMode: WorkbookCompareMode,
+): DiffLine[] | null {
+  return data.precomputedDiffLinesByMode?.[compareMode]
+    ?? (compareMode === 'strict' ? (data.precomputedDiffLines ?? null) : null);
+}
+
+function getPrecomputedWorkbookDeltaForMode(
+  data: DiffData,
+  compareMode: WorkbookCompareMode,
+): WorkbookPrecomputedDeltaPayload | null {
+  return data.precomputedWorkbookDeltaByMode?.[compareMode]
+    ?? (compareMode === 'strict' ? (data.precomputedWorkbookDelta ?? null) : null);
+}
+
+function mergeWorkbookCompareModePayload(
+  data: DiffData,
+  payload: WorkbookCompareModePayload,
+): DiffData {
+  const nextDiffLinesByMode = {
+    ...(data.precomputedDiffLinesByMode ?? {}),
+    [payload.compareMode]: payload.diffLines,
+  };
+  const nextWorkbookDeltaByMode = payload.workbookDelta
+    ? {
+        ...(data.precomputedWorkbookDeltaByMode ?? {}),
+        [payload.compareMode]: payload.workbookDelta,
+      }
+    : (data.precomputedWorkbookDeltaByMode ?? null);
+
+  return {
+    ...data,
+    precomputedDiffLines: payload.compareMode === 'strict'
+      ? payload.diffLines
+      : (data.precomputedDiffLines ?? null),
+    precomputedWorkbookDelta: payload.compareMode === 'strict'
+      ? payload.workbookDelta
+      : (data.precomputedWorkbookDelta ?? null),
+    precomputedDiffLinesByMode: nextDiffLinesByMode,
+    precomputedWorkbookDeltaByMode: nextWorkbookDeltaByMode,
+    perf: payload.perf
+      ? {
+          ...(data.perf ?? { source: 'local-dev' as const }),
+          ...payload.perf,
+        }
+      : (data.perf ?? null),
+  };
+}
+
 const MAX_WORKBOOK_METADATA_SINGLE_BYTES = 12 * 1024 * 1024;
 const MAX_WORKBOOK_METADATA_TOTAL_BYTES = 20 * 1024 * 1024;
 
@@ -121,86 +200,30 @@ function shouldResolveWorkbookMetadata(source: WorkbookMetadataSource) {
   return (baseBytes + mineBytes) <= MAX_WORKBOOK_METADATA_TOTAL_BYTES;
 }
 
-// ── Demo data (used for in-app development fallback) ──────────────────────────
-
-const DEMO_BASE = `import axios from 'axios';
-
-const BASE_URL = 'https://api.example.com';
-const TIMEOUT = 5000;
-
-async function fetchUser(id) {
-  const response = await axios.get(\`\${BASE_URL}/users/\${id}\`);
-  return response.data;
+function getRevisionOptionsStatus(data: Pick<DiffData, 'revisionOptions' | 'canSwitchRevisions'>): RevisionOptionsStatus {
+  return data.canSwitchRevisions ? 'idle' : 'loaded';
 }
 
-async function updateUser(id, payload) {
-  const response = await axios.put(\`\${BASE_URL}/users/\${id}\`, payload);
-  return response.data;
-}
-
-async function deleteUser(id) {
-  await axios.delete(\`\${BASE_URL}/users/\${id}\`);
-  return true;
-}
-
-async function listUsers(page = 1, limit = 20) {
-  const response = await axios.get(\`\${BASE_URL}/users\`, { params: { page, limit } });
-  return response.data;
-}
-
-export { fetchUser, updateUser, deleteUser, listUsers };
-`;
-
-const DEMO_MINE = `import axios from 'axios';
-import { cache } from '../utils/cache';
-import { logger } from '../utils/logger';
-
-const BASE_URL = 'https://api.example.com';
-const TIMEOUT = 8000;
-
-async function fetchUser(id, options = {}) {
-  const cacheKey = \`user_\${id}\`;
-  if (!options.force && cache.has(cacheKey)) {
-    logger.debug('Cache hit', { key: cacheKey });
-    return cache.get(cacheKey);
-  }
-  const response = await axios.get(\`\${BASE_URL}/users/\${id}\`, { timeout: TIMEOUT });
-  const data = response.data;
-  cache.set(cacheKey, data, options.ttl || 300);
-  return data;
-}
-
-async function updateUser(id, payload) {
-  const response = await axios.put(\`\${BASE_URL}/users/\${id}\`, payload, { timeout: TIMEOUT });
-  cache.delete(\`user_\${id}\`);
-  return response.data;
-}
-
-async function deleteUser(id, soft = false) {
-  if (soft) {
-    await axios.patch(\`\${BASE_URL}/users/\${id}\`, { deleted: true });
-  } else {
-    await axios.delete(\`\${BASE_URL}/users/\${id}\`);
-  }
-  cache.delete(\`user_\${id}\`);
-  return { success: true, soft };
-}
-
-async function listUsers(page = 1, limit = 20, filters = {}) {
-  const response = await axios.get(\`\${BASE_URL}/users\`, {
-    params: { page, limit, ...filters },
-    timeout: TIMEOUT,
+function mergeRevisionOptions(current: SvnRevisionInfo[], incoming: SvnRevisionInfo[]): SvnRevisionInfo[] {
+  const nextById = new Map<string, SvnRevisionInfo>();
+  current.forEach((option) => {
+    nextById.set(option.id, option);
   });
-  return response.data;
-}
+  incoming.forEach((option) => {
+    nextById.set(option.id, option);
+  });
 
-async function searchUsers(query) {
-  const response = await axios.get(\`\${BASE_URL}/users/search\`, { params: { q: query } });
-  return response.data;
+  const ordered: SvnRevisionInfo[] = [];
+  const seen = new Set<string>();
+  [...current, ...incoming].forEach((option) => {
+    if (seen.has(option.id)) return;
+    const latest = nextById.get(option.id);
+    if (!latest) return;
+    seen.add(option.id);
+    ordered.push(latest);
+  });
+  return ordered;
 }
-
-export { fetchUser, updateUser, deleteUser, listUsers, searchUsers };
-`;
 
 // ═════════════════════════════════════════════════════════════════════════════
 // ROOT APP
@@ -242,7 +265,16 @@ export default function App() {
   const [baseWorkbookMetadata, setBaseWorkbookMetadata] = useState<WorkbookMetadataMap | null>(null);
   const [mineWorkbookMetadata, setMineWorkbookMetadata] = useState<WorkbookMetadataMap | null>(null);
   const [precomputedWorkbookDelta, setPrecomputedWorkbookDelta] = useState<WorkbookPrecomputedDeltaPayload | null>(null);
+  const [workbookArtifactDiff, setWorkbookArtifactDiff] = useState<WorkbookArtifactDiff | null>(null);
+  const [artifactNoticeDismissed, setArtifactNoticeDismissed] = useState(false);
   const [revisionOptions, setRevisionOptions] = useState<SvnRevisionInfo[]>([]);
+  const [revisionOptionsStatus, setRevisionOptionsStatus] = useState<RevisionOptionsStatus>('idle');
+  const [revisionHasMore, setRevisionHasMore] = useState(false);
+  const [revisionNextBeforeId, setRevisionNextBeforeId] = useState<string | null>(null);
+  const [revisionQueryDateTime, setRevisionQueryDateTime] = useState('');
+  const [revisionQueryError, setRevisionQueryError] = useState('');
+  const [isLoadingMoreRevisions, setIsLoadingMoreRevisions] = useState(false);
+  const [isSearchingRevisionDateTime, setIsSearchingRevisionDateTime] = useState(false);
   const [baseRevisionInfo, setBaseRevisionInfo] = useState<SvnRevisionInfo | null>(null);
   const [mineRevisionInfo, setMineRevisionInfo] = useState<SvnRevisionInfo | null>(null);
   const [canSwitchRevisions, setCanSwitchRevisions] = useState(false);
@@ -250,16 +282,17 @@ export default function App() {
   const [workbookFreezeBySheet, setWorkbookFreezeBySheet] = useState<WorkbookFreezeStateMap>({});
   const [workbookColumnWidthBySheet, setWorkbookColumnWidthBySheet] = useState<WorkbookColumnWidthBySheet>({});
   const [activeWorkbookSheetName, setActiveWorkbookSheetName] = useState<string | null>(null);
-  const [mountedWorkbookLayouts, setMountedWorkbookLayouts] = useState<Record<LayoutMode, boolean>>({
-    unified: initialSettings.layout === 'unified',
-    'split-h': initialSettings.layout === 'split-h',
-    'split-v': initialSettings.layout === 'split-v',
-  });
+  const [guidedPulseNonce, setGuidedPulseNonce] = useState(0);
   const loadSeqRef = useRef(0);
   const hasLoadedDiffRef = useRef(false);
   const workbookCompareModeRef = useRef<WorkbookCompareMode>(workbookCompareMode);
   const currentDiffDataRef = useRef<DiffData | null>(null);
   const diffResultCacheRef = useRef<Map<string, CachedDiffResult>>(new Map());
+  const workbookLayoutSnapshotsRef = useRef<WorkbookLayoutSnapshotsByMode>(
+    createEmptyWorkbookLayoutSnapshots(),
+  );
+  const revisionOptionsRef = useRef<SvnRevisionInfo[]>([]);
+  const revisionQuerySeqRef = useRef(0);
 
   const T = THEMES[themeKey];
 
@@ -295,13 +328,38 @@ export default function App() {
       ? (baseWorkbookMetadata?.sheets[sheetName]?.mergeRanges ?? [])
       : (mineWorkbookMetadata?.sheets[sheetName]?.mergeRanges ?? []);
   }, [baseWorkbookMetadata, mineWorkbookMetadata, selectedCell]);
+  const artifactNoticeKey = useMemo(() => (
+    workbookArtifactDiff?.hasArtifactOnlyDiff
+      ? [
+          fileName,
+          baseRevisionInfo?.id ?? baseRevisionInfo?.revision ?? baseName,
+          mineRevisionInfo?.id ?? mineRevisionInfo?.revision ?? mineName,
+          workbookArtifactDiff.baseBytes,
+          workbookArtifactDiff.mineBytes,
+        ].join('::')
+      : ''
+  ), [
+    baseName,
+    baseRevisionInfo?.id,
+    baseRevisionInfo?.revision,
+    fileName,
+    mineName,
+    mineRevisionInfo?.id,
+    mineRevisionInfo?.revision,
+    workbookArtifactDiff,
+  ]);
 
   // scrollToIndex exposed by the active panel — used by Goto and hunk nav
   const scrollToIndexRef = useRef<((idx: number, align?: 'start' | 'center') => void) | null>(null);
   const workbookMoveRef = useRef<((direction: WorkbookMoveDirection) => void) | null>(null);
+  const collapseNavigationRef = useRef<((direction: 'prev' | 'next') => void) | null>(null);
   // Ref-based showSearch avoids stale keyboard handler closure
   const showSearchRef = useRef(false);
   useEffect(() => { showSearchRef.current = showSearch; }, [showSearch]);
+  useEffect(() => { revisionOptionsRef.current = revisionOptions; }, [revisionOptions]);
+  useEffect(() => {
+    setArtifactNoticeDismissed(false);
+  }, [artifactNoticeKey]);
 
   // ── Load diff data ─────────────────────────────────────────────────────────
 
@@ -324,16 +382,82 @@ export default function App() {
     }
   }, []);
 
-  const buildDemoDiffData = useCallback((): DiffData => ({
-    baseName: 'userService.js (r142)',
-    mineName: 'userService.js (r143)',
-    svnUrl: '',
-    fileName: 'userService.js',
-    baseContent: DEMO_BASE,
-    mineContent: DEMO_MINE,
-    baseBytes: null,
-    mineBytes: null,
-  }), []);
+  const applyRevisionOptionsPayload = useCallback((
+    payload: RevisionOptionsPayload,
+    mode: 'replace' | 'append' = 'replace',
+  ) => {
+    const nextOptions = mode === 'append'
+      ? mergeRevisionOptions(revisionOptionsRef.current, payload.items)
+      : payload.items;
+
+    revisionOptionsRef.current = nextOptions;
+    setRevisionOptions(nextOptions);
+    setRevisionOptionsStatus('loaded');
+    setRevisionHasMore(payload.hasMore);
+    setRevisionNextBeforeId(payload.nextBeforeRevisionId);
+    setRevisionQueryDateTime(payload.queryDateTime ?? '');
+    setRevisionQueryError('');
+    setBaseRevisionInfo((prev) => (
+      prev ? (nextOptions.find((option) => option.id === prev.id) ?? prev) : prev
+    ));
+    setMineRevisionInfo((prev) => (
+      prev ? (nextOptions.find((option) => option.id === prev.id) ?? prev) : prev
+    ));
+  }, []);
+
+  const queryRevisionOptionsPage = useCallback(async (
+    query: RevisionOptionsQuery,
+    options?: {
+      append?: boolean;
+      showInitialLoading?: boolean;
+      showSearchLoading?: boolean;
+    },
+  ) => {
+    if (!window.svnDiff?.queryRevisionOptions) return;
+    const seq = ++revisionQuerySeqRef.current;
+    const append = Boolean(options?.append);
+
+    if (options?.showInitialLoading) {
+      setRevisionOptionsStatus('loading');
+    }
+    if (append) {
+      setIsLoadingMoreRevisions(true);
+    }
+    if (options?.showSearchLoading) {
+      setIsSearchingRevisionDateTime(true);
+    }
+    if (!append) {
+      setRevisionQueryError('');
+    }
+
+    try {
+      const payload = await window.svnDiff.queryRevisionOptions(query);
+      if (seq !== revisionQuerySeqRef.current) return;
+      applyRevisionOptionsPayload(payload, append ? 'append' : 'replace');
+      debugLog('revision-options:loaded', {
+        count: payload.items.length,
+        hasMore: payload.hasMore,
+        nextBeforeRevisionId: payload.nextBeforeRevisionId,
+        queryDateTime: payload.queryDateTime,
+      });
+    } catch (error) {
+      if (seq !== revisionQuerySeqRef.current) return;
+      const message = error instanceof Error ? error.message : String(error);
+      setRevisionQueryError(message);
+      if (options?.showInitialLoading) {
+        setRevisionOptionsStatus('error');
+      }
+      debugLog('revision-options:error', { message });
+    } finally {
+      if (seq !== revisionQuerySeqRef.current) return;
+      if (append) {
+        setIsLoadingMoreRevisions(false);
+      }
+      if (options?.showSearchLoading) {
+        setIsSearchingRevisionDateTime(false);
+      }
+    }
+  }, [applyRevisionOptionsPayload]);
 
   const applyDiffData = useCallback(async (
     data: DiffData,
@@ -343,6 +467,13 @@ export default function App() {
     const applyStart = getNow();
     const compareMode = options?.compareMode ?? workbookCompareModeRef.current;
     const cacheKey = buildDiffCacheKey(data, compareMode);
+    debugLog('apply-diff-data:start', {
+      seq,
+      compareMode,
+      cacheKey,
+      hasPrecomputedDiff: Boolean(getPrecomputedDiffLinesForMode(data, compareMode)),
+      fileName: data.fileName,
+    });
     if (!options?.loadingAlreadyStarted) {
       setLoadError('');
       setIsLoadingDiff(true);
@@ -351,13 +482,10 @@ export default function App() {
     }
 
     try {
-      const textStart = getNow();
-      const { baseText, mineText } = resolveDiffTexts(data);
-      const textResolveMs = getNow() - textStart;
-      const precomputedDiffLines = data.precomputedDiffLinesByMode?.[compareMode]
-        ?? (compareMode === 'strict' ? (data.precomputedDiffLines ?? null) : null);
-      const selectedPrecomputedWorkbookDelta = data.precomputedWorkbookDeltaByMode?.[compareMode]
-        ?? (compareMode === 'strict' ? (data.precomputedWorkbookDelta ?? null) : null);
+      const precomputedDiffLines = getPrecomputedDiffLinesForMode(data, compareMode);
+      const selectedPrecomputedWorkbookDelta = getPrecomputedWorkbookDeltaForMode(data, compareMode);
+      const shouldUsePrecomputedDiff = Boolean(precomputedDiffLines);
+      let textResolveMs = 0;
       const cachedResult = diffResultCacheRef.current.get(cacheKey);
       const metadataInput: WorkbookMetadataSource = {
         baseName: data.baseName,
@@ -366,9 +494,10 @@ export default function App() {
         baseBytes: data.baseBytes,
         mineBytes: data.mineBytes,
       };
-      const hasMetadataFromPayload = data.baseWorkbookMetadata !== undefined || data.mineWorkbookMetadata !== undefined;
-      const shouldLoadMetadata = shouldResolveWorkbookMetadata(metadataInput);
-      if (!shouldLoadMetadata && (hasBytePayload(metadataInput.baseBytes) || hasBytePayload(metadataInput.mineBytes))) {
+      const hasMetadataFromPayload = data.baseWorkbookMetadata != null || data.mineWorkbookMetadata != null;
+      const canLoadMetadataRemotely = Boolean(window.svnDiff?.loadWorkbookMetadata && isWorkbookFileName(data.fileName || data.baseName || data.mineName));
+      const shouldLoadMetadata = shouldResolveWorkbookMetadata(metadataInput) || canLoadMetadataRemotely;
+      if (!shouldResolveWorkbookMetadata(metadataInput) && (hasBytePayload(metadataInput.baseBytes) || hasBytePayload(metadataInput.mineBytes))) {
         console.warn('[workbook-metadata] skipped for large workbook payload');
       }
       if (cachedResult) {
@@ -383,10 +512,20 @@ export default function App() {
         setWorkbookFreezeBySheet({});
         setWorkbookColumnWidthBySheet({});
         setActiveWorkbookSheetName(null);
+        workbookLayoutSnapshotsRef.current = createEmptyWorkbookLayoutSnapshots();
         setPrecomputedWorkbookDelta(cachedResult.workbookDelta);
+        setWorkbookArtifactDiff(data.workbookArtifactDiff ?? null);
         setBaseWorkbookMetadata(cachedResult.baseWorkbookMetadata ?? data.baseWorkbookMetadata ?? null);
         setMineWorkbookMetadata(cachedResult.mineWorkbookMetadata ?? data.mineWorkbookMetadata ?? null);
+        revisionQuerySeqRef.current += 1;
         setRevisionOptions(data.revisionOptions ?? []);
+        setRevisionOptionsStatus(getRevisionOptionsStatus(data));
+        setRevisionHasMore(false);
+        setRevisionNextBeforeId(null);
+        setRevisionQueryDateTime('');
+        setRevisionQueryError('');
+        setIsLoadingMoreRevisions(false);
+        setIsSearchingRevisionDateTime(false);
         setBaseRevisionInfo(data.baseRevisionInfo ?? null);
         setMineRevisionInfo(data.mineRevisionInfo ?? null);
         setCanSwitchRevisions(Boolean(data.canSwitchRevisions));
@@ -403,17 +542,37 @@ export default function App() {
           totalAppMs: getNow() - applyStart,
           diffLineCount: cachedResult.diffLines.length,
         });
+        debugLog('apply-diff-data:done', {
+          seq,
+          compareMode,
+          cached: true,
+          diffLineCount: cachedResult.diffLines.length,
+          totalAppMs: Number((getNow() - applyStart).toFixed(1)),
+          perf: data.perf ?? null,
+        });
         return;
       }
 
       const metadataTask = !hasMetadataFromPayload && shouldLoadMetadata
         ? (async () => {
             const metadataStart = getNow();
+            debugLog('metadata:request', {
+              compareMode,
+              fileName: data.fileName,
+            });
             try {
-              const result = await resolveWorkbookMetadataAsync(metadataInput);
+              const result = canLoadMetadataRemotely
+                ? await window.svnDiff!.loadWorkbookMetadata(
+                    data.baseRevisionInfo?.id,
+                    data.mineRevisionInfo?.id,
+                  )
+                : await resolveWorkbookMetadataAsync(metadataInput);
               return {
                 ok: true as const,
-                result,
+                result: {
+                  base: result.base,
+                  mine: result.mine,
+                },
                 duration: getNow() - metadataStart,
               };
             } catch (error) {
@@ -427,11 +586,13 @@ export default function App() {
         : null;
       let nextDiffLines: DiffLine[];
       let diffDuration: number;
-      const shouldUsePrecomputedDiff = Boolean(precomputedDiffLines);
       if (shouldUsePrecomputedDiff) {
         nextDiffLines = precomputedDiffLines!;
         diffDuration = data.perf?.rustDiffMs ?? data.perf?.diffMs ?? 0;
       } else {
+        const textStart = getNow();
+        const { baseText, mineText } = resolveDiffTexts(data);
+        textResolveMs = getNow() - textStart;
         const diffStart = getNow();
         nextDiffLines = await computeDiffAsync(baseText, mineText, compareMode);
         diffDuration = getNow() - diffStart;
@@ -447,10 +608,20 @@ export default function App() {
       setWorkbookFreezeBySheet({});
       setWorkbookColumnWidthBySheet({});
       setActiveWorkbookSheetName(null);
+      workbookLayoutSnapshotsRef.current = createEmptyWorkbookLayoutSnapshots();
       setPrecomputedWorkbookDelta(selectedPrecomputedWorkbookDelta);
+      setWorkbookArtifactDiff(data.workbookArtifactDiff ?? null);
       setBaseWorkbookMetadata(data.baseWorkbookMetadata ?? null);
       setMineWorkbookMetadata(data.mineWorkbookMetadata ?? null);
+      revisionQuerySeqRef.current += 1;
       setRevisionOptions(data.revisionOptions ?? []);
+      setRevisionOptionsStatus(getRevisionOptionsStatus(data));
+      setRevisionHasMore(false);
+      setRevisionNextBeforeId(null);
+      setRevisionQueryDateTime('');
+      setRevisionQueryError('');
+      setIsLoadingMoreRevisions(false);
+      setIsSearchingRevisionDateTime(false);
       setBaseRevisionInfo(data.baseRevisionInfo ?? null);
       setMineRevisionInfo(data.mineRevisionInfo ?? null);
       setCanSwitchRevisions(Boolean(data.canSwitchRevisions));
@@ -465,6 +636,16 @@ export default function App() {
         diffMs: shouldUsePrecomputedDiff ? (data.perf?.rustDiffMs ?? data.perf?.diffMs ?? 0) : diffDuration,
         totalAppMs,
         diffLineCount: nextDiffLines.length,
+      });
+      debugLog('apply-diff-data:done', {
+        seq,
+        compareMode,
+        cached: false,
+        diffLineCount: nextDiffLines.length,
+        textResolveMs: Number(textResolveMs.toFixed(1)),
+        diffMs: Number(diffDuration.toFixed(1)),
+        totalAppMs: Number(totalAppMs.toFixed(1)),
+        source: data.perf?.source ?? 'local-dev',
       });
       diffResultCacheRef.current.set(cacheKey, {
         diffLines: nextDiffLines,
@@ -508,6 +689,10 @@ export default function App() {
             metadataMs: metadataResult.duration,
             totalAppMs: Math.max(prev.totalAppMs ?? 0, getNow() - applyStart),
           } : prev));
+          debugLog('metadata:loaded', {
+            compareMode,
+            durationMs: Number(metadataResult.duration.toFixed(1)),
+          });
         });
       }
     } catch (error) {
@@ -515,9 +700,18 @@ export default function App() {
       if (!hasLoadedDiffRef.current) {
         setDiffLines([]);
         setPrecomputedWorkbookDelta(null);
+        setWorkbookArtifactDiff(null);
         setBaseWorkbookMetadata(null);
         setMineWorkbookMetadata(null);
+        revisionQuerySeqRef.current += 1;
         setRevisionOptions([]);
+        setRevisionOptionsStatus('idle');
+        setRevisionHasMore(false);
+        setRevisionNextBeforeId(null);
+        setRevisionQueryDateTime('');
+        setRevisionQueryError('');
+        setIsLoadingMoreRevisions(false);
+        setIsSearchingRevisionDateTime(false);
         setBaseRevisionInfo(null);
         setMineRevisionInfo(null);
         setCanSwitchRevisions(false);
@@ -535,28 +729,91 @@ export default function App() {
     }
   }, []);
 
-  useEffect(() => {
-    const currentData = currentDiffDataRef.current;
-    if (!currentData) return;
-    void applyDiffData(currentData, { compareMode: workbookCompareMode });
-  }, [applyDiffData, workbookCompareMode]);
+  const ensureWorkbookCompareModeLoaded = useCallback(async (
+    data: DiffData,
+    compareMode: WorkbookCompareMode,
+  ): Promise<DiffData> => {
+    if (getPrecomputedDiffLinesForMode(data, compareMode)) {
+      debugLog('ensure-compare-mode:cache-hit', {
+        compareMode,
+        fileName: data.fileName,
+      });
+      return data;
+    }
+    if (!window.svnDiff?.loadWorkbookCompareMode) {
+      throw new Error(`Missing workbook compare mode payload for '${compareMode}'.`);
+    }
 
-  const loadStandaloneDemo = useCallback(async () => {
-    const seq = await beginDiffLoad();
-    await applyDiffData({
-      ...buildDemoDiffData(),
-      perf: { source: 'demo' },
-    }, {
-      seq,
-      loadingAlreadyStarted: true,
+    debugLog('ensure-compare-mode:request', {
+      compareMode,
+      fileName: data.fileName,
+      baseRevisionId: data.baseRevisionInfo?.id ?? null,
+      mineRevisionId: data.mineRevisionInfo?.id ?? null,
     });
-  }, [applyDiffData, beginDiffLoad, buildDemoDiffData]);
+    const payload = await window.svnDiff.loadWorkbookCompareMode(
+      compareMode,
+      data.baseRevisionInfo?.id,
+      data.mineRevisionInfo?.id,
+    );
+    if (!payload.diffLines) {
+      throw new Error(`Failed to load workbook compare mode '${compareMode}'.`);
+    }
+    debugLog('ensure-compare-mode:loaded', {
+      compareMode,
+      diffLineCount: payload.diffLines.length,
+      rustDiffMs: payload.perf?.rustDiffMs ?? 0,
+    });
+    return mergeWorkbookCompareModePayload(data, payload);
+  }, []);
+
+  const handleWorkbookCompareModeChange = useCallback(async (nextMode: WorkbookCompareMode) => {
+    if (nextMode === workbookCompareModeRef.current) return;
+
+    const currentData = currentDiffDataRef.current;
+    if (!currentData) {
+      setWorkbookCompareMode(nextMode);
+      return;
+    }
+    const isCurrentWorkbook = isWorkbookFileName(currentData.fileName || currentData.baseName || currentData.mineName);
+
+    if (!isCurrentWorkbook) {
+      setWorkbookCompareMode(nextMode);
+      void applyDiffData(currentData, {
+        compareMode: nextMode,
+        loadingAlreadyStarted: true,
+      });
+      return;
+    }
+
+    if (getPrecomputedDiffLinesForMode(currentData, nextMode)) {
+      setWorkbookCompareMode(nextMode);
+      void applyDiffData(currentData, {
+        compareMode: nextMode,
+        loadingAlreadyStarted: true,
+      });
+      return;
+    }
+
+    const seq = await beginDiffLoad();
+    try {
+      const nextData = await ensureWorkbookCompareModeLoaded(currentData, nextMode);
+      if (seq !== loadSeqRef.current) return;
+      setWorkbookCompareMode(nextMode);
+      await applyDiffData(nextData, {
+        seq,
+        compareMode: nextMode,
+        loadingAlreadyStarted: true,
+      });
+    } catch (error) {
+      failDiffLoad(seq, error);
+    }
+  }, [applyDiffData, beginDiffLoad, ensureWorkbookCompareModeLoaded, failDiffLoad]);
 
   const loadElectronWorkingCopyDiff = useCallback(async (filePath: string) => {
     if (!window.svnDiff?.loadDevWorkingCopyDiff) return;
     const seq = await beginDiffLoad();
     try {
-      const nextData = await window.svnDiff.loadDevWorkingCopyDiff(filePath);
+      const nextData = await window.svnDiff.loadDevWorkingCopyDiff(filePath, workbookCompareModeRef.current);
       if (seq !== loadSeqRef.current) return;
       await applyDiffData(nextData, {
         seq,
@@ -565,6 +822,21 @@ export default function App() {
     } catch (error) {
       failDiffLoad(seq, error);
       throw error;
+    }
+  }, [applyDiffData, beginDiffLoad, failDiffLoad]);
+
+  const reloadCliDiffData = useCallback(async () => {
+    if (!window.svnDiff?.getDiffData) return;
+    const seq = await beginDiffLoad();
+    try {
+      const data = await window.svnDiff.getDiffData(workbookCompareModeRef.current);
+      if (seq !== loadSeqRef.current) return;
+      await applyDiffData(data, {
+        seq,
+        loadingAlreadyStarted: true,
+      });
+    } catch (error) {
+      failDiffLoad(seq, error);
     }
   }, [applyDiffData, beginDiffLoad, failDiffLoad]);
 
@@ -595,7 +867,7 @@ export default function App() {
       let seq = 0;
       try {
         seq = await beginDiffLoad();
-        const data = await window.svnDiff.getDiffData();
+        const data = await window.svnDiff.getDiffData(workbookCompareModeRef.current);
         const hasDiffPayload = Boolean(
           data
           && (
@@ -603,6 +875,9 @@ export default function App() {
             || typeof data.mineContent === 'string'
             || hasBytePayload(data.baseBytes)
             || hasBytePayload(data.mineBytes)
+            || Boolean(data.precomputedDiffLines?.length)
+            || Boolean(data.precomputedDiffLinesByMode?.strict?.length)
+            || Boolean(data.precomputedDiffLinesByMode?.content?.length)
           )
         );
         if (hasDiffPayload) {
@@ -618,6 +893,15 @@ export default function App() {
           setLoadPhase('idle');
           setLoadError('');
           setLoadPerfMetrics(null);
+          revisionQuerySeqRef.current += 1;
+          setRevisionOptions([]);
+          setRevisionOptionsStatus('idle');
+          setRevisionHasMore(false);
+          setRevisionNextBeforeId(null);
+          setRevisionQueryDateTime('');
+          setRevisionQueryError('');
+          setIsLoadingMoreRevisions(false);
+          setIsSearchingRevisionDateTime(false);
         }
       } catch (error) {
         if (!cancelled && seq === loadSeqRef.current) {
@@ -625,6 +909,9 @@ export default function App() {
           setHasLoadedDiff(false);
           setLoadPhase('error');
           setLoadError(error instanceof Error ? error.message : String(error));
+          revisionQuerySeqRef.current += 1;
+          setRevisionOptionsStatus('error');
+          setRevisionQueryError(error instanceof Error ? error.message : String(error));
         }
       }
 
@@ -639,6 +926,30 @@ export default function App() {
     };
   }, [applyDiffData, beginDiffLoad]);
 
+  useEffect(() => {
+    if (!window.svnDiff?.onCliArgsUpdated) return;
+    return window.svnDiff.onCliArgsUpdated(() => {
+      void reloadCliDiffData();
+    });
+  }, [reloadCliDiffData]);
+
+  useEffect(() => {
+    if (!isElectron || revisionOptionsStatus !== 'idle' || !canSwitchRevisions) return;
+    if (!window.svnDiff?.queryRevisionOptions) return;
+
+    debugLog('revision-options:request');
+
+    void queryRevisionOptionsPage(
+      {
+        limit: 50,
+        includeSpecials: true,
+      },
+      {
+        showInitialLoading: true,
+      },
+    );
+  }, [canSwitchRevisions, isElectron, queryRevisionOptionsPage, revisionOptionsStatus]);
+
   // Clear token cache when theme changes
   useEffect(() => { clearTokenCache(); }, [themeKey]);
 
@@ -649,6 +960,46 @@ export default function App() {
   useEffect(() => {
     workbookCompareModeRef.current = workbookCompareMode;
   }, [workbookCompareMode]);
+
+  const handleLoadMoreRevisionOptions = useCallback(() => {
+    if (!window.svnDiff?.queryRevisionOptions) return;
+    if (isLoadingMoreRevisions || !revisionHasMore || !revisionNextBeforeId) return;
+    void queryRevisionOptionsPage(
+      {
+        limit: 50,
+        beforeRevisionId: revisionNextBeforeId,
+        includeSpecials: false,
+      },
+      {
+        append: true,
+      },
+    );
+  }, [
+    isLoadingMoreRevisions,
+    queryRevisionOptionsPage,
+    revisionHasMore,
+    revisionNextBeforeId,
+  ]);
+
+  const handleRevisionDateTimeQuery = useCallback((nextDateTime: string) => {
+    if (!window.svnDiff?.queryRevisionOptions) return;
+    const trimmed = nextDateTime.trim();
+    void queryRevisionOptionsPage(
+      trimmed
+        ? {
+            limit: 50,
+            anchorDateTime: trimmed,
+            includeSpecials: true,
+          }
+        : {
+            limit: 50,
+            includeSpecials: true,
+          },
+      {
+        showSearchLoading: true,
+      },
+    );
+  }, [queryRevisionOptionsPage]);
 
   useEffect(() => {
     saveStoredAppSettings({
@@ -689,26 +1040,45 @@ export default function App() {
     [diffLines, precomputedWorkbookDelta, workbookCompareMode, workbookSections],
   );
   const isWorkbookMode = workbookSections.length > 0;
-  const workbookHunkTargets = useMemo(
-    () => hunks.map(hunk => findWorkbookHunkTargetCell(
-      hunk,
+  const workbookDiffRegions = useMemo(
+    () => buildWorkbookDiffRegions(
       workbookSections,
-        workbookSectionRowIndex,
-        baseVersionLabel,
-        mineVersionLabel,
-        workbookCompareMode,
-      )),
-    [baseVersionLabel, hunks, mineVersionLabel, workbookCompareMode, workbookSectionRowIndex, workbookSections],
+      workbookSectionRowIndex,
+      baseVersionLabel,
+      mineVersionLabel,
+      workbookCompareMode,
+      baseWorkbookMetadata,
+      mineWorkbookMetadata,
+    ),
+    [
+      baseVersionLabel,
+      baseWorkbookMetadata,
+      mineVersionLabel,
+      mineWorkbookMetadata,
+      workbookCompareMode,
+      workbookSectionRowIndex,
+      workbookSections,
+    ],
   );
-  const currentHunkTargetLabel = useMemo(() => {
+  const activeWorkbookDiffRegion = isWorkbookMode
+    ? (workbookDiffRegions[hunkIdx] ?? null)
+    : null;
+  const activeWorkbookTargetCell = activeWorkbookDiffRegion?.anchorSelection ?? null;
+  const activeWorkbookGuidedRange = useMemo(() => (
+    activeWorkbookDiffRegion
+      ? {
+          startIdx: activeWorkbookDiffRegion.lineStartIdx,
+          endIdx: activeWorkbookDiffRegion.lineEndIdx,
+          addCount: 0,
+          delCount: 0,
+        }
+      : null
+  ), [activeWorkbookDiffRegion]);
+  const navigationCount = isWorkbookMode ? workbookDiffRegions.length : totalHunks;
+  const currentNavigationLabel = useMemo(() => {
     if (!isWorkbookMode) return '';
-    const targetCell = workbookHunkTargets[hunkIdx];
-    if (!targetCell) return '';
-    const showSheetName = workbookSections.length > 1;
-    return showSheetName
-      ? `${targetCell.sheetName}!${targetCell.address}`
-      : targetCell.address;
-  }, [hunkIdx, isWorkbookMode, workbookHunkTargets, workbookSections.length]);
+    return '';
+  }, [isWorkbookMode]);
 
   const totalLines = useMemo(() => {
     let max = 0;
@@ -756,14 +1126,22 @@ export default function App() {
     [],
   );
   const handleLayoutChange = useCallback((nextLayout: LayoutMode) => {
-    setMountedWorkbookLayouts((prev) => (
-      prev[nextLayout]
-        ? prev
-        : { ...prev, [nextLayout]: true }
-    ));
     startTransition(() => {
       setLayout(nextLayout);
     });
+  }, []);
+  const handleWorkbookLayoutSnapshotChange = useCallback((
+    snapshot: WorkbookCompareLayoutSnapshot | WorkbookHorizontalLayoutSnapshot,
+  ) => {
+    if (snapshot.layout === 'split-h') {
+      workbookLayoutSnapshotsRef.current['split-h'] = snapshot;
+      return;
+    }
+    if (snapshot.layout === 'unified') {
+      workbookLayoutSnapshotsRef.current.unified = snapshot;
+      return;
+    }
+    workbookLayoutSnapshotsRef.current['split-v'] = snapshot;
   }, []);
 
   const handleWorkbookNavigationReady = useCallback(
@@ -772,6 +1150,20 @@ export default function App() {
     },
     [],
   );
+  const handleCollapseNavigationReady = useCallback(
+    (fn: ((direction: 'prev' | 'next') => void) | null) => {
+      collapseNavigationRef.current = fn;
+    },
+    [],
+  );
+  const handleWorkbookSelectionChange = useCallback((nextSelection: WorkbookSelectedCell | null) => {
+    setSelectedCell(nextSelection);
+    if (!nextSelection || !isWorkbookMode || nextSelection.kind !== 'cell') return;
+    const regionIndex = findWorkbookDiffRegionIndexForSelection(workbookDiffRegions, nextSelection);
+    if (regionIndex >= 0) {
+      setHunkIdx(regionIndex);
+    }
+  }, [isWorkbookMode, workbookDiffRegions]);
 
   const handleRevisionCompareChange = useCallback(async (
     nextBaseRevisionId: string,
@@ -781,7 +1173,11 @@ export default function App() {
     setIsSwitchingRevisions(true);
     const seq = await beginDiffLoad();
     try {
-      const nextData = await window.svnDiff.loadRevisionDiff(nextBaseRevisionId, nextMineRevisionId);
+      const nextData = await window.svnDiff.loadRevisionDiff(
+        nextBaseRevisionId,
+        nextMineRevisionId,
+        workbookCompareModeRef.current,
+      );
       if (seq !== loadSeqRef.current) return;
       await applyDiffData(nextData, {
         seq,
@@ -853,6 +1249,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    setHunkIdx((prev) => {
+      if (navigationCount <= 0) return 0;
+      return Math.min(prev, navigationCount - 1);
+    });
+  }, [navigationCount]);
+
+  useEffect(() => {
     if (workbookSections.length === 0) {
       setActiveWorkbookSheetName(null);
       return;
@@ -865,32 +1268,6 @@ export default function App() {
       return workbookSections[0]?.name ?? null;
     });
   }, [workbookSections]);
-
-  useEffect(() => {
-    if (!isWorkbookMode) return;
-    setMountedWorkbookLayouts((prev) => (
-      prev[layout]
-        ? prev
-        : { ...prev, [layout]: true }
-    ));
-  }, [isWorkbookMode, layout]);
-
-  useEffect(() => {
-    if (!hasLoadedDiff || !isWorkbookMode) return;
-    if (mountedWorkbookLayouts.unified && mountedWorkbookLayouts['split-h'] && mountedWorkbookLayouts['split-v']) return;
-
-    const timer = setTimeout(() => {
-      startTransition(() => {
-        setMountedWorkbookLayouts({
-          unified: true,
-          'split-h': true,
-          'split-v': true,
-        });
-      });
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [hasLoadedDiff, isWorkbookMode, mountedWorkbookLayouts]);
 
   useEffect(() => {
     if (!isWorkbookMode || !selectedCell?.sheetName) return;
@@ -908,12 +1285,26 @@ export default function App() {
 
   useEffect(() => {
     if (!isWorkbookMode) return;
-    const targetLineIdx = hunkPositions[hunkIdx];
-    if (targetLineIdx == null) return;
-    const sheetName = workbookSections[findWorkbookSectionIndex(workbookSections, targetLineIdx)]?.name;
+    const sheetName = activeWorkbookDiffRegion?.sheetName
+      ?? (() => {
+        const targetLineIdx = hunkPositions[hunkIdx];
+        if (targetLineIdx == null) return null;
+        return workbookSections[findWorkbookSectionIndex(workbookSections, targetLineIdx)]?.name ?? null;
+      })();
     if (!sheetName) return;
     setActiveWorkbookSheetName((prev) => (prev === sheetName ? prev : sheetName));
-  }, [hunkIdx, hunkPositions, isWorkbookMode, workbookSections]);
+  }, [
+    activeWorkbookDiffRegion?.sheetName,
+    hunkIdx,
+    hunkPositions,
+    isWorkbookMode,
+    workbookSections,
+  ]);
+
+  useEffect(() => {
+    if (!hasLoadedDiff) return;
+    setGuidedPulseNonce((value) => value + 1);
+  }, [activeWorkbookDiffRegion?.id, hasLoadedDiff, hunkIdx, isWorkbookMode]);
 
   // ── Keyboard shortcuts ─────────────────────────────────────────────────────
 
@@ -947,9 +1338,21 @@ export default function App() {
           return;
         }
       }
+      if (!showGoto && !showHelp && !isEditableTarget(e.target) && e.altKey && !e.ctrlKey && !e.metaKey) {
+        if (e.code === 'BracketRight') {
+          e.preventDefault();
+          collapseNavigationRef.current?.('next');
+          return;
+        }
+        if (e.code === 'BracketLeft') {
+          e.preventDefault();
+          collapseNavigationRef.current?.('prev');
+          return;
+        }
+      }
       if (e.key === 'F7') {
         e.preventDefault();
-        setHunkIdx(i => cycleHunkIndex(i, totalHunks, e.shiftKey ? -1 : 1));
+        setHunkIdx(i => cycleHunkIndex(i, navigationCount, e.shiftKey ? -1 : 1));
         return;
       }
       if (e.key === 'f' && (e.ctrlKey || e.metaKey)) {
@@ -978,7 +1381,7 @@ export default function App() {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [handleSearchNav, isWorkbookMode, selectedCell, showGoto, showHelp, totalHunks]);
+  }, [handleSearchNav, isWorkbookMode, navigationCount, selectedCell, showGoto, showHelp]);
 
   // ── Shared panel props ─────────────────────────────────────────────────────
 
@@ -987,23 +1390,18 @@ export default function App() {
     searchMatches, activeSearchIdx, hunkPositions,
     showWhitespace, fontSize,
     guidedLineIdx: null,
-    guidedHunkRange: null,
-    guidedPulseNonce: 0,
+    guidedHunkRange: isWorkbookMode ? activeWorkbookGuidedRange : (hunks[hunkIdx] ?? null),
+    guidedPulseNonce,
     onScrollerReady: handleScrollerReady,
+    onCollapseNavigationReady: handleCollapseNavigationReady,
   };
 
   useEffect(() => {
-    const targetHunk = hunks[hunkIdx];
-    if (!targetHunk) {
-      return;
-    }
-
-    let raf2 = 0;
     if (isWorkbookMode) {
-      const targetCell = workbookHunkTargets[hunkIdx];
+      const targetCell = activeWorkbookTargetCell;
       if (targetCell) {
         setActiveWorkbookSheetName((prev) => (prev === targetCell.sheetName ? prev : targetCell.sheetName));
-        setSelectedCell(prev => (
+        setSelectedCell((prev) => (
           prev
           && prev.kind === targetCell.kind
           && prev.sheetName === targetCell.sheetName
@@ -1014,8 +1412,12 @@ export default function App() {
             : targetCell
         ));
       }
+      return;
     }
 
+    let raf2 = 0;
+    const targetHunk = hunks[hunkIdx];
+    if (!targetHunk) return;
     const targetLineIdx = targetHunk.startIdx;
     const raf1 = requestAnimationFrame(() => {
       raf2 = requestAnimationFrame(() => {
@@ -1026,7 +1428,12 @@ export default function App() {
       cancelAnimationFrame(raf1);
       if (raf2) cancelAnimationFrame(raf2);
     };
-  }, [hunkIdx, hunks, isWorkbookMode, workbookHunkTargets]);
+  }, [
+    activeWorkbookTargetCell,
+    hunkIdx,
+    hunks,
+    isWorkbookMode,
+  ]);
 
   useEffect(() => {
     setSelectedCell(null);
@@ -1052,16 +1459,16 @@ export default function App() {
           fileName={displayFileName}
           themeKey={themeKey}         setThemeKey={setThemeKey}
           layout={layout}             setLayout={handleLayoutChange}
-          hunkIdx={hunkIdx}           totalHunks={totalHunks}
-          hunkTargetLabel={currentHunkTargetLabel}
-          onPrev={() => setHunkIdx(i => cycleHunkIndex(i, totalHunks, -1))}
-          onNext={() => setHunkIdx(i => cycleHunkIndex(i, totalHunks, 1))}
+          hunkIdx={hunkIdx}           totalHunks={navigationCount}
+          hunkTargetLabel={currentNavigationLabel}
+          onPrev={() => setHunkIdx(i => cycleHunkIndex(i, navigationCount, -1))}
+          onNext={() => setHunkIdx(i => cycleHunkIndex(i, navigationCount, 1))}
           showSearch={showSearch}     setShowSearch={setShowSearch}
           collapseCtx={collapseCtx}   setCollapseCtx={setCollapseCtx}
           showWhitespace={showWhitespace} setShowWhitespace={setShowWhitespace}
           showHiddenColumns={showHiddenColumns} setShowHiddenColumns={setShowHiddenColumns}
           workbookCompareMode={workbookCompareMode}
-          setWorkbookCompareMode={setWorkbookCompareMode}
+          setWorkbookCompareMode={handleWorkbookCompareModeChange}
           fontSize={fontSize}         setFontSize={setFontSize}
           onGoto={() => setShowGoto(v => !v)}
           onHelp={() => setShowHelp(v => !v)}
@@ -1071,7 +1478,6 @@ export default function App() {
 
         {isElectron && isDevMode && (
           <DevLoadBar
-            onLoadDemo={loadStandaloneDemo}
             onLoadWorkingCopyDiff={loadElectronWorkingCopyDiff}
           />
         )}
@@ -1098,8 +1504,16 @@ export default function App() {
             mineRevisionInfo={mineRevisionInfo}
             revisionOptions={revisionOptions}
             canSwitchRevisions={canSwitchRevisions && isElectron}
+            isLoadingRevisionOptions={revisionOptionsStatus === 'loading'}
             isSwitchingRevisions={isSwitchingRevisions || isLoadingDiff}
+            revisionHasMore={revisionHasMore}
+            revisionQueryDateTime={revisionQueryDateTime}
+            revisionQueryError={revisionQueryError}
+            isLoadingMoreRevisions={isLoadingMoreRevisions}
+            isSearchingRevisionDateTime={isSearchingRevisionDateTime}
             onRevisionChange={handleRevisionCompareChange}
+            onLoadMoreRevisions={handleLoadMoreRevisionOptions}
+            onRevisionDateTimeQuery={handleRevisionDateTimeQuery}
           />
         )}
 
@@ -1114,6 +1528,9 @@ export default function App() {
             onFreezePane={handleFreezePane}
             onResetFreeze={handleResetFreeze}
           />
+        )}
+        {hasLoadedDiff && isWorkbookMode && workbookArtifactDiff?.hasArtifactOnlyDiff && !artifactNoticeDismissed && (
+          <WorkbookArtifactNoticeBar onClose={() => setArtifactNoticeDismissed(true)} />
         )}
 
         {!hasLoadedDiff && loadPhase === 'loading' ? (
@@ -1186,19 +1603,17 @@ export default function App() {
 
             {isWorkbookMode && (
               <div style={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0 }}>
-                {mountedWorkbookLayouts.unified && (
-                  <div
-                    style={layout === 'unified'
-                      ? { position: 'relative', display: 'flex', width: '100%', height: '100%', minWidth: 0, minHeight: 0 }
-                      : { position: 'absolute', inset: 0, display: 'flex', minWidth: 0, minHeight: 0, visibility: 'hidden', pointerEvents: 'none' }}>
+                {layout === 'unified' && (
+                  <div style={{ position: 'relative', display: 'flex', width: '100%', height: '100%', minWidth: 0, minHeight: 0 }}>
                     <WorkbookComparePanel
                       {...panelProps}
-                      active={layout === 'unified'}
+                      active
                       baseVersionLabel={baseVersionLabel}
                       mineVersionLabel={mineVersionLabel}
                       mode="stacked"
+                      activeDiffRegion={activeWorkbookDiffRegion}
                       selectedCell={selectedCell}
-                      onSelectCell={setSelectedCell}
+                      onSelectCell={handleWorkbookSelectionChange}
                       onWorkbookNavigationReady={handleWorkbookNavigationReady}
                       baseWorkbookMetadata={baseWorkbookMetadata}
                       mineWorkbookMetadata={mineWorkbookMetadata}
@@ -1212,23 +1627,23 @@ export default function App() {
                       compareMode={workbookCompareMode}
                       showPerfDebug={isDevMode}
                       showHiddenColumns={showHiddenColumns}
-                      tooltipDisabled={isLoadingDiff || layout !== 'unified'}
+                      tooltipDisabled={isLoadingDiff}
+                      layoutSnapshot={workbookLayoutSnapshotsRef.current.unified as WorkbookCompareLayoutSnapshot | null}
+                      onLayoutSnapshotChange={handleWorkbookLayoutSnapshotChange}
                     />
                   </div>
                 )}
-                {mountedWorkbookLayouts['split-v'] && (
-                  <div
-                    style={layout === 'split-v'
-                      ? { position: 'relative', display: 'flex', width: '100%', height: '100%', minWidth: 0, minHeight: 0 }
-                      : { position: 'absolute', inset: 0, display: 'flex', minWidth: 0, minHeight: 0, visibility: 'hidden', pointerEvents: 'none' }}>
+                {layout === 'split-v' && (
+                  <div style={{ position: 'relative', display: 'flex', width: '100%', height: '100%', minWidth: 0, minHeight: 0 }}>
                     <WorkbookComparePanel
                       {...panelProps}
-                      active={layout === 'split-v'}
+                      active
                       baseVersionLabel={baseVersionLabel}
                       mineVersionLabel={mineVersionLabel}
                       mode="columns"
+                      activeDiffRegion={activeWorkbookDiffRegion}
                       selectedCell={selectedCell}
-                      onSelectCell={setSelectedCell}
+                      onSelectCell={handleWorkbookSelectionChange}
                       onWorkbookNavigationReady={handleWorkbookNavigationReady}
                       baseWorkbookMetadata={baseWorkbookMetadata}
                       mineWorkbookMetadata={mineWorkbookMetadata}
@@ -1242,22 +1657,22 @@ export default function App() {
                       compareMode={workbookCompareMode}
                       showPerfDebug={isDevMode}
                       showHiddenColumns={showHiddenColumns}
-                      tooltipDisabled={isLoadingDiff || layout !== 'split-v'}
+                      tooltipDisabled={isLoadingDiff}
+                      layoutSnapshot={workbookLayoutSnapshotsRef.current['split-v'] as WorkbookCompareLayoutSnapshot | null}
+                      onLayoutSnapshotChange={handleWorkbookLayoutSnapshotChange}
                     />
                   </div>
                 )}
-                {mountedWorkbookLayouts['split-h'] && (
-                  <div
-                    style={layout === 'split-h'
-                      ? { position: 'relative', display: 'flex', width: '100%', height: '100%', minWidth: 0, minHeight: 0 }
-                      : { position: 'absolute', inset: 0, display: 'flex', minWidth: 0, minHeight: 0, visibility: 'hidden', pointerEvents: 'none' }}>
+                {layout === 'split-h' && (
+                  <div style={{ position: 'relative', display: 'flex', width: '100%', height: '100%', minWidth: 0, minHeight: 0 }}>
                     <WorkbookHorizontalPanel
                       {...panelProps}
-                      active={layout === 'split-h'}
+                      active
                       baseVersionLabel={baseVersionLabel}
                       mineVersionLabel={mineVersionLabel}
+                      activeDiffRegion={activeWorkbookDiffRegion}
                       selectedCell={selectedCell}
-                      onSelectCell={setSelectedCell}
+                      onSelectCell={handleWorkbookSelectionChange}
                       onWorkbookNavigationReady={handleWorkbookNavigationReady}
                       baseWorkbookMetadata={baseWorkbookMetadata}
                       mineWorkbookMetadata={mineWorkbookMetadata}
@@ -1271,7 +1686,9 @@ export default function App() {
                       compareMode={workbookCompareMode}
                       showPerfDebug={isDevMode}
                       showHiddenColumns={showHiddenColumns}
-                      tooltipDisabled={isLoadingDiff || layout !== 'split-h'}
+                      tooltipDisabled={isLoadingDiff}
+                      layoutSnapshot={workbookLayoutSnapshotsRef.current['split-h'] as WorkbookHorizontalLayoutSnapshot | null}
+                      onLayoutSnapshotChange={handleWorkbookLayoutSnapshotChange}
                     />
                   </div>
                 )}
@@ -1332,6 +1749,7 @@ export default function App() {
           mineVersionLabel={mineVersionLabel}
           isWorkbookMode={isWorkbookMode}
           workbookCompareMode={workbookCompareMode}
+          workbookArtifactDiff={workbookArtifactDiff}
         />
 
         {/* Modal backdrop */}
@@ -1352,7 +1770,7 @@ export default function App() {
         {showHelp && (
           <ShortcutsPanel onClose={() => setShowHelp(false)} />
         )}
-        <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}@keyframes guidedPulse{0%{box-shadow:0 0 0 0 ${T.acc2}00,inset 0 0 0 2px ${T.acc2}f2}50%{box-shadow:0 0 0 6px ${T.acc2}22,inset 0 0 0 2px ${T.acc2}}100%{box-shadow:0 0 0 0 ${T.acc2}00,inset 0 0 0 2px ${T.acc2}b8}}`}</style>
+        <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}@keyframes guidedPulse{0%{box-shadow:0 0 0 0 ${T.acc2}00,inset 0 0 0 2px ${T.acc2}f2}50%{box-shadow:0 0 0 8px ${T.acc2}26,inset 0 0 0 2px ${T.acc2}}100%{box-shadow:0 0 0 0 ${T.acc2}00,inset 0 0 0 2px ${T.acc2}b8}}@keyframes regionDashTravel{from{stroke-dashoffset:0}to{stroke-dashoffset:-100}}`}</style>
       </div>
     </ThemeContext.Provider>
   );
