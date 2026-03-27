@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { computeVirtualWindow } from '../src/hooks/useVirtual';
+import { computeVirtualWindow } from '../src/hooks/virtualization/useVirtual';
 import {
   computeHorizontalWindow,
   preparePositionedMergedColumnRanges,
-} from '../src/hooks/useHorizontalVirtualColumns';
+} from '../src/hooks/virtualization/useHorizontalVirtualColumns';
 
 test('computeVirtualWindow keeps the rendered range stable for tiny scroll deltas', () => {
   const atTop = computeVirtualWindow(1000, 21, 600, 0, 24, 2);

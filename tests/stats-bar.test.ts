@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import StatsBar from '../src/components/StatsBar';
+import StatsBar from '../src/components/navigation/StatsBar';
 import type { DiffLine } from '../src/types';
 import { I18nProvider } from '../src/context/i18n';
 import { ThemeContext } from '../src/context/theme';
-import { buildTextDiffPresentation } from '../src/engine/textChangeAlignment';
+import { buildTextDiffPresentation } from '../src/engine/text/textChangeAlignment';
 import { THEMES } from '../src/theme';
 
 function renderStatsBar(showArtifactOnlyDiff: boolean, diffLines: DiffLine[] = []): string {
@@ -22,6 +22,8 @@ function renderStatsBar(showArtifactOnlyDiff: boolean, diffLines: DiffLine[] = [
           textDiffPresentation: buildTextDiffPresentation(diffLines),
           baseName: 'Base',
           mineName: 'Local',
+          baseTitle: 'Compare Version',
+          mineTitle: 'Working Copy',
           fileName: '[1]新物品表.xlsm',
           totalLines: 0,
           baseVersionLabel: 'r1825384',

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   applyWorkbookSelection,
   createWorkbookSelectionState,
-} from '../src/utils/workbookSelectionState';
+} from '../src/utils/workbook/workbookSelectionState';
 
 function buildCell(rowNumber: number, side: 'base' | 'mine' = 'base') {
   return {

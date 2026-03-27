@@ -6,8 +6,8 @@ import {
   overlayHiddenWorkbookRowsOnItems,
   revealWorkbookSelection,
   splitWorkbookRowsByVisibility,
-} from '../src/utils/workbookManualVisibility';
-import { buildCollapsedItems, buildCollapsibleRowBlocks } from '../src/utils/collapsibleRows';
+} from '../src/utils/workbook/workbookManualVisibility';
+import { buildCollapsedItems, buildCollapsibleRowBlocks } from '../src/utils/collapse/collapsibleRows';
 
 test('splitWorkbookRowsByVisibility preserves visible and hidden row runs', () => {
   const rows = [

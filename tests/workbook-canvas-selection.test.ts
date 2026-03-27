@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { resolveWorkbookCanvasSelectionKind } from '../src/utils/workbookCanvasSelection';
+import { resolveWorkbookCanvasSelectionKind } from '../src/utils/workbook/workbookCanvasSelection';
 
 test('resolveWorkbookCanvasSelectionKind only treats the row header gutter as row selection', () => {
   assert.equal(resolveWorkbookCanvasSelectionKind({

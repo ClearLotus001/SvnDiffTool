@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import type { HorizontalVirtualColumnEntry } from '../src/hooks/useHorizontalVirtualColumns';
+import type { HorizontalVirtualColumnEntry } from '../src/hooks/virtualization/useHorizontalVirtualColumns';
 import {
   findWorkbookMergeRange,
   getWorkbookCanvasSpanGeometry,
   getWorkbookColumnSpanBounds,
   getWorkbookMergeDrawInfo,
   getWorkbookSelectionSpanForSelection,
-} from '../src/utils/workbookMergeLayout';
+} from '../src/utils/workbook/workbookMergeLayout';
 
 const mergeRanges = [
   {

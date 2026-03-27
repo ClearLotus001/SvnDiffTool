@@ -6,8 +6,8 @@ import {
   alignTextChangeBlock,
   buildReplacementPairIndex,
   summarizeDiffChanges,
-} from '../src/engine/textChangeAlignment';
-import { buildSplitRows } from '../src/engine/diff';
+} from '../src/engine/text/textChangeAlignment';
+import { buildSplitRows } from '../src/engine/text/diff';
 
 function makeDeleteLine(base: string, baseLineNo: number): DiffLine {
   return {

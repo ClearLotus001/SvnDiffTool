@@ -3,17 +3,17 @@ import assert from 'node:assert/strict';
 
 import { zipSync, strToU8 } from 'fflate';
 
-import { computeWorkbookDiff } from '../src/engine/workbookDiff';
-import { workbookBytesToText } from '../src/utils/diffSource';
-import { getWorkbookCellChangeKind, isWorkbookStrictOnlyDifference } from '../src/utils/workbookCellContract';
-import { parseWorkbookDisplayLine } from '../src/utils/workbookDisplay';
-import { getWorkbookSections } from '../src/utils/workbookSections';
-import { buildWorkbookSectionRowIndex } from '../src/utils/workbookSheetIndex';
+import { computeWorkbookDiff } from '../src/engine/workbook/workbookDiff';
+import { workbookBytesToText } from '../src/utils/diff/diffSource';
+import { getWorkbookCellChangeKind, isWorkbookStrictOnlyDifference } from '../src/utils/workbook/workbookCellContract';
+import { parseWorkbookDisplayLine } from '../src/utils/workbook/workbookDisplay';
+import { getWorkbookSections } from '../src/utils/workbook/workbookSections';
+import { buildWorkbookSectionRowIndex } from '../src/utils/workbook/workbookSheetIndex';
 import {
   buildWorkbookCompareCells,
   buildWorkbookCompareRowState,
   parseWorkbookRowLine,
-} from '../src/utils/workbookCompare';
+} from '../src/utils/workbook/workbookCompare';
 
 function escapeXml(value: string) {
   return value

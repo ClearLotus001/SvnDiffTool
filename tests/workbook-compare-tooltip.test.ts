@@ -3,13 +3,16 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import WorkbookCompareTooltip from '../src/components/WorkbookCompareTooltip';
+import WorkbookCompareTooltip from '../src/components/workbook/WorkbookCompareTooltip';
 import { I18nProvider } from '../src/context/i18n';
 import { ThemeContext } from '../src/context/theme';
 import { THEMES } from '../src/theme';
 import type { WorkbookCellDelta } from '../src/types';
 
-function renderTooltip(compareCell: WorkbookCellDelta): string {
+function renderTooltip(
+  compareCell: WorkbookCellDelta,
+  props?: { baseTitle?: string; mineTitle?: string },
+): string {
   return renderToStaticMarkup(
     React.createElement(
       ThemeContext.Provider,
@@ -17,7 +20,7 @@ function renderTooltip(compareCell: WorkbookCellDelta): string {
       React.createElement(
         I18nProvider,
         null,
-        React.createElement(WorkbookCompareTooltip, { compareCell }),
+        React.createElement(WorkbookCompareTooltip, { compareCell, ...props }),
       ),
     ),
   );
@@ -49,9 +52,9 @@ test('tooltip shows cleared badge and hint for paired delete-like cells', () => 
   }));
 
   assert.match(html, /删空/);
-  assert.match(html, /提示：本地侧已将该单元格清空，基线侧仍有内容。/);
-  assert.match(html, /基线/);
-  assert.match(html, /本地/);
+  assert.match(html, /提示：本地工作副本已将该单元格清空，对比版本仍有内容。/);
+  assert.match(html, /对比版本/);
+  assert.match(html, /本地工作副本/);
   assert.match(html, /before/);
   assert.match(html, /—/);
 });
@@ -66,9 +69,28 @@ test('tooltip shows added badge and hint for paired add-like cells', () => {
   }));
 
   assert.match(html, /新增内容/);
-  assert.match(html, /提示：本地侧为该单元格新增了内容，基线侧原本为空。/);
-  assert.match(html, /基线/);
-  assert.match(html, /本地/);
+  assert.match(html, /提示：本地工作副本为该单元格新增了内容，对比版本原本为空。/);
+  assert.match(html, /对比版本/);
+  assert.match(html, /本地工作副本/);
   assert.match(html, /after/);
   assert.match(html, /—/);
+});
+
+test('tooltip uses active side titles for revision-vs-revision compare', () => {
+  const html = renderTooltip(createCompareCell({
+    baseCell: { value: 'before', formula: '' },
+    mineCell: { value: '', formula: '' },
+    kind: 'delete',
+    hasBaseContent: true,
+    hasMineContent: false,
+  }), {
+    baseTitle: '版本 A',
+    mineTitle: '版本 B',
+  });
+
+  assert.match(html, /提示：版本 B已将该单元格清空，版本 A仍有内容。/);
+  assert.match(html, /版本 A/);
+  assert.match(html, /版本 B/);
+  assert.doesNotMatch(html, /对比版本/);
+  assert.doesNotMatch(html, /本地工作副本/);
 });

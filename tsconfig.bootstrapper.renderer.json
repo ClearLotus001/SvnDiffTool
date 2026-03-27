@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "outDir": ".build-tmp/bootstrapper-dist/renderer",
+    "rootDir": "bootstrapper/renderer"
+  },
+  "include": [
+    "bootstrapper/renderer/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "release",
+    "dist",
+    "dist-electron",
+    "dist-bootstrapper",
+    ".build-tmp"
+  ]
+}

@@ -6,8 +6,8 @@ import {
   getCollapseExpandStep,
   revealCollapsedLine,
   type CollapseExpansionState,
-} from '../src/utils/collapseState';
-import { buildCollapsedItems, buildCollapsibleRowBlocks } from '../src/utils/collapsibleRows';
+} from '../src/utils/collapse/collapseState';
+import { buildCollapsedItems, buildCollapsibleRowBlocks } from '../src/utils/collapse/collapsibleRows';
 
 interface MockRow {
   lineIdx: number;

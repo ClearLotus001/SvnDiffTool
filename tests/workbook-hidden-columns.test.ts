@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildWorkbookSheetPresentation, type WorkbookMetadataMap } from '../src/utils/workbookMeta';
-import { createWorkbookRowLine, createWorkbookSheetLine } from '../src/utils/workbookDisplay';
-import { computeWorkbookDiff } from '../src/engine/workbookDiff';
-import { getWorkbookSections } from '../src/utils/workbookSections';
-import { buildWorkbookSectionRowIndex } from '../src/utils/workbookSheetIndex';
+import { buildWorkbookSheetPresentation, type WorkbookMetadataMap } from '../src/utils/workbook/workbookMeta';
+import { createWorkbookRowLine, createWorkbookSheetLine } from '../src/utils/workbook/workbookDisplay';
+import { computeWorkbookDiff } from '../src/engine/workbook/workbookDiff';
+import { getWorkbookSections } from '../src/utils/workbook/workbookSections';
+import { buildWorkbookSectionRowIndex } from '../src/utils/workbook/workbookSheetIndex';
 
 test('buildWorkbookSheetPresentation can include hidden columns when requested', () => {
   const base = [

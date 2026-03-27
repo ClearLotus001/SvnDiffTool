@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { THEMES } from '../src/theme';
-import { getWorkbookCompareCellsTone } from '../src/utils/workbookCompareTone';
-import { resolveWorkbookCompareCellVisual } from '../src/utils/workbookCompareVisuals';
+import { getWorkbookCompareCellsTone } from '../src/utils/workbook/workbookCompareTone';
+import { resolveWorkbookCompareCellVisual } from '../src/utils/workbook/workbookCompareVisuals';
 
 const changedCell = {
   column: 2,

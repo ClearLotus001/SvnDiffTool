@@ -1,20 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { expandCollapseBlock, type CollapseExpansionState } from '../src/utils/collapseState';
-import { buildCollapsedItems, buildCollapsibleRowBlocks } from '../src/utils/collapsibleRows';
-import { buildWorkbookCollapseBlockPrefix } from '../src/utils/workbookCollapse';
+import { expandCollapseBlock, type CollapseExpansionState } from '../src/utils/collapse/collapseState';
+import { buildCollapsedItems, buildCollapsibleRowBlocks } from '../src/utils/collapse/collapsibleRows';
+import { buildWorkbookCollapseBlockPrefix } from '../src/utils/workbook/workbookCollapse';
 import {
   buildWorkbookCompareLayoutSnapshot,
   buildWorkbookHorizontalLayoutSnapshot,
   resolveWorkbookExpandedBlocksForContext,
-} from '../src/utils/workbookLayoutSnapshot';
+} from '../src/utils/workbook/workbookLayoutSnapshot';
 import {
   applyWorkbookExpandedBlocksChange,
   applyWorkbookLayoutSnapshot,
   createEmptyWorkbookLayoutSnapshots,
   getWorkbookSharedExpandedBlocks,
-} from '../src/utils/workbookLayoutState';
+} from '../src/utils/workbook/workbookLayoutState';
 
 interface MockRow {
   lineIdx: number;

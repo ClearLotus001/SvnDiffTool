@@ -1,0 +1,11 @@
+# Default owner for repository-wide changes.
+* @ClearLotus001
+
+# Review units
+/src/ @ClearLotus001
+/electron/ @ClearLotus001
+/rust/ @ClearLotus001
+/scripts/ @ClearLotus001
+/bootstrapper/ @ClearLotus001
+/.github/workflows/ @ClearLotus001
+/docs/code-review/ @ClearLotus001

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import WorkbookArtifactNoticeBar from '../src/components/WorkbookArtifactNoticeBar';
+import WorkbookArtifactNoticeBar from '../src/components/workbook/WorkbookArtifactNoticeBar';
 import { I18nProvider } from '../src/context/i18n';
 import { ThemeContext } from '../src/context/theme';
 import { THEMES } from '../src/theme';

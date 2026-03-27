@@ -6,7 +6,7 @@ import {
   buildWorkbookHorizontalLayoutSnapshot,
   cloneCollapseExpansionState,
   shouldRestoreWorkbookLayoutSnapshot,
-} from '../src/utils/workbookLayoutSnapshot';
+} from '../src/utils/workbook/workbookLayoutSnapshot';
 
 test('cloneCollapseExpansionState deep-clones reveal ranges', () => {
   const original = {

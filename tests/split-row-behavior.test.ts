@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import type { SplitRow } from '../src/types';
-import { getTextVerticalRenderMode } from '../src/utils/splitRowBehavior';
+import { getTextVerticalRenderMode } from '../src/utils/diff/splitRowBehavior';
 
 test('getTextVerticalRenderMode collapses pure delete rows into a single line', () => {
   const row: SplitRow = {

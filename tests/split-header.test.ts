@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import SplitHeader from '../src/components/SplitHeader';
+import SplitHeader from '../src/components/navigation/SplitHeader';
 import { I18nProvider } from '../src/context/i18n';
 import { ThemeContext } from '../src/context/theme';
 import { THEMES } from '../src/theme';

@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import type { WorkbookDiffRegion } from '../src/types';
-import { buildWorkbookRegionOverlayBox } from '../src/utils/workbookRegionOverlay';
+import { buildWorkbookRegionOverlayBox } from '../src/utils/workbook/workbookRegionOverlay';
+import { mergeWorkbookDiffRegionOverlayBoxes } from '../src/components/workbook/WorkbookDiffRegionOverlay';
 
 function buildRegion(overrides: Partial<WorkbookDiffRegion> = {}): WorkbookDiffRegion {
   return {
@@ -49,10 +50,10 @@ test('buildWorkbookRegionOverlayBox merges paired compare sides into one layout-
   });
 
   assert.ok(box);
-  assert.equal(box.left, 38);
-  assert.equal(box.top, 22);
-  assert.equal(box.width, 304);
-  assert.equal(box.height, 44);
+  assert.equal(box.left, 40);
+  assert.equal(box.top, 24);
+  assert.equal(box.width, 300);
+  assert.equal(box.height, 40);
 });
 
 test('buildWorkbookRegionOverlayBox keeps single-pane regions to one box', () => {
@@ -69,6 +70,15 @@ test('buildWorkbookRegionOverlayBox keeps single-pane regions to one box', () =>
   });
 
   assert.ok(box);
-  assert.equal(box.width, 204);
-  assert.equal(box.height, 44);
+  assert.equal(box.width, 200);
+  assert.equal(box.height, 40);
+});
+
+test('mergeWorkbookDiffRegionOverlayBoxes keeps staggered column islands separate', () => {
+  const merged = mergeWorkbookDiffRegionOverlayBoxes([
+    { key: 'top', left: 0, top: 0, width: 120, height: 21 },
+    { key: 'bottom-shifted', left: 52, top: 21, width: 120, height: 21 },
+  ]);
+
+  assert.equal(merged.length, 2);
 });

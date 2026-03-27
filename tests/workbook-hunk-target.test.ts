@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { computeHunks } from '../src/engine/diff';
-import { computeWorkbookDiff } from '../src/engine/workbookDiff';
-import { createWorkbookRowLine, createWorkbookSheetLine } from '../src/utils/workbookDisplay';
-import { findWorkbookHunkTargetCell } from '../src/utils/workbookHunkTarget';
-import { buildWorkbookSectionRowIndex } from '../src/utils/workbookSheetIndex';
-import { getWorkbookSections } from '../src/utils/workbookSections';
+import { computeHunks } from '../src/engine/text/diff';
+import { computeWorkbookDiff } from '../src/engine/workbook/workbookDiff';
+import { createWorkbookRowLine, createWorkbookSheetLine } from '../src/utils/workbook/workbookDisplay';
+import { findWorkbookHunkTargetCell } from '../src/utils/workbook/workbookHunkTarget';
+import { buildWorkbookSectionRowIndex } from '../src/utils/workbook/workbookSheetIndex';
+import { getWorkbookSections } from '../src/utils/workbook/workbookSections';
 
 function buildWorkbook(rows: Array<Array<string>>, sheetName = 'Thing') {
   return [

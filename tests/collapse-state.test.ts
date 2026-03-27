@@ -9,7 +9,7 @@ import {
   getExpandedHiddenCount,
   getCollapseRevealRanges,
   revealCollapsedLine,
-} from '../src/utils/collapseState';
+} from '../src/utils/collapse/collapseState';
 
 test('expandCollapseBlock fully expands small hidden ranges in one click', () => {
   const blockId = 'block-100-200';

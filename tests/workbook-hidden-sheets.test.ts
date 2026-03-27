@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 
 import { zipSync, strToU8 } from 'fflate';
 
-import { workbookBytesToText } from '../src/utils/diffSource';
-import { parseWorkbookMetadata } from '../src/utils/workbookMeta';
+import { workbookBytesToText } from '../src/utils/diff/diffSource';
+import { parseWorkbookMetadata } from '../src/utils/workbook/workbookMeta';
 
 function buildWorkbookZipWithHiddenSheet() {
   const files = {

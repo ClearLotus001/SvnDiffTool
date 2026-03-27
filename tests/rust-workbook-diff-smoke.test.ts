@@ -6,9 +6,9 @@ import { join } from 'node:path';
 
 import { zipSync, strToU8 } from 'fflate';
 import type { DiffLine } from '../src/types';
-import { getWorkbookSections } from '../src/utils/workbookSections';
-import { buildWorkbookSectionRowIndex } from '../src/utils/workbookSheetIndex';
-import { buildWorkbookCompareCells, parseWorkbookRowLine } from '../src/utils/workbookCompare';
+import { getWorkbookSections } from '../src/utils/workbook/workbookSections';
+import { buildWorkbookSectionRowIndex } from '../src/utils/workbook/workbookSheetIndex';
+import { buildWorkbookCompareCells, parseWorkbookRowLine } from '../src/utils/workbook/workbookCompare';
 
 interface RustDiffLinePayload {
   type?: string;

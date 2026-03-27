@@ -2,7 +2,7 @@
 // src/theme.ts
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { Theme, ThemeKey } from './types';
+import type { Theme, ThemeKey } from '@/types';
 
 export const THEMES: Record<ThemeKey, Theme> = {
   dark: {

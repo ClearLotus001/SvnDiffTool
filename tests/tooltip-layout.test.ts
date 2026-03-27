@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { computeTooltipLayout } from '../src/components/Tooltip';
+import { computeTooltipLayout } from '../src/components/shared/Tooltip';
 
 test('computeTooltipLayout centers short tooltips on buttons when space is available', () => {
   const rect = {

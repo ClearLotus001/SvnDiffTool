@@ -10,7 +10,7 @@ import {
   findPreviousCollapseIndexWithWrap,
   getCollapseIndexes,
   resolveActiveCollapsePosition,
-} from '../src/utils/collapseNavigation';
+} from '../src/utils/collapse/collapseNavigation';
 
 test('findNextCollapseIndex returns the first collapsed item after the current viewport', () => {
   const items = ['row', 'collapse', 'row', 'collapse', 'collapse'];

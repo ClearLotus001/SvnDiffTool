@@ -7,7 +7,7 @@ import {
   shouldRenderSingleBaseStackedRow,
   shouldRenderSingleEqualStackedRow,
   shouldRenderSingleMineStackedRow,
-} from '../src/utils/workbookRowBehavior';
+} from '../src/utils/workbook/workbookRowBehavior';
 
 test('shouldRenderSingleMineStackedRow only matches pure added rows', () => {
   const pureAddRow: SplitRow = {

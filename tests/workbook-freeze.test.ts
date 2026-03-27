@@ -1,17 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { expandCollapseBlock, type CollapseExpansionState } from '../src/utils/collapseState';
+import { expandCollapseBlock, type CollapseExpansionState } from '../src/utils/collapse/collapseState';
 import {
   buildCollapsedItems,
   buildCollapsibleRowBlocks,
   describeCollapsedRowBlocks,
   remapExpandedBlocksForCollapsedRows,
-} from '../src/utils/collapsibleRows';
+} from '../src/utils/collapse/collapsibleRows';
 import {
   applyWorkbookFreezePatch,
   applyWorkbookFreezeToExpandedBlocks,
-} from '../src/utils/workbookFreeze';
+} from '../src/utils/workbook/workbookFreeze';
 
 interface MockRow {
   lineIdx: number;

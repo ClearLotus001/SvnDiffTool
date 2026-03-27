@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 
 async function loadComputeDiff() {
   const require = createRequire(import.meta.url);
-  const diffExports = require('../src/engine/diff.ts') as typeof import('../src/engine/diff');
+  const diffExports = require('../src/engine/text/diff.ts') as typeof import('../src/engine/text/diff');
 
   if (typeof diffExports.computeDiff !== 'function') {
     throw new Error('Failed to load computeDiff test exports.');

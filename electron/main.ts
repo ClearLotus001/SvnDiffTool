@@ -1,28 +1,30 @@
 import { app, BrowserWindow, clipboard, dialog, nativeTheme, ipcMain, shell } from 'electron';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import { performance } from 'node:perf_hooks';
 import * as path from 'node:path';
 import { promisify } from 'node:util';
 import { XMLParser } from 'fast-xml-parser';
+import { EMPTY_CLI_ARGS, parseCliArgsFromArgv, type CliArgs } from './cliArgs';
+import { readInstallerBootstrapSync } from './installerBootstrap';
+import { getMaintenanceModeFromArgv, runMaintenance } from './maintenance';
+import {
+  cleanupStaleManagedTempFilesSync,
+  cleanupTrackedManagedTempFilesSync,
+  configureRuntimePaths,
+  getRuntimePathState,
+  removeManagedTempFile,
+  writeManagedTempFile,
+} from './runtimePaths';
 import { configureSvnDiffViewer, getSvnDiffViewerStatus, type SvnDiffViewerScope } from './svnDiffViewerConfig';
 import { detectWorkbookArtifactOnlyDiff, type WorkbookArtifactDiffSummary } from './workbookArtifactDiff';
 import { ensureLegacyUserDataMigration } from './userDataMigration';
 import { createPlatformUpdater } from './updater';
 import type { AppUpdateState } from './updater/types';
 
-interface CliArgs {
-  basePath: string;
-  minePath: string;
-  baseName: string;
-  mineName: string;
-  svnUrl: string;
-  fileName: string;
-}
-
 type SvnRevisionSourceKind = 'revision' | 'working-copy' | 'input-file';
 type WorkbookCompareMode = 'strict' | 'content';
+type CompareContext = 'standard_local_compare' | 'literal_two_file_compare' | 'revision_vs_revision_compare';
 
 interface SvnRevisionInfo {
   id: string;
@@ -49,11 +51,24 @@ interface RevisionOptionsPayload {
   queryDateTime: string | null;
 }
 
+interface RevisionSelectionPair {
+  baseRevisionId: string | null;
+  mineRevisionId: string | null;
+}
+
 interface DiffData {
   baseName: string;
   mineName: string;
   svnUrl: string;
   fileName: string;
+  sourceIdentity: string;
+  compareContext: CompareContext;
+  timelineTargetUrl: string | null;
+  workingCopyAvailable: boolean;
+  initialPair: RevisionSelectionPair | null;
+  resetPair: RevisionSelectionPair | null;
+  launchBaseName: string;
+  launchMineName: string;
   baseContent: string | null;
   mineContent: string | null;
   baseBytes: Uint8Array | null;
@@ -119,6 +134,8 @@ interface TitleBarOverlayPayload {
   height?: unknown;
 }
 
+type XmlNode = Record<string, unknown>;
+
 function logDebugTiming(message: string, payload?: unknown) {
   if (process.env.SVN_DIFF_DEBUG_TIMING !== '1') return;
   if (payload === undefined) {
@@ -133,6 +150,60 @@ function logRustDebugStderr(label: string, stderr: string) {
   const normalized = stderr.trim();
   if (!normalized) return;
   console.log(`[${label}] ${normalized}`);
+}
+
+function toSerializableDebugValue(value: unknown): unknown {
+  if (value == null) return value;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return value;
+  }
+  if (value instanceof Error) {
+    return {
+      name: value.name,
+      message: value.message,
+      stack: value.stack ?? '',
+    };
+  }
+  if (Array.isArray(value)) {
+    return value.map(item => toSerializableDebugValue(item));
+  }
+  if (typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, entryValue]) => [key, toSerializableDebugValue(entryValue)]),
+    );
+  }
+  return String(value);
+}
+
+function getExternalDiffDebugLogPaths(): string[] {
+  const runtimePaths = getRuntimePathState();
+  const candidateRoots = [
+    process.env.APPDATA ? path.join(process.env.APPDATA, 'svn-diff-tool', 'logs') : '',
+    runtimePaths.logsPath ?? '',
+    runtimePaths.userDataPath ? path.join(runtimePaths.userDataPath, 'logs') : '',
+    process.execPath ? path.dirname(process.execPath) : '',
+    path.join(process.cwd(), 'logs'),
+  ].filter(Boolean);
+
+  return Array.from(new Set(candidateRoots)).map(rootPath => path.join(rootPath, 'external-diff-debug.log'));
+}
+
+function writeExternalDiffDebugLog(event: string, payload?: unknown) {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    pid: process.pid,
+    event,
+    payload: payload === undefined ? null : toSerializableDebugValue(payload),
+  };
+
+  getExternalDiffDebugLogPaths().forEach((targetPath) => {
+    try {
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+      fs.appendFileSync(targetPath, `${JSON.stringify(entry)}\n`, 'utf-8');
+    } catch {
+      // Ignore best-effort debug logging failures.
+    }
+  });
 }
 
 interface DiffLine {
@@ -208,16 +279,8 @@ interface WorkbookPrecomputedDeltaPayload {
   sections: WorkbookSectionDeltaPayload[];
 }
 
-const argv = process.argv.slice(2);
-
-const cliArgs: CliArgs = {
-  basePath: argv[0] ?? '',
-  minePath: argv[1] ?? '',
-  baseName: argv[2] ?? 'Base',
-  mineName: argv[3] ?? 'Mine',
-  svnUrl: argv[4] ?? '',
-  fileName: argv[5] ?? '',
-};
+const parsedStartupCliArgs = parseCliArgsFromArgv(process.argv, process.execPath);
+const cliArgs: CliArgs = parsedStartupCliArgs ?? { ...EMPTY_CLI_ARGS };
 
 const APP_ROOT = path.resolve(__dirname, '..');
 const RENDERER_DIST = path.join(APP_ROOT, 'dist');
@@ -233,6 +296,7 @@ const XML = new XMLParser({
 });
 const SPECIAL_BASE_ID = '__base_input__';
 const SPECIAL_MINE_ID = '__mine_input__';
+const REMOTE_HEAD_ID = '__remote_head__';
 const TRAILING_PAREN_VERSION = /\(([^)]+)\)\s*$/;
 const KEYWORD_VERSION = /\b(?:r|rev|revision|ver|version|v)\s*[:#-]?\s*([0-9][\w.-]*)\b/i;
 const execFileAsync = promisify(execFile);
@@ -253,9 +317,14 @@ const DEFAULT_REVISION_QUERY_LIMIT = 50;
 const MAX_REVISION_QUERY_LIMIT = 100;
 const USE_NATIVE_WINDOW_CONTROLS = process.env.SVN_DIFF_NATIVE_WINDOW_CONTROLS === '1';
 const DEFAULT_LAUNCH_MAXIMIZED = true;
+const maintenanceMode = getMaintenanceModeFromArgv(process.argv);
+const installerBootstrap = readInstallerBootstrapSync(process.execPath);
+
+configureRuntimePaths(app, DEV_PROFILE_ROOT, installerBootstrap);
 
 let mainWindow: BrowserWindow | null = null;
 let cachedSvnTarget: string | null | undefined;
+let cachedTimelineTarget: string | null | undefined;
 let activeCliArgs: CliArgs = { ...cliArgs };
 const cachedRevisionOptionPages = new Map<string, RevisionOptionsPayload>();
 const filePayloadCache = new Map<string, FilePayloadCacheEntry>();
@@ -465,6 +534,19 @@ function asArray<T>(value: T | T[] | null | undefined): T[] {
   return Array.isArray(value) ? value : [value];
 }
 
+function asXmlNode(value: unknown): XmlNode | null {
+  return value != null && typeof value === 'object' ? value as XmlNode : null;
+}
+
+function asXmlNodeArray(value: unknown): XmlNode[] {
+  return asArray(value).map(asXmlNode).filter((item): item is XmlNode => item != null);
+}
+
+function getXmlString(node: XmlNode | null, key: string): string {
+  const value = node?.[key];
+  return typeof value === 'string' ? value : '';
+}
+
 function getActiveCliArgs(): CliArgs {
   return activeCliArgs;
 }
@@ -472,40 +554,13 @@ function getActiveCliArgs(): CliArgs {
 function setActiveCliArgs(nextArgs: CliArgs) {
   activeCliArgs = { ...nextArgs };
   cachedSvnTarget = undefined;
+  cachedTimelineTarget = undefined;
   cachedRevisionOptionPages.clear();
+  writeExternalDiffDebugLog('active-cli-args-updated', activeCliArgs);
 }
 
 function parseCliArgsFromSecondInstance(commandLine: string[]): CliArgs | null {
-  const args = commandLine.slice(1).filter((value) => !value.startsWith('--'));
-  if (args.length === 0) return null;
-
-  const normalizedArgs = [...args];
-  const appToken = normalizedArgs[0] ?? '';
-  if (
-    appToken === '.'
-    || appToken.endsWith('.js')
-    || appToken.endsWith('.cjs')
-    || appToken.endsWith('.mjs')
-    || appToken.endsWith('.asar')
-  ) {
-    normalizedArgs.shift();
-  }
-
-  if (normalizedArgs.length === 5) {
-    normalizedArgs.splice(4, 0, '');
-  }
-  if (normalizedArgs.length < 6) return null;
-
-  const [basePath, minePath, baseName, mineName, svnUrl, fileName] = normalizedArgs.slice(0, 6);
-  if (!fileName && !basePath && !minePath) return null;
-  return {
-    basePath: basePath ?? '',
-    minePath: minePath ?? '',
-    baseName: baseName ?? 'Base',
-    mineName: mineName ?? 'Mine',
-    svnUrl: svnUrl ?? '',
-    fileName: fileName ?? '',
-  };
+  return parseCliArgsFromArgv(commandLine, process.execPath);
 }
 
 function notifyCliArgsUpdated() {
@@ -520,25 +575,55 @@ function focusMainWindow() {
   mainWindow.focus();
 }
 
-function configureDevelopmentPaths() {
-  if (!DEV_PROFILE_ROOT) return;
+function resolveInstalledUninstallerPath(): string | null {
+  if (process.platform !== 'win32' || !app.isPackaged) return null;
 
-  const userDataPath = path.join(DEV_PROFILE_ROOT, 'user-data');
-  const sessionDataPath = path.join(DEV_PROFILE_ROOT, 'session-data');
-  const logsPath = path.join(DEV_PROFILE_ROOT, 'logs');
-  const diskCachePath = path.join(sessionDataPath, 'cache');
+  const installDir = path.dirname(process.execPath);
+  const executableName = path.basename(process.execPath);
+  const candidates = [
+    path.join(installDir, `Uninstall ${executableName}`),
+    path.join(installDir, 'Uninstall SvnDiffTool.exe'),
+  ];
 
-  [userDataPath, sessionDataPath, logsPath, diskCachePath].forEach((targetPath) => {
-    fs.mkdirSync(targetPath, { recursive: true });
-  });
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
 
-  app.setPath('userData', userDataPath);
-  app.setPath('sessionData', sessionDataPath);
-  app.setPath('logs', logsPath);
-  app.commandLine.appendSwitch('disk-cache-dir', diskCachePath);
+  return null;
 }
 
-const gotSingleInstanceLock = app.requestSingleInstanceLock();
+async function launchInstalledUninstaller() {
+  const uninstallerPath = resolveInstalledUninstallerPath();
+  if (!uninstallerPath) {
+    throw new Error('The installed uninstaller could not be found.');
+  }
+
+  const child = spawn(uninstallerPath, [], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true,
+  });
+  child.unref();
+
+  setTimeout(() => {
+    app.quit();
+  }, 150);
+}
+
+const gotSingleInstanceLock = maintenanceMode ? true : app.requestSingleInstanceLock();
+
+writeExternalDiffDebugLog('process-start', {
+  execPath: process.execPath,
+  argv: process.argv,
+  cwd: process.cwd(),
+  maintenanceMode,
+  gotSingleInstanceLock,
+  parsedStartupCliArgs,
+  activeCliArgs: cliArgs,
+  logsPath: getRuntimePathState().logsPath,
+});
 
 function resolveIconPath(): string | undefined {
   const candidates = [
@@ -555,6 +640,175 @@ function getExtension(filePath: string): string {
 
 function isWorkbookFile(filePath: string): boolean {
   return WORKBOOK_EXTENSIONS.has(getExtension(filePath));
+}
+
+function buildFileIdentity(filePath: string): string {
+  const resolved = filePath.trim();
+  if (!resolved) return '';
+
+  try {
+    const stat = fs.statSync(resolved);
+    return `${resolved}::${stat.size}::${Math.round(stat.mtimeMs)}`;
+  } catch {
+    return resolved;
+  }
+}
+
+function buildSourceIdentity(params: {
+  kind: 'cli' | 'revision-switch' | 'local-dev';
+  fileName: string;
+  baseUrl: string;
+  mineUrl: string;
+  baseRevision: string;
+  mineRevision: string;
+  pegRevision: string;
+  basePath: string;
+  minePath: string;
+  baseName: string;
+  mineName: string;
+}): string {
+  return [
+    params.kind,
+    params.fileName.trim(),
+    params.baseUrl.trim(),
+    params.mineUrl.trim(),
+    params.baseRevision.trim(),
+    params.mineRevision.trim(),
+    params.pegRevision.trim(),
+    buildFileIdentity(params.basePath),
+    buildFileIdentity(params.minePath),
+    params.baseName.trim(),
+    params.mineName.trim(),
+  ].join('::');
+}
+
+function normalizeSvnUrlForCompare(value: string): string {
+  return value.trim().replace(/\/+$/, '');
+}
+
+function isRemoteRepositoryTarget(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return false;
+  return normalized.startsWith('http://')
+    || normalized.startsWith('https://')
+    || normalized.startsWith('svn://')
+    || normalized.startsWith('svn+ssh://')
+    || normalized.startsWith('file://');
+}
+
+function haveSameExplicitSvnUrl(args: CliArgs): boolean {
+  const baseUrl = normalizeSvnUrlForCompare(args.baseUrl);
+  const mineUrl = normalizeSvnUrlForCompare(args.mineUrl);
+  if (!baseUrl || !mineUrl) return false;
+  return baseUrl === mineUrl;
+}
+
+function normalizeRevisionLabelToken(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  if (/^(wc|working copy|local)$/i.test(trimmed)) return 'WC';
+  if (/^(base|working base)$/i.test(trimmed)) return 'BASE';
+  if (/^head$/i.test(trimmed)) return 'HEAD';
+
+  const numeric = formatRevisionLabel(trimmed);
+  if (numeric) return numeric;
+  return trimmed;
+}
+
+function isWorkingCopyRevisionToken(value: string): boolean {
+  return normalizeRevisionLabelToken(value) === 'WC';
+}
+
+function isRemoteRevisionToken(value: string): boolean {
+  const normalized = normalizeRevisionLabelToken(value);
+  return Boolean(normalized && (normalized === 'HEAD' || /^r\d+/i.test(normalized)));
+}
+
+function isRemoteHeadSelectionId(value: string | undefined): boolean {
+  return value?.trim() === REMOTE_HEAD_ID;
+}
+
+function makeRevisionSelectionPair(
+  baseRevisionId: string | null | undefined,
+  mineRevisionId: string | null | undefined,
+): RevisionSelectionPair {
+  return {
+    baseRevisionId: baseRevisionId?.trim() || null,
+    mineRevisionId: mineRevisionId?.trim() || null,
+  };
+}
+
+function createWorkingCopyRevisionInfo(): SvnRevisionInfo {
+  return {
+    id: SPECIAL_MINE_ID,
+    revision: 'WC',
+    title: '本地工作副本',
+    author: '',
+    date: '',
+    message: '',
+    kind: 'working-copy',
+  };
+}
+
+function createCliRevisionInfo(side: 'base' | 'mine'): SvnRevisionInfo | null {
+  const args = getActiveCliArgs();
+  const filePath = side === 'base' ? args.basePath : args.minePath;
+  const sideName = side === 'base' ? args.baseName : args.mineName;
+  const revision = getCliSideRevisionLabel(side);
+
+  if (isWorkingCopyRevisionToken(revision)) {
+    return {
+      id: side === 'base' ? SPECIAL_BASE_ID : SPECIAL_MINE_ID,
+      revision: 'WC',
+      title: resolveSideName(sideName, filePath) || sideName || 'Working Copy',
+      author: '',
+      date: '',
+      message: '',
+      kind: 'working-copy',
+    };
+  }
+  if (revision) {
+    return {
+      id: revision,
+      revision,
+      title: revision,
+      author: '',
+      date: '',
+      message: '',
+      kind: isRemoteRevisionToken(revision) ? 'revision' : 'input-file',
+    };
+  }
+
+  const title = resolveSideName(sideName, filePath);
+  if (!title) return null;
+  return {
+    id: side === 'base' ? SPECIAL_BASE_ID : SPECIAL_MINE_ID,
+    revision: '',
+    title,
+    author: '',
+    date: '',
+    message: '',
+    kind: side === 'base' ? 'input-file' : 'working-copy',
+  };
+}
+
+function getCliSideRevisionLabel(side: 'base' | 'mine'): string {
+  const args = getActiveCliArgs();
+  const explicit = side === 'base' ? args.baseRevision : args.mineRevision;
+  const normalizedExplicit = normalizeRevisionLabelToken(explicit);
+  if (normalizedExplicit) return normalizedExplicit;
+
+  const sideName = side === 'base' ? args.baseName : args.mineName;
+  return normalizeRevisionLabelToken(extractRevisionToken(sideName));
+}
+
+function getPeggedSvnTarget(target: string): string {
+  const normalizedTarget = target.trim();
+  if (!normalizedTarget) return '';
+
+  const pegRevision = formatRevisionLabel(getActiveCliArgs().pegRevision);
+  if (!pegRevision) return normalizedTarget;
+  return `${normalizedTarget}@${normalizeRevisionNumber(pegRevision)}`;
 }
 
 function resolveSideName(explicitName: string, filePath: string): string {
@@ -1193,11 +1447,7 @@ async function withWorkbookDiffSources<T>(
     }
     if (!bytes || bytes.byteLength === 0) return null;
 
-    const tempPath = path.join(
-      os.tmpdir(),
-      `svn-excel-diff-${suffix}-${Date.now()}-${Math.random().toString(16).slice(2)}${getExtension(fileName) || '.bin'}`,
-    );
-    await fs.promises.writeFile(tempPath, Buffer.from(bytes));
+    const tempPath = await writeManagedTempFile(suffix, getExtension(fileName) || '.bin', Buffer.from(bytes));
     tempPaths.push(tempPath);
     return tempPath;
   };
@@ -1210,7 +1460,7 @@ async function withWorkbookDiffSources<T>(
   } finally {
     await Promise.all(tempPaths.map(async (tempPath) => {
       try {
-        await fs.promises.unlink(tempPath);
+        await removeManagedTempFile(tempPath);
       } catch {
         // ignore temp cleanup failure
       }
@@ -1361,13 +1611,9 @@ async function buildPayloadFromBuffer(
     const includeWorkbookBytes = options.includeWorkbookBytes !== false;
     const includeWorkbookMetadata = options.includeWorkbookMetadata !== false;
     const bytes = includeWorkbookBytes ? Uint8Array.from(buffer) : null;
-    const tempFilePath = path.join(
-      os.tmpdir(),
-      `svn-excel-diff-${Date.now()}-${Math.random().toString(16).slice(2)}${getExtension(fileName) || '.bin'}`,
-    );
+    const tempFilePath = await writeManagedTempFile('payload', getExtension(fileName) || '.bin', buffer);
 
     try {
-      await fs.promises.writeFile(tempFilePath, buffer);
       const [parsedWorkbook, metadataResult] = await Promise.all([
         includeWorkbookText
           ? tryParseWorkbookWithRust(tempFilePath)
@@ -1389,7 +1635,7 @@ async function buildPayloadFromBuffer(
       };
     } finally {
       try {
-        await fs.promises.unlink(tempFilePath);
+        await removeManagedTempFile(tempFilePath);
       } catch {
         // ignore temp cleanup failure
       }
@@ -1421,22 +1667,122 @@ async function resolveSvnTarget(): Promise<string> {
   if (cachedSvnTarget !== undefined) return cachedSvnTarget ?? '';
 
   const args = getActiveCliArgs();
-  const explicit = args.svnUrl.trim();
-  if (explicit) {
-    cachedSvnTarget = explicit;
-    return explicit;
-  }
-
-  const candidatePath = args.minePath || args.basePath;
-  if (!candidatePath) {
+  const explicitBase = isRemoteRepositoryTarget(args.baseUrl) ? args.baseUrl.trim() : '';
+  const explicitMine = isRemoteRepositoryTarget(args.mineUrl) ? args.mineUrl.trim() : '';
+  if (explicitBase && explicitMine) {
+    if (haveSameExplicitSvnUrl(args)) {
+      cachedSvnTarget = explicitMine;
+      writeExternalDiffDebugLog('resolve-svn-target', {
+        mode: 'explicit-both',
+        result: explicitMine,
+      });
+      return explicitMine;
+    }
     cachedSvnTarget = null;
+    writeExternalDiffDebugLog('resolve-svn-target', {
+      mode: 'explicit-conflict',
+      baseUrl: explicitBase,
+      mineUrl: explicitMine,
+      result: '',
+    });
     return '';
   }
 
-  const result = await runSvnUtf8(['info', '--show-item', 'url', candidatePath]);
-  const target = result.ok ? result.stdout.trim() : '';
+  const explicit = explicitMine || explicitBase;
+  if (explicit) {
+    cachedSvnTarget = explicit;
+    writeExternalDiffDebugLog('resolve-svn-target', {
+      mode: explicitMine ? 'explicit-mine' : 'explicit-base',
+      result: explicit,
+    });
+    return explicit;
+  }
+
+  const candidatePaths = Array.from(new Set([args.minePath, args.basePath].map(value => value.trim()).filter(Boolean)));
+  if (candidatePaths.length === 0) {
+    cachedSvnTarget = null;
+    writeExternalDiffDebugLog('resolve-svn-target', {
+      mode: 'no-candidates',
+      result: '',
+    });
+    return '';
+  }
+
+  const resolvedTargets = Array.from(new Set((await Promise.all(
+    candidatePaths.map(async (candidatePath) => {
+      const result = await runSvnUtf8(['info', '--show-item', 'url', candidatePath]);
+      return result.ok ? result.stdout.trim() : '';
+    }),
+  )).filter(Boolean)));
+
+  if (resolvedTargets.length !== 1) {
+    cachedSvnTarget = null;
+    writeExternalDiffDebugLog('resolve-svn-target', {
+      mode: 'path-probe-mismatch',
+      candidatePaths,
+      resolvedTargets,
+      result: '',
+    });
+    return '';
+  }
+
+  const target = resolvedTargets[0] ?? '';
   cachedSvnTarget = target || null;
+  writeExternalDiffDebugLog('resolve-svn-target', {
+    mode: 'path-probe',
+    candidatePaths,
+    resolvedTargets,
+    result: target,
+  });
   return target;
+}
+
+async function resolveTimelineTargetUrl(): Promise<string> {
+  if (cachedTimelineTarget !== undefined) return cachedTimelineTarget ?? '';
+
+  const args = getActiveCliArgs();
+  const candidatePaths = [args.minePath, args.basePath]
+    .map(value => value.trim())
+    .filter(Boolean);
+
+  for (const candidatePath of candidatePaths) {
+    const versioningStatus = await detectLocalSvnVersioningStatus(candidatePath);
+    if (versioningStatus !== 'versioned') continue;
+
+    const result = await runSvnUtf8(['info', '--show-item', 'url', candidatePath]);
+    if (!result.ok) continue;
+    const resolved = result.stdout.trim();
+    if (!resolved) continue;
+
+    cachedTimelineTarget = resolved;
+    writeExternalDiffDebugLog('resolve-timeline-target', {
+      mode: 'working-copy-path',
+      candidatePath,
+      result: resolved,
+    });
+    return resolved;
+  }
+
+  const explicitBase = isRemoteRepositoryTarget(args.baseUrl) ? normalizeSvnUrlForCompare(args.baseUrl) : '';
+  const explicitMine = isRemoteRepositoryTarget(args.mineUrl) ? normalizeSvnUrlForCompare(args.mineUrl) : '';
+  const fallback = explicitMine || explicitBase;
+  if (explicitBase && explicitMine && explicitBase !== explicitMine) {
+    cachedTimelineTarget = null;
+    writeExternalDiffDebugLog('resolve-timeline-target', {
+      mode: 'explicit-conflict',
+      baseUrl: explicitBase,
+      mineUrl: explicitMine,
+      result: '',
+    });
+    return '';
+  }
+
+  cachedTimelineTarget = fallback || null;
+  writeExternalDiffDebugLog('resolve-timeline-target', {
+    mode: 'fallback',
+    result: fallback,
+  });
+  return fallback;
 }
 
 async function detectLocalSvnVersioningStatus(filePath: string): Promise<'versioned' | 'unversioned' | 'unknown'> {
@@ -1456,22 +1802,47 @@ async function detectLocalSvnVersioningStatus(filePath: string): Promise<'versio
   return 'versioned';
 }
 
+async function resolveWorkingCopyPathForTarget(
+  args: CliArgs,
+  target: string,
+): Promise<string> {
+  const normalizedTarget = normalizeSvnUrlForCompare(target);
+  if (!normalizedTarget) return '';
+
+  const candidates = [args.minePath, args.basePath]
+    .map(value => value.trim())
+    .filter(Boolean);
+
+  for (const candidatePath of candidates) {
+    const versioningStatus = await detectLocalSvnVersioningStatus(candidatePath);
+    if (versioningStatus !== 'versioned') continue;
+
+    const result = await runSvnUtf8(['info', '--show-item', 'url', candidatePath]);
+    if (!result.ok) continue;
+    if (normalizeSvnUrlForCompare(result.stdout) === normalizedTarget) {
+      return candidatePath;
+    }
+  }
+
+  return '';
+}
+
 function parseLogEntries(xmlText: string): SvnRevisionInfo[] {
   if (!xmlText.trim()) return [];
 
   try {
-    const parsed = XML.parse(xmlText);
-    const mapped: Array<SvnRevisionInfo | null> = asArray<any>(parsed?.log?.logentry)
+    const parsed = asXmlNode(XML.parse(xmlText));
+    const mapped: Array<SvnRevisionInfo | null> = asXmlNodeArray(asXmlNode(parsed?.log)?.logentry)
       .map((entry): SvnRevisionInfo | null => {
-        const revision = formatRevisionLabel(String(entry?.revision ?? '').trim());
+        const revision = formatRevisionLabel(getXmlString(entry, 'revision').trim());
         if (!revision) return null;
         return {
           id: revision,
           revision,
           title: revision,
-          author: typeof entry?.author === 'string' ? entry.author.trim() : '',
-          date: formatLogDate(typeof entry?.date === 'string' ? entry.date.trim() : ''),
-          message: typeof entry?.msg === 'string' ? entry.msg.trim() : '',
+          author: getXmlString(entry, 'author').trim(),
+          date: formatLogDate(getXmlString(entry, 'date').trim()),
+          message: getXmlString(entry, 'msg').trim(),
           kind: 'revision' as const,
         };
       });
@@ -1483,38 +1854,6 @@ function parseLogEntries(xmlText: string): SvnRevisionInfo[] {
   }
 }
 
-function buildSpecialRevisionEntries(): SvnRevisionInfo[] {
-  const entries: SvnRevisionInfo[] = [];
-  const args = getActiveCliArgs();
-  const hasDistinctBaseFile = Boolean(args.basePath && args.basePath !== args.minePath);
-
-  if (hasDistinctBaseFile && fs.existsSync(args.basePath)) {
-    entries.push({
-      id: SPECIAL_BASE_ID,
-      revision: extractRevisionToken(args.baseName) || 'BASE',
-      title: '基线输入文件',
-      author: '',
-      date: '',
-      message: '当前输入的基线文件（不是 SVN 提交版本）',
-      kind: 'input-file',
-    });
-  }
-
-  if (args.minePath && fs.existsSync(args.minePath)) {
-    entries.push({
-      id: SPECIAL_MINE_ID,
-      revision: extractRevisionToken(args.mineName) || 'LOCAL',
-      title: '本地工作副本',
-      author: '',
-      date: '',
-      message: '当前本地工作副本（不是 SVN 提交版本）',
-      kind: 'working-copy',
-    });
-  }
-
-  return entries;
-}
-
 function buildRevisionQueryCacheKey(query: Required<RevisionOptionsQuery>): string {
   return JSON.stringify(query);
 }
@@ -1523,11 +1862,12 @@ async function queryRevisionOptions(query: RevisionOptionsQuery | undefined): Pr
   const start = performance.now();
   const normalized = normalizeRevisionQuery(query);
   const cacheKey = buildRevisionQueryCacheKey(normalized);
-  const cached = cachedRevisionOptionPages.get(cacheKey);
+  const shouldBypassCache = !normalized.beforeRevisionId && !normalized.anchorDateTime;
+  const cached = shouldBypassCache ? null : cachedRevisionOptionPages.get(cacheKey);
   if (cached) return cached;
 
-  const target = await resolveSvnTarget();
-  const specials = normalized.includeSpecials ? buildSpecialRevisionEntries() : [];
+  const target = await resolveTimelineTargetUrl();
+  const specials: SvnRevisionInfo[] = [];
   if (!target) {
     const payload: RevisionOptionsPayload = {
       items: specials,
@@ -1536,7 +1876,7 @@ async function queryRevisionOptions(query: RevisionOptionsQuery | undefined): Pr
       anchorRevisionId: null,
       queryDateTime: normalized.anchorDateTime || null,
     };
-    cachedRevisionOptionPages.set(cacheKey, payload);
+    if (!shouldBypassCache) cachedRevisionOptionPages.set(cacheKey, payload);
     logDebugTiming('revision-options:skip', {
       ms: Number((performance.now() - start).toFixed(1)),
       count: payload.items.length,
@@ -1554,7 +1894,7 @@ async function queryRevisionOptions(query: RevisionOptionsQuery | undefined): Pr
         anchorRevisionId: null,
         queryDateTime: normalized.anchorDateTime || null,
       };
-      cachedRevisionOptionPages.set(cacheKey, payload);
+      if (!shouldBypassCache) cachedRevisionOptionPages.set(cacheKey, payload);
       return payload;
     }
   }
@@ -1580,7 +1920,7 @@ async function queryRevisionOptions(query: RevisionOptionsQuery | undefined): Pr
       anchorRevisionId: null,
       queryDateTime: normalized.anchorDateTime || null,
     };
-    cachedRevisionOptionPages.set(cacheKey, payload);
+    if (!shouldBypassCache) cachedRevisionOptionPages.set(cacheKey, payload);
     logDebugTiming('revision-options:fallback', {
       ms: Number((performance.now() - start).toFixed(1)),
       count: payload.items.length,
@@ -1599,7 +1939,7 @@ async function queryRevisionOptions(query: RevisionOptionsQuery | undefined): Pr
     anchorRevisionId: normalized.anchorDateTime ? (pageRevisions[0]?.id ?? null) : null,
     queryDateTime: normalized.anchorDateTime || null,
   };
-  cachedRevisionOptionPages.set(cacheKey, payload);
+  if (!shouldBypassCache) cachedRevisionOptionPages.set(cacheKey, payload);
   logDebugTiming('revision-options:loaded', {
     ms: Number((performance.now() - start).toFixed(1)),
     count: payload.items.length,
@@ -1613,16 +1953,20 @@ async function queryRevisionOptions(query: RevisionOptionsQuery | undefined): Pr
 async function getRevisionOptions(): Promise<SvnRevisionInfo[]> {
   const payload = await queryRevisionOptions({
     limit: 60,
-    includeSpecials: true,
+    includeSpecials: false,
   });
   return payload.items;
+}
+
+function getLatestRemoteRevisionId(options: SvnRevisionInfo[] | null): string | undefined {
+  return options?.find(option => option.kind === 'revision')?.id;
 }
 
 function makeFallbackRevisionInfo(side: 'base' | 'mine'): SvnRevisionInfo {
   const args = getActiveCliArgs();
   const sideName = side === 'base' ? args.baseName : args.mineName;
   const filePath = side === 'base' ? args.basePath : args.minePath;
-  const extractedRevision = extractRevisionToken(sideName);
+  const extractedRevision = getCliSideRevisionLabel(side);
 
   return {
     id: side === 'base' ? SPECIAL_BASE_ID : SPECIAL_MINE_ID,
@@ -1636,9 +1980,7 @@ function makeFallbackRevisionInfo(side: 'base' | 'mine'): SvnRevisionInfo {
 }
 
 function resolveCurrentRevisionInfo(side: 'base' | 'mine', options: SvnRevisionInfo[]): SvnRevisionInfo {
-  const args = getActiveCliArgs();
-  const sideName = side === 'base' ? args.baseName : args.mineName;
-  const extractedRevision = extractRevisionToken(sideName);
+  const extractedRevision = getCliSideRevisionLabel(side);
   if (extractedRevision) {
     const matchedRevision = options.find(option => option.revision.toLowerCase() === extractedRevision.toLowerCase());
     if (matchedRevision) return matchedRevision;
@@ -1662,6 +2004,136 @@ function resolveRevisionById(
     if (matched) return matched;
   }
   return resolveCurrentRevisionInfo(side, options);
+}
+
+function isRevisionSelectionId(value: string | null | undefined): boolean {
+  const normalized = value?.trim() ?? '';
+  if (!normalized) return false;
+  if (normalized === SPECIAL_BASE_ID || normalized === SPECIAL_MINE_ID || normalized === REMOTE_HEAD_ID) {
+    return false;
+  }
+  return true;
+}
+
+function isStartupRevisionVsRevisionCompare(): boolean {
+  return isRemoteRevisionToken(getCliSideRevisionLabel('base'))
+    && isRemoteRevisionToken(getCliSideRevisionLabel('mine'));
+}
+
+function isStartupWorkingCopyCompare(): boolean {
+  const baseRevision = getCliSideRevisionLabel('base');
+  const mineRevision = getCliSideRevisionLabel('mine');
+  return isWorkingCopyRevisionToken(mineRevision) || normalizeRevisionLabelToken(baseRevision) === 'BASE';
+}
+
+function buildInitialPairFromCli(compareContext: CompareContext): RevisionSelectionPair | null {
+  if (compareContext === 'literal_two_file_compare') return null;
+
+  if (compareContext === 'standard_local_compare') {
+    const baseRevisionId = isRemoteRevisionToken(getCliSideRevisionLabel('base'))
+      ? getCliSideRevisionLabel('base')
+      : null;
+    const mineRevisionId = isWorkingCopyRevisionToken(getCliSideRevisionLabel('mine'))
+      ? SPECIAL_MINE_ID
+      : null;
+    return makeRevisionSelectionPair(baseRevisionId, mineRevisionId);
+  }
+
+  const baseRevisionId = isRemoteRevisionToken(getCliSideRevisionLabel('base'))
+    ? getCliSideRevisionLabel('base')
+    : null;
+  const mineRevisionId = isRemoteRevisionToken(getCliSideRevisionLabel('mine'))
+    ? getCliSideRevisionLabel('mine')
+    : null;
+  return makeRevisionSelectionPair(baseRevisionId, mineRevisionId);
+}
+
+function buildResetPair(
+  compareContext: CompareContext,
+  initialPair: RevisionSelectionPair | null,
+  workingCopyAvailable: boolean,
+): RevisionSelectionPair | null {
+  if (compareContext === 'literal_two_file_compare') return null;
+  if (compareContext === 'standard_local_compare' && workingCopyAvailable) {
+    return makeRevisionSelectionPair(REMOTE_HEAD_ID, SPECIAL_MINE_ID);
+  }
+  return initialPair;
+}
+
+function resolveCurrentCompareContext(params: {
+  target: string;
+  workingCopyAvailable: boolean;
+  requestedBaseRevisionId?: string | undefined;
+  requestedMineRevisionId?: string | undefined;
+  args: CliArgs;
+}): CompareContext {
+  if (!params.target) return 'literal_two_file_compare';
+  if (params.requestedMineRevisionId?.trim() === SPECIAL_MINE_ID) {
+    return 'standard_local_compare';
+  }
+  if (params.requestedBaseRevisionId || params.requestedMineRevisionId) {
+    return 'revision_vs_revision_compare';
+  }
+  if (isStartupRevisionVsRevisionCompare()) {
+    return 'revision_vs_revision_compare';
+  }
+  if (isStartupWorkingCopyCompare()) {
+    return 'standard_local_compare';
+  }
+  return 'literal_two_file_compare';
+}
+
+function createCurrentPairInfo(params: {
+  compareContext: CompareContext;
+  requestedBaseRevisionId?: string | undefined;
+  requestedMineRevisionId?: string | undefined;
+  revisionOptions: SvnRevisionInfo[] | null;
+}): { base: SvnRevisionInfo | null; mine: SvnRevisionInfo | null } {
+  const { compareContext, requestedBaseRevisionId, requestedMineRevisionId, revisionOptions } = params;
+  if (compareContext === 'literal_two_file_compare') {
+    return {
+      base: null,
+      mine: null,
+    };
+  }
+
+  const startupBase = createCliRevisionInfo('base');
+  const startupMine = createCliRevisionInfo('mine');
+
+  if (!requestedBaseRevisionId && !requestedMineRevisionId) {
+    return {
+      base: startupBase,
+      mine: startupMine,
+    };
+  }
+
+  if (revisionOptions && requestedBaseRevisionId) {
+    if (compareContext === 'standard_local_compare') {
+      return {
+        base: resolveRevisionById('base', revisionOptions, requestedBaseRevisionId),
+        mine: createWorkingCopyRevisionInfo(),
+      };
+    }
+
+    return {
+      base: resolveRevisionById('base', revisionOptions, requestedBaseRevisionId),
+      mine: requestedMineRevisionId
+        ? resolveRevisionById('mine', revisionOptions, requestedMineRevisionId)
+        : createCliRevisionInfo('mine'),
+    };
+  }
+
+  if (compareContext === 'standard_local_compare') {
+    return {
+      base: startupBase,
+      mine: startupMine ?? createWorkingCopyRevisionInfo(),
+    };
+  }
+
+  return {
+    base: startupBase,
+    mine: startupMine,
+  };
 }
 
 function isSameWorkbookSource(
@@ -1815,8 +2287,11 @@ function createRequestedRevisionInfo(
   if (!normalized) {
     return makeFallbackRevisionInfo(side);
   }
-  if (normalized === SPECIAL_BASE_ID || normalized === SPECIAL_MINE_ID) {
+  if (normalized === SPECIAL_BASE_ID) {
     return makeFallbackRevisionInfo(side);
+  }
+  if (normalized === SPECIAL_MINE_ID) {
+    return createWorkingCopyRevisionInfo();
   }
 
   const revision = formatRevisionLabel(normalized);
@@ -1838,8 +2313,26 @@ async function readRevisionPayload(
   options: ReadFilePayloadOptions = {},
 ): Promise<FilePayload> {
   const args = getActiveCliArgs();
-  if (source.id === SPECIAL_BASE_ID) return readFilePayload(args.basePath, options);
-  if (source.id === SPECIAL_MINE_ID) return readFilePayload(args.minePath, options);
+  if (source.id === SPECIAL_BASE_ID) {
+    writeExternalDiffDebugLog('read-revision-payload', {
+      mode: 'special-base',
+      sourceId: source.id,
+      fileName,
+      filePath: args.basePath,
+    });
+    return readFilePayload(args.basePath, options);
+  }
+  if (source.id === SPECIAL_MINE_ID) {
+    const workingCopyPath = await resolveWorkingCopyPathForTarget(args, target);
+    const filePath = workingCopyPath || args.minePath;
+    writeExternalDiffDebugLog('read-revision-payload', {
+      mode: 'special-mine',
+      sourceId: source.id,
+      fileName,
+      filePath,
+    });
+    return readFilePayload(filePath, options);
+  }
 
   const revisionCacheKey = `${target}::${fileName}::${source.id}`;
   const cachedPayload = revisionPayloadCache.get(revisionCacheKey);
@@ -1852,6 +2345,12 @@ async function readRevisionPayload(
   }
 
   if (!target) {
+    writeExternalDiffDebugLog('read-revision-payload', {
+      mode: 'missing-target',
+      sourceId: source.id,
+      revision: source.revision,
+      fileName,
+    });
     return {
       content: '[SVN] 无法定位仓库 URL，无法按版本切换',
       bytes: null,
@@ -1860,9 +2359,27 @@ async function readRevisionPayload(
     };
   }
 
-  const result = await runSvnBuffer(['cat', '-r', normalizeRevisionNumber(source.revision), target]);
+  const peggedTarget = getPeggedSvnTarget(target);
+  writeExternalDiffDebugLog('read-revision-payload', {
+    mode: 'svn-cat',
+    sourceId: source.id,
+    revision: source.revision,
+    normalizedRevision: normalizeRevisionNumber(source.revision),
+    target,
+    peggedTarget,
+    fileName,
+  });
+  const result = await runSvnBuffer(['cat', '-r', normalizeRevisionNumber(source.revision), peggedTarget]);
   if (!result.ok) {
     const message = result.stderr.trim() || 'svn cat failed';
+    writeExternalDiffDebugLog('read-revision-payload:error', {
+      sourceId: source.id,
+      revision: source.revision,
+      target,
+      peggedTarget,
+      fileName,
+      message,
+    });
     return {
       content: `[SVN] 读取版本 ${source.revision} 失败: ${message}`,
       bytes: null,
@@ -1902,6 +2419,12 @@ function makeSideDisplayName(fileName: string, info: SvnRevisionInfo, fallback: 
   return fallback;
 }
 
+function buildLaunchDisplayName(fileName: string, sideName: string, filePath: string): string {
+  const label = resolveSideName(sideName, filePath);
+  if (label) return label;
+  return fileName.trim();
+}
+
 async function buildDiffData(options: BuildDiffDataOptions = {}): Promise<DiffData> {
   const buildStart = performance.now();
   const {
@@ -1913,39 +2436,113 @@ async function buildDiffData(options: BuildDiffDataOptions = {}): Promise<DiffDa
   } = options;
   const args = getActiveCliArgs();
   const target = await resolveSvnTarget();
+  const timelineTargetUrl = await resolveTimelineTargetUrl();
+  const workingCopyPath = target
+    ? await resolveWorkingCopyPathForTarget(args, target)
+    : '';
+  const workingCopyAvailable = Boolean(workingCopyPath);
   const resolvedFileName = args.fileName.trim()
     || path.basename(args.minePath || args.basePath || '');
-  const revisionOptions = includeRevisionOptions
+  const shouldLoadRevisionOptions = Boolean(timelineTargetUrl) || includeRevisionOptions;
+  const revisionOptions = shouldLoadRevisionOptions
     ? (revisionOptionsOverride ?? await getRevisionOptions())
     : null;
+  const latestRemoteRevisionId = getLatestRemoteRevisionId(revisionOptions);
+  const resolvedBaseRevisionId = isRemoteHeadSelectionId(baseRevisionId)
+    ? (latestRemoteRevisionId ?? undefined)
+    : baseRevisionId;
+  const resolvedMineRevisionId = isRemoteHeadSelectionId(mineRevisionId)
+    ? (latestRemoteRevisionId ?? undefined)
+    : mineRevisionId;
+  const isLaunchView = !resolvedBaseRevisionId && !resolvedMineRevisionId;
+  const compareContext = resolveCurrentCompareContext({
+    target,
+    workingCopyAvailable,
+    requestedBaseRevisionId: resolvedBaseRevisionId,
+    requestedMineRevisionId: resolvedMineRevisionId,
+    args,
+  });
+  const initialPair = buildInitialPairFromCli(compareContext);
+  const resetPair = buildResetPair(compareContext, initialPair, workingCopyAvailable);
   const isWorkbook = isWorkbookFile(resolvedFileName);
   const payloadOptions: ReadFilePayloadOptions = isWorkbook
     ? { includeWorkbookText: false, includeWorkbookBytes: true, includeWorkbookMetadata: false }
     : {};
 
-  const baseRevisionInfo = revisionOptions
-    ? resolveRevisionById('base', revisionOptions, baseRevisionId)
-    : createRequestedRevisionInfo('base', baseRevisionId);
-  const mineRevisionInfo = revisionOptions
-    ? resolveRevisionById('mine', revisionOptions, mineRevisionId)
-    : createRequestedRevisionInfo('mine', mineRevisionId);
-  const sameSource = isSameWorkbookSource(args, baseRevisionId, mineRevisionId);
+  const pairInfo = createCurrentPairInfo({
+    compareContext,
+    requestedBaseRevisionId: resolvedBaseRevisionId,
+    requestedMineRevisionId: resolvedMineRevisionId,
+    revisionOptions,
+  });
+  const baseRevisionInfo = pairInfo.base;
+  const mineRevisionInfo = pairInfo.mine;
+  const sameSource = isSameWorkbookSource(args, resolvedBaseRevisionId, resolvedMineRevisionId);
+  const sourceIdentity = buildSourceIdentity({
+    kind: resolvedBaseRevisionId || resolvedMineRevisionId ? 'revision-switch' : 'cli',
+    fileName: resolvedFileName,
+    baseUrl: isRevisionSelectionId(resolvedBaseRevisionId) ? target : args.baseUrl,
+    mineUrl: isRevisionSelectionId(resolvedMineRevisionId) ? target : args.mineUrl,
+    baseRevision: resolvedBaseRevisionId ?? args.baseRevision,
+    mineRevision: resolvedMineRevisionId ?? args.mineRevision,
+    pegRevision: args.pegRevision,
+    basePath: resolvedBaseRevisionId ? '' : args.basePath,
+    minePath: resolvedMineRevisionId ? '' : args.minePath,
+    baseName: args.baseName,
+    mineName: args.mineName,
+  });
+  const launchBaseName = buildLaunchDisplayName(resolvedFileName, args.baseName, args.basePath);
+  const launchMineName = buildLaunchDisplayName(resolvedFileName, args.mineName, args.minePath);
+  const displayBaseName = isLaunchView
+    ? launchBaseName
+    : makeSideDisplayName(
+        resolvedFileName,
+        baseRevisionInfo ?? createCliRevisionInfo('base') ?? createRequestedRevisionInfo('base', resolvedBaseRevisionId),
+        resolveSideName(args.baseName, args.basePath),
+      );
+  const displayMineName = isLaunchView
+    ? launchMineName
+    : makeSideDisplayName(
+        resolvedFileName,
+        mineRevisionInfo ?? createCliRevisionInfo('mine') ?? createRequestedRevisionInfo('mine', resolvedMineRevisionId),
+        resolveSideName(args.mineName, args.minePath),
+      );
 
-  const basePayloadPromise = baseRevisionId
-    ? readRevisionPayload(baseRevisionInfo, target, resolvedFileName, payloadOptions)
+  writeExternalDiffDebugLog('build-diff-data:start', {
+    requestedBaseRevisionId: resolvedBaseRevisionId ?? null,
+    requestedMineRevisionId: resolvedMineRevisionId ?? null,
+    compareMode: workbookCompareMode,
+    fileName: resolvedFileName,
+    target,
+    timelineTargetUrl,
+    workingCopyAvailable,
+    compareContext,
+    sameSource,
+    initialPair,
+    resetPair,
+    activeCliArgs: args,
+    resolvedBaseRevisionInfo: baseRevisionInfo,
+    resolvedMineRevisionInfo: mineRevisionInfo,
+  });
+
+  const resolvedBasePayloadInfo = baseRevisionInfo ?? createRequestedRevisionInfo('base', resolvedBaseRevisionId);
+  const resolvedMinePayloadInfo = mineRevisionInfo ?? createRequestedRevisionInfo('mine', resolvedMineRevisionId);
+
+  const basePayloadPromise = resolvedBaseRevisionId
+    ? readRevisionPayload(resolvedBasePayloadInfo, target, resolvedFileName, payloadOptions)
     : readFilePayload(args.basePath, payloadOptions);
   const [basePayload, minePayload] = sameSource
     ? await Promise.all([basePayloadPromise, basePayloadPromise])
     : await Promise.all([
         basePayloadPromise,
-        mineRevisionId
-          ? readRevisionPayload(mineRevisionInfo, target, resolvedFileName, payloadOptions)
+        resolvedMineRevisionId
+          ? readRevisionPayload(resolvedMinePayloadInfo, target, resolvedFileName, payloadOptions)
           : readFilePayload(args.minePath, payloadOptions),
       ]);
   const workbookComparePayload = await resolveWorkbookCompareModePayload(
-    baseRevisionId ? '' : args.basePath,
+    resolvedBaseRevisionId ? '' : args.basePath,
     basePayload.bytes,
-    mineRevisionId ? '' : args.minePath,
+    resolvedMineRevisionId ? '' : args.minePath,
     minePayload.bytes,
     resolvedFileName,
     workbookCompareMode,
@@ -1960,9 +2557,9 @@ async function buildDiffData(options: BuildDiffDataOptions = {}): Promise<DiffDa
 
   logDebugTiming('build-diff-data:done', {
     compareMode: workbookCompareMode,
-    baseRevisionId: baseRevisionId ?? null,
-    mineRevisionId: mineRevisionId ?? null,
-    includeRevisionOptions,
+    baseRevisionId: resolvedBaseRevisionId ?? null,
+    mineRevisionId: resolvedMineRevisionId ?? null,
+    includeRevisionOptions: shouldLoadRevisionOptions,
     isWorkbook,
     hasPrecomputedWorkbookDiff,
     durationMs: Number((performance.now() - buildStart).toFixed(1)),
@@ -1973,20 +2570,40 @@ async function buildDiffData(options: BuildDiffDataOptions = {}): Promise<DiffDa
     metadataMs: Number(((basePayload.perf.metadataMs ?? 0) + (minePayload.perf.metadataMs ?? 0)).toFixed(1)),
     rustDiffMs: Number((workbookComparePayload?.perf?.rustDiffMs ?? 0).toFixed(1)),
   });
+  writeExternalDiffDebugLog('build-diff-data:done', {
+    requestedBaseRevisionId: resolvedBaseRevisionId ?? null,
+    requestedMineRevisionId: resolvedMineRevisionId ?? null,
+    compareMode: workbookCompareMode,
+    fileName: resolvedFileName,
+    target,
+    timelineTargetUrl,
+    sameSource,
+    compareContext,
+    workingCopyAvailable,
+    canSwitchRevisions: compareContext !== 'literal_two_file_compare' && Boolean(timelineTargetUrl),
+    initialPair,
+    resetPair,
+    workingCopyPath,
+    sourceIdentity,
+    resolvedBaseRevisionInfo: baseRevisionInfo,
+    resolvedMineRevisionInfo: mineRevisionInfo,
+    baseDisplayName: displayBaseName,
+    mineDisplayName: displayMineName,
+  });
 
   return {
     svnUrl: target,
     fileName: resolvedFileName,
-    baseName: makeSideDisplayName(
-      resolvedFileName,
-      baseRevisionInfo,
-      resolveSideName(args.baseName, args.basePath),
-    ),
-    mineName: makeSideDisplayName(
-      resolvedFileName,
-      mineRevisionInfo,
-      resolveSideName(args.mineName, args.minePath),
-    ),
+    sourceIdentity,
+    compareContext,
+    timelineTargetUrl,
+    workingCopyAvailable,
+    initialPair,
+    resetPair,
+    launchBaseName,
+    launchMineName,
+    baseName: displayBaseName,
+    mineName: displayMineName,
     baseContent: hasPrecomputedWorkbookDiff ? null : basePayload.content,
     mineContent: hasPrecomputedWorkbookDiff ? null : minePayload.content,
     baseBytes: hasPrecomputedWorkbookDiff ? null : basePayload.bytes,
@@ -2000,11 +2617,11 @@ async function buildDiffData(options: BuildDiffDataOptions = {}): Promise<DiffDa
     revisionOptions,
     baseRevisionInfo,
     mineRevisionInfo,
-    canSwitchRevisions: Boolean(target),
+    canSwitchRevisions: compareContext !== 'literal_two_file_compare' && Boolean(timelineTargetUrl),
     workbookArtifactDiff,
     sourceNoticeCode: null,
     perf: {
-      source: baseRevisionId || mineRevisionId ? 'revision-switch' : 'cli',
+      source: resolvedBaseRevisionId || resolvedMineRevisionId ? 'revision-switch' : 'cli',
       mainLoadMs: performance.now() - buildStart,
       baseReadMs: basePayload.perf.readMs,
       mineReadMs: minePayload.perf.readMs,
@@ -2027,33 +2644,13 @@ function buildDevWorkingCopyCliArgs(filePath: string): CliArgs {
     minePath: resolvedPath,
     baseName: fileName,
     mineName: fileName,
-    svnUrl: '',
+    baseUrl: '',
+    mineUrl: '',
+    baseRevision: '',
+    mineRevision: '',
+    pegRevision: '',
     fileName,
   };
-}
-
-function resolveDefaultDevRevisionPair(
-  options: SvnRevisionInfo[],
-): { baseRevisionId?: string; mineRevisionId?: string } {
-  const revisions = options.filter(option => option.kind === 'revision');
-  const workingCopy = options.find(option => option.id === SPECIAL_MINE_ID);
-
-  if (revisions.length >= 2) {
-    return {
-      baseRevisionId: revisions[1]!.id,
-      mineRevisionId: revisions[0]!.id,
-    };
-  }
-
-  if (revisions.length === 1) {
-    const result: { baseRevisionId?: string; mineRevisionId?: string } = {
-      baseRevisionId: revisions[0]!.id,
-    };
-    if (workingCopy?.id) result.mineRevisionId = workingCopy.id;
-    return result;
-  }
-
-  return {};
 }
 
 async function buildDevWorkingCopyDiffData(
@@ -2066,15 +2663,11 @@ async function buildDevWorkingCopyDiffData(
   }
 
   setActiveCliArgs(buildDevWorkingCopyCliArgs(resolvedPath));
-  const revisionOptions = await getRevisionOptions();
-  const { baseRevisionId, mineRevisionId } = resolveDefaultDevRevisionPair(revisionOptions);
   const versioningStatus = await detectLocalSvnVersioningStatus(resolvedPath);
   const data = await buildDiffData({
-    baseRevisionId,
-    mineRevisionId,
+    baseRevisionId: versioningStatus === 'versioned' ? REMOTE_HEAD_ID : undefined,
+    mineRevisionId: versioningStatus === 'versioned' ? SPECIAL_MINE_ID : undefined,
     workbookCompareMode,
-    includeRevisionOptions: true,
-    revisionOptionsOverride: revisionOptions,
   });
 
   return {
@@ -2127,6 +2720,26 @@ async function buildLocalDiffData(
   return {
     svnUrl: '',
     fileName: resolvedFileName,
+    sourceIdentity: buildSourceIdentity({
+      kind: 'local-dev',
+      fileName: resolvedFileName,
+      baseUrl: '',
+      mineUrl: '',
+      baseRevision: '',
+      mineRevision: '',
+      pegRevision: '',
+      basePath: resolvedBasePath,
+      minePath: resolvedMinePath,
+      baseName: resolvedBasePath,
+      mineName: resolvedMinePath,
+    }),
+    compareContext: 'literal_two_file_compare',
+    timelineTargetUrl: null,
+    workingCopyAvailable: false,
+    initialPair: null,
+    resetPair: null,
+    launchBaseName: resolveSideName('', resolvedBasePath),
+    launchMineName: resolveSideName('', resolvedMinePath),
     baseName: resolveSideName('', resolvedBasePath),
     mineName: resolveSideName('', resolvedMinePath),
     baseContent: hasPrecomputedWorkbookDiff ? null : basePayload.content,
@@ -2473,6 +3086,7 @@ ipcMain.handle('check-app-update', async (_, payload: { manual?: boolean } | und
 ));
 ipcMain.handle('download-app-update', async () => appUpdater.downloadUpdate());
 ipcMain.handle('install-downloaded-update', async () => appUpdater.installUpdate());
+ipcMain.handle('launch-uninstaller', async () => launchInstalledUninstaller());
 
 ipcMain.on('clipboard-write-text', (_, text: unknown) => {
   if (typeof text === 'string') {
@@ -2524,13 +3138,32 @@ ipcMain.on('open-external', (_, url: unknown) => {
   }
 });
 
-if (!gotSingleInstanceLock) {
+if (maintenanceMode) {
+  ensureLegacyUserDataMigration();
+  void app.whenReady().then(async () => {
+    try {
+      await runMaintenance(app, maintenanceMode);
+    } catch (error) {
+      console.error('[maintenance] failed', error);
+    } finally {
+      app.quit();
+    }
+  });
+} else if (!gotSingleInstanceLock) {
   console.warn('[electron] single-instance lock denied; another SvnDiffTool instance is already running');
+  writeExternalDiffDebugLog('single-instance-lock-denied', {
+    argv: process.argv,
+    parsedStartupCliArgs,
+  });
   app.quit();
 } else {
   app.on('second-instance', (_event, commandLine) => {
     const nextArgs = parseCliArgsFromSecondInstance(commandLine);
     logDebugTiming('second-instance:raw-command-line', { commandLine });
+    writeExternalDiffDebugLog('second-instance', {
+      commandLine,
+      parsedCliArgs: nextArgs,
+    });
     if (nextArgs) {
       logDebugTiming('second-instance:cli-args-updated', {
         fileName: nextArgs.fileName,
@@ -2544,12 +3177,20 @@ if (!gotSingleInstanceLock) {
   });
 
   ensureLegacyUserDataMigration();
-  configureDevelopmentPaths();
+  cleanupStaleManagedTempFilesSync();
   void app.whenReady().then(() => {
+    writeExternalDiffDebugLog('app-ready', {
+      logsPath: getRuntimePathState().logsPath,
+      userDataPath: getRuntimePathState().userDataPath,
+    });
     appUpdater.initialize();
     createWindow();
   });
 }
+
+app.on('before-quit', () => {
+  cleanupTrackedManagedTempFilesSync();
+});
 
 app.on('window-all-closed', () => {
   app.quit();

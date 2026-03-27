@@ -12,13 +12,20 @@
     "dev:app": "tsx scripts/dev-app.ts",
     "dev:electron:watch": "tsc -p tsconfig.electron.json --watch --preserveWatchOutput",
     "dev:electron:run": "tsx scripts/dev-electron-runner.ts",
+    "lint": "npm run lint:eslint && npm run lint:exports",
+    "lint:eslint": "eslint src electron scripts bootstrapper --max-warnings=0",
+    "lint:exports": "tsx scripts/check-unused-exports.ts",
     "build": "npm run typecheck && npm run build:renderer && npm run build:electron && npm run build:rust",
     "build:renderer": "vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
     "build:rust": "tsx scripts/build-rust.ts",
-    "build:win": "npm run build && electron-builder --win nsis",
-    "build:win:release": "npm run build && electron-builder --win nsis",
-    "typecheck": "npm run typecheck:renderer && npm run typecheck:electron && npm run typecheck:scripts",
+    "build:bootstrapper:shell": "tsx scripts/build-bootstrapper-shell.ts",
+    "build:win:installer": "npm run build && tsx scripts/build-win-installer.ts",
+    "build:win:bootstrapper": "tsx scripts/build-bootstrapper.ts",
+    "build:win": "npm run build:win:installer && npm run build:win:bootstrapper",
+    "build:win:release": "npm run build:win",
+    "typecheck": "npm run typecheck:renderer && npm run typecheck:electron && npm run typecheck:scripts && npm run typecheck:bootstrapper",
+    "typecheck:bootstrapper": "tsc -p tsconfig.bootstrapper.json --noEmit && tsc -p tsconfig.bootstrapper.renderer.json --noEmit",
     "typecheck:renderer": "tsc --noEmit",
     "typecheck:electron": "tsc -p tsconfig.electron.json --noEmit",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit",
@@ -54,21 +61,41 @@
         "to": "bin/svn_excel_parser.exe"
       }
     ],
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": false,
+      "deleteAppDataOnUninstall": false,
+      "installerHeader": "installerHeader.bmp",
+      "installerSidebar": "installerSidebar.bmp",
+      "installerLanguages": [
+        "en_US",
+        "zh_CN"
+      ],
+      "include": "build/installer.nsh"
+    },
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     }
   },
   "devDependencies": {
+    "@eslint/js": "^9.38.0",
     "@types/node": "^18.19.130",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@vitejs/plugin-react": "^4.2.0",
     "electron": "^28.0.0",
+    "eslint": "^9.38.0",
+    "eslint-plugin-react-hooks": "^7.0.0",
     "electron-builder": "^24.9.0",
+    "globals": "^16.4.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "tsx": "^4.21.0",
     "typescript": "^5.3.0",
+    "typescript-eslint": "^8.46.2",
     "vite": "^5.0.0"
   },
   "dependencies": {

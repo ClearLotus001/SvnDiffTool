@@ -110,7 +110,7 @@ release/SvnDiffTool-<version>.exe
 3. 将外部对比命令设置为：
 
 ```text
-"C:\Path\To\SvnDiffTool.exe" %base %mine %bname %yname %yurl %fname
+"C:\Path\To\SvnDiffTool.exe" %base %mine %bname %yname %burl %yurl %brev %yrev %peg %fname
 ```
 
 参数说明：
@@ -121,7 +121,11 @@ release/SvnDiffTool-<version>.exe
 | `%mine` | 新版本临时文件路径 |
 | `%bname` | 旧版本显示名称 |
 | `%yname` | 新版本显示名称 |
-| `%yurl` | SVN 仓库 URL |
+| `%burl` | 左侧文件的 SVN URL |
+| `%yurl` | 右侧文件的 SVN URL |
+| `%brev` | 左侧文件的 revision |
+| `%yrev` | 右侧文件的 revision |
+| `%peg` | peg revision |
 | `%fname` | 当前文件名 |
 
 接入时建议注意：
@@ -239,7 +243,7 @@ SvnDiffTool/
 
 - `SvnDiffTool.exe` 路径是否正确
 - 外部命令路径是否带双引号
-- 参数顺序是否仍然是 `%base %mine %bname %yname %yurl %fname`
+- 参数顺序是否仍然是 `%base %mine %bname %yname %burl %yurl %brev %yrev %peg %fname`
 
 ### 2. 直接启动应用后没有内容
 

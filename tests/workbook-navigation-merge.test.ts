@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import type { WorkbookRowEntry } from '../src/utils/workbookNavigation';
-import { buildWorkbookSelectedCell, moveWorkbookSelection } from '../src/utils/workbookNavigation';
+import type { WorkbookRowEntry } from '../src/utils/workbook/workbookNavigation';
+import { buildWorkbookSelectedCell, moveWorkbookSelection } from '../src/utils/workbook/workbookNavigation';
 
 const mergeRanges = [
   {

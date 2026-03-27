@@ -1,0 +1,31 @@
+{
+  "appId": "com.svnexceldifftool.bootstrapper",
+  "productName": "SvnDiffTool Setup",
+  "artifactName": "SvnDiffTool-Setup-${version}.${ext}",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    ".build-tmp/bootstrapper-dist/**/*",
+    "assets/icon.png",
+    "assets/icon.ico",
+    "package.json"
+  ],
+  "extraMetadata": {
+    "main": ".build-tmp/bootstrapper-dist/main.js"
+  },
+  "extraResources": [
+    {
+      "from": ".build-tmp/payload/SvnDiffTool-installer.exe",
+      "to": "payload/SvnDiffTool-installer.exe"
+    }
+  ],
+  "asar": true,
+  "compression": "maximum",
+  "publish": null,
+  "win": {
+    "target": "portable",
+    "icon": "assets/icon.ico",
+    "executableName": "SvnDiffTool-Setup"
+  }
+}

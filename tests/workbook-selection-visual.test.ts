@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { THEMES } from '../src/theme';
-import { getWorkbookSelectionOverlay, getWorkbookSelectionVisualState } from '../src/utils/workbookSelectionVisual';
-import { buildWorkbookSelectionLookup, createWorkbookSelectionState } from '../src/utils/workbookSelectionState';
+import { getWorkbookSelectionOverlay, getWorkbookSelectionVisualState } from '../src/utils/workbook/workbookSelectionVisual';
+import { buildWorkbookSelectionLookup, createWorkbookSelectionState } from '../src/utils/workbook/workbookSelectionState';
 
 test('mirrored workbook cell selection uses the mirrored side accent', () => {
   const theme = THEMES.light;

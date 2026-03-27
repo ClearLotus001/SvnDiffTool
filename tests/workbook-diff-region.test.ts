@@ -1,15 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { computeWorkbookDiff } from '../src/engine/workbookDiff';
+import { computeWorkbookDiff } from '../src/engine/workbook/workbookDiff';
+import { computeHunks } from '../src/engine/text/diff';
 import {
   buildWorkbookDiffRegions,
+  buildWorkbookNavigationRegions,
   findWorkbookDiffRegionIndexForSelection,
   formatWorkbookDiffRegionLabel,
-} from '../src/utils/workbookDiffRegion';
-import { createWorkbookRowLine, createWorkbookSheetLine } from '../src/utils/workbookDisplay';
-import { buildWorkbookSectionRowIndex } from '../src/utils/workbookSheetIndex';
-import { getWorkbookSections } from '../src/utils/workbookSections';
+} from '../src/utils/workbook/workbookDiffRegion';
+import { createWorkbookRowLine, createWorkbookSheetLine } from '../src/utils/workbook/workbookDisplay';
+import { buildWorkbookSectionRowIndex } from '../src/utils/workbook/workbookSheetIndex';
+import { getWorkbookSections } from '../src/utils/workbook/workbookSections';
 
 function buildWorkbook(rows: Array<Array<string>>, sheetName = 'Thing') {
   return [
@@ -110,4 +112,48 @@ test('buildWorkbookDiffRegions merges diagonal workbook cells into one normalize
   assert.equal(regions[0]?.endCol, 2);
   assert.equal(regions[0]?.rowNumberStart, 2);
   assert.equal(regions[0]?.rowNumberEnd, 3);
+});
+
+test('buildWorkbookNavigationRegions groups disjoint cell islands within the same workbook hunk', () => {
+  const base = buildWorkbook([
+    ['ID', 'Name', 'Type', 'Slot', 'Buff', 'Tag', 'Desc'],
+    ['10001', 'Sword', 'Weapon', 'L', 'A', 'Alpha', 'Keep'],
+    ['10002', 'Potion', 'Consumable', 'L', 'B', 'Beta', 'Keep'],
+  ]);
+  const mine = buildWorkbook([
+    ['ID', 'Name', 'Type', 'Slot', 'Buff', 'Tag', 'Desc'],
+    ['10001', 'Long Sword', 'Rare Weapon', 'L', 'A', 'Alpha+', 'Keep+'],
+    ['10002', 'Hi-Potion', 'Epic Consumable', 'L', 'B', 'Beta', 'Keep'],
+  ]);
+
+  const diffLines = computeWorkbookDiff(base, mine);
+  const hunks = computeHunks(diffLines);
+  const sections = getWorkbookSections(diffLines);
+  const rowIndex = buildWorkbookSectionRowIndex(diffLines, sections);
+  const cellRegions = buildWorkbookDiffRegions(
+    sections,
+    rowIndex,
+    'BASE',
+    'MINE',
+  );
+  const navigationRegions = buildWorkbookNavigationRegions(cellRegions, hunks);
+
+  assert.equal(cellRegions.length, 2);
+  assert.equal(navigationRegions.length, 1);
+  assert.equal(navigationRegions[0]?.sheetName, 'Thing');
+  assert.equal(navigationRegions[0]?.startCol, 1);
+  assert.equal(navigationRegions[0]?.endCol, 6);
+  assert.equal(navigationRegions[0]?.rowNumberStart, 2);
+  assert.equal(navigationRegions[0]?.rowNumberEnd, 3);
+  assert.equal(
+    navigationRegions[0]?.patches.length,
+    cellRegions.reduce((count, region) => count + region.patches.length, 0),
+  );
+  assert.equal(
+    findWorkbookDiffRegionIndexForSelection(
+      navigationRegions,
+      cellRegions[1]?.anchorSelection ?? null,
+    ),
+    0,
+  );
 });

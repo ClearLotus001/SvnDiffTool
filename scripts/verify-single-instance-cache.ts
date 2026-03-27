@@ -77,8 +77,13 @@ function buildElectronArgs(basePath: string, minePath: string): string[] {
     '.',
     basePath,
     minePath,
-    `${displayName} (base)`,
-    `${displayName} (mine)`,
+    `${displayName} : base input`,
+    `${displayName} : mine input`,
+    '',
+    '',
+    '',
+    '',
+    '',
     displayName,
   ];
 }

@@ -30,7 +30,7 @@ const TORTOISE_REG_PATH = 'HKCU\\Software\\TortoiseSVN';
 const TORTOISE_DIFF_TOOLS_REG_PATH = `${TORTOISE_REG_PATH}\\DiffTools`;
 const WORKBOOK_EXTENSIONS = ['.xls', '.xlsx', '.xlsm', '.xlsb', '.xltx', '.xltm'] as const;
 const WORKBOOK_EXTENSION_SET = new Set<string>(WORKBOOK_EXTENSIONS);
-const DIFF_COMMAND_ARGUMENTS = ['%base', '%mine', '%bname', '%yname', '%yurl', '%fname'];
+const DIFF_COMMAND_ARGUMENTS = ['%base', '%mine', '%bname', '%yname', '%burl', '%yurl', '%brev', '%yrev', '%peg', '%fname'];
 
 function getBackupFilePath() {
   return path.join(app.getPath('userData'), 'svn-diff-viewer-backup.json');
@@ -317,6 +317,43 @@ export async function configureSvnDiffViewer(scope: SvnDiffViewerScope): Promise
 
     const previousValue = backup.diffToolCommands?.[key];
     await restoreOrDeleteRegistryValue(TORTOISE_DIFF_TOOLS_REG_PATH, key, previousValue);
+  }
+
+  return getSvnDiffViewerStatus();
+}
+
+export async function restoreSvnDiffViewerConfiguration(): Promise<SvnDiffViewerStatus> {
+  const command = buildDiffCommand();
+  if (!command) {
+    return getSvnDiffViewerStatus();
+  }
+
+  const backup = await readBackup();
+  const { globalDiffCommand, diffToolCommands } = await getCurrentRegistryState();
+  const normalizedOurCommand = normalizeCommand(command);
+
+  if (normalizeCommand(globalDiffCommand) === normalizedOurCommand) {
+    await restoreOrDeleteRegistryValue(TORTOISE_REG_PATH, 'Diff', backup.globalDiffCommand);
+  }
+
+  const keysToRestore = new Set<string>([
+    ...Object.keys(diffToolCommands),
+    ...Object.keys(backup.diffToolCommands ?? {}),
+  ]);
+
+  for (const rawKey of keysToRestore) {
+    const key = normalizeKeyName(rawKey);
+    const currentValue = diffToolCommands[key] ?? null;
+    const backupValue = backup.diffToolCommands?.[key];
+
+    if (normalizeCommand(currentValue) !== normalizedOurCommand && backupValue === undefined) {
+      continue;
+    }
+    if (normalizeCommand(currentValue) !== normalizedOurCommand) {
+      continue;
+    }
+
+    await restoreOrDeleteRegistryValue(TORTOISE_DIFF_TOOLS_REG_PATH, key, backupValue);
   }
 
   return getSvnDiffViewerStatus();

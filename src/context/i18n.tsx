@@ -1,18 +1,27 @@
 import type { ReactNode } from 'react';
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import enUS from '../locales/en-US.json';
-import zhCN from '../locales/zh-CN.json';
-import type { ThemeKey } from '../types';
+import enUS from '@/locales/en-US.json';
+import zhCN from '@/locales/zh-CN.json';
+import type { ThemeKey } from '@/types';
 
 export type Locale = 'zh-CN' | 'en-US';
 
-const zhCNMessages = zhCN;
-type Messages = typeof zhCNMessages;
-type TranslationKey = keyof Messages;
-type TranslationParams = Record<string, number | string>;
+type Messages = Record<string, string>;
+export type TranslationKey = string;
+export type TranslationParams = Record<string, number | string>;
+export type TranslationFn = (key: TranslationKey, params?: TranslationParams) => string;
 
 const LOCALE_STORAGE_KEY = 'svn-excel-diff-tool.locale';
-const enUSMessages: Messages = enUS;
+
+function coerceMessages(value: unknown): Messages {
+  if (!value || typeof value !== 'object') {
+    throw new Error('Invalid locale messages payload.');
+  }
+  return value as Messages;
+}
+
+const zhCNMessages = coerceMessages(zhCN as unknown);
+const enUSMessages = coerceMessages(enUS as unknown);
 
 const MESSAGES_BY_LOCALE: Record<Locale, Messages> = {
   'zh-CN': zhCNMessages,
@@ -55,7 +64,7 @@ function getInitialLocale(): Locale {
 interface I18nContextValue {
   locale: Locale;
   setLocale: (locale: Locale) => void;
-  t: (key: TranslationKey, params?: TranslationParams) => string;
+  t: TranslationFn;
   getThemeLabel: (themeKey: ThemeKey) => string;
   shortcuts: [string, string][];
 }
@@ -73,7 +82,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<I18nContextValue>(() => {
     const messages = MESSAGES_BY_LOCALE[locale];
-    const t = (key: TranslationKey, params?: TranslationParams) => formatMessage(messages[key], params);
+    const t = (key: TranslationKey, params?: TranslationParams) => formatMessage(messages[key] ?? key, params);
     const shortcuts = SHORTCUT_DEFS.map(item => [item.key, t(item.labelKey)] as [string, string]);
 
     return {

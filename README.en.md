@@ -110,7 +110,7 @@ release/SvnDiffTool-<version>.exe
 3. Set the external diff command to:
 
 ```text
-"C:\Path\To\SvnDiffTool.exe" %base %mine %bname %yname %yurl %fname
+"C:\Path\To\SvnDiffTool.exe" %base %mine %bname %yname %burl %yurl %brev %yrev %peg %fname
 ```
 
 Argument reference:
@@ -121,7 +121,11 @@ Argument reference:
 | `%mine` | Temporary file path for the new revision |
 | `%bname` | Display name for the old revision |
 | `%yname` | Display name for the new revision |
-| `%yurl` | SVN repository URL |
+| `%burl` | SVN URL for the left side |
+| `%yurl` | SVN URL for the right side |
+| `%brev` | Revision for the left side |
+| `%yrev` | Revision for the right side |
+| `%peg` | Peg revision |
 | `%fname` | Current file name |
 
 Recommended setup notes:
@@ -239,7 +243,7 @@ Check these first:
 
 - The `SvnDiffTool.exe` path is correct
 - The executable path is quoted if needed
-- The argument order is still `%base %mine %bname %yname %yurl %fname`
+- The argument order is still `%base %mine %bname %yname %burl %yurl %brev %yrev %peg %fname`
 
 ### 2. The app opens with no content when started directly
 

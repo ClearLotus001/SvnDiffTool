@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld('svnDiff', {
   checkForAppUpdate: (options?: { manual?: boolean }) => ipcRenderer.invoke('check-app-update', options),
   downloadAppUpdate: () => ipcRenderer.invoke('download-app-update'),
   installDownloadedUpdate: () => ipcRenderer.invoke('install-downloaded-update'),
+  launchUninstaller: () => ipcRenderer.invoke('launch-uninstaller'),
   onAppUpdateState: (listener: (state: unknown) => void) => {
     const wrapped = (_event: Electron.IpcRendererEvent, state: unknown) => listener(state);
     ipcRenderer.on('app-update-state-changed', wrapped);

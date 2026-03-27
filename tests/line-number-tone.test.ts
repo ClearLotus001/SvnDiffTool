@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import Ln from '../src/components/Ln';
+import Ln from '../src/components/diff/Ln';
 import { THEMES } from '../src/theme';
-import { resolveSharedWorkbookLineNumberTone } from '../src/utils/lineNumberTone';
+import { resolveSharedWorkbookLineNumberTone } from '../src/utils/diff/lineNumberTone';
 
 test('Ln uses side-specific tones for base and mine line numbers', () => {
   const baseHtml = renderToStaticMarkup(

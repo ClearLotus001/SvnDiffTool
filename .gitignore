@@ -2,6 +2,15 @@ node_modules/
 dist/
 dist-electron/
 release/
+.build-tmp/
+.tmp-*/
+logs/
+
+release-debug*/
+release-inner*/
+release-bootstrapper-*/
+
+bootstrapper/payload/*.exe
 
 rust/target/
 

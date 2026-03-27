@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { computeWorkbookDiff } from '../src/engine/workbookDiff';
-import { createWorkbookRowLine, createWorkbookSheetLine } from '../src/utils/workbookDisplay';
-import { getWorkbookSections } from '../src/utils/workbookSections';
-import { buildWorkbookSectionRowIndex } from '../src/utils/workbookSheetIndex';
-import { buildWorkbookCompareCells, parseWorkbookRowLine } from '../src/utils/workbookCompare';
+import { computeWorkbookDiff } from '../src/engine/workbook/workbookDiff';
+import { createWorkbookRowLine, createWorkbookSheetLine } from '../src/utils/workbook/workbookDisplay';
+import { getWorkbookSections } from '../src/utils/workbook/workbookSections';
+import { buildWorkbookSectionRowIndex } from '../src/utils/workbook/workbookSheetIndex';
+import { buildWorkbookCompareCells, parseWorkbookRowLine } from '../src/utils/workbook/workbookCompare';
 
 function buildWorkbook(rows: Array<Array<string>>, sheetName = 'Thing') {
   return [
