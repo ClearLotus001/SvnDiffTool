@@ -96,6 +96,17 @@ test('getWorkbookCanvasSpanGeometry keeps paired-base merge segments non-contigu
   ]);
 });
 
+test('getWorkbookCanvasSpanGeometry merges contiguous single-pane column spans into one segment', () => {
+  const bounds = getWorkbookColumnSpanBounds(1, 2, buildSingleColumnLayout(), 'single', 0);
+  assert.ok(bounds);
+  const geometry = getWorkbookCanvasSpanGeometry(bounds, 12, 0, 0);
+  assert.ok(geometry);
+  assert.deepEqual(geometry.segments, [
+    { left: 132, width: 240 },
+  ]);
+  assert.equal(geometry.width, 240);
+});
+
 test('getWorkbookMergeDrawInfo clips merged regions to the first visible row in the strip', () => {
   const info = getWorkbookMergeDrawInfo({
     rowNumber: 3,

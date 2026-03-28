@@ -1,22 +1,198 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io;
 use std::thread;
 
 use crate::model::{
     workbook_cells_differ, DiffLineJson, WorkbookCellDeltaJson, WorkbookCellSnapshotJson,
-    WorkbookDiffOutputJson, WorkbookPrecomputedDeltaJson, WorkbookRowDeltaJson, WorkbookRowEntry,
+    WorkbookDiffOutputJson, WorkbookMergeRange, WorkbookMetadataMap, WorkbookPrecomputedDeltaJson,
+    WorkbookRowDeltaJson, WorkbookRowEntry,
     WorkbookSectionDeltaJson, WorkbookSheetDiffEntry, WorkbookTextSheetEntry, SHEET_PREFIX,
     normalize_field,
 };
 use crate::profile;
 use crate::workbook::{
-    parse_workbook_document, parse_workbook_text_document, ZipWorkbookContext,
+    collect_workbook_metadata, parse_workbook_document, parse_workbook_text_document,
+    ZipWorkbookContext,
 };
 
 struct LcsNode {
     base_idx: usize,
     mine_idx: usize,
     prev_idx: Option<usize>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MergeAwareCellRole {
+    Single,
+    Anchor,
+    Covered,
+}
+
+#[derive(Clone)]
+struct MergeAwareCellState {
+    snapshot: WorkbookCellSnapshotJson,
+    role: MergeAwareCellRole,
+    range: Option<WorkbookMergeRange>,
+}
+
+fn find_merge_range<'a>(
+    merge_ranges: &'a [WorkbookMergeRange],
+    row_number: usize,
+    column: usize,
+) -> Option<&'a WorkbookMergeRange> {
+    merge_ranges.iter().find(|range| {
+        row_number >= range.start_row
+            && row_number <= range.end_row
+            && column >= range.start_col
+            && column <= range.end_col
+    })
+}
+
+fn merge_ranges_equal(left: &WorkbookMergeRange, right: &WorkbookMergeRange) -> bool {
+    left.start_row == right.start_row
+        && left.end_row == right.end_row
+        && left.start_col == right.start_col
+        && left.end_col == right.end_col
+}
+
+fn merge_range_slices_equal(left: &[WorkbookMergeRange], right: &[WorkbookMergeRange]) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right.iter())
+            .all(|(left_range, right_range)| merge_ranges_equal(left_range, right_range))
+}
+
+fn collect_row_merge_signatures(
+    merge_ranges: &[WorkbookMergeRange],
+    row_number: usize,
+) -> Vec<(usize, usize, usize, usize)> {
+    let mut signatures = merge_ranges
+        .iter()
+        .filter(|range| row_number >= range.start_row && row_number <= range.end_row)
+        .map(|range| (range.start_row, range.end_row, range.start_col, range.end_col))
+        .collect::<Vec<_>>();
+    signatures.sort_unstable();
+    signatures
+}
+
+fn row_merge_semantics_match(
+    row_number: usize,
+    base_merge_ranges: &[WorkbookMergeRange],
+    mine_merge_ranges: &[WorkbookMergeRange],
+) -> bool {
+    if base_merge_ranges.is_empty() && mine_merge_ranges.is_empty() {
+        return true;
+    }
+
+    collect_row_merge_signatures(base_merge_ranges, row_number)
+        == collect_row_merge_signatures(mine_merge_ranges, row_number)
+}
+
+fn resolve_merge_aware_cell(
+    row: Option<&WorkbookRowEntry>,
+    row_number: usize,
+    column: usize,
+    merge_ranges: &[WorkbookMergeRange],
+) -> MergeAwareCellState {
+    let resolved_range = if row.is_some() {
+        find_merge_range(merge_ranges, row_number, column).cloned()
+    } else {
+        None
+    };
+    let role = match &resolved_range {
+        Some(range) if range.start_row == row_number && range.start_col == column => MergeAwareCellRole::Anchor,
+        Some(_) => MergeAwareCellRole::Covered,
+        None => MergeAwareCellRole::Single,
+    };
+    let snapshot = match role {
+        MergeAwareCellRole::Covered => WorkbookCellSnapshotJson {
+            value: String::new(),
+            formula: String::new(),
+        },
+        MergeAwareCellRole::Single | MergeAwareCellRole::Anchor => row
+            .and_then(|entry| entry.cells.get(column))
+            .cloned()
+            .unwrap_or_else(|| WorkbookCellSnapshotJson {
+                value: String::new(),
+                formula: String::new(),
+            }),
+    };
+
+    MergeAwareCellState {
+        snapshot,
+        role,
+        range: resolved_range,
+    }
+}
+
+fn merge_structure_diff(left: &MergeAwareCellState, right: &MergeAwareCellState) -> bool {
+    if left.role != right.role {
+        return true;
+    }
+
+    match (&left.range, &right.range) {
+        (Some(left_range), Some(right_range)) => !merge_ranges_equal(left_range, right_range),
+        (None, None) => false,
+        _ => true,
+    }
+}
+
+fn collect_row_candidate_columns(
+    base_row: Option<&WorkbookRowEntry>,
+    mine_row: Option<&WorkbookRowEntry>,
+    base_merge_ranges: &[WorkbookMergeRange],
+    mine_merge_ranges: &[WorkbookMergeRange],
+) -> Vec<usize> {
+    let mut columns = BTreeSet::new();
+    let max_columns = usize::max(
+        base_row.map(|row| row.cells.len()).unwrap_or(0),
+        mine_row.map(|row| row.cells.len()).unwrap_or(0),
+    );
+
+    for column in 0..max_columns {
+        columns.insert(column);
+    }
+
+    if let Some(row) = base_row {
+        for range in base_merge_ranges
+            .iter()
+            .filter(|range| range.start_row == row.row_number)
+        {
+            columns.insert(range.start_col);
+        }
+    }
+
+    if let Some(row) = mine_row {
+        for range in mine_merge_ranges
+            .iter()
+            .filter(|range| range.start_row == row.row_number)
+        {
+            columns.insert(range.start_col);
+        }
+    }
+
+    columns.into_iter().collect()
+}
+
+fn build_merge_aware_cell_delta_json(
+    column: usize,
+    base_cell: &MergeAwareCellState,
+    mine_cell: &MergeAwareCellState,
+    compare_mode: &str,
+) -> Option<WorkbookCellDeltaJson> {
+    let value_changed = workbook_cells_differ(&base_cell.snapshot, &mine_cell.snapshot, compare_mode);
+    let structure_changed = merge_structure_diff(base_cell, mine_cell);
+
+    if !value_changed && !structure_changed {
+        return None;
+    }
+
+    Some(WorkbookCellDeltaJson {
+        column,
+        base_cell: base_cell.snapshot.clone(),
+        mine_cell: mine_cell.snapshot.clone(),
+    })
 }
 
 fn patience_lcs(base_rows: &[WorkbookRowEntry], mine_rows: &[WorkbookRowEntry]) -> Vec<(usize, usize)> {
@@ -118,17 +294,17 @@ fn push_diff_line(
 fn build_workbook_row_delta_json(
     base_row: Option<&WorkbookRowEntry>,
     mine_row: Option<&WorkbookRowEntry>,
+    base_merge_ranges: &[WorkbookMergeRange],
+    mine_merge_ranges: &[WorkbookMergeRange],
     left_line_idx: Option<usize>,
     right_line_idx: Option<usize>,
     compare_mode: &str,
 ) -> WorkbookRowDeltaJson {
-    let max_columns = usize::max(
-        base_row.map(|row| row.cells.len()).unwrap_or(0),
-        mine_row.map(|row| row.cells.len()).unwrap_or(0),
-    );
-
     if let (Some(base_row), Some(mine_row)) = (base_row, mine_row) {
-        if base_row.signature == mine_row.signature {
+        if base_row.row_number == mine_row.row_number
+            && base_row.signature == mine_row.signature
+            && row_merge_semantics_match(base_row.row_number, base_merge_ranges, mine_merge_ranges)
+        {
             return WorkbookRowDeltaJson {
                 left_line_idx,
                 right_line_idx,
@@ -137,27 +313,22 @@ fn build_workbook_row_delta_json(
         }
     }
 
-    let empty_cell = WorkbookCellSnapshotJson { value: String::new(), formula: String::new() };
-    let mut cell_deltas = Vec::with_capacity(max_columns);
+    let base_row_number = base_row.map(|row| row.row_number).unwrap_or(0);
+    let mine_row_number = mine_row.map(|row| row.row_number).unwrap_or(0);
+    let candidate_columns = collect_row_candidate_columns(
+        base_row,
+        mine_row,
+        base_merge_ranges,
+        mine_merge_ranges,
+    );
+    let mut cell_deltas = Vec::with_capacity(candidate_columns.len());
 
-    for column in 0..max_columns {
-        let base_cell = base_row
-            .and_then(|row| row.cells.get(column))
-            .cloned()
-            .unwrap_or_else(|| empty_cell.clone());
-        let mine_cell = mine_row
-            .and_then(|row| row.cells.get(column))
-            .cloned()
-            .unwrap_or_else(|| empty_cell.clone());
-        if !workbook_cells_differ(&base_cell, &mine_cell, compare_mode) {
-            continue;
+    for column in candidate_columns {
+        let base_cell = resolve_merge_aware_cell(base_row, base_row_number, column, base_merge_ranges);
+        let mine_cell = resolve_merge_aware_cell(mine_row, mine_row_number, column, mine_merge_ranges);
+        if let Some(cell_delta) = build_merge_aware_cell_delta_json(column, &base_cell, &mine_cell, compare_mode) {
+            cell_deltas.push(cell_delta);
         }
-
-        cell_deltas.push(WorkbookCellDeltaJson {
-            column,
-            base_cell,
-            mine_cell,
-        });
     }
 
     WorkbookRowDeltaJson {
@@ -171,6 +342,8 @@ fn append_row_pairs(
     output: &mut Vec<DiffLineJson>,
     base_rows: &[WorkbookRowEntry],
     mine_rows: &[WorkbookRowEntry],
+    base_merge_ranges: &[WorkbookMergeRange],
+    mine_merge_ranges: &[WorkbookMergeRange],
     sheet_rows: &mut Vec<WorkbookRowDeltaJson>,
     compare_mode: &str,
     collect_row_deltas: bool,
@@ -182,6 +355,7 @@ fn append_row_pairs(
             .all(|(base_row, mine_row)| {
                 base_row.row_number == mine_row.row_number
                     && base_row.signature == mine_row.signature
+                    && row_merge_semantics_match(base_row.row_number, base_merge_ranges, mine_merge_ranges)
             })
     {
         for (base_row, mine_row) in base_rows.iter().zip(mine_rows.iter()) {
@@ -198,6 +372,8 @@ fn append_row_pairs(
                 sheet_rows.push(build_workbook_row_delta_json(
                     Some(base_row),
                     Some(mine_row),
+                    base_merge_ranges,
+                    mine_merge_ranges,
                     Some(line_idx),
                     Some(line_idx),
                     compare_mode,
@@ -215,6 +391,8 @@ fn append_row_pairs(
         output: &mut Vec<DiffLineJson>,
         base_rows: &[WorkbookRowEntry],
         mine_rows: &[WorkbookRowEntry],
+        base_merge_ranges: &[WorkbookMergeRange],
+        mine_merge_ranges: &[WorkbookMergeRange],
         sheet_rows: &mut Vec<WorkbookRowDeltaJson>,
         base_idx: &mut usize,
         mine_idx: &mut usize,
@@ -260,6 +438,8 @@ fn append_row_pairs(
                         sheet_rows.push(build_workbook_row_delta_json(
                             Some(base_row),
                             Some(mine_row),
+                            base_merge_ranges,
+                            mine_merge_ranges,
                             Some(left_line_idx),
                             Some(right_line_idx),
                             compare_mode,
@@ -280,6 +460,8 @@ fn append_row_pairs(
                         sheet_rows.push(build_workbook_row_delta_json(
                             Some(base_row),
                             None,
+                            base_merge_ranges,
+                            mine_merge_ranges,
                             Some(left_line_idx),
                             None,
                             compare_mode,
@@ -300,6 +482,8 @@ fn append_row_pairs(
                         sheet_rows.push(build_workbook_row_delta_json(
                             None,
                             Some(mine_row),
+                            base_merge_ranges,
+                            mine_merge_ranges,
                             None,
                             Some(right_line_idx),
                             compare_mode,
@@ -318,6 +502,8 @@ fn append_row_pairs(
             output,
             base_rows,
             mine_rows,
+            base_merge_ranges,
+            mine_merge_ranges,
             sheet_rows,
             &mut base_idx,
             &mut mine_idx,
@@ -341,6 +527,8 @@ fn append_row_pairs(
             sheet_rows.push(build_workbook_row_delta_json(
                 Some(base_row),
                 Some(mine_row),
+                base_merge_ranges,
+                mine_merge_ranges,
                 Some(line_idx),
                 Some(line_idx),
                 compare_mode,
@@ -354,6 +542,8 @@ fn append_row_pairs(
         output,
         base_rows,
         mine_rows,
+        base_merge_ranges,
+        mine_merge_ranges,
         sheet_rows,
         &mut base_idx,
         &mut mine_idx,
@@ -413,7 +603,7 @@ fn build_equal_workbook_output(
     sheets: Vec<WorkbookTextSheetEntry>,
     compare_mode: &str,
 ) -> WorkbookDiffOutputJson {
-    let include_workbook_delta = compare_mode == "strict";
+    let include_workbook_delta = true;
     let mut diff_lines = Vec::new();
     let mut sections = Vec::new();
 
@@ -460,6 +650,14 @@ pub fn compute_workbook_diff_output(
         );
         return Ok(output);
     }
+
+    let empty_workbook_metadata = WorkbookMetadataMap {
+        sheets: std::collections::BTreeMap::new(),
+    };
+    let base_workbook_metadata =
+        collect_workbook_metadata(base_file_path).unwrap_or_else(|| empty_workbook_metadata.clone());
+    let mine_workbook_metadata =
+        collect_workbook_metadata(mine_file_path).unwrap_or_else(|| empty_workbook_metadata.clone());
 
     let inspect_start = profile::start();
     let mut use_sheet_inspection = false;
@@ -534,6 +732,18 @@ pub fn compute_workbook_diff_output(
                                 .get(*sheet_name)
                                 .map(|inspection| &inspection.fingerprint)
                                 == mine_fingerprints.get(*sheet_name)
+                                && merge_range_slices_equal(
+                                    base_workbook_metadata
+                                        .sheets
+                                        .get(*sheet_name)
+                                        .map(|sheet| sheet.merge_ranges.as_slice())
+                                        .unwrap_or(&[]),
+                                    mine_workbook_metadata
+                                        .sheets
+                                        .get(*sheet_name)
+                                        .map(|sheet| sheet.merge_ranges.as_slice())
+                                        .unwrap_or(&[]),
+                                )
                         })
                         .cloned()
                         .collect();
@@ -653,7 +863,7 @@ pub fn compute_workbook_diff_output(
 
     let mut diff_lines = Vec::new();
     let mut sections = Vec::new();
-    let include_workbook_delta = compare_mode == "strict";
+    let include_workbook_delta = true;
 
     for base_sheet_name in base_sheet_names {
         if unchanged_sheet_names.contains(&base_sheet_name) {
@@ -686,6 +896,16 @@ pub fn compute_workbook_diff_output(
         if let Some(mine_sheet) = mine_full_by_name.remove(&base_sheet_name) {
             let sheet_start = profile::start();
             let section_name = base_sheet.name.clone();
+            let base_merge_ranges = base_workbook_metadata
+                .sheets
+                .get(&base_sheet_name)
+                .map(|sheet| sheet.merge_ranges.as_slice())
+                .unwrap_or(&[]);
+            let mine_merge_ranges = mine_workbook_metadata
+                .sheets
+                .get(&base_sheet_name)
+                .map(|sheet| sheet.merge_ranges.as_slice())
+                .unwrap_or(&[]);
             push_diff_line(
                 &mut diff_lines,
                 "equal",
@@ -699,6 +919,8 @@ pub fn compute_workbook_diff_output(
                 &mut diff_lines,
                 &base_sheet.rows,
                 &mine_sheet.rows,
+                base_merge_ranges,
+                mine_merge_ranges,
                 &mut rows,
                 compare_mode,
                 include_workbook_delta,
@@ -725,6 +947,11 @@ pub fn compute_workbook_diff_output(
         let sheet_start = profile::start();
         let section_name = base_sheet.name.clone();
         let deleted_row_count = base_sheet.rows.len();
+        let base_merge_ranges = base_workbook_metadata
+            .sheets
+            .get(&base_sheet_name)
+            .map(|sheet| sheet.merge_ranges.as_slice())
+            .unwrap_or(&[]);
         push_diff_line(
             &mut diff_lines,
             "delete",
@@ -748,6 +975,8 @@ pub fn compute_workbook_diff_output(
                 rows.push(build_workbook_row_delta_json(
                     Some(&row),
                     None,
+                    base_merge_ranges,
+                    &[],
                     Some(line_idx),
                     None,
                     compare_mode,
@@ -779,6 +1008,11 @@ pub fn compute_workbook_diff_output(
         let sheet_start = profile::start();
         let section_name = mine_sheet.name.clone();
         let added_row_count = mine_sheet.rows.len();
+        let mine_merge_ranges = mine_workbook_metadata
+            .sheets
+            .get(&mine_sheet_name)
+            .map(|sheet| sheet.merge_ranges.as_slice())
+            .unwrap_or(&[]);
         push_diff_line(
             &mut diff_lines,
             "add",
@@ -802,6 +1036,8 @@ pub fn compute_workbook_diff_output(
                 rows.push(build_workbook_row_delta_json(
                     None,
                     Some(&row),
+                    &[],
+                    mine_merge_ranges,
                     None,
                     Some(line_idx),
                     compare_mode,

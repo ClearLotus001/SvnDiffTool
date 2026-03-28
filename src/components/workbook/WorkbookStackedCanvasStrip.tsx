@@ -21,6 +21,10 @@ import {
 } from '@/utils/workbook/workbookSelectionVisual';
 import { buildWorkbookSelectionLookup } from '@/utils/workbook/workbookSelectionState';
 import {
+  layoutWorkbookCanvasTextLines,
+  normalizeWorkbookCanvasText,
+} from '@/utils/workbook/workbookCanvasText';
+import {
   resolveLineNumberColor,
   resolveSharedWorkbookLineNumberTone,
 } from '@/utils/diff/lineNumberTone';
@@ -87,10 +91,6 @@ interface CanvasBand {
   isGuided: boolean;
   isActiveSearch: boolean;
   rowHighlightBg?: string | undefined;
-}
-
-function trimCellText(value: string) {
-  return value.replace(/\u001F/g, ' ').replace(/\r\n/g, ' / ').replace(/\r/g, ' / ').replace(/\n/g, ' / ');
 }
 
 function getSelectionModeFromMouseEvent(event: Pick<React.MouseEvent<HTMLCanvasElement>, 'shiftKey' | 'ctrlKey' | 'metaKey'>): WorkbookSelectionMode {
@@ -416,6 +416,7 @@ const WorkbookStackedCanvasStrip = memo(({
           const selectionHeight = regionHeight;
           const textCenterY = regionTop + (regionHeight / 2);
           const textX = regionLeft + 8;
+          const centerMergedText = Boolean(mergeInfo.region && regionSegments.length === 1);
 
           const paintRegion = () => {
             ctx.fillStyle = cellVisual.background;
@@ -451,9 +452,31 @@ const WorkbookStackedCanvasStrip = memo(({
             ctx.clip();
             ctx.fillStyle = cellVisual.textColor;
             ctx.font = `${sizes.ui}px ${FONT_UI}`;
-            ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';
-            ctx.fillText(trimCellText(cell.value || '\u00A0'), textX, textCenterY);
+            if (centerMergedText) {
+              const lineHeight = Math.max(sizes.ui + 4, 16);
+              const maxLines = Math.max(1, Math.floor(Math.max(0, regionHeight - 4) / lineHeight));
+              const lines = layoutWorkbookCanvasTextLines({
+                value: cell.value || '',
+                maxWidth: Math.max(0, regionWidth - 16),
+                maxLines,
+                measureText: (value) => ctx.measureText(value).width,
+              });
+              const textBlockHeight = lines.length * lineHeight;
+              let lineY = regionTop + Math.max(2, (regionHeight - textBlockHeight) / 2) + (lineHeight / 2);
+              ctx.textAlign = 'center';
+              lines.forEach((line) => {
+                ctx.fillText(line, regionLeft + (regionWidth / 2), lineY);
+                lineY += lineHeight;
+              });
+            } else {
+              ctx.textAlign = 'left';
+              ctx.fillText(
+                normalizeWorkbookCanvasText(cell.value || '\u00A0').replace(/\n/g, ' / '),
+                textX,
+                textCenterY,
+              );
+            }
             ctx.restore();
           };
 

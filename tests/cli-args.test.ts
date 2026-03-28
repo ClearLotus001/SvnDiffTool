@@ -175,3 +175,15 @@ test('parseCliArgsFromArgv returns null when no usable diff paths were passed', 
   assert.equal(parsed, null);
   assert.equal(EMPTY_CLI_ARGS.fileName, '');
 });
+
+test('parseCliArgsFromArgv ignores dev app entry after Electron runtime switches', () => {
+  const parsed = parseCliArgsFromArgv([
+    EXEC_PATH,
+    '--allow-file-access-from-files',
+    '--disk-cache-dir=C:\\Users\\tester\\AppData\\Local\\Temp\\cache',
+    '--disk-cache-size=268435456',
+    '.',
+  ], EXEC_PATH);
+
+  assert.equal(parsed, null);
+});

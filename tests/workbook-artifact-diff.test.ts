@@ -40,6 +40,29 @@ test('detectWorkbookArtifactOnlyDiff returns null when workbook diff has content
   assert.equal(result, null);
 });
 
+test('detectWorkbookArtifactOnlyDiff returns null when workbook delta reports structural changes', () => {
+  const result = detectWorkbookArtifactOnlyDiff({
+    isWorkbook: true,
+    baseBytes: bytes([1, 2, 3]),
+    mineBytes: bytes([1, 2, 4]),
+    diffLines: [
+      { type: 'equal' },
+      { type: 'equal' },
+    ],
+    workbookDelta: {
+      sections: [
+        {
+          rows: [
+            { changedCount: 1 },
+          ],
+        },
+      ],
+    },
+  });
+
+  assert.equal(result, null);
+});
+
 test('detectWorkbookArtifactOnlyDiff returns null when workbook bytes are identical or file is not workbook', () => {
   const sameBytes = detectWorkbookArtifactOnlyDiff({
     isWorkbook: true,

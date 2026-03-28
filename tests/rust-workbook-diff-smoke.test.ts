@@ -26,7 +26,7 @@ interface RustDiffLinePayload {
 interface RustWorkbookDiffOutput {
   diffLines: DiffLine[];
   workbookDelta: {
-    compareMode: 'strict';
+    compareMode: 'strict' | 'content';
     sections: Array<{
       name: string;
       rows: Array<{
@@ -74,13 +74,13 @@ function normalizeWorkbookDelta(input: unknown): RustWorkbookDiffOutput['workboo
   if (!input || typeof input !== 'object') return null;
   const payload = input as Record<string, unknown>;
   const compareMode = payload.compareMode ?? payload.m;
-  if (compareMode !== 'strict') return null;
+  if (compareMode !== 'strict' && compareMode !== 'content') return null;
   const rawSections = Array.isArray(payload.sections ?? payload.s)
     ? ((payload.sections ?? payload.s) as unknown[])
     : [];
 
   return {
-    compareMode: 'strict',
+    compareMode,
     sections: rawSections.flatMap((entry) => {
       if (!entry || typeof entry !== 'object') return [];
       const rawSection = entry as Record<string, unknown>;
@@ -171,6 +171,42 @@ function buildWorkbookZip(sheetName: string, rows: string[][]) {
       </Relationships>`),
     'xl/worksheets/sheet1.xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
       <worksheet><sheetData>${sheetRows}</sheetData></worksheet>`),
+  });
+}
+
+function buildMergedWorkbookZip(sheetName: string, rows: string[][], mergeRefs: string[]) {
+  const sheetRows = rows.map((cells, rowIndex) => {
+    const cellXml = cells.map((value, columnIndex) => {
+      const columnLabel = String.fromCharCode(65 + columnIndex);
+      const escapedValue = value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      const preserveWhitespace = value.trim() !== value;
+      const textNode = preserveWhitespace
+        ? `<t xml:space="preserve">${escapedValue}</t>`
+        : `<t>${escapedValue}</t>`;
+      return `<c r="${columnLabel}${rowIndex + 1}" t="inlineStr"><is>${textNode}</is></c>`;
+    }).join('');
+    return `<row r="${rowIndex + 1}">${cellXml}</row>`;
+  }).join('');
+  const mergeCellsXml = mergeRefs.length > 0
+    ? `<mergeCells count="${mergeRefs.length}">${mergeRefs.map((ref) => `<mergeCell ref="${ref}" />`).join('')}</mergeCells>`
+    : '';
+
+  return zipSync({
+    'xl/workbook.xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+      <workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+        <sheets>
+          <sheet name="${sheetName}" sheetId="1" r:id="rId1" />
+        </sheets>
+      </workbook>`),
+    'xl/_rels/workbook.xml.rels': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+      <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+        <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml" />
+      </Relationships>`),
+    'xl/worksheets/sheet1.xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+      <worksheet><sheetData>${sheetRows}</sheetData>${mergeCellsXml}</worksheet>`),
   });
 }
 
@@ -453,6 +489,39 @@ test('rust workbook diff keeps semantic equality when shared-string tables diffe
   assert.equal(diffOutput.workbookDelta?.compareMode, 'strict');
 });
 
+test('rust workbook diff reports merged-cell structural changes in strict and content modes', async (t) => {
+  const parserPath = join(process.cwd(), 'rust', 'target', 'release', process.platform === 'win32' ? 'svn_excel_parser.exe' : 'svn_excel_parser');
+  if (!existsSync(parserPath)) {
+    t.skip('rust parser binary not built');
+    return;
+  }
+
+  const os = await import('node:os');
+  const fs = await import('node:fs/promises');
+  const tempDir = await fs.mkdtemp(join(os.tmpdir(), 'rust-workbook-diff-merge-'));
+  const basePath = join(tempDir, 'base.xlsx');
+  const minePath = join(tempDir, 'mine.xlsx');
+  await fs.writeFile(basePath, Buffer.from(buildMergedWorkbookZip('Thing', [['Group']], ['A1:B1'])));
+  await fs.writeFile(minePath, Buffer.from(buildMergedWorkbookZip('Thing', [['Group']], ['A1:C1'])));
+
+  const strictOutput = normalizeRustWorkbookDiffOutput(execFileSync(parserPath, ['--diff-json', basePath, minePath], {
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+  }));
+  const contentOutput = normalizeRustWorkbookDiffOutput(execFileSync(parserPath, ['--diff-json', basePath, minePath, '--compare-mode', 'content'], {
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+  }));
+
+  assert.equal(strictOutput.diffLines.every((line) => line.type === 'equal'), true);
+  assert.equal(strictOutput.workbookDelta?.compareMode, 'strict');
+  assert.deepEqual(strictOutput.workbookDelta?.sections[0]?.rows[0]?.changedColumns, [0]);
+
+  assert.equal(contentOutput.diffLines.every((line) => line.type === 'equal'), true);
+  assert.equal(contentOutput.workbookDelta?.compareMode, 'content');
+  assert.deepEqual(contentOutput.workbookDelta?.sections[0]?.rows[0]?.changedColumns, [0]);
+});
+
 test('rust workbook diff handles large aligned workbooks without stack overflow', async (t) => {
   const parserPath = join(process.cwd(), 'rust', 'target', 'release', process.platform === 'win32' ? 'svn_excel_parser.exe' : 'svn_excel_parser');
   if (!existsSync(parserPath)) {
@@ -589,6 +658,12 @@ test('rust workbook diff can emit content-mode equality for whitespace-only chan
   });
   const diffOutput = normalizeRustWorkbookDiffOutput(output);
 
-  assert.equal(diffOutput.workbookDelta, null);
+  assert.equal(diffOutput.workbookDelta?.compareMode, 'content');
+  assert.equal(
+    diffOutput.workbookDelta?.sections.every((section) => (
+      section.rows.every((row) => row.changedColumns.length === 0)
+    )),
+    true,
+  );
   assert.equal(diffOutput.diffLines.every((line) => line.type === 'equal'), true);
 });

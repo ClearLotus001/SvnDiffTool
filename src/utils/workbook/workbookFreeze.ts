@@ -1,4 +1,4 @@
-import type { SplitRow, WorkbookFreezeState } from '@/types';
+import type { SplitRow, WorkbookFreezeState, WorkbookMergeRange } from '@/types';
 import type { CollapseExpansionState, CollapseRevealRange } from '@/utils/collapse/collapseState';
 import type { CollapsedRowBlockDescriptor } from '@/utils/collapse/collapsibleRows';
 import { getWorkbookSplitRowNumber } from '@/utils/workbook/workbookNavigation';
@@ -26,6 +26,28 @@ export function getResolvedWorkbookFreezeRowNumber(
   defaults: WorkbookFreezeDefaults,
 ): number {
   return Math.max(defaults.rowNumber, freezeState?.rowNumber ?? 0);
+}
+
+export function extendWorkbookFreezeRowNumberForMergedCells(
+  freezeRowNumber: number,
+  mergeRanges: ReadonlyArray<WorkbookMergeRange>,
+): number {
+  let effectiveFreezeRowNumber = Math.max(0, freezeRowNumber);
+
+  while (true) {
+    let nextFreezeRowNumber = effectiveFreezeRowNumber;
+    mergeRanges.forEach((range) => {
+      if (range.startRow <= effectiveFreezeRowNumber && range.endRow > effectiveFreezeRowNumber) {
+        nextFreezeRowNumber = Math.max(nextFreezeRowNumber, range.endRow);
+      }
+    });
+
+    if (nextFreezeRowNumber === effectiveFreezeRowNumber) {
+      return effectiveFreezeRowNumber;
+    }
+
+    effectiveFreezeRowNumber = nextFreezeRowNumber;
+  }
 }
 
 export function getResolvedWorkbookFreezeColCount(

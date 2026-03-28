@@ -194,7 +194,7 @@ export interface WorkbookSectionDeltaPayload {
 }
 
 export interface WorkbookPrecomputedDeltaPayload {
-  compareMode: 'strict';
+  compareMode: WorkbookCompareMode;
   sections: WorkbookSectionDeltaPayload[];
 }
 

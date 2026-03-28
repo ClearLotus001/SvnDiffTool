@@ -275,7 +275,7 @@ interface WorkbookSectionDeltaPayload {
 }
 
 interface WorkbookPrecomputedDeltaPayload {
-  compareMode: 'strict';
+  compareMode: WorkbookCompareMode;
   sections: WorkbookSectionDeltaPayload[];
 }
 
@@ -1158,14 +1158,21 @@ function normalizeWorkbookCellDeltaPayload(input: unknown): WorkbookCellDeltaPay
   const column = Number(payload.column ?? payload.c);
   const baseCell = normalizeWorkbookCellSnapshot(payload.baseCell ?? payload.b);
   const mineCell = normalizeWorkbookCellSnapshot(payload.mineCell ?? payload.m);
-  const kindValue = payload.kind;
-  const kind = kindValue === 'equal' || kindValue === 'add' || kindValue === 'delete' || kindValue === 'modify'
-    ? kindValue
-    : (baseCell && mineCell ? getWorkbookCellDeltaKind(baseCell, mineCell, 'strict') : null);
-  if (!Number.isFinite(column) || !baseCell || !mineCell || !kind) return null;
+  const explicitChanged = payload.changed ?? payload.x;
+  const kindValue = payload.kind ?? payload.k;
+  if (!Number.isFinite(column) || !baseCell || !mineCell) return null;
   const hasBaseContent = hasNormalizedWorkbookCellContent(baseCell, 'strict');
   const hasMineContent = hasNormalizedWorkbookCellContent(mineCell, 'strict');
-  const changed = workbookCellsDifferForMode(baseCell, mineCell, 'strict');
+  const valueChanged = workbookCellsDifferForMode(baseCell, mineCell, 'strict');
+  const changed = explicitChanged == null ? true : Boolean(explicitChanged);
+  const kind = kindValue === 'equal' || kindValue === 'add' || kindValue === 'delete' || kindValue === 'modify'
+    ? kindValue
+    : (
+      changed
+        ? (valueChanged ? getWorkbookCellDeltaKind(baseCell, mineCell, 'strict') : 'modify')
+        : 'equal'
+    );
+  if (!Number.isFinite(column) || !baseCell || !mineCell || !kind) return null;
   const strictOnly = workbookCellsDifferForMode(baseCell, mineCell, 'strict')
     && !workbookCellsDifferForMode(baseCell, mineCell, 'content');
 
@@ -1173,7 +1180,7 @@ function normalizeWorkbookCellDeltaPayload(input: unknown): WorkbookCellDeltaPay
     column,
     baseCell,
     mineCell,
-    changed: payload.changed == null ? changed : Boolean(payload.changed),
+    changed,
     masked: payload.masked == null ? false : Boolean(payload.masked),
     strictOnly: payload.strictOnly == null ? strictOnly : Boolean(payload.strictOnly),
     kind,
@@ -1250,7 +1257,7 @@ function normalizeWorkbookPrecomputedDeltaPayload(input: unknown): WorkbookPreco
   if (!input || typeof input !== 'object') return null;
   const payload = input as Record<string, unknown>;
   const compareMode = payload.compareMode ?? payload.m ?? 'strict';
-  if (compareMode !== 'strict') return null;
+  if (compareMode !== 'strict' && compareMode !== 'content') return null;
   const rawSections = Array.isArray(payload.sections ?? payload.s)
     ? ((payload.sections ?? payload.s) as unknown[])
     : null;
@@ -1273,7 +1280,7 @@ function normalizeWorkbookPrecomputedDeltaPayload(input: unknown): WorkbookPreco
     : [];
 
   return {
-    compareMode: 'strict',
+    compareMode,
     sections,
   };
 }
@@ -2466,7 +2473,7 @@ async function buildDiffData(options: BuildDiffDataOptions = {}): Promise<DiffDa
   const resetPair = buildResetPair(compareContext, initialPair, workingCopyAvailable);
   const isWorkbook = isWorkbookFile(resolvedFileName);
   const payloadOptions: ReadFilePayloadOptions = isWorkbook
-    ? { includeWorkbookText: false, includeWorkbookBytes: true, includeWorkbookMetadata: false }
+    ? { includeWorkbookText: false, includeWorkbookBytes: true, includeWorkbookMetadata: true }
     : {};
 
   const pairInfo = createCurrentPairInfo({
@@ -2553,6 +2560,7 @@ async function buildDiffData(options: BuildDiffDataOptions = {}): Promise<DiffDa
     baseBytes: basePayload.bytes,
     mineBytes: minePayload.bytes,
     diffLines: workbookComparePayload?.diffLines ?? null,
+    workbookDelta: workbookComparePayload?.workbookDelta ?? null,
   });
 
   logDebugTiming('build-diff-data:done', {
@@ -2695,7 +2703,7 @@ async function buildLocalDiffData(
   const resolvedFileName = path.basename(resolvedMinePath || resolvedBasePath || 'local-diff');
   const isWorkbook = isWorkbookFile(resolvedFileName);
   const payloadOptions: ReadFilePayloadOptions = isWorkbook
-    ? { includeWorkbookText: false, includeWorkbookBytes: true, includeWorkbookMetadata: false }
+    ? { includeWorkbookText: false, includeWorkbookBytes: true, includeWorkbookMetadata: true }
     : {};
   const [basePayload, minePayload] = await Promise.all([
     readFilePayload(resolvedBasePath, payloadOptions),
@@ -2715,6 +2723,7 @@ async function buildLocalDiffData(
     baseBytes: basePayload.bytes,
     mineBytes: minePayload.bytes,
     diffLines: workbookComparePayload?.diffLines ?? null,
+    workbookDelta: workbookComparePayload?.workbookDelta ?? null,
   });
 
   return {

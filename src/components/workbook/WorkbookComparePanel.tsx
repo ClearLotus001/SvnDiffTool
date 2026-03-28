@@ -29,12 +29,12 @@ import {
 import { workbookDiffRegionContainsSelection } from '@/utils/workbook/workbookDiffRegion';
 import {
   buildWorkbookSheetPresentation,
-  type WorkbookSheetPresentation,
   type WorkbookMetadataMap,
 } from '@/utils/workbook/workbookMeta';
 import { buildWorkbookCollapseBlockPrefix } from '@/utils/workbook/workbookCollapse';
 import {
   applyWorkbookFreezeToExpandedBlocks,
+  extendWorkbookFreezeRowNumberForMergedCells,
   getResolvedWorkbookFreezeColCount,
   getResolvedWorkbookFreezeRowNumber,
 } from '@/utils/workbook/workbookFreeze';
@@ -277,7 +277,6 @@ const WorkbookComparePanel = memo(({
   const [pendingScrollTarget, setPendingScrollTarget] = useState<{ lineIdx: number; align: 'start' | 'center' } | null>(null);
   const visibleRowsCacheRef = useRef(new Map<string, SplitRow[]>());
   const collapsedItemsCacheRef = useRef(new WeakMap<CollapseExpansionState, Map<string, { value: Array<Extract<WorkbookCompareRenderItem, { kind: 'row' | 'collapse' }>>; duration: number }>>());
-  const sheetPresentationCacheRef = useRef(new Map<string, WorkbookSheetPresentation>());
   const userScrollPauseUntilRef = useRef(0);
   const programmaticScrollUntilRef = useRef(0);
   const lastAutoRowKeyRef = useRef('');
@@ -319,6 +318,15 @@ const WorkbookComparePanel = memo(({
     if (!activeWorkbookSection) return null;
     return freezeStateBySheet[activeWorkbookSection.name] ?? null;
   }, [activeWorkbookSection, freezeStateBySheet]);
+  const activeSheetMergeRanges = useMemo(
+    () => activeWorkbookSection
+      ? [
+          ...(baseWorkbookMetadata?.sheets[activeWorkbookSection.name]?.mergeRanges ?? []),
+          ...(mineWorkbookMetadata?.sheets[activeWorkbookSection.name]?.mergeRanges ?? []),
+        ]
+      : [],
+    [activeWorkbookSection, baseWorkbookMetadata, mineWorkbookMetadata],
+  );
   const activeHiddenState = useMemo(() => {
     if (!activeWorkbookSection) {
       return {
@@ -332,11 +340,12 @@ const WorkbookComparePanel = memo(({
     };
   }, [activeWorkbookSection, workbookHiddenStateBySheet]);
   const freezeRowNumber = useMemo(() => {
-    return getResolvedWorkbookFreezeRowNumber(activeFreezeState, {
+    const resolvedFreezeRowNumber = getResolvedWorkbookFreezeRowNumber(activeFreezeState, {
       rowNumber: activeWorkbookSection?.firstDataRowNumber ?? 0,
       colCount: 1,
     });
-  }, [activeWorkbookSection?.firstDataRowNumber, activeFreezeState]);
+    return extendWorkbookFreezeRowNumberForMergedCells(resolvedFreezeRowNumber, activeSheetMergeRanges);
+  }, [activeSheetMergeRanges, activeWorkbookSection?.firstDataRowNumber, activeFreezeState]);
   const freezeColumnCount = useMemo(
     () => getResolvedWorkbookFreezeColCount(activeFreezeState, {
       rowNumber: activeWorkbookSection?.firstDataRowNumber ?? 0,
@@ -356,7 +365,6 @@ const WorkbookComparePanel = memo(({
   useEffect(() => {
     visibleRowsCacheRef.current.clear();
     collapsedItemsCacheRef.current = new WeakMap();
-    sheetPresentationCacheRef.current.clear();
   }, [diffLines, baseWorkbookMetadata, mineWorkbookMetadata]);
 
   const collapseSourceRows = useMemo(() => {
@@ -769,12 +777,7 @@ const WorkbookComparePanel = memo(({
   }, [active, onScrollerReady, scrollToResolvedLine]);
 
   const sheetPresentation = useMemo(() => {
-    const hiddenColumnsKey = activeHiddenState.hiddenColumns.join(',');
-    const sheetPresentationKey = `${compareMode}::${activeWorkbookSection?.name ?? ''}::${activeWorkbookSection?.maxColumns ?? 1}::${showHiddenColumns ? '1' : '0'}::${hiddenColumnsKey}`;
-    const cached = sheetPresentationCacheRef.current.get(sheetPresentationKey);
-    if (cached) return cached;
-
-    const nextPresentation = buildWorkbookSheetPresentation(
+    return buildWorkbookSheetPresentation(
       sectionRows,
       activeWorkbookSection?.name ?? '',
       baseWorkbookMetadata,
@@ -784,8 +787,6 @@ const WorkbookComparePanel = memo(({
       compareMode,
       activeHiddenState.hiddenColumns,
     );
-    sheetPresentationCacheRef.current.set(sheetPresentationKey, nextPresentation);
-    return nextPresentation;
   }, [activeHiddenState.hiddenColumns, activeWorkbookSection?.maxColumns, activeWorkbookSection?.name, baseWorkbookMetadata, compareMode, mineWorkbookMetadata, sectionRows, showHiddenColumns]);
   const activeSheetName = activeWorkbookSection?.name ?? '';
   const resolveColumnWidth = useCallback(

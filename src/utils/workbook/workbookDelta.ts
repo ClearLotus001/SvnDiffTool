@@ -194,7 +194,7 @@ export function buildWorkbookSplitRowDelta(
   compareMode: WorkbookCompareMode = 'strict',
 ): WorkbookRowDelta {
   const precomputed = row.workbookRowDelta;
-  if (!precomputed || compareMode !== 'strict') {
+  if (!precomputed) {
     return buildWorkbookRowDelta(row.left, row.right, columns, compareMode);
   }
   if (!columns || columns.length === 0) return precomputed;

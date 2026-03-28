@@ -53,6 +53,31 @@ export interface WorkbookCanvasSpanGeometry {
   segments: WorkbookCanvasSpanSegment[];
 }
 
+function mergeContiguousCanvasSegments(
+  segments: WorkbookCanvasSpanSegment[],
+): WorkbookCanvasSpanSegment[] {
+  if (segments.length <= 1) return segments;
+
+  const merged: WorkbookCanvasSpanSegment[] = [];
+  segments.forEach((segment) => {
+    const previous = merged[merged.length - 1];
+    if (!previous) {
+      merged.push({ ...segment });
+      return;
+    }
+
+    const previousRight = previous.left + previous.width;
+    if (Math.abs(previousRight - segment.left) <= 0.5) {
+      previous.width = (segment.left + segment.width) - previous.left;
+      return;
+    }
+
+    merged.push({ ...segment });
+  });
+
+  return merged;
+}
+
 function getCompactHalfWidth(entry: HorizontalVirtualColumnEntry): number {
   return Math.max(28, Math.floor(entry.width / 2));
 }
@@ -212,14 +237,17 @@ export function getWorkbookCanvasSpanGeometry(
 
   const visibleSegments = segments.filter((segment) => segment.width > 0);
   if (visibleSegments.length === 0) return null;
-  const left = visibleSegments[0]!.left;
-  const right = visibleSegments[visibleSegments.length - 1]!.left + visibleSegments[visibleSegments.length - 1]!.width;
+  const normalizedSegments = bounds.spansFreezeBoundary
+    ? visibleSegments
+    : mergeContiguousCanvasSegments(visibleSegments);
+  const left = normalizedSegments[0]!.left;
+  const right = normalizedSegments[normalizedSegments.length - 1]!.left + normalizedSegments[normalizedSegments.length - 1]!.width;
 
   return {
     left,
     right,
     width: Math.max(0, right - left),
-    segments: visibleSegments,
+    segments: normalizedSegments,
   };
 }
 

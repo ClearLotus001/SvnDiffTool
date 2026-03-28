@@ -53,11 +53,13 @@ function stripLaunchTokens(argv: string[], execPath: string): string[] {
     positional.shift();
   }
 
-  if (positional[0] && isAppEntryToken(positional[0])) {
-    positional.shift();
+  const filtered = positional.filter((value) => !value.startsWith('--'));
+
+  if (filtered[0] && isAppEntryToken(filtered[0])) {
+    filtered.shift();
   }
 
-  return positional.filter((value) => !value.startsWith('--'));
+  return filtered;
 }
 
 function normalizeCliToken(value: string | undefined): string {

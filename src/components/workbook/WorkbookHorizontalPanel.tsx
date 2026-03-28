@@ -68,6 +68,7 @@ import {
 import { buildWorkbookCollapseBlockPrefix } from '@/utils/workbook/workbookCollapse';
 import {
   applyWorkbookFreezeToExpandedBlocks,
+  extendWorkbookFreezeRowNumberForMergedCells,
   getResolvedWorkbookFreezeColCount,
   getResolvedWorkbookFreezeRowNumber,
 } from '@/utils/workbook/workbookFreeze';
@@ -300,6 +301,15 @@ const WorkbookHorizontalPanel = memo(({
     if (!activeWorkbookSection) return null;
     return freezeStateBySheet[activeWorkbookSection.name] ?? null;
   }, [activeWorkbookSection, freezeStateBySheet]);
+  const activeSheetMergeRanges = useMemo(
+    () => activeWorkbookSection
+      ? [
+          ...(baseWorkbookMetadata?.sheets[activeWorkbookSection.name]?.mergeRanges ?? []),
+          ...(mineWorkbookMetadata?.sheets[activeWorkbookSection.name]?.mergeRanges ?? []),
+        ]
+      : [],
+    [activeWorkbookSection, baseWorkbookMetadata, mineWorkbookMetadata],
+  );
   const activeHiddenState = useMemo(() => {
     if (!activeWorkbookSection) {
       return {
@@ -313,11 +323,14 @@ const WorkbookHorizontalPanel = memo(({
     };
   }, [activeWorkbookSection, workbookHiddenStateBySheet]);
   const freezeRowNumber = useMemo(
-    () => getResolvedWorkbookFreezeRowNumber(activeFreezeState, {
-      rowNumber: activeWorkbookSection?.firstDataRowNumber ?? 0,
-      colCount: 1,
-    }),
-    [activeWorkbookSection?.firstDataRowNumber, activeFreezeState],
+    () => extendWorkbookFreezeRowNumberForMergedCells(
+      getResolvedWorkbookFreezeRowNumber(activeFreezeState, {
+        rowNumber: activeWorkbookSection?.firstDataRowNumber ?? 0,
+        colCount: 1,
+      }),
+      activeSheetMergeRanges,
+    ),
+    [activeSheetMergeRanges, activeWorkbookSection?.firstDataRowNumber, activeFreezeState],
   );
   const activeSheetCacheKey = activeWorkbookSection?.name ?? '';
 

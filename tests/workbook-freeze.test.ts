@@ -11,6 +11,7 @@ import {
 import {
   applyWorkbookFreezePatch,
   applyWorkbookFreezeToExpandedBlocks,
+  extendWorkbookFreezeRowNumberForMergedCells,
 } from '../src/utils/workbook/workbookFreeze';
 
 interface MockRow {
@@ -112,6 +113,21 @@ test('applyWorkbookFreezePatch keeps only custom freeze axes beyond defaults', (
     applyWorkbookFreezePatch({ colCount: 2 }, { colCount: 1 }, defaults),
     null,
   );
+});
+
+test('extendWorkbookFreezeRowNumberForMergedCells preserves merged blocks that cross the freeze boundary', () => {
+  assert.equal(extendWorkbookFreezeRowNumberForMergedCells(1, [
+    { startRow: 1, endRow: 3, startCol: 0, endCol: 0 },
+  ]), 3);
+
+  assert.equal(extendWorkbookFreezeRowNumberForMergedCells(1, [
+    { startRow: 1, endRow: 3, startCol: 0, endCol: 0 },
+    { startRow: 3, endRow: 5, startCol: 2, endCol: 4 },
+  ]), 5);
+
+  assert.equal(extendWorkbookFreezeRowNumberForMergedCells(2, [
+    { startRow: 3, endRow: 5, startCol: 0, endCol: 1 },
+  ]), 2);
 });
 
 test('remapExpandedBlocksForCollapsedRows preserves revealed rows after the freeze boundary moves', () => {

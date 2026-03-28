@@ -198,7 +198,7 @@ export default function useAppViewModel({
   );
   const workbookSectionRowIndex = useMemo(
     () => (
-      workbookCompareMode === 'strict' && precomputedWorkbookDelta
+      precomputedWorkbookDelta
         ? buildWorkbookSectionRowIndexFromPrecomputedDelta(diffLines, precomputedWorkbookDelta)
         : buildWorkbookSectionRowIndex(diffLines, workbookSections, workbookCompareMode)
     ),

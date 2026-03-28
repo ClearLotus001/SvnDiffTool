@@ -33,3 +33,37 @@ test('buildWorkbookSheetPresentation can include hidden columns when requested',
   assert.deepEqual(hiddenOff.visibleColumns, [0, 2]);
   assert.deepEqual(hiddenOn.visibleColumns, [0, 1, 2]);
 });
+
+test('buildWorkbookSheetPresentation keeps covered merged columns visible to avoid workbook data loss', () => {
+  const base = [
+    createWorkbookSheetLine('Thing'),
+    createWorkbookRowLine(1, ['Merged title', '']),
+    createWorkbookRowLine(2, ['10001', '']),
+  ].join('\n');
+  const diffLines = computeWorkbookDiff(base, base);
+  const sections = getWorkbookSections(diffLines);
+  const rows = buildWorkbookSectionRowIndex(diffLines, sections).get('Thing')?.rows ?? [];
+
+  const metadata: WorkbookMetadataMap = {
+    sheets: {
+      Thing: {
+        name: 'Thing',
+        hiddenColumns: [],
+        mergeRanges: [
+          {
+            startRow: 1,
+            endRow: 1,
+            startCol: 0,
+            endCol: 1,
+          },
+        ],
+      },
+    },
+  };
+
+  const withoutMetadata = buildWorkbookSheetPresentation(rows, 'Thing', null, null, 2, false);
+  const withMetadata = buildWorkbookSheetPresentation(rows, 'Thing', metadata, metadata, 2, false);
+
+  assert.deepEqual(withoutMetadata.visibleColumns, [0]);
+  assert.deepEqual(withMetadata.visibleColumns, [0, 1]);
+});
