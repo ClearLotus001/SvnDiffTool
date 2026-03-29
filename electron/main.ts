@@ -5,7 +5,8 @@ import { performance } from 'node:perf_hooks';
 import * as path from 'node:path';
 import { promisify } from 'node:util';
 import { XMLParser } from 'fast-xml-parser';
-import { EMPTY_CLI_ARGS, parseCliArgsFromArgv, type CliArgs } from './cliArgs';
+import { EMPTY_CLI_ARGS, type CliArgs } from './cliArgs';
+import { resolveLaunchCliArgsFromArgv } from './externalDiffRequest';
 import { readInstallerBootstrapSync } from './installerBootstrap';
 import { getMaintenanceModeFromArgv, runMaintenance } from './maintenance';
 import {
@@ -279,8 +280,8 @@ interface WorkbookPrecomputedDeltaPayload {
   sections: WorkbookSectionDeltaPayload[];
 }
 
-const parsedStartupCliArgs = parseCliArgsFromArgv(process.argv, process.execPath);
-const cliArgs: CliArgs = parsedStartupCliArgs ?? { ...EMPTY_CLI_ARGS };
+let parsedStartupCliArgs: CliArgs | null = null;
+let cliArgs: CliArgs = { ...EMPTY_CLI_ARGS };
 
 const APP_ROOT = path.resolve(__dirname, '..');
 const RENDERER_DIST = path.join(APP_ROOT, 'dist');
@@ -560,7 +561,7 @@ function setActiveCliArgs(nextArgs: CliArgs) {
 }
 
 function parseCliArgsFromSecondInstance(commandLine: string[]): CliArgs | null {
-  return parseCliArgsFromArgv(commandLine, process.execPath);
+  return resolveLaunchCliArgsFromArgv(commandLine);
 }
 
 function notifyCliArgsUpdated() {
@@ -613,6 +614,12 @@ async function launchInstalledUninstaller() {
 }
 
 const gotSingleInstanceLock = maintenanceMode ? true : app.requestSingleInstanceLock();
+
+if (gotSingleInstanceLock) {
+  parsedStartupCliArgs = resolveLaunchCliArgsFromArgv(process.argv);
+  cliArgs = parsedStartupCliArgs ?? { ...EMPTY_CLI_ARGS };
+  activeCliArgs = { ...cliArgs };
+}
 
 writeExternalDiffDebugLog('process-start', {
   execPath: process.execPath,
@@ -767,6 +774,17 @@ function createCliRevisionInfo(side: 'base' | 'mine'): SvnRevisionInfo | null {
       kind: 'working-copy',
     };
   }
+  if (side === 'base' && revision === 'BASE') {
+    return {
+      id: SPECIAL_BASE_ID,
+      revision: 'BASE',
+      title: resolveSideName(sideName, filePath) || sideName || 'Working Base',
+      author: '',
+      date: '',
+      message: '',
+      kind: 'input-file',
+    };
+  }
   if (revision) {
     return {
       id: revision,
@@ -802,13 +820,21 @@ function getCliSideRevisionLabel(side: 'base' | 'mine'): string {
   return normalizeRevisionLabelToken(extractRevisionToken(sideName));
 }
 
+function resolveUrlPegRevision(value: string): string {
+  const normalized = normalizeRevisionLabelToken(value);
+  if (!normalized) return '';
+  if (normalized === 'HEAD') return 'HEAD';
+  if (/^r\d+/i.test(normalized)) return normalizeRevisionNumber(normalized);
+  return '';
+}
+
 function getPeggedSvnTarget(target: string): string {
   const normalizedTarget = target.trim();
   if (!normalizedTarget) return '';
 
-  const pegRevision = formatRevisionLabel(getActiveCliArgs().pegRevision);
+  const pegRevision = resolveUrlPegRevision(getActiveCliArgs().pegRevision);
   if (!pegRevision) return normalizedTarget;
-  return `${normalizedTarget}@${normalizeRevisionNumber(pegRevision)}`;
+  return `${normalizedTarget}@${pegRevision}`;
 }
 
 function resolveSideName(explicitName: string, filePath: string): string {
@@ -2108,6 +2134,20 @@ function createCurrentPairInfo(params: {
   const startupMine = createCliRevisionInfo('mine');
 
   if (!requestedBaseRevisionId && !requestedMineRevisionId) {
+    if (revisionOptions) {
+      if (compareContext === 'standard_local_compare') {
+        return {
+          base: resolveCurrentRevisionInfo('base', revisionOptions),
+          mine: createWorkingCopyRevisionInfo(),
+        };
+      }
+
+      return {
+        base: resolveCurrentRevisionInfo('base', revisionOptions),
+        mine: resolveCurrentRevisionInfo('mine', revisionOptions),
+      };
+    }
+
     return {
       base: startupBase,
       mine: startupMine,
@@ -2290,14 +2330,21 @@ function createRequestedRevisionInfo(
   side: 'base' | 'mine',
   requestedId: string | undefined,
 ): SvnRevisionInfo {
-  const normalized = requestedId?.trim() ?? '';
-  if (!normalized) {
+  const requested = requestedId?.trim() ?? '';
+  if (!requested) {
     return makeFallbackRevisionInfo(side);
   }
-  if (normalized === SPECIAL_BASE_ID) {
+  if (requested === SPECIAL_BASE_ID) {
     return makeFallbackRevisionInfo(side);
   }
-  if (normalized === SPECIAL_MINE_ID) {
+  if (requested === SPECIAL_MINE_ID) {
+    return createWorkingCopyRevisionInfo();
+  }
+  const normalized = normalizeRevisionLabelToken(requested);
+  if (side === 'base' && normalized === 'BASE') {
+    return makeFallbackRevisionInfo(side);
+  }
+  if (side === 'mine' && normalized === 'WC') {
     return createWorkingCopyRevisionInfo();
   }
 
@@ -3208,3 +3255,4 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
+

@@ -59,6 +59,10 @@
       {
         "from": "rust/target/release/svn_excel_parser.exe",
         "to": "bin/svn_excel_parser.exe"
+      },
+      {
+        "from": "rust/target/release/svn_diff_launcher.exe",
+        "to": "bin/svn_diff_launcher.exe"
       }
     ],
     "nsis": {

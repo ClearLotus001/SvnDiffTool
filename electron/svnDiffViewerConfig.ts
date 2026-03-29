@@ -57,9 +57,17 @@ function getAvailabilityReason(): SvnDiffViewerAvailabilityReason {
   return 'ready';
 }
 
-function buildDiffCommand(): string | null {
+function getDiffLauncherPath(): string | null {
   if (getAvailabilityReason() !== 'ready') return null;
-  return `"${process.execPath}" ${DIFF_COMMAND_ARGUMENTS.join(' ')}`;
+  const launcherPath = path.join(process.resourcesPath, 'bin', 'svn_diff_launcher.exe');
+  if (!fs.existsSync(launcherPath)) return null;
+  return launcherPath;
+}
+
+function buildDiffCommand(): string | null {
+  const launcherPath = getDiffLauncherPath();
+  if (!launcherPath) return null;
+  return `"${launcherPath}" ${DIFF_COMMAND_ARGUMENTS.join(' ')}`;
 }
 
 async function execReg(args: string[]): Promise<{ ok: boolean; stdout: string; stderr: string }> {
@@ -273,7 +281,7 @@ export async function getSvnDiffViewerStatus(): Promise<SvnDiffViewerStatus> {
   return {
     available: reason === 'ready',
     reason,
-    executablePath: process.execPath || null,
+    executablePath: getDiffLauncherPath(),
     command,
     currentMode: resolveCurrentMode(command, globalDiffCommand, diffToolCommands),
     globalDiffCommand,
