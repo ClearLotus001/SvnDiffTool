@@ -1,8 +1,5 @@
 type DiffViewerMode = 'keep' | 'excel-only' | 'all-files';
-type InstallView = 'configure' | 'installing' | 'done' | 'error';
-type NoticeTone = 'neutral' | 'info' | 'success' | 'danger';
-type TimelineStepKey = 'configure' | 'install' | 'complete';
-type TimelineState = 'pending' | 'current' | 'done' | 'error';
+type InstallView = 'welcome' | 'directories' | 'settings' | 'installing' | 'done' | 'error';
 
 interface SetupContext {
   productName: string;
@@ -11,6 +8,7 @@ interface SetupContext {
   defaultInstallDir: string;
   defaultCacheParent: string;
   managedCacheRoot: string;
+  iconPath: string;
 }
 
 interface InstallState {
@@ -136,11 +134,16 @@ const state: AppState = {
     message: '',
     error: '',
   },
-  view: 'configure',
+  view: 'welcome',
   windowState: {
     isMaximized: false,
   },
 };
+
+function getIconUrl(): string {
+  if (!state.setup?.iconPath) return '../../assets/icon.png';
+  return `file:///${state.setup.iconPath.replace(/\\/g, '/')}`;
+}
 
 function managedCacheRoot(): string {
   return state.cacheParent
@@ -204,206 +207,71 @@ function renderSummary(variant: 'compact' | 'receipt' | 'review' = 'review'): st
   `;
 }
 
-function renderPill(text: string, tone: NoticeTone): string {
-  return `<span class="pill pill--${tone}">${escapeHtml(text)}</span>`;
-}
 
-function railStatus(): { tone: NoticeTone; label: string; title: string; description: string } {
-  if (!state.setup?.payloadReady) {
-    return {
-      tone: 'danger',
-      label: '缺少 payload',
-      title: '当前无法启动安装',
-      description: '未检测到内层安装器 payload，请先修复打包产物后再继续。',
-    };
-  }
+// Sidebar and Timeline functions removed to enforce a static, single-pane minimalism
 
-  if (state.view === 'installing') {
-    return {
-      tone: 'info',
-      label: phaseLabels[state.installState.phase],
-      title: '正在静默安装',
-      description: '外层 setup shell 正在驱动安装流程，期间不会再显示原生安装向导。',
-    };
-  }
-
-  if (state.view === 'done') {
-    return {
-      tone: 'success',
-      label: '已完成',
-      title: '安装与配置已完成',
-      description: state.launchAfterInstall
-        ? 'SvnDiffTool 已按你的选择启动。'
-        : '现在可以关闭安装器或直接打开安装目录。',
-    };
-  }
-
-  if (state.view === 'error') {
-    return {
-      tone: 'danger',
-      label: '需要处理',
-      title: '安装未能完成',
-      description: '请检查目录与权限设置，返回配置页后可再次发起安装。',
-    };
-  }
-
-  return {
-    tone: 'neutral',
-    label: '等待配置',
-    title: '确认本次安装设置',
-    description: '这里会汇总目录、Diff Viewer 策略与安装后动作，再通过静默模式执行。',
-  };
-}
-
-function timelineStepState(step: TimelineStepKey): TimelineState {
-  if (step === 'configure') {
-    return state.view === 'configure' ? 'current' : 'done';
-  }
-
-  if (step === 'install') {
-    if (state.view === 'error') return 'error';
-    if (state.view === 'installing') return 'current';
-    if (state.view === 'done') return 'done';
-    return 'pending';
-  }
-
-  if (state.view === 'done') return 'current';
-  return 'pending';
-}
-
-function timelineStateLabel(value: TimelineState): string {
-  switch (value) {
-    case 'done':
-      return '已完成';
-    case 'current':
-      return '进行中';
-    case 'error':
-      return '需处理';
-    case 'pending':
-    default:
-      return '待执行';
-  }
-}
-
-function renderTimeline(): string {
-  const steps: Array<{ key: TimelineStepKey; title: string; description: string }> = [
-    {
-      key: 'configure',
-      title: '配置安装参数',
-      description: '确认程序目录、缓存目录和默认接管策略。',
-    },
-    {
-      key: 'install',
-      title: '执行静默安装',
-      description: '调用内层 installer 并写入程序集成配置。',
-    },
-    {
-      key: 'complete',
-      title: '完成与交付',
-      description: '展示安装回执，并提供打开目录或关闭安装器。',
-    },
-  ];
-
+function renderWelcomePanel(): string {
   return `
-    <div class="timeline">
-      ${steps.map((step) => {
-        const currentState = timelineStepState(step.key);
-        return `
-          <div class="timeline__item timeline__item--${currentState}">
-            <div class="timeline__dot"></div>
-            <div class="timeline__content">
-              <div class="timeline__top">
-                <div class="timeline__title">${step.title}</div>
-                <div class="timeline__state">${timelineStateLabel(currentState)}</div>
-              </div>
-              <div class="timeline__desc">${step.description}</div>
-            </div>
-          </div>
-        `;
-      }).join('')}
-    </div>
-  `;
-}
-
-function renderSidebar(): string {
-  const status = railStatus();
-
-  return `
-    <aside class="sidebar">
-      <section class="sidebar__hero">
-        <div class="sidebar__eyebrow">Setup Control Desk</div>
-        <h1 class="sidebar__title">${escapeHtml(state.setup?.productName || 'SvnDiffTool')} 安装工作台</h1>
-        <p class="sidebar__subtitle">把关键设置、安装状态和最终回执放在同一块控制台里，整个过程由独立 bootstrapper 接管。</p>
-        <div class="sidebar__meta-row">
-          ${renderPill(`v${state.setup?.version || '0.0.0'}`, 'neutral')}
-          ${renderPill(state.setup?.payloadReady ? 'Payload Ready' : 'Payload Missing', state.setup?.payloadReady ? 'success' : 'danger')}
-        </div>
-      </section>
-
-      <section class="sidebar-card sidebar-card--focus">
-        <div class="sidebar-card__pills">
-          ${renderPill(status.label, status.tone)}
-          ${renderPill(state.view === 'configure' ? '配置中' : state.view === 'installing' ? '安装中' : state.view === 'done' ? '已完成' : '异常', status.tone)}
-        </div>
-        <div class="sidebar-card__title">${status.title}</div>
-        <p class="sidebar-card__text">${status.description}</p>
-      </section>
-
-      <section class="sidebar-card">
-        <div class="sidebar-card__eyebrow">Installation Flow</div>
-        ${renderTimeline()}
-      </section>
-
-      <section class="sidebar-card">
-        <div class="sidebar-card__eyebrow">Current Summary</div>
-        ${renderSummary('compact')}
-      </section>
-    </aside>
-  `;
-}
-
-function renderConfigurePanel(): string {
-  return `
-    <section class="panel panel--configure">
+    <section class="panel panel--welcome">
       <div class="panel__header">
-        <div class="panel__eyebrow">Configure</div>
-        <h2 class="panel__title">确认安装位置与默认接管方式</h2>
-        <p class="panel__subtitle">这里只保留真正需要你决定的内容：程序目录、受控缓存目录、Diff Viewer 策略，以及两个常用安装选项。</p>
+        <div class="panel__eyebrow">Welcome</div>
+        <h2 class="panel__title">安装 SvnDiffTool</h2>
+        <p class="panel__subtitle">欢迎使用 SvnDiffTool 安装向导。本程序将帮助您高效部署针对 Excel 和文本比较的增强版 Diff Viewer。</p>
       </div>
 
       ${!state.setup?.payloadReady
-        ? '<div class="callout callout--error">当前未检测到内层安装器 payload，安装按钮会保持禁用，需先修复打包产物。</div>'
-        : '<div class="callout callout--neutral">确认后将由当前 setup shell 以静默方式调用内层 installer，期间不会再出现原生安装页面。</div>'}
+        ? '<div class="callout callout--error">当前未检测到内层安装器 payload，安装将无法进行。请修复打包产物。</div>'
+        : '<div class="callout callout--neutral">建议在继续安装前，关闭所有正在使用的 TortoiseSVN 窗口以防写入冲突。</div>'}
+    </section>
+  `;
+}
+
+function renderDirectoriesPanel(): string {
+  return `
+    <section class="panel panel--directories">
+      <div class="panel__header">
+        <div class="panel__eyebrow">Location</div>
+        <h2 class="panel__title">选择安装和缓存位置</h2>
+        <p class="panel__subtitle">请确认程序安装目录，以及在运行时用于存放受控缓存的父级目录。</p>
+      </div>
 
       <div class="surface-grid">
-        <section class="surface">
-          <div class="surface__header">
-            <div class="surface__eyebrow">Directories</div>
-            <div class="surface__title">程序与缓存目录</div>
-            <div class="surface__subtitle">安装目录决定程序位置，缓存父目录会自动生成受控的 <span class="mono">SvnDiffTool\\Cache</span> 子目录。</div>
-          </div>
+        <section class="surface" style="grid-column: 1 / -1;">
           <div class="field">
             <label class="field__label">程序安装目录</label>
             <div class="field__row">
-              <input class="input" data-input="installDir" value="${escapeHtml(state.installDir)}" />
+              <input class="input" spellcheck="false" data-input="installDir" value="${escapeHtml(state.installDir)}" />
               <button class="button button--ghost" data-action="pick-install-dir">浏览</button>
             </div>
           </div>
           <div class="field">
             <label class="field__label">会话与临时文件父目录</label>
             <div class="field__row">
-              <input class="input" data-input="cacheParent" value="${escapeHtml(state.cacheParent)}" />
+              <input class="input" spellcheck="false" data-input="cacheParent" value="${escapeHtml(state.cacheParent)}" />
               <button class="button button--ghost" data-action="pick-cache-parent">浏览</button>
             </div>
             <div class="field__hint">实际受控目录：<span class="mono">${escapeHtml(managedCacheRoot() || '未设置')}</span></div>
           </div>
         </section>
+      </div>
+    </section>
+  `;
+}
 
-        <section class="surface surface--blue">
+function renderSettingsPanel(): string {
+  return `
+    <section class="panel panel--settings">
+      <div class="panel__header">
+        <div class="panel__eyebrow">Settings</div>
+        <h2 class="panel__title">配置接管策略与选项</h2>
+        <p class="panel__subtitle">告诉 SvnDiffTool 您希望如何处理文件差异比较，以及是否创建桌面快捷入口。</p>
+      </div>
+
+      <div class="surface-grid">
+        <section class="surface surface--blue" style="grid-column: 1 / -1;">
           <div class="surface__header">
             <div class="surface__eyebrow">Diff Viewer</div>
             <div class="surface__title">默认接管策略</div>
-            <div class="surface__subtitle">你可以保持当前 TortoiseSVN 配置，也可以让 SvnDiffTool 接管工作簿或全部文件 diff。</div>
           </div>
           <div class="choice-list">
             ${diffModes.map((mode) => `
@@ -421,37 +289,25 @@ function renderConfigurePanel(): string {
           </div>
         </section>
 
-        <section class="surface">
+        <section class="surface" style="grid-column: 1 / -1;">
           <div class="surface__header">
             <div class="surface__eyebrow">Optional</div>
-            <div class="surface__title">安装后动作</div>
-            <div class="surface__subtitle">只保留两个最常用的安装后选项，避免让安装页变成复杂的配置面板。</div>
+            <div class="surface__title">快速访问</div>
           </div>
-          <div class="toggle-list">
-            <label class="toggle">
+          <div class="toggle-list" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+            <label class="toggle" style="min-height: 54px; padding: 12px 14px;">
               <input type="checkbox" data-toggle="desktopShortcut" ${state.createDesktopShortcut ? 'checked' : ''} />
               <span class="toggle__copy">
                 <span class="toggle__title">创建桌面快捷方式</span>
-                <span class="toggle__desc">为常用入口保留一个直接启动点。</span>
               </span>
             </label>
-            <label class="toggle">
+            <label class="toggle" style="min-height: 54px; padding: 12px 14px;">
               <input type="checkbox" data-toggle="launchAfterInstall" ${state.launchAfterInstall ? 'checked' : ''} />
               <span class="toggle__copy">
-                <span class="toggle__title">安装完成后立即启动 SvnDiffTool</span>
-                <span class="toggle__desc">完成安装后直接进入应用，无需再次手动打开。</span>
+                <span class="toggle__title">安装完成后立即启动</span>
               </span>
             </label>
           </div>
-        </section>
-
-        <section class="surface surface--receipt">
-          <div class="surface__header">
-            <div class="surface__eyebrow">Review</div>
-            <div class="surface__title">安装前摘要</div>
-            <div class="surface__subtitle">点击安装前，这里会汇总本次将写入的关键设置。</div>
-          </div>
-          ${renderSummary('review')}
         </section>
       </div>
     </section>
@@ -483,7 +339,6 @@ function renderInstallingPanel(): string {
           <div class="progress__bar">
             <div class="progress__fill" style="width:${progressPercent()}%"></div>
           </div>
-          <div class="progress-shell__hint">${escapeHtml(phaseDescription)}</div>
         </div>
       </section>
 
@@ -569,9 +424,13 @@ function renderMainPanel(): string {
       return renderDonePanel();
     case 'error':
       return renderErrorPanel();
-    case 'configure':
+    case 'directories':
+      return renderDirectoriesPanel();
+    case 'settings':
+      return renderSettingsPanel();
+    case 'welcome':
     default:
-      return renderConfigurePanel();
+      return renderWelcomePanel();
   }
 }
 
@@ -590,27 +449,46 @@ function renderFooter(): string {
     return `
       <div class="footer__meta">修正安装目录、缓存目录或打包产物后，可以直接返回重新尝试。</div>
       <div class="footer__actions">
-        <button class="button button--ghost" data-action="back-to-configure">返回修改</button>
+        <button class="button button--ghost" data-action="nav-welcome">返回重试</button>
       </div>
     `;
   }
 
   if (state.view === 'installing') {
     return `
-      <div class="footer__meta">内层静默安装器正在运行，期间不会再弹出原生安装页面。</div>
+      <div class="footer__meta">内层静默安装器正在运行，期间不会弹出原生安装页面。</div>
       <div class="footer__actions">
-        <button class="button button--ghost" disabled>安装中</button>
+        <button class="button button--ghost" disabled>正在安装...</button>
       </div>
     `;
   }
 
+  if (state.view === 'welcome') {
+    return `
+      <div class="footer__meta">${state.setup?.payloadReady ? '您可以随时取消安装。' : '当前未检测到内层安装器 payload。'}</div>
+      <div class="footer__actions">
+        <button class="button button--ghost" data-action="close">取消</button>
+        <button class="button button--primary" data-action="nav-directories" ${!state.setup?.payloadReady ? 'disabled' : ''}>下一步</button>
+      </div>
+    `;
+  }
+
+  if (state.view === 'directories') {
+    return `
+      <div class="footer__meta">SvnDiffTool 会在您选定的目录被部署。</div>
+      <div class="footer__actions">
+        <button class="button button--ghost" data-action="nav-welcome">上一步</button>
+        <button class="button button--primary" data-action="nav-settings">下一步</button>
+      </div>
+    `;
+  }
+
+  // settings view
   return `
-    <div class="footer__meta">${state.setup?.payloadReady
-      ? '安装程序将使用当前设置静默调用内层 installer。'
-      : '当前未检测到内层安装器 payload，安装按钮已禁用。'}</div>
+    <div class="footer__meta">确认全部选项后点击安装，将会写入所需集成。</div>
     <div class="footer__actions">
-      <button class="button button--ghost" data-action="close">取消</button>
-      <button class="button button--primary" data-action="install" ${!state.setup?.payloadReady ? 'disabled' : ''}>安装</button>
+      <button class="button button--ghost" data-action="nav-directories">上一步</button>
+      <button class="button button--primary" data-action="install" ${!state.setup?.payloadReady ? 'disabled' : ''}>执行安装</button>
     </div>
   `;
 }
@@ -715,15 +593,23 @@ function bindEvents() {
     void setupBridge.openPath(state.installDir);
   });
 
-  appRoot.querySelector('[data-action="back-to-configure"]')?.addEventListener('click', () => {
-    state.view = 'configure';
-    state.installState = {
-      status: 'idle',
-      phase: 'ready',
-      progress: 0,
-      message: '',
-      error: '',
-    };
+  appRoot.querySelector('[data-action="nav-welcome"]')?.addEventListener('click', () => {
+    state.view = 'welcome';
+    render();
+  });
+  
+  appRoot.querySelector('[data-action="nav-directories"]')?.addEventListener('click', () => {
+    state.view = 'directories';
+    render();
+  });
+
+  appRoot.querySelector('[data-action="nav-settings"]')?.addEventListener('click', () => {
+    const validationMessage = validateInstallOptions();
+    if (validationMessage) {
+      window.alert(validationMessage);
+      return;
+    }
+    state.view = 'settings';
     render();
   });
 
@@ -743,7 +629,7 @@ function render() {
     <div class="shell">
       <header class="titlebar">
         <div class="titlebar__brand">
-          <div class="titlebar__icon"><img src="../../assets/icon.png" alt="SvnDiffTool icon" /></div>
+          <div class="titlebar__icon"><img src="${escapeHtml(getIconUrl())}" alt="SvnDiffTool icon" /></div>
           <div class="titlebar__meta">
             <div class="titlebar__title">SvnDiffTool Setup</div>
             <div class="titlebar__subtitle">v${escapeHtml(state.setup?.version || '0.0.0')}</div>
@@ -757,7 +643,6 @@ function render() {
       </header>
 
       <main class="workspace">
-        ${renderSidebar()}
         ${renderMainPanel()}
       </main>
 
@@ -781,7 +666,7 @@ async function initialize() {
       ? 'error'
       : state.installState.status === 'running'
         ? 'installing'
-        : 'configure';
+        : 'welcome';
   state.windowState = await setupBridge.getWindowState();
 
   setupBridge.onInstallState((payload) => {
@@ -792,7 +677,7 @@ async function initialize() {
         ? 'error'
         : payload.status === 'running'
           ? 'installing'
-          : 'configure';
+          : 'welcome';
     render();
   });
 

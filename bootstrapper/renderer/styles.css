@@ -38,12 +38,9 @@ body {
   margin: 0;
   min-height: 100%;
   font-family: var(--font-ui);
-  background:
-    radial-gradient(circle at top right, rgba(106, 155, 204, 0.12), transparent 24%),
-    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.48), transparent 22%),
-    radial-gradient(circle at bottom left, rgba(217, 119, 87, 0.12), transparent 30%),
-    linear-gradient(180deg, #f6f2e8 0%, var(--bg) 100%);
+  background: var(--bg);
   color: var(--text);
+  overflow: hidden;
 }
 
 body {
@@ -60,9 +57,10 @@ input {
 }
 
 .shell {
-  min-height: 100vh;
+  height: 100vh;
   display: grid;
-  grid-template-rows: 60px 1fr auto;
+  grid-template-rows: 60px minmax(0, 1fr) 80px;
+  overflow: hidden;
 }
 
 .titlebar {
@@ -132,17 +130,11 @@ input {
 }
 
 .workspace {
-  width: min(1180px, calc(100vw - 40px));
-  margin: 0 auto;
-  padding: 24px 0 20px;
-  display: grid;
-  grid-template-columns: minmax(300px, 352px) minmax(0, 1fr);
-  gap: 20px;
-  align-items: start;
-}
-
-.workspace--single {
-  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -436,12 +428,23 @@ input {
 }
 
 .panel {
-  padding: 26px;
-  display: grid;
-  gap: 18px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.5), transparent),
-    var(--surface-strong);
+  padding: 30px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  background: #fff;
+  animation: panelFadeIn 300ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+  transform: translateY(4px);
+  flex: 1;
+  overflow-y: auto;
+}
+
+@keyframes panelFadeIn {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .panel__header,
@@ -755,53 +758,3 @@ input {
   border: 1px solid rgba(191, 182, 167, 0.54);
 }
 
-@media (max-width: 1080px) {
-  .workspace {
-    width: calc(100vw - 28px);
-    grid-template-columns: 1fr;
-  }
-
-  .summary-grid--receipt,
-  .summary-grid--review,
-  .surface-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 860px) {
-  .workspace {
-    padding-top: 18px;
-  }
-
-  .panel,
-  .sidebar__hero,
-  .sidebar-card,
-  .surface,
-  .progress-shell {
-    padding-left: 18px;
-    padding-right: 18px;
-  }
-
-  .field__row,
-  .progress-shell {
-    grid-template-columns: 1fr;
-  }
-
-  .progress-shell__visual {
-    justify-content: start;
-  }
-
-  .timeline__top,
-  .footer {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .footer__actions {
-    width: 100%;
-  }
-
-  .footer__actions .button {
-    flex: 1 1 auto;
-  }
-}

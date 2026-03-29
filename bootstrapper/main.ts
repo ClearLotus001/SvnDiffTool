@@ -29,6 +29,7 @@ interface SetupContext {
   defaultInstallDir: string;
   defaultCacheParent: string;
   managedCacheRoot: string;
+  iconPath: string;
 }
 
 interface InstallOptions {
@@ -105,12 +106,10 @@ function notifyWindowState() {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1040,
-    height: 720,
-    minWidth: 920,
-    minHeight: 620,
-    resizable: true,
-    maximizable: true,
+    width: 800,
+    height: 560,
+    resizable: false,
+    maximizable: false,
     minimizable: true,
     fullscreenable: false,
     show: false,
@@ -290,6 +289,7 @@ function getSetupContext(): SetupContext {
     defaultInstallDir: getDefaultInstallDir(),
     defaultCacheParent,
     managedCacheRoot: getManagedCacheRoot(defaultCacheParent),
+    iconPath: getIconPath(),
   };
 }
 
