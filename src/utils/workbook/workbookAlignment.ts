@@ -81,7 +81,11 @@ function patienceLCS<TMeta>(
     const positions = mineIndex.get(baseRows[baseIdx]!.signature);
     if (!positions) continue;
 
-    const sortedPositions = positions.slice().sort((left, right) => left - right);
+    // Iterate matching mine positions in reverse order.
+    // This is the standard Hunt–Szymanski / patience-LCS trick that prevents
+    // one base row from being chained against multiple duplicate mine rows
+    // (for example many consecutive blank workbook rows).
+    const sortedPositions = positions.slice().sort((left, right) => right - left);
     sortedPositions.forEach((mineIdx) => {
       let lo = 0;
       let hi = tails.length;

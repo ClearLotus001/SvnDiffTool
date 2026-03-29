@@ -552,6 +552,59 @@ test('rust workbook diff handles large aligned workbooks without stack overflow'
   assert.equal(diffLines.every(line => line.type === 'equal'), true);
 });
 
+test('rust workbook diff keeps duplicate blank rows aligned after an insertion', async (t) => {
+  const parserPath = join(process.cwd(), 'rust', 'target', 'release', process.platform === 'win32' ? 'svn_excel_parser.exe' : 'svn_excel_parser');
+  if (!existsSync(parserPath)) {
+    t.skip('rust parser binary not built');
+    return;
+  }
+
+  const os = await import('node:os');
+  const fs = await import('node:fs/promises');
+  const tempDir = await fs.mkdtemp(join(os.tmpdir(), 'rust-workbook-diff-blank-anchors-'));
+  const basePath = join(tempDir, 'base.xlsx');
+  const minePath = join(tempDir, 'mine.xlsx');
+  const blankCount = 5;
+
+  await fs.writeFile(basePath, Buffer.from(buildWorkbookZip('Thing', [
+    ['Header'],
+    ['Anchor'],
+    ...Array.from({ length: blankCount }, () => ['']),
+    ['Tail'],
+  ])));
+  await fs.writeFile(minePath, Buffer.from(buildWorkbookZip('Thing', [
+    ['Header'],
+    [''],
+    ['Anchor'],
+    ...Array.from({ length: blankCount }, () => ['']),
+    ['Tail'],
+  ])));
+
+  const output = execFileSync(parserPath, ['--diff-json', basePath, minePath], {
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  const diffOutput = normalizeRustWorkbookDiffOutput(output);
+  const rows = buildWorkbookSectionRowIndex(diffOutput.diffLines, getWorkbookSections(diffOutput.diffLines)).get('Thing')?.rows ?? [];
+  const preview = rows.slice(0, blankCount + 3).map((row) => ({
+    leftRow: parseWorkbookRowLine(row.left)?.rowNumber ?? null,
+    rightRow: parseWorkbookRowLine(row.right)?.rowNumber ?? null,
+    leftA: parseWorkbookRowLine(row.left)?.cells[0]?.value ?? null,
+    rightA: parseWorkbookRowLine(row.right)?.cells[0]?.value ?? null,
+  }));
+
+  assert.deepEqual(preview, [
+    { leftRow: 1, rightRow: 1, leftA: 'Header', rightA: 'Header' },
+    { leftRow: null, rightRow: 2, leftA: null, rightA: null },
+    { leftRow: 2, rightRow: 3, leftA: 'Anchor', rightA: 'Anchor' },
+    { leftRow: 3, rightRow: 4, leftA: null, rightA: null },
+    { leftRow: 4, rightRow: 5, leftA: null, rightA: null },
+    { leftRow: 5, rightRow: 6, leftA: null, rightA: null },
+    { leftRow: 6, rightRow: 7, leftA: null, rightA: null },
+    { leftRow: 7, rightRow: 8, leftA: null, rightA: null },
+  ]);
+});
+
 test('rust workbook diff supports same-file fast path', async (t) => {
   const parserPath = join(process.cwd(), 'rust', 'target', 'release', process.platform === 'win32' ? 'svn_excel_parser.exe' : 'svn_excel_parser');
   if (!existsSync(parserPath)) {

@@ -34,6 +34,7 @@ export interface WorkbookMergedRegion {
   height: number;
   visibleStartRow: number;
   segments: WorkbookCanvasSpanSegment[];
+  rowSegments: WorkbookCanvasRowSegment[];
 }
 
 export interface WorkbookMergeDrawInfo {
@@ -46,11 +47,47 @@ export interface WorkbookCanvasSpanSegment {
   width: number;
 }
 
+export interface WorkbookCanvasRowSegment {
+  top: number;
+  height: number;
+}
+
 export interface WorkbookCanvasSpanGeometry {
   left: number;
   right: number;
   width: number;
   segments: WorkbookCanvasSpanSegment[];
+  layerSegments: {
+    frozen: WorkbookCanvasSpanSegment[];
+    scroll: WorkbookCanvasSpanSegment[];
+  };
+}
+
+export interface WorkbookCanvasCellViewportRect {
+  left: number;
+  width: number;
+}
+
+export interface WorkbookCanvasLayerViewports {
+  content: WorkbookCanvasCellViewportRect;
+  frozen: WorkbookCanvasCellViewportRect | null;
+  scroll: WorkbookCanvasCellViewportRect | null;
+  frozenBoundaryX: number;
+}
+
+export function clipWorkbookCanvasToViewport(
+  ctx: CanvasRenderingContext2D,
+  viewportRect: WorkbookCanvasCellViewportRect,
+  top: number,
+  height: number,
+  draw: () => void,
+): void {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(viewportRect.left, top, viewportRect.width, height);
+  ctx.clip();
+  draw();
+  ctx.restore();
 }
 
 function mergeContiguousCanvasSegments(
@@ -76,6 +113,20 @@ function mergeContiguousCanvasSegments(
   });
 
   return merged;
+}
+
+function getWorkbookCanvasSpanSegmentBounds(
+  segments: WorkbookCanvasSpanSegment[],
+): { left: number; right: number; width: number } | null {
+  if (segments.length === 0) return null;
+
+  const left = Math.min(...segments.map((segment) => segment.left));
+  const right = Math.max(...segments.map((segment) => segment.left + segment.width));
+  return {
+    left,
+    right,
+    width: Math.max(0, right - left),
+  };
 }
 
 function getCompactHalfWidth(entry: HorizontalVirtualColumnEntry): number {
@@ -200,23 +251,20 @@ export function getWorkbookCanvasSpanGeometry(
 ): WorkbookCanvasSpanGeometry | null {
   const boundaryX = contentLeft + frozenWidth;
   const segments: WorkbookCanvasSpanSegment[] = [];
+  const frozenLayerSegments: WorkbookCanvasSpanSegment[] = [];
+  const scrollLayerSegments: WorkbookCanvasSpanSegment[] = [];
 
   bounds.segmentOffsets.forEach((segment) => {
-    if (!bounds.spansFreezeBoundary) {
-      const frozen = segment.rightOffset <= frozenWidth || bounds.startEntry.offset < frozenWidth;
-      const left = contentLeft + segment.leftOffset - (frozen ? 0 : currentScrollLeft);
-      segments.push({ left, width: segment.rightOffset - segment.leftOffset });
-      return;
-    }
-
     if (segment.leftOffset < frozenWidth) {
       const frozenLeftOffset = segment.leftOffset;
       const frozenRightOffset = Math.min(segment.rightOffset, frozenWidth);
       if (frozenRightOffset > frozenLeftOffset) {
-        segments.push({
+        const frozenSegment = {
           left: contentLeft + frozenLeftOffset,
           width: frozenRightOffset - frozenLeftOffset,
-        });
+        };
+        segments.push(frozenSegment);
+        frozenLayerSegments.push(frozenSegment);
       }
     }
 
@@ -225,6 +273,12 @@ export function getWorkbookCanvasSpanGeometry(
       const scrollRightOffset = segment.rightOffset;
       const rawLeft = contentLeft + scrollLeftOffset - currentScrollLeft;
       const rawRight = contentLeft + scrollRightOffset - currentScrollLeft;
+      if (rawRight > rawLeft) {
+        scrollLayerSegments.push({
+          left: rawLeft,
+          width: rawRight - rawLeft,
+        });
+      }
       const clippedLeft = Math.max(boundaryX, rawLeft);
       if (rawRight > clippedLeft) {
         segments.push({
@@ -240,14 +294,106 @@ export function getWorkbookCanvasSpanGeometry(
   const normalizedSegments = bounds.spansFreezeBoundary
     ? visibleSegments
     : mergeContiguousCanvasSegments(visibleSegments);
-  const left = normalizedSegments[0]!.left;
-  const right = normalizedSegments[normalizedSegments.length - 1]!.left + normalizedSegments[normalizedSegments.length - 1]!.width;
+  const normalizedFrozenLayerSegments = mergeContiguousCanvasSegments(
+    frozenLayerSegments.filter((segment) => segment.width > 0),
+  );
+  const normalizedScrollLayerSegments = mergeContiguousCanvasSegments(
+    scrollLayerSegments.filter((segment) => segment.width > 0),
+  );
+  const normalizedBounds = getWorkbookCanvasSpanSegmentBounds(normalizedSegments);
+  if (!normalizedBounds) return null;
 
   return {
-    left,
-    right,
-    width: Math.max(0, right - left),
+    left: normalizedBounds.left,
+    right: normalizedBounds.right,
+    width: normalizedBounds.width,
     segments: normalizedSegments,
+    layerSegments: {
+      frozen: normalizedFrozenLayerSegments,
+      scroll: normalizedScrollLayerSegments,
+    },
+  };
+}
+
+export function getWorkbookCanvasSpanSegmentsForLayer(
+  geometry: WorkbookCanvasSpanGeometry,
+  layer: 'content' | 'frozen' | 'scroll',
+): WorkbookCanvasSpanSegment[] {
+  if (layer === 'content') return geometry.segments;
+  return geometry.layerSegments[layer];
+}
+
+export function getWorkbookCanvasLayerViewports(params: {
+  contentLeft: number;
+  contentRight: number;
+  frozenWidth: number;
+}): WorkbookCanvasLayerViewports {
+  const {
+    contentLeft,
+    contentRight,
+    frozenWidth,
+  } = params;
+
+  const normalizedContentRight = Math.max(contentLeft, contentRight);
+  const frozenBoundaryX = contentLeft + frozenWidth;
+  const frozenRight = Math.min(normalizedContentRight, frozenBoundaryX);
+  const scrollLeft = Math.max(contentLeft, frozenBoundaryX);
+  const contentWidth = Math.max(0, normalizedContentRight - contentLeft);
+  const frozenViewportWidth = Math.max(0, frozenRight - contentLeft);
+  const scrollViewportWidth = Math.max(0, normalizedContentRight - scrollLeft);
+
+  return {
+    content: {
+      left: contentLeft,
+      width: contentWidth,
+    },
+    frozen: frozenViewportWidth > 0
+      ? {
+          left: contentLeft,
+          width: frozenViewportWidth,
+        }
+      : null,
+    scroll: scrollViewportWidth > 0
+      ? {
+          left: scrollLeft,
+          width: scrollViewportWidth,
+        }
+      : null,
+    frozenBoundaryX,
+  };
+}
+
+export function getWorkbookCanvasCellViewportRect(params: {
+  drawLeft: number;
+  drawWidth: number;
+  contentLeft: number;
+  frozenWidth: number;
+  frozen: boolean;
+}): WorkbookCanvasCellViewportRect | null {
+  const {
+    drawLeft,
+    drawWidth,
+    contentLeft,
+    frozenWidth,
+    frozen,
+  } = params;
+
+  if (drawWidth <= 0) return null;
+  if (frozen) {
+    return {
+      left: drawLeft,
+      width: drawWidth,
+    };
+  }
+
+  const boundaryX = contentLeft + frozenWidth;
+  const visibleLeft = Math.max(drawLeft, boundaryX);
+  const visibleRight = drawLeft + drawWidth;
+  if (visibleRight <= visibleLeft) return null;
+
+  return {
+    left: visibleLeft,
+    width: visibleRight - visibleLeft,
   };
 }
 
@@ -267,12 +413,183 @@ export function getWorkbookMergedCompareCell(
   return fallback;
 }
 
+export function getWorkbookMergedCompareCellFromRows(
+  compareCellsByRowNumber: Map<number, Map<number, WorkbookCompareCellState>>,
+  range: WorkbookMergeRange,
+): WorkbookCompareCellState | undefined {
+  let fallback: WorkbookCompareCellState | undefined;
+
+  for (let rowNumber = range.startRow; rowNumber <= range.endRow; rowNumber += 1) {
+    const compareCells = compareCellsByRowNumber.get(rowNumber);
+    if (!compareCells) continue;
+
+    const cell = getWorkbookMergedCompareCell(compareCells, range);
+    if (!cell) continue;
+
+    fallback ??= cell;
+    if (cell.changed) return cell;
+  }
+
+  return fallback;
+}
+
+function getWorkbookVisibleStartColumn(params: {
+  range: WorkbookMergeRange;
+  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
+  contentLeft: number;
+  currentScrollLeft: number;
+  freezeColumnCount: number;
+  frozenWidth: number;
+  mode: WorkbookColumnSpanMode;
+  layer?: 'content' | 'frozen' | 'scroll';
+}): number | null {
+  const {
+    range,
+    columnLayoutByColumn,
+    contentLeft,
+    currentScrollLeft,
+    freezeColumnCount,
+    frozenWidth,
+    mode,
+    layer = 'content',
+  } = params;
+
+  for (let column = range.startCol; column <= range.endCol; column += 1) {
+    const bounds = getWorkbookColumnSpanBounds(
+      column,
+      column,
+      columnLayoutByColumn,
+      mode,
+      freezeColumnCount,
+    );
+    if (!bounds) continue;
+
+    const geometry = getWorkbookCanvasSpanGeometry(
+      bounds,
+      contentLeft,
+      currentScrollLeft,
+      frozenWidth,
+    );
+    if (geometry && getWorkbookCanvasSpanSegmentsForLayer(geometry, layer).some((segment) => segment.width > 0)) {
+      return column;
+    }
+  }
+
+  return null;
+}
+
+export function getWorkbookCanvasRowSegments(
+  range: WorkbookMergeRange,
+  renderedRowNumbers: number[],
+  rowLayoutByRowNumber: Map<number, { top: number; height: number }>,
+): WorkbookCanvasRowSegment[] {
+  return renderedRowNumbers
+    .filter((rowNumber) => rowNumber >= range.startRow && rowNumber <= range.endRow)
+    .map((rowNumber) => rowLayoutByRowNumber.get(rowNumber))
+    .filter((segment): segment is { top: number; height: number } => Boolean(segment))
+    .map((segment) => ({ top: segment.top, height: segment.height }))
+    .sort((left, right) => left.top - right.top);
+}
+
+export function getWorkbookCanvasRowSegmentBounds(
+  segments: WorkbookCanvasRowSegment[],
+): { top: number; height: number } | null {
+  if (segments.length === 0) return null;
+
+  const top = segments[0]!.top;
+  const bottom = Math.max(...segments.map((segment) => segment.top + segment.height));
+  return {
+    top,
+    height: Math.max(0, bottom - top),
+  };
+}
+
+export function findWorkbookCanvasRowSegmentAtY(
+  segments: WorkbookCanvasRowSegment[],
+  y: number,
+): WorkbookCanvasRowSegment | null {
+  return segments.find((segment) => y >= segment.top && y <= (segment.top + segment.height)) ?? null;
+}
+
+export function getWorkbookCanvasHoverRowSegmentBounds(
+  segments: WorkbookCanvasRowSegment[],
+  y: number,
+): { top: number; height: number } | null {
+  if (segments.length === 0) return null;
+
+  if (segments.length === 1) {
+    const segment = segments[0]!;
+    return { top: segment.top, height: segment.height };
+  }
+
+  const hoveredSegment = findWorkbookCanvasRowSegmentAtY(segments, y) ?? segments[0]!;
+  return {
+    top: hoveredSegment.top,
+    height: hoveredSegment.height,
+  };
+}
+
+export function getWorkbookCanvasRowSegmentContentHeight(
+  segments: WorkbookCanvasRowSegment[],
+): number {
+  return segments.reduce((sum, segment) => sum + Math.max(0, segment.height), 0);
+}
+
+export function getWorkbookCanvasRowSegmentLineSlotCenters(
+  segments: WorkbookCanvasRowSegment[],
+  lineCount: number,
+  lineHeight: number,
+): number[] {
+  if (lineCount <= 0 || lineHeight <= 0) return [];
+
+  const normalizedSegments = segments
+    .filter((segment) => segment.height > 0)
+    .sort((left, right) => left.top - right.top);
+  if (normalizedSegments.length === 0) return [];
+
+  const slotCenters = normalizedSegments.flatMap((segment) => {
+    const innerHeight = Math.max(0, segment.height - 4);
+    const capacity = Math.max(1, Math.floor(innerHeight / lineHeight));
+    const blockHeight = capacity * lineHeight;
+    const startY = segment.top + Math.max(2, (segment.height - blockHeight) / 2) + (lineHeight / 2);
+
+    return Array.from({ length: capacity }, (_, index) => startY + (index * lineHeight));
+  });
+
+  return slotCenters.slice(0, Math.max(0, lineCount));
+}
+
+export function getWorkbookCanvasRowSegmentCenterY(
+  segments: WorkbookCanvasRowSegment[],
+): number | null {
+  const slotCenters = getWorkbookCanvasRowSegmentLineSlotCenters(segments, 1, 16);
+  if (slotCenters.length > 0) return slotCenters[0] ?? null;
+  const bounds = getWorkbookCanvasRowSegmentBounds(segments);
+  return bounds ? bounds.top + (bounds.height / 2) : null;
+}
+
+export function getWorkbookCanvasRowSegmentLineCenters(
+  segments: WorkbookCanvasRowSegment[],
+  lineCount: number,
+  lineHeight: number,
+): number[] {
+  if (lineCount <= 0) return [];
+
+  const slotCenters = getWorkbookCanvasRowSegmentLineSlotCenters(segments, lineCount, lineHeight);
+  if (slotCenters.length === 0) return [];
+
+  if (slotCenters.length <= lineCount) return slotCenters;
+  return slotCenters.slice(0, lineCount);
+}
+
 export function getWorkbookMergeDrawInfo(params: {
   rowNumber: number;
   column: number;
   rowTop: number;
   rowHeight: number;
   renderedRowNumbers: number[];
+  rowLayoutByRowNumber?: Map<number, { top: number; height: number }>;
+  renderedColumns?: number[];
   mergedRanges: WorkbookMergeRange[];
   columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
   contentLeft: number;
@@ -280,13 +597,28 @@ export function getWorkbookMergeDrawInfo(params: {
   freezeColumnCount: number;
   frozenWidth: number;
   mode: WorkbookColumnSpanMode;
+  layer?: 'content' | 'frozen' | 'scroll';
 }): WorkbookMergeDrawInfo {
   const range = findWorkbookMergeRange(params.mergedRanges, params.rowNumber, params.column);
   if (!range) {
     return { covered: false, region: null };
   }
 
-  if (params.column !== range.startCol) {
+  const visibleStartColumn = getWorkbookVisibleStartColumn({
+    range,
+    columnLayoutByColumn: params.columnLayoutByColumn,
+    contentLeft: params.contentLeft,
+    currentScrollLeft: params.currentScrollLeft,
+    freezeColumnCount: params.freezeColumnCount,
+    frozenWidth: params.frozenWidth,
+    mode: params.mode,
+    layer: params.layer ?? 'content',
+  });
+  if (visibleStartColumn == null) {
+    return { covered: true, region: null };
+  }
+
+  if (params.column !== visibleStartColumn) {
     return { covered: true, region: null };
   }
 
@@ -318,16 +650,33 @@ export function getWorkbookMergeDrawInfo(params: {
     return { covered: false, region: null };
   }
 
+  const regionSegments = getWorkbookCanvasSpanSegmentsForLayer(geometry, params.layer ?? 'content');
+  const regionBounds = getWorkbookCanvasSpanSegmentBounds(regionSegments);
+  if (!regionBounds) {
+    return { covered: true, region: null };
+  }
+  const rowSegments = params.rowLayoutByRowNumber
+    ? getWorkbookCanvasRowSegments(range, params.renderedRowNumbers, params.rowLayoutByRowNumber)
+    : [{
+        top: params.rowTop,
+        height: Math.max(params.rowHeight, ((range.endRow - visibleStartRow) + 1) * params.rowHeight),
+      }];
+  const rowSegmentBounds = getWorkbookCanvasRowSegmentBounds(rowSegments);
+  if (!rowSegmentBounds) {
+    return { covered: true, region: null };
+  }
+
   return {
     covered: true,
     region: {
       range,
-      left: geometry.left,
-      top: params.rowTop,
-      width: geometry.width,
-      height: Math.max(params.rowHeight, ((range.endRow - visibleStartRow) + 1) * params.rowHeight),
+      left: regionBounds.left,
+      top: rowSegmentBounds.top,
+      width: regionBounds.width,
+      height: rowSegmentBounds.height,
       visibleStartRow,
-      segments: geometry.segments,
+      segments: regionSegments,
+      rowSegments,
     },
   };
 }

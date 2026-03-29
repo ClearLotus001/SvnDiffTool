@@ -160,3 +160,40 @@ test('workbook-native diff does not degrade large workbooks into duplicated shee
   assert.ok(shiftedRow);
   assert.ok(equalCount > rowCount);
 });
+
+test('workbook-native diff keeps duplicate blank rows aligned after an insertion', () => {
+  const blankCount = 5;
+  const base = buildWorkbook([
+    ['Header'],
+    ['Anchor'],
+    ...Array.from({ length: blankCount }, () => ['']),
+    ['Tail'],
+  ]);
+  const mine = buildWorkbook([
+    ['Header'],
+    [''],
+    ['Anchor'],
+    ...Array.from({ length: blankCount }, () => ['']),
+    ['Tail'],
+  ]);
+
+  const diffLines = computeWorkbookDiff(base, mine);
+  const rows = getSectionRows(diffLines);
+  const preview = rows.slice(0, blankCount + 3).map((row) => ({
+    leftRow: parseWorkbookRowLine(row.left)?.rowNumber ?? null,
+    rightRow: parseWorkbookRowLine(row.right)?.rowNumber ?? null,
+    leftA: parseWorkbookRowLine(row.left)?.cells[0]?.value ?? null,
+    rightA: parseWorkbookRowLine(row.right)?.cells[0]?.value ?? null,
+  }));
+
+  assert.deepEqual(preview, [
+    { leftRow: 1, rightRow: 1, leftA: 'Header', rightA: 'Header' },
+    { leftRow: null, rightRow: 2, leftA: null, rightA: '' },
+    { leftRow: 2, rightRow: 3, leftA: 'Anchor', rightA: 'Anchor' },
+    { leftRow: 3, rightRow: 4, leftA: '', rightA: '' },
+    { leftRow: 4, rightRow: 5, leftA: '', rightA: '' },
+    { leftRow: 5, rightRow: 6, leftA: '', rightA: '' },
+    { leftRow: 6, rightRow: 7, leftA: '', rightA: '' },
+    { leftRow: 7, rightRow: 8, leftA: '', rightA: '' },
+  ]);
+});

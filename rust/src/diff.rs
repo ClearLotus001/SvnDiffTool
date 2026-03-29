@@ -215,7 +215,10 @@ fn patience_lcs(base_rows: &[WorkbookRowEntry], mine_rows: &[WorkbookRowEntry]) 
         };
 
         let mut sorted_positions = positions.clone();
-        sorted_positions.sort_unstable();
+        // Iterate mine positions in reverse order so one base row does not
+        // anchor against multiple duplicate mine rows (for example long runs
+        // of identical blank workbook rows after an insertion).
+        sorted_positions.sort_unstable_by(|left, right| right.cmp(left));
 
         for mine_idx in sorted_positions {
             let mut low = 0usize;

@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import type { WorkbookDiffRegion } from '../src/types';
-import { buildWorkbookRegionOverlayBox } from '../src/utils/workbook/workbookRegionOverlay';
+import {
+  buildWorkbookRegionOverlayBox,
+  buildWorkbookRegionOverlayBoxes,
+} from '../src/utils/workbook/workbookRegionOverlay';
 import { mergeWorkbookDiffRegionOverlayBoxes } from '../src/components/workbook/WorkbookDiffRegionOverlay';
 
 function buildRegion(overrides: Partial<WorkbookDiffRegion> = {}): WorkbookDiffRegion {
@@ -34,6 +37,11 @@ const visibleRowFrames = new Map<number, { top: number; height: number }>([
 const columnLayoutByColumn = new Map([
   [0, { column: 0, position: 0, width: 100, displayWidth: 200, offset: 0 }],
   [1, { column: 1, position: 1, width: 100, displayWidth: 200, offset: 100 }],
+]);
+
+const discontinuousPairedColumnLayoutByColumn = new Map([
+  [0, { column: 0, position: 0, width: 100, displayWidth: 200, offset: 0 }],
+  [1, { column: 1, position: 1, width: 100, displayWidth: 200, offset: 200 }],
 ]);
 
 test('buildWorkbookRegionOverlayBox merges paired compare sides into one layout-level box', () => {
@@ -72,6 +80,41 @@ test('buildWorkbookRegionOverlayBox keeps single-pane regions to one box', () =>
   assert.ok(box);
   assert.equal(box.width, 200);
   assert.equal(box.height, 40);
+});
+
+test('buildWorkbookRegionOverlayBoxes keeps discontinuous paired segments separate before overlay merge', () => {
+  const boxes = buildWorkbookRegionOverlayBoxes({
+    region: buildRegion({ hasMineSide: false }),
+    visibleRowFrames,
+    boundsModes: ['paired-base'],
+    columnLayoutByColumn: discontinuousPairedColumnLayoutByColumn,
+    contentLeft: 40,
+    scrollLeft: 0,
+    frozenWidth: 0,
+    freezeColumnCount: 0,
+    key: 'paired-segments',
+  });
+
+  assert.deepEqual(boxes, [
+    {
+      key: 'paired-segments:paired-base:0:segment-0',
+      left: 40,
+      top: 24,
+      width: 100,
+      height: 40,
+      openTop: false,
+      openBottom: false,
+    },
+    {
+      key: 'paired-segments:paired-base:0:segment-1',
+      left: 240,
+      top: 24,
+      width: 100,
+      height: 40,
+      openTop: false,
+      openBottom: false,
+    },
+  ]);
 });
 
 test('mergeWorkbookDiffRegionOverlayBoxes keeps staggered column islands separate', () => {

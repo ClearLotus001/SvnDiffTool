@@ -94,3 +94,16 @@ test('tooltip uses active side titles for revision-vs-revision compare', () => {
   assert.doesNotMatch(html, /对比版本/);
   assert.doesNotMatch(html, /本地工作副本/);
 });
+
+test('tooltip restores workbook logical line breaks instead of showing slash-normalized values', () => {
+  const html = renderTooltip(createCompareCell({
+    baseCell: { value: '六人个人竞速单局 / 我们恋爱吧 / 全魔法套装+A车', formula: '' },
+    mineCell: { value: '六人个人竞速单局 / 我们恋爱吧 / 全魔法套装+A车', formula: '' },
+  }));
+
+  assert.doesNotMatch(html, /六人个人竞速单局 \/ 我们恋爱吧 \/ 全魔法套装\+A车/);
+  assert.match(html, /六人个人竞速单局/);
+  assert.match(html, /我们恋爱吧/);
+  assert.match(html, /全魔法套装\+A车/);
+  assert.doesNotMatch(html, /↵/);
+});

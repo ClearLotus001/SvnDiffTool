@@ -275,6 +275,8 @@
   "artifactNoticeTitle": "当前对比没有单元格差异，但工作簿产物文件发生了变化",
   "artifactNoticeBody": "这类变化通常来自非单元格层，例如导出时间、包内结构、宏容器或其他元数据。主视图仍按表格内容无差异处理。",
   "artifactNoticeDismiss": "关闭提示",
+  "workbookStackedMergeNoticeTitle": "当前视口包含 {count} 个多行合并区域，堆叠模式已简化纵向显示",
+  "workbookStackedMergeNoticeBody": "在单边改单行、折叠、隐藏行或冻结边界附近，合并单元格会按分段语义显示。若需要查看更完整的表格几何布局，建议切换到“列对比”或“左右”。",
   "sourceNoticeUnversionedTitle": "当前文件未纳入 SVN 版本管理",
   "sourceNoticeUnversionedBody": "已按本地文件方式打开，可正常查看内容；由于没有可用 revision，顶部不会提供 SVN 版本切换。",
   "sourceNoticeDismiss": "关闭提示",

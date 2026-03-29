@@ -40,7 +40,10 @@ import {
   getWorkbookColumnSpanBounds,
   getWorkbookSelectionSpanForSelection,
 } from '@/utils/workbook/workbookMergeLayout';
-import { buildWorkbookRegionOverlayBox } from '@/utils/workbook/workbookRegionOverlay';
+import {
+  buildWorkbookRegionOverlayBoxes,
+  buildWorkbookRegionOverlayBoxesFromGeometry,
+} from '@/utils/workbook/workbookRegionOverlay';
 import { buildWorkbookSplitRowCompareState } from '@/utils/workbook/workbookCompare';
 import {
   getWorkbookColumnWidth,
@@ -515,6 +518,27 @@ const WorkbookHorizontalPanel = memo(({
 
     return next;
   }, [activeSheetName, baseVersion, mineVersion, sectionRows, sheetPresentation.visibleColumns]);
+  const compareCellsByRowNumber = useMemo(() => {
+    const next = {
+      base: new Map<number, ReturnType<typeof buildWorkbookSplitRowCompareState>['cellDeltas']>(),
+      mine: new Map<number, ReturnType<typeof buildWorkbookSplitRowCompareState>['cellDeltas']>(),
+    };
+
+    sectionRows.forEach((row) => {
+      const rowDelta = buildWorkbookSplitRowCompareState(
+        row,
+        sheetPresentation.visibleColumns,
+        compareMode,
+      );
+      const baseRowNumber = getWorkbookSideRowNumber(row, 'base');
+      if (baseRowNumber != null) next.base.set(baseRowNumber, rowDelta.cellDeltas);
+
+      const mineRowNumber = getWorkbookSideRowNumber(row, 'mine');
+      if (mineRowNumber != null) next.mine.set(mineRowNumber, rowDelta.cellDeltas);
+    });
+
+    return next;
+  }, [compareMode, sectionRows, sheetPresentation.visibleColumns]);
   const rowItemIndexBySide = useMemo(() => {
     const next = {
       base: new Map<number, number>(),
@@ -686,22 +710,21 @@ const WorkbookHorizontalPanel = memo(({
           : null;
         if (!geometry) return [];
 
-        return [{
-          key: `${activeDiffRegion.id}:${side}:${patchIndex}`,
-          top: Math.max(0, top),
-          left: Math.max(0, geometry.left),
-          width: Math.max(0, geometry.right - geometry.left),
-          height: Math.max(0, bottom - top),
+        return buildWorkbookRegionOverlayBoxesFromGeometry({
+          geometry,
+          keyPrefix: `${activeDiffRegion.id}:${side}:${patchIndex}`,
+          top,
+          bottom,
           openTop: firstVisibleRowIndex > patch.startRowIndex,
           openBottom: lastVisibleRowIndex < patch.endRowIndex,
-        }];
+        });
       });
 
       const mergedBoxes = mergeWorkbookDiffRegionOverlayBoxes(boxes)
         .filter((box) => box.width > 6 && box.height > 6);
       if (mergedBoxes.length > 0) return mergedBoxes;
 
-      const fallbackBox = buildWorkbookRegionOverlayBox({
+      const fallbackBoxes = buildWorkbookRegionOverlayBoxes({
         region: activeDiffRegion,
         visibleRowFrames,
         boundsModes: ['single'],
@@ -713,9 +736,9 @@ const WorkbookHorizontalPanel = memo(({
         key: `${activeDiffRegion.id}:${side}:fallback`,
       });
 
-      return fallbackBox && fallbackBox.width > 6 && fallbackBox.height > 6
-        ? [fallbackBox]
-        : [];
+      const mergedFallbackBoxes = mergeWorkbookDiffRegionOverlayBoxes(fallbackBoxes)
+        .filter((box) => box.width > 6 && box.height > 6);
+      return mergedFallbackBoxes.length > 0 ? mergedFallbackBoxes : [];
     };
 
     return {
@@ -1472,6 +1495,7 @@ const WorkbookHorizontalPanel = memo(({
                   columnLayoutByColumn={virtualColumns.columnLayoutByColumn}
                   mergedRanges={side === 'left' ? sheetPresentation.baseMergeRanges : sheetPresentation.mineMergeRanges}
                   rowEntryByRowNumber={side === 'left' ? rowEntryByRowNumber.base : rowEntryByRowNumber.mine}
+                  compareCellsByRowNumber={side === 'left' ? compareCellsByRowNumber.base : compareCellsByRowNumber.mine}
                   compareMode={compareMode}
                 />
               </div>
@@ -1557,6 +1581,7 @@ const WorkbookHorizontalPanel = memo(({
                         columnLayoutByColumn={virtualColumns.columnLayoutByColumn}
                         mergedRanges={side === 'left' ? sheetPresentation.baseMergeRanges : sheetPresentation.mineMergeRanges}
                         rowEntryByRowNumber={side === 'left' ? rowEntryByRowNumber.base : rowEntryByRowNumber.mine}
+                        compareCellsByRowNumber={side === 'left' ? compareCellsByRowNumber.base : compareCellsByRowNumber.mine}
                         compareMode={compareMode}
                       />
                     </div>

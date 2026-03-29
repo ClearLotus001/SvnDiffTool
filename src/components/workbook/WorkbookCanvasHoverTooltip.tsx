@@ -3,6 +3,7 @@ import { useTheme } from '@/context/theme';
 import { FONT_SIZE, FONT_UI } from '@/constants/typography';
 import { createPortal } from 'react-dom';
 import type { WorkbookCompareCellState } from '@/utils/workbook/workbookCompare';
+import { splitWorkbookCanvasTextLines } from '@/utils/workbook/workbookCanvasText';
 import WorkbookCompareTooltip from '@/components/workbook/WorkbookCompareTooltip';
 import { computeTooltipLayout, getTooltipSurfaceBackground, TooltipArrow } from '@/components/shared/Tooltip';
 
@@ -16,6 +17,8 @@ export interface WorkbookCanvasHoverCell {
     right: number;
     bottom: number;
   };
+  address?: string;
+  displayValue?: string;
   compareCell: WorkbookCompareCellState;
 }
 
@@ -33,6 +36,11 @@ const WorkbookCanvasHoverTooltip = memo(({
   const T = useTheme();
   const bubbleRef = useRef<HTMLDivElement>(null);
   const [bubbleSize, setBubbleSize] = useState({ width: 320, height: 96 });
+  const normalizedDisplayValue = useMemo(() => {
+    if (!hover?.displayValue) return '';
+    const logicalLines = splitWorkbookCanvasTextLines(hover.displayValue);
+    return logicalLines.length > 0 ? logicalLines.join('\n') : hover.displayValue;
+  }, [hover?.displayValue]);
 
   useLayoutEffect(() => {
     if (!hover) return;
@@ -86,6 +94,41 @@ const WorkbookCanvasHoverTooltip = memo(({
           fontFamily: FONT_UI,
           boxShadow: '0 14px 30px rgba(0, 0, 0, 0.12)',
         }}>
+        {(hover.address || hover.displayValue) && (
+          <div
+            style={{
+              display: 'grid',
+              gap: 4,
+              marginBottom: 8,
+              paddingBottom: 8,
+              borderBottom: `1px solid ${T.border}`,
+            }}>
+            {hover.address && (
+              <div
+                style={{
+                  color: T.t2,
+                  fontSize: FONT_SIZE.xs,
+                  fontWeight: 700,
+                  fontFamily: FONT_UI,
+                }}>
+                {hover.address}
+              </div>
+            )}
+            {normalizedDisplayValue && (
+              <div
+                style={{
+                  color: T.t0,
+                  fontSize: FONT_SIZE.sm,
+                  lineHeight: 1.4,
+                  fontFamily: FONT_UI,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}>
+                {normalizedDisplayValue}
+              </div>
+            )}
+          </div>
+        )}
         <WorkbookCompareTooltip
           compareCell={hover.compareCell}
           baseTitle={baseTitle}

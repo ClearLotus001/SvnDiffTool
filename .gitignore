@@ -5,6 +5,7 @@ release/
 .build-tmp/
 .tmp-*/
 logs/
+.claude
 
 release-debug*/
 release-inner*/

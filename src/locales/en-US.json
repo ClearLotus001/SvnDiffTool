@@ -275,6 +275,8 @@
   "artifactNoticeTitle": "This comparison has no cell-level changes, but the workbook artifact changed",
   "artifactNoticeBody": "This usually comes from non-cell layers such as export timestamps, package structure, macro containers, or other metadata. The main view still treats the workbook as content-equal.",
   "artifactNoticeDismiss": "Dismiss notice",
+  "workbookStackedMergeNoticeTitle": "The current viewport contains {count} multi-row merged regions, so stacked mode is using simplified vertical rendering",
+  "workbookStackedMergeNoticeBody": "Near single-sided edits, collapsed blocks, hidden rows, or freeze boundaries, merged cells are shown as semantic segments. Switch to Columns or Left/Right view when you need a more complete worksheet geometry.",
   "sourceNoticeUnversionedTitle": "This file is not under SVN version control",
   "sourceNoticeUnversionedBody": "It has been opened as a local file, so the content can still be viewed normally. SVN revision switching is unavailable for this file.",
   "sourceNoticeDismiss": "Dismiss notice",

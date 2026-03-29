@@ -3,6 +3,7 @@ import { FONT_CODE, FONT_SIZE, FONT_UI } from '@/constants/typography';
 import { useI18n } from '@/context/i18n';
 import { useTheme } from '@/context/theme';
 import type { WorkbookCompareCellState } from '@/utils/workbook/workbookCompare';
+import { splitWorkbookCanvasTextLines } from '@/utils/workbook/workbookCanvasText';
 import { getWorkbookCompareBadgeVisual } from '@/utils/workbook/workbookCompareVisuals';
 import type { WorkbookCellDisplay } from '@/utils/workbook/workbookDisplay';
 
@@ -12,15 +13,10 @@ interface WorkbookCompareTooltipProps {
   mineTitle?: string | undefined;
 }
 
-function getInvisiblePreview(value: string): string | null {
-  if (value === '') return '∅';
-  const preview = value
-    .replace(/ /g, '␠')
-    .replace(/\t/g, '⇥')
-    .replace(/\r\n/g, '↵')
-    .replace(/\r/g, '↵')
-    .replace(/\n/g, '↵');
-  return preview === value ? null : preview;
+function formatWorkbookTooltipValue(value: string): string {
+  if (value === '') return value;
+  const logicalLines = splitWorkbookCanvasTextLines(value);
+  return logicalLines.length > 0 ? logicalLines.join('\n') : value;
 }
 
 const WorkbookCompareTooltip = memo(({
@@ -114,22 +110,11 @@ const WorkbookCompareTooltip = memo(({
               fontSize: FONT_SIZE.sm,
               fontFamily: FONT_UI,
               minWidth: 0,
+              whiteSpace: 'pre-wrap',
               wordBreak: 'break-word',
             }}>
-            {cell.value || t('formulaBarEmptyValue')}
+            {cell.value ? formatWorkbookTooltipValue(cell.value) : t('formulaBarEmptyValue')}
           </span>
-          {getInvisiblePreview(cell.value) && (
-            <span
-              style={{
-                color: T.t2,
-                fontSize: FONT_SIZE.xs,
-                fontFamily: FONT_CODE,
-                minWidth: 0,
-                wordBreak: 'break-word',
-              }}>
-              {getInvisiblePreview(cell.value)}
-            </span>
-          )}
         </div>
 
         <div style={{ display: 'grid', gap: 2, minWidth: 0 }}>
@@ -147,18 +132,6 @@ const WorkbookCompareTooltip = memo(({
             }}>
             {cell.formula || t('formulaBarEmpty')}
           </span>
-          {getInvisiblePreview(cell.formula) && (
-            <span
-              style={{
-                color: T.t2,
-                fontSize: FONT_SIZE.xs,
-                fontFamily: FONT_CODE,
-                minWidth: 0,
-                wordBreak: 'break-word',
-              }}>
-              {getInvisiblePreview(cell.formula)}
-            </span>
-          )}
         </div>
       </div>
     </div>

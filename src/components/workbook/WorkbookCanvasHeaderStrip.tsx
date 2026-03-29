@@ -14,6 +14,11 @@ import type {
 import { ROW_H } from '@/hooks/virtualization/useVirtual';
 import { getWorkbookColumnLabel } from '@/utils/workbook/workbookSections';
 import { buildWorkbookSelectionLookup } from '@/utils/workbook/workbookSelectionState';
+import {
+  clipWorkbookCanvasToViewport,
+  getWorkbookCanvasCellViewportRect,
+  getWorkbookCanvasLayerViewports,
+} from '@/utils/workbook/workbookMergeLayout';
 import WorkbookAnchorTooltip, { type WorkbookAnchorTooltipState } from '@/components/workbook/WorkbookAnchorTooltip';
 
 type WorkbookCanvasHeaderMode = 'single' | 'paired-wide' | 'paired-compact';
@@ -194,9 +199,18 @@ const WorkbookCanvasHeaderStrip = memo(({
       const drawX = entry.position < freezeColumnCount
         ? contentLeft + entry.offset
         : contentLeft + entry.offset - currentScrollLeft;
-      if (x < drawX || x >= drawX + pairWidth) continue;
+      const viewportRect = getWorkbookCanvasCellViewportRect({
+        drawLeft: drawX,
+        drawWidth: pairWidth,
+        contentLeft,
+        frozenWidth: renderColumns
+          .filter(renderEntry => renderEntry.position < freezeColumnCount)
+          .reduce((sum, renderEntry) => sum + renderEntry.displayWidth, 0),
+        frozen: entry.position < freezeColumnCount,
+      });
+      if (!viewportRect || x < viewportRect.left || x >= viewportRect.left + viewportRect.width) continue;
 
-      if (onColumnWidthChange && onAutoFitColumn && x >= (drawX + pairWidth - 6)) {
+      if (onColumnWidthChange && onAutoFitColumn && x >= (viewportRect.left + viewportRect.width - 6)) {
         return {
           kind: 'resize',
           column: entry.column,
@@ -259,8 +273,17 @@ const WorkbookCanvasHeaderStrip = memo(({
       ctx.stroke();
 
       const contentLeft = LN_W + 3;
-
-      renderColumns.forEach((entry) => {
+      const frozenWidth = renderColumns
+        .filter(renderEntry => renderEntry.position < freezeColumnCount)
+        .reduce((sum, renderEntry) => sum + renderEntry.displayWidth, 0);
+      const layerViewports = getWorkbookCanvasLayerViewports({
+        contentLeft,
+        contentRight,
+        frozenWidth,
+      });
+      const frozenEntries = renderColumns.filter(entry => entry.position < freezeColumnCount);
+      const floatingEntries = renderColumns.filter(entry => entry.position >= freezeColumnCount);
+      const drawColumn = (entry: HorizontalVirtualColumnEntry) => {
         const pairWidth = mode === 'single'
           ? entry.width
           : mode === 'paired-wide'
@@ -358,7 +381,25 @@ const WorkbookCanvasHeaderStrip = memo(({
           ctx.fillStyle = cursor === 'col-resize' ? `${T.acc2}b0` : `${T.border2}aa`;
           ctx.fillRect(drawX + pairWidth - 2, 8, 2, height - 16);
         }
-      });
+      };
+
+      if (layerViewports.content.width > 0) {
+        clipWorkbookCanvasToViewport(ctx, layerViewports.content, 0, height, () => {
+          floatingEntries.forEach((entry) => {
+            drawColumn(entry);
+          });
+        });
+      }
+
+      if (layerViewports.frozen) {
+        ctx.fillStyle = T.bg1;
+        ctx.fillRect(layerViewports.frozen.left, 0, layerViewports.frozen.width, height);
+        clipWorkbookCanvasToViewport(ctx, layerViewports.frozen, 0, height, () => {
+          frozenEntries.forEach((entry) => {
+            drawColumn(entry);
+          });
+        });
+      }
 
       resolveHiddenIndicatorLayouts(currentScrollLeft).forEach((indicator) => {
         ctx.fillStyle = T.bg0;

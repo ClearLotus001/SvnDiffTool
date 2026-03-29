@@ -1,5 +1,6 @@
 import { memo, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type { SvnRevisionInfo } from '@/types';
 import { FONT_CODE, FONT_SIZE, FONT_UI } from '@/constants/typography';
 import { useI18n, type Locale } from '@/context/i18n';
@@ -51,6 +52,9 @@ const UI = {
   calendarDaySize: 34,
 } as const;
 
+const FLOATING_PANEL_VIEWPORT_PADDING = 12;
+const FLOATING_PANEL_GAP = 8;
+
 function formatDisplayRevision(revision: string) {
   return revision.replace(/^r/i, '');
 }
@@ -92,6 +96,52 @@ function buildQueryDateTime(date: string, hour: string, minute: string) {
 
 function clampInlineText(lines: number): CSSProperties {
   return { display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: lines, overflow: 'hidden' };
+}
+
+function computeFloatingPanelLayout(
+  rect: DOMRect,
+  viewportWidth: number,
+  viewportHeight: number,
+  panelWidth: number,
+  panelHeight: number,
+) {
+  const minLeft = FLOATING_PANEL_VIEWPORT_PADDING;
+  const maxLeft = Math.max(
+    FLOATING_PANEL_VIEWPORT_PADDING,
+    viewportWidth - panelWidth - FLOATING_PANEL_VIEWPORT_PADDING,
+  );
+  const leftAligned = rect.left;
+  const rightAligned = rect.right - panelWidth;
+  const fitsLeftAligned = leftAligned >= minLeft
+    && leftAligned + panelWidth <= viewportWidth - FLOATING_PANEL_VIEWPORT_PADDING;
+  const fitsRightAligned = rightAligned >= minLeft
+    && rightAligned + panelWidth <= viewportWidth - FLOATING_PANEL_VIEWPORT_PADDING;
+
+  let left: number;
+  if (fitsLeftAligned) {
+    left = leftAligned;
+  } else if (fitsRightAligned) {
+    left = rightAligned;
+  } else {
+    const clampedLeftAligned = Math.min(Math.max(leftAligned, minLeft), maxLeft);
+    const clampedRightAligned = Math.min(Math.max(rightAligned, minLeft), maxLeft);
+    const leftAlignedDistance = Math.abs(clampedLeftAligned - leftAligned);
+    const rightAlignedDistance = Math.abs(clampedRightAligned - rightAligned);
+    left = leftAlignedDistance <= rightAlignedDistance
+      ? clampedLeftAligned
+      : clampedRightAligned;
+  }
+
+  const canPlaceBottom = viewportHeight - rect.bottom >= panelHeight + FLOATING_PANEL_GAP + FLOATING_PANEL_VIEWPORT_PADDING;
+  const canPlaceTop = rect.top >= panelHeight + FLOATING_PANEL_GAP + FLOATING_PANEL_VIEWPORT_PADDING;
+  const top = canPlaceBottom || !canPlaceTop
+    ? Math.min(
+        rect.bottom + FLOATING_PANEL_GAP,
+        Math.max(FLOATING_PANEL_VIEWPORT_PADDING, viewportHeight - panelHeight - FLOATING_PANEL_VIEWPORT_PADDING),
+      )
+    : Math.max(FLOATING_PANEL_VIEWPORT_PADDING, rect.top - panelHeight - FLOATING_PANEL_GAP);
+
+  return { left, top };
 }
 
 function padDatePart(value: number) {
@@ -300,6 +350,7 @@ const RevisionDatePicker = memo(({
   const T = useTheme();
   const { t, locale } = useI18n();
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const todayValue = useMemo(() => buildDateValueFromDate(new Date()), []);
   const initialMonthKey = useMemo(
     () => (value ? value.slice(0, 7) : todayValue.slice(0, 7)),
@@ -313,6 +364,8 @@ const RevisionDatePicker = memo(({
   const [viewMonth, setViewMonth] = useState(() => initialMonthKey);
   const [quickMode, setQuickMode] = useState<'day' | 'month' | 'year'>('day');
   const [yearGridStart, setYearGridStart] = useState(() => initialMonthMeta.year - 5);
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
+  const [panelSize, setPanelSize] = useState<{ width: number; height: number }>({ width: UI.calendarWidth, height: 360 });
 
   useEffect(() => {
     if (disabled) setOpen(false);
@@ -329,20 +382,29 @@ const RevisionDatePicker = memo(({
   useEffect(() => {
     if (!open) return undefined;
 
+    const updateRect = () => {
+      const nextRect = wrapperRef.current?.getBoundingClientRect();
+      if (nextRect) setAnchorRect(nextRect);
+    };
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as Node | null;
-      if (wrapperRef.current?.contains(target ?? null)) return;
+      if (wrapperRef.current?.contains(target ?? null) || panelRef.current?.contains(target ?? null)) return;
       setOpen(false);
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setOpen(false);
     };
 
+    updateRect();
     window.addEventListener('mousedown', handlePointerDown);
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('resize', updateRect);
+    window.addEventListener('scroll', updateRect, true);
     return () => {
       window.removeEventListener('mousedown', handlePointerDown);
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', updateRect);
+      window.removeEventListener('scroll', updateRect, true);
     };
   }, [open]);
 
@@ -355,6 +417,340 @@ const RevisionDatePicker = memo(({
   const yearChoices = useMemo(() => buildYearChoices(yearGridStart), [yearGridStart]);
   const dayCells = useMemo(() => buildCalendarDayCells(viewMonth, value), [viewMonth, value]);
   const hasValue = Boolean(value);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const nextWidth = Math.ceil(panel.offsetWidth);
+    const nextHeight = Math.ceil(panel.offsetHeight);
+    setPanelSize((prev) => (
+      prev.width === nextWidth && prev.height === nextHeight
+        ? prev
+        : { width: nextWidth, height: nextHeight }
+    ));
+  }, [dayCells, monthLabels, open, quickMode, value, viewMonth, weekdayLabels, yearChoices]);
+  const panelLayout = useMemo(() => {
+    if (!open || !anchorRect || typeof window === 'undefined') return null;
+    return computeFloatingPanelLayout(
+      anchorRect,
+      window.innerWidth,
+      window.innerHeight,
+      panelSize.width,
+      panelSize.height,
+    );
+  }, [anchorRect, open, panelSize.height, panelSize.width]);
+
+  const panelContent = (
+    <div
+      ref={panelRef}
+      style={{
+        position: 'fixed',
+        top: panelLayout?.top ?? ((anchorRect?.bottom ?? 0) + FLOATING_PANEL_GAP),
+        left: panelLayout?.left ?? (anchorRect?.left ?? FLOATING_PANEL_VIEWPORT_PADDING),
+        zIndex: 120,
+        width: `min(${UI.calendarWidth}px, calc(100vw - 24px))`,
+        maxWidth: UI.calendarWidth,
+        maxHeight: 'calc(100vh - 24px)',
+        padding: 10,
+        borderRadius: 16,
+        border: `1px solid ${T.border}`,
+        background: `linear-gradient(180deg, ${T.bg1} 0%, ${T.bg0} 100%)`,
+        boxShadow: `0 22px 40px -28px ${T.border2}`,
+        overflowX: 'hidden',
+        overflowY: 'auto',
+      }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
+        <button
+          type="button"
+          onClick={() => {
+            setViewMonth((current) => shiftMonthKey(current, -1));
+            setQuickMode('day');
+          }}
+          style={{
+            width: 30,
+            height: 30,
+            borderRadius: 9,
+            border: `1px solid ${T.border}`,
+            background: T.bg2,
+            color: T.t1,
+            fontSize: FONT_SIZE.sm,
+            fontFamily: FONT_UI,
+            cursor: 'pointer',
+          }}>
+          {'<'}
+        </button>
+        <div style={{ minWidth: 0, color: T.t0, fontSize: FONT_SIZE.xs, fontWeight: 700, fontFamily: FONT_UI, letterSpacing: 0.2 }}>
+          {formatMonthDisplay(viewMonth, locale)}
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setViewMonth((current) => shiftMonthKey(current, 1));
+            setQuickMode('day');
+          }}
+          style={{
+            width: 30,
+            height: 30,
+            borderRadius: 9,
+            border: `1px solid ${T.border}`,
+            background: T.bg2,
+            color: T.t1,
+            fontSize: FONT_SIZE.sm,
+            fontFamily: FONT_UI,
+            cursor: 'pointer',
+          }}>
+          {'>'}
+        </button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 6, marginBottom: 10 }}>
+        <button
+          type="button"
+          onClick={() => {
+            setYearGridStart(viewMonthMeta.year - 5);
+            setQuickMode((current) => (current === 'year' ? 'day' : 'year'));
+          }}
+          style={{
+            height: 32,
+            padding: '0 12px',
+            borderRadius: 10,
+            border: `1px solid ${quickMode === 'year' ? `${accent}33` : T.border}`,
+            background: quickMode === 'year' ? `${accent}12` : T.bg2,
+            color: quickMode === 'year' ? accent : T.t1,
+            fontSize: FONT_SIZE.xs,
+            fontWeight: 700,
+            fontFamily: FONT_UI,
+            cursor: 'pointer',
+          }}>
+          {viewMonthMeta.year}
+        </button>
+        <button
+          type="button"
+          onClick={() => setQuickMode((current) => (current === 'month' ? 'day' : 'month'))}
+          style={{
+            height: 32,
+            padding: '0 12px',
+            borderRadius: 10,
+            border: `1px solid ${quickMode === 'month' ? `${accent}33` : T.border}`,
+            background: quickMode === 'month' ? `${accent}12` : T.bg2,
+            color: quickMode === 'month' ? accent : T.t1,
+            fontSize: FONT_SIZE.xs,
+            fontWeight: 700,
+            fontFamily: FONT_UI,
+            cursor: 'pointer',
+          }}>
+          {monthLabels[viewMonthMeta.month - 1] ?? `${viewMonthMeta.month}`}
+        </button>
+      </div>
+
+      {quickMode === 'year' && (
+        <div style={{ display: 'grid', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => setYearGridStart((current) => current - 12)}
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: 9,
+                border: `1px solid ${T.border}`,
+                background: T.bg2,
+                color: T.t1,
+                fontSize: FONT_SIZE.sm,
+                fontFamily: FONT_UI,
+                cursor: 'pointer',
+              }}>
+              {'<'}
+            </button>
+            <span style={{ color: T.t2, fontSize: UI.metaSize, fontWeight: 700, fontFamily: FONT_UI }}>
+              {`${yearGridStart} - ${yearGridStart + 11}`}
+            </span>
+            <button
+              type="button"
+              onClick={() => setYearGridStart((current) => current + 12)}
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: 9,
+                border: `1px solid ${T.border}`,
+                background: T.bg2,
+                color: T.t1,
+                fontSize: FONT_SIZE.sm,
+                fontFamily: FONT_UI,
+                cursor: 'pointer',
+              }}>
+              {'>'}
+            </button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 6 }}>
+            {yearChoices.map((year) => {
+              const selected = year === viewMonthMeta.year;
+              return (
+                <button
+                  key={year}
+                  type="button"
+                  onClick={() => {
+                    setViewMonth(buildMonthKey(year, viewMonthMeta.month));
+                    setYearGridStart(year - 5);
+                    setQuickMode('day');
+                  }}
+                  style={{
+                    height: 34,
+                    borderRadius: 10,
+                    border: `1px solid ${selected ? accent : T.border}`,
+                    background: selected ? `${accent}14` : T.bg2,
+                    color: selected ? accent : T.t1,
+                    fontSize: FONT_SIZE.xs,
+                    fontWeight: selected ? 700 : 600,
+                    fontFamily: FONT_UI,
+                    cursor: 'pointer',
+                  }}>
+                  {year}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {quickMode === 'month' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 6 }}>
+          {monthLabels.map((label, index) => {
+            const month = index + 1;
+            const selected = month === viewMonthMeta.month;
+            return (
+              <button
+                key={`${label}-${month}`}
+                type="button"
+                onClick={() => {
+                  setViewMonth(buildMonthKey(viewMonthMeta.year, month));
+                  setQuickMode('day');
+                }}
+                style={{
+                  height: 34,
+                  borderRadius: 10,
+                  border: `1px solid ${selected ? accent : T.border}`,
+                  background: selected ? `${accent}14` : T.bg2,
+                  color: selected ? accent : T.t1,
+                  fontSize: FONT_SIZE.xs,
+                  fontWeight: selected ? 700 : 600,
+                  fontFamily: FONT_UI,
+                  cursor: 'pointer',
+                }}>
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {quickMode === 'day' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 6 }}>
+          {weekdayLabels.map((label, index) => (
+            <span
+              key={`${label}-${index}`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: 22,
+                color: T.t2,
+                fontSize: UI.metaSize,
+                fontWeight: 700,
+                fontFamily: FONT_UI,
+                textTransform: 'uppercase',
+                letterSpacing: 0.2,
+              }}>
+              {label}
+            </span>
+          ))}
+
+          {dayCells.map((cell) => {
+            const dayColor = cell.isSelected
+              ? '#fffaf2'
+              : cell.inMonth ? T.t0 : T.t2;
+
+            return (
+              <button
+                key={cell.dateValue}
+                type="button"
+                onClick={() => {
+                  onChange(cell.dateValue);
+                  setViewMonth(cell.dateValue.slice(0, 7));
+                  setOpen(false);
+                }}
+                style={{
+                  width: '100%',
+                  height: UI.calendarDaySize,
+                  borderRadius: 10,
+                  border: `1px solid ${
+                    cell.isSelected
+                      ? accent
+                      : cell.isToday ? `${accent}48` : 'transparent'
+                  }`,
+                  background: cell.isSelected
+                    ? `linear-gradient(180deg, ${accent} 0%, ${accent}cc 100%)`
+                    : cell.isToday ? `${accent}14` : 'transparent',
+                  color: dayColor,
+                  fontSize: FONT_SIZE.xs,
+                  fontWeight: cell.isSelected || cell.isToday ? 700 : 500,
+                  fontFamily: FONT_UI,
+                  cursor: 'pointer',
+                  boxShadow: cell.isSelected ? `0 12px 26px -24px ${accent}bb` : 'none',
+                }}>
+                {cell.dayLabel}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 10 }}>
+        <button
+          type="button"
+          onClick={() => {
+            onClear?.();
+            setOpen(false);
+          }}
+          style={{
+            height: 30,
+            padding: '0 12px',
+            borderRadius: 999,
+            border: `1px solid ${T.border}`,
+            background: T.bg2,
+            color: T.t2,
+            fontSize: UI.metaSize,
+            fontWeight: 600,
+            fontFamily: FONT_UI,
+            cursor: 'pointer',
+          }}>
+          {t('revisionPickerDateClear')}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            onChange(todayValue);
+            setViewMonth(todayValue.slice(0, 7));
+            setOpen(false);
+          }}
+          style={{
+            height: 30,
+            padding: '0 12px',
+            borderRadius: 999,
+            border: `1px solid ${accent}28`,
+            background: `${accent}10`,
+            color: accent,
+            fontSize: UI.metaSize,
+            fontWeight: 700,
+            fontFamily: FONT_UI,
+            cursor: 'pointer',
+          }}>
+          {t('revisionPickerDateToday')}
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <div ref={wrapperRef} style={{ position: 'relative', width: '100%' }}>
@@ -403,313 +799,7 @@ const RevisionDatePicker = memo(({
           <CalendarGlyph color={open ? accent : T.t2} />
         </span>
       </button>
-
-      {open && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 'calc(100% + 8px)',
-            left: 0,
-            zIndex: 9,
-            width: UI.calendarWidth,
-            padding: 10,
-            borderRadius: 16,
-            border: `1px solid ${T.border}`,
-            background: `linear-gradient(180deg, ${T.bg1} 0%, ${T.bg0} 100%)`,
-            boxShadow: `0 22px 40px -28px ${T.border2}`,
-            overflow: 'hidden',
-          }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
-            <button
-              type="button"
-              onClick={() => {
-                setViewMonth((current) => shiftMonthKey(current, -1));
-                setQuickMode('day');
-              }}
-              style={{
-                width: 30,
-                height: 30,
-                borderRadius: 9,
-                border: `1px solid ${T.border}`,
-                background: T.bg2,
-                color: T.t1,
-                fontSize: FONT_SIZE.sm,
-                fontFamily: FONT_UI,
-                cursor: 'pointer',
-              }}>
-              {'<'}
-            </button>
-            <div style={{ minWidth: 0, color: T.t0, fontSize: FONT_SIZE.xs, fontWeight: 700, fontFamily: FONT_UI, letterSpacing: 0.2 }}>
-              {formatMonthDisplay(viewMonth, locale)}
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setViewMonth((current) => shiftMonthKey(current, 1));
-                setQuickMode('day');
-              }}
-              style={{
-                width: 30,
-                height: 30,
-                borderRadius: 9,
-                border: `1px solid ${T.border}`,
-                background: T.bg2,
-                color: T.t1,
-                fontSize: FONT_SIZE.sm,
-                fontFamily: FONT_UI,
-                cursor: 'pointer',
-              }}>
-              {'>'}
-            </button>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 6, marginBottom: 10 }}>
-            <button
-              type="button"
-              onClick={() => {
-                setYearGridStart(viewMonthMeta.year - 5);
-                setQuickMode((current) => (current === 'year' ? 'day' : 'year'));
-              }}
-              style={{
-                height: 32,
-                padding: '0 12px',
-                borderRadius: 10,
-                border: `1px solid ${quickMode === 'year' ? `${accent}33` : T.border}`,
-                background: quickMode === 'year' ? `${accent}12` : T.bg2,
-                color: quickMode === 'year' ? accent : T.t1,
-                fontSize: FONT_SIZE.xs,
-                fontWeight: 700,
-                fontFamily: FONT_UI,
-                cursor: 'pointer',
-              }}>
-              {viewMonthMeta.year}
-            </button>
-            <button
-              type="button"
-              onClick={() => setQuickMode((current) => (current === 'month' ? 'day' : 'month'))}
-              style={{
-                height: 32,
-                padding: '0 12px',
-                borderRadius: 10,
-                border: `1px solid ${quickMode === 'month' ? `${accent}33` : T.border}`,
-                background: quickMode === 'month' ? `${accent}12` : T.bg2,
-                color: quickMode === 'month' ? accent : T.t1,
-                fontSize: FONT_SIZE.xs,
-                fontWeight: 700,
-                fontFamily: FONT_UI,
-                cursor: 'pointer',
-              }}>
-              {monthLabels[viewMonthMeta.month - 1] ?? `${viewMonthMeta.month}`}
-            </button>
-          </div>
-
-          {quickMode === 'year' && (
-            <div style={{ display: 'grid', gap: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                <button
-                  type="button"
-                  onClick={() => setYearGridStart((current) => current - 12)}
-                  style={{
-                    width: 30,
-                    height: 30,
-                    borderRadius: 9,
-                    border: `1px solid ${T.border}`,
-                    background: T.bg2,
-                    color: T.t1,
-                    fontSize: FONT_SIZE.sm,
-                    fontFamily: FONT_UI,
-                    cursor: 'pointer',
-                  }}>
-                  {'<'}
-                </button>
-                <span style={{ color: T.t2, fontSize: UI.metaSize, fontWeight: 700, fontFamily: FONT_UI }}>
-                  {`${yearGridStart} - ${yearGridStart + 11}`}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setYearGridStart((current) => current + 12)}
-                  style={{
-                    width: 30,
-                    height: 30,
-                    borderRadius: 9,
-                    border: `1px solid ${T.border}`,
-                    background: T.bg2,
-                    color: T.t1,
-                    fontSize: FONT_SIZE.sm,
-                    fontFamily: FONT_UI,
-                    cursor: 'pointer',
-                  }}>
-                  {'>'}
-                </button>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 6 }}>
-                {yearChoices.map((year) => {
-                  const selected = year === viewMonthMeta.year;
-                  return (
-                    <button
-                      key={year}
-                      type="button"
-                      onClick={() => {
-                        setViewMonth(buildMonthKey(year, viewMonthMeta.month));
-                        setYearGridStart(year - 5);
-                        setQuickMode('day');
-                      }}
-                      style={{
-                        height: 34,
-                        borderRadius: 10,
-                        border: `1px solid ${selected ? accent : T.border}`,
-                        background: selected ? `${accent}14` : T.bg2,
-                        color: selected ? accent : T.t1,
-                        fontSize: FONT_SIZE.xs,
-                        fontWeight: selected ? 700 : 600,
-                        fontFamily: FONT_UI,
-                        cursor: 'pointer',
-                      }}>
-                      {year}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {quickMode === 'month' && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 6 }}>
-              {monthLabels.map((label, index) => {
-                const month = index + 1;
-                const selected = month === viewMonthMeta.month;
-                return (
-                  <button
-                    key={`${label}-${month}`}
-                    type="button"
-                    onClick={() => {
-                      setViewMonth(buildMonthKey(viewMonthMeta.year, month));
-                      setQuickMode('day');
-                    }}
-                    style={{
-                      height: 34,
-                      borderRadius: 10,
-                      border: `1px solid ${selected ? accent : T.border}`,
-                      background: selected ? `${accent}14` : T.bg2,
-                      color: selected ? accent : T.t1,
-                      fontSize: FONT_SIZE.xs,
-                      fontWeight: selected ? 700 : 600,
-                      fontFamily: FONT_UI,
-                      cursor: 'pointer',
-                    }}>
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {quickMode === 'day' && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 6 }}>
-              {weekdayLabels.map((label, index) => (
-                <span
-                  key={`${label}-${index}`}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    height: 22,
-                    color: T.t2,
-                    fontSize: UI.metaSize,
-                    fontWeight: 700,
-                    fontFamily: FONT_UI,
-                    textTransform: 'uppercase',
-                    letterSpacing: 0.2,
-                  }}>
-                  {label}
-                </span>
-              ))}
-
-              {dayCells.map((cell) => {
-                const dayColor = cell.isSelected
-                  ? '#fffaf2'
-                  : cell.inMonth ? T.t0 : T.t2;
-
-                return (
-                  <button
-                    key={cell.dateValue}
-                    type="button"
-                    onClick={() => {
-                      onChange(cell.dateValue);
-                      setViewMonth(cell.dateValue.slice(0, 7));
-                      setOpen(false);
-                    }}
-                    style={{
-                      width: '100%',
-                      height: UI.calendarDaySize,
-                      borderRadius: 10,
-                      border: `1px solid ${
-                        cell.isSelected
-                          ? accent
-                          : cell.isToday ? `${accent}48` : 'transparent'
-                      }`,
-                      background: cell.isSelected
-                        ? `linear-gradient(180deg, ${accent} 0%, ${accent}cc 100%)`
-                        : cell.isToday ? `${accent}14` : 'transparent',
-                      color: dayColor,
-                      fontSize: FONT_SIZE.xs,
-                      fontWeight: cell.isSelected || cell.isToday ? 700 : 500,
-                      fontFamily: FONT_UI,
-                      cursor: 'pointer',
-                      boxShadow: cell.isSelected ? `0 12px 26px -24px ${accent}bb` : 'none',
-                    }}>
-                    {cell.dayLabel}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 10 }}>
-            <button
-              type="button"
-              onClick={() => {
-                onClear?.();
-                setOpen(false);
-              }}
-              style={{
-                height: 30,
-                padding: '0 12px',
-                borderRadius: 999,
-                border: `1px solid ${T.border}`,
-                background: T.bg2,
-                color: T.t2,
-                fontSize: UI.metaSize,
-                fontWeight: 600,
-                fontFamily: FONT_UI,
-                cursor: 'pointer',
-              }}>
-              {t('revisionPickerDateClear')}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                onChange(todayValue);
-                setViewMonth(todayValue.slice(0, 7));
-                setOpen(false);
-              }}
-              style={{
-                height: 30,
-                padding: '0 12px',
-                borderRadius: 999,
-                border: `1px solid ${accent}28`,
-                background: `${accent}10`,
-                color: accent,
-                fontSize: UI.metaSize,
-                fontWeight: 700,
-                fontFamily: FONT_UI,
-                cursor: 'pointer',
-              }}>
-              {t('revisionPickerDateToday')}
-            </button>
-          </div>
-        </div>
-      )}
+      {open && anchorRect && typeof document !== 'undefined' && createPortal(panelContent, document.body)}
     </div>
   );
 });
@@ -779,6 +869,8 @@ const RevisionPicker = memo(({
   const hasActiveTimeFilter = Boolean(queryDateTime || draftDate);
   const hasActiveFilter = Boolean(searchQuery.trim() || hasActiveTimeFilter);
   const activeDateFilter = draftDate || (queryDateTime ? queryDateTime.slice(0, 10) : '');
+  const selectedMeta = useMemo(() => (value ? buildRevisionOptionMeta(value) : ''), [value]);
+  const triggerTitleText = selectedMeta || title;
 
   useEffect(() => {
     const next = parseDateTimeDraft(queryDateTime);
@@ -915,7 +1007,7 @@ const RevisionPicker = memo(({
               anchorStyle={{ display: 'block', flexShrink: 1, minWidth: 0, maxWidth: '100%' }}
               textStyle={{ minWidth: 0, color: selected ? T.t0 : T.t1, fontSize: FONT_SIZE.xs, fontWeight: selected ? 700 : 600, fontFamily: FONT_UI }}
             />
-            {meta && <span style={{ flexShrink: 0, color: T.t2, fontSize: UI.metaSize, fontFamily: FONT_UI, whiteSpace: 'nowrap' }}>{renderHighlightedText(meta, deferredSearchQuery, highlightStyle)}</span>}
+            {meta && <span style={{ flexShrink: 0, color: T.t2, fontSize: UI.metaSize, fontFamily: FONT_UI, whiteSpace: 'nowrap', textAlign: 'right' }}>{renderHighlightedText(meta, deferredSearchQuery, highlightStyle)}</span>}
           </div>
           {isSpecial && option.message && option.message !== description && (
             <TruncatedTooltipText
@@ -965,6 +1057,7 @@ const RevisionPicker = memo(({
         type="button"
         aria-expanded={open}
         aria-label={title}
+        title={triggerTitleText}
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
         style={{
@@ -973,9 +1066,26 @@ const RevisionPicker = memo(({
           color: T.t0, textAlign: 'left', boxShadow: open ? `0 14px 28px -24px ${accent}66, inset 0 0 0 1px ${accent}22` : 'none', cursor: disabled ? 'default' : 'pointer',
         }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: '1 1 auto' }}>
-          <span style={{ minWidth: 0, color: accent, fontSize: FONT_SIZE.sm, fontWeight: 700, fontFamily: FONT_CODE, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <span style={{ flexShrink: 0, color: accent, fontSize: FONT_SIZE.sm, fontWeight: 700, fontFamily: FONT_CODE, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {value ? formatDisplayRevision(value.revision) : t('splitHeaderVersionUnknown')}
           </span>
+          {selectedMeta && (
+            <span
+              style={{
+                minWidth: 0,
+                flex: '1 1 auto',
+                marginLeft: 'auto',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                color: T.t2,
+                fontSize: UI.metaSize,
+                fontFamily: FONT_UI,
+                textAlign: 'right',
+              }}>
+              {selectedMeta}
+            </span>
+          )}
         </div>
         <span aria-hidden="true" style={{ flexShrink: 0, color: open ? accent : T.t2, fontSize: UI.metaSize, fontFamily: FONT_UI }}>
           {open ? '▲' : '▼'}

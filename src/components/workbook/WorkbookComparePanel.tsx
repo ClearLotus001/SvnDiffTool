@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject, startTransition } from 'react';
+import { FONT_SIZE, FONT_UI } from '@/constants/typography';
 import type {
     DiffLine,
     Hunk,
@@ -15,6 +16,7 @@ import type {
     WorkbookSelectionRequest,
     WorkbookSelectionState,
   } from '@/types';
+import { useI18n } from '@/context/i18n';
 import { useTheme } from '@/context/theme';
 import { useVirtual, ROW_H } from '@/hooks/virtualization/useVirtual';
 import { useHorizontalVirtualColumns } from '@/hooks/virtualization/useHorizontalVirtualColumns';
@@ -53,7 +55,10 @@ import {
   getWorkbookColumnSpanBounds,
   getWorkbookSelectionSpanForSelection,
 } from '@/utils/workbook/workbookMergeLayout';
-import { buildWorkbookRegionOverlayBox } from '@/utils/workbook/workbookRegionOverlay';
+import {
+  buildWorkbookRegionOverlayBoxes,
+  buildWorkbookRegionOverlayBoxesFromGeometry,
+} from '@/utils/workbook/workbookRegionOverlay';
 import {
   getWorkbookColumnWidth,
   measureWorkbookAutoFitColumnWidth,
@@ -78,6 +83,10 @@ import {
   getWorkbookCompactRenderMode,
 } from '@/utils/workbook/workbookRowBehavior';
 import {
+  buildWorkbookStackedLayoutRows,
+  buildWorkbookStackedVisualGroups,
+} from '@/utils/workbook/workbookStackedMergeGroups';
+import {
   buildWorkbookCompareLayoutSnapshot,
   shouldRestoreWorkbookLayoutSnapshot,
 } from '@/utils/workbook/workbookLayoutSnapshot';
@@ -97,7 +106,10 @@ import WorkbookMiniMap, {
 import WorkbookCanvasHoverTooltip, { type WorkbookCanvasHoverCell } from '@/components/workbook/WorkbookCanvasHoverTooltip';
 import WorkbookCanvasHeaderStrip from '@/components/workbook/WorkbookCanvasHeaderStrip';
 import WorkbookColumnsCanvasStrip, { type WorkbookColumnsCanvasRow } from '@/components/workbook/WorkbookColumnsCanvasStrip';
-import WorkbookStackedCanvasStrip, { type WorkbookCanvasRenderRow } from '@/components/workbook/WorkbookStackedCanvasStrip';
+import WorkbookStackedCanvasStrip, {
+  type WorkbookCanvasRenderGroup,
+  type WorkbookCanvasRenderRow,
+} from '@/components/workbook/WorkbookStackedCanvasStrip';
 import WorkbookPerfDebugPanel, { type WorkbookPerfDebugStats } from '@/components/workbook/WorkbookPerfDebugPanel';
 import WorkbookSheetTabs from '@/components/workbook/WorkbookSheetTabs';
 import WorkbookDiffRegionOverlay, {
@@ -113,6 +125,20 @@ type WorkbookCompareRenderItem =
   | { kind: 'row'; row: SplitRow; lineIdx: number }
   | { kind: 'collapse'; blockId: string; count: number; fromIdx: number; toIdx: number; hiddenStart: number; hiddenEnd: number; expandStep: number }
   | { kind: 'hidden-rows'; rows: SplitRow[]; rowNumbers: number[]; count: number };
+type WorkbookStackedVirtualItem =
+  | {
+    kind: 'rows';
+    rows: WorkbookCanvasRenderRow[];
+    height: number;
+    sourceStartItemIndex: number;
+    sourceEndItemIndex: number;
+    groupKey: string;
+    hasVerticalMerge: boolean;
+    baseTrack: Array<{ sourceRowIndex: number; rowNumber: number }>;
+    mineTrack: Array<{ sourceRowIndex: number; rowNumber: number }>;
+  }
+  | { kind: 'collapse'; item: Extract<WorkbookCompareRenderItem, { kind: 'collapse' }>; height: number; sourceItemIndex: number }
+  | { kind: 'hidden-rows'; item: Extract<WorkbookCompareRenderItem, { kind: 'hidden-rows' }>; height: number; sourceItemIndex: number };
 
 interface SelectionAutoScrollLock {
   sheetName: string;
@@ -259,6 +285,7 @@ const WorkbookComparePanel = memo(({
   onLayoutSnapshotChange,
 }: WorkbookComparePanelProps) => {
   const T = useTheme();
+  const { t } = useI18n();
   const selectedCell = selection.primary;
   const resolvedActiveWorkbookSectionIdx = activeWorkbookSheetName
     ? findWorkbookSectionIndexByName(workbookSections, activeWorkbookSheetName)
@@ -490,18 +517,148 @@ const WorkbookComparePanel = memo(({
     }),
     [items, mode, rowHeight],
   );
+  const sheetPresentation = useMemo(() => {
+    return buildWorkbookSheetPresentation(
+      sectionRows,
+      activeWorkbookSection?.name ?? '',
+      baseWorkbookMetadata,
+      mineWorkbookMetadata,
+      activeWorkbookSection?.maxColumns ?? 1,
+      showHiddenColumns,
+      compareMode,
+      activeHiddenState.hiddenColumns,
+    );
+  }, [activeHiddenState.hiddenColumns, activeWorkbookSection?.maxColumns, activeWorkbookSection?.name, baseWorkbookMetadata, compareMode, mineWorkbookMetadata, sectionRows, showHiddenColumns]);
+  const stackedVirtualItems = useMemo<WorkbookStackedVirtualItem[]>(() => {
+    if (mode !== 'stacked') return [];
+
+    const next: WorkbookStackedVirtualItem[] = [];
+    const currentRows: Array<{ row: WorkbookCanvasRenderRow; sourceItemIndex: number }> = [];
+
+    const flushRows = () => {
+      if (currentRows.length === 0) return;
+
+      const layoutRows = buildWorkbookStackedLayoutRows({
+        rows: currentRows.map((item) => ({
+          row: item.row.row,
+          renderMode: item.row.renderMode,
+          height: item.row.height,
+        })),
+        sheetName: activeWorkbookSection?.name ?? '',
+        baseVersion,
+        mineVersion,
+        visibleColumns: sheetPresentation.visibleColumns,
+      });
+      const groups = buildWorkbookStackedVisualGroups({
+        rows: layoutRows,
+        baseMergeRanges: sheetPresentation.baseMergeRanges,
+        mineMergeRanges: sheetPresentation.mineMergeRanges,
+      });
+
+      groups.forEach((group) => {
+        const groupedRows = currentRows.slice(group.startIndex, group.endIndex + 1);
+        next.push({
+          kind: 'rows',
+          rows: groupedRows.map((item) => item.row),
+          height: groupedRows.reduce((sum, item) => sum + item.row.height, 0),
+          sourceStartItemIndex: groupedRows[0]!.sourceItemIndex,
+          sourceEndItemIndex: groupedRows[groupedRows.length - 1]!.sourceItemIndex,
+          groupKey: group.key,
+          hasVerticalMerge: group.reason === 'merge',
+          baseTrack: group.baseTrack.map((track) => ({
+            sourceRowIndex: track.sourceRowIndex,
+            rowNumber: track.entry.rowNumber,
+          })),
+          mineTrack: group.mineTrack.map((track) => ({
+            sourceRowIndex: track.sourceRowIndex,
+            rowNumber: track.entry.rowNumber,
+          })),
+        });
+      });
+
+      currentRows.length = 0;
+    };
+
+    items.forEach((item, index) => {
+      if (item.kind === 'collapse') {
+        flushRows();
+        next.push({
+          kind: 'collapse',
+          item,
+          height: ROW_H,
+          sourceItemIndex: index,
+        });
+        return;
+      }
+
+      if (item.kind === 'hidden-rows') {
+        flushRows();
+        next.push({
+          kind: 'hidden-rows',
+          item,
+          height: ROW_H,
+          sourceItemIndex: index,
+        });
+        return;
+      }
+
+      const renderMode = getWorkbookCompactRenderMode(item.row);
+      const isGuided = rowTouchesGuidedHunk(item.row, guidedHunkRange);
+      const prevGuided = index > 0
+        && items[index - 1]?.kind === 'row'
+        && rowTouchesGuidedHunk((items[index - 1] as Extract<typeof items[number], { kind: 'row' }>).row, guidedHunkRange);
+      const nextGuided = index + 1 < items.length
+        && items[index + 1]?.kind === 'row'
+        && rowTouchesGuidedHunk((items[index + 1] as Extract<typeof items[number], { kind: 'row' }>).row, guidedHunkRange);
+
+      currentRows.push({
+        sourceItemIndex: index,
+        row: {
+          row: item.row,
+          renderMode,
+          height: itemHeights[index] ?? rowHeight,
+          isSearchMatch: item.row.lineIdxs.some(idx => searchMatchSet.has(idx)),
+          isActiveSearch: item.row.lineIdxs.includes(activeSearchLineIdx),
+          isGuided,
+          isGuidedStart: isGuided && !prevGuided,
+          isGuidedEnd: isGuided && !nextGuided,
+        },
+      });
+    });
+
+    flushRows();
+    return next;
+  }, [
+    activeSearchLineIdx,
+    activeWorkbookSection?.name,
+    baseVersion,
+    guidedHunkRange,
+    itemHeights,
+    items,
+    mineVersion,
+    mode,
+    rowHeight,
+    searchMatchSet,
+    sheetPresentation.baseMergeRanges,
+    sheetPresentation.mineMergeRanges,
+    sheetPresentation.visibleColumns,
+  ]);
+  const stackedVirtualHeights = useMemo(
+    () => stackedVirtualItems.map((item) => item.height),
+    [stackedVirtualItems],
+  );
   const constantVirtual = useVirtual(
     items.length,
     scrollRef as RefObject<HTMLDivElement>,
     rowHeight,
     { overscanMin: 12, overscanFactor: 1.5 },
   );
-  const variableVirtual = useVariableVirtual(
-    itemHeights,
+  const stackedVariableVirtual = useVariableVirtual(
+    stackedVirtualHeights,
     scrollRef as RefObject<HTMLDivElement>,
     { overscanMin: 12, overscanFactor: 1.5 },
   );
-  const activeVirtual = mode === 'stacked' ? variableVirtual : constantVirtual;
+  const activeVirtual = mode === 'stacked' ? stackedVariableVirtual : constantVirtual;
   const {
     totalH,
     startIdx,
@@ -509,7 +666,7 @@ const WorkbookComparePanel = memo(({
     scrollToIndex,
     debug: rowVirtualDebug,
   } = activeVirtual;
-  const rowWindowOffsetTop = mode === 'stacked' ? variableVirtual.offsetTop : startIdx * rowHeight;
+  const rowWindowOffsetTop = mode === 'stacked' ? stackedVariableVirtual.offsetTop : startIdx * rowHeight;
   const markProgrammaticScroll = useCallback((duration = 320) => {
     programmaticScrollUntilRef.current = Math.max(programmaticScrollUntilRef.current, getNow() + duration);
   }, []);
@@ -716,7 +873,9 @@ const WorkbookComparePanel = memo(({
     align: 'start' | 'center' = 'center',
     behavior: 'auto' | 'smooth' | 'smart' = 'smart',
   ) => {
-    const exactIndex = items.findIndex((item) => item.kind === 'row' && compareRowHasLineIdx(item.row, lineIdx));
+    const exactIndex = mode === 'stacked'
+      ? stackedVirtualItems.findIndex((item) => item.kind === 'rows' && item.rows.some((row) => compareRowHasLineIdx(row.row, lineIdx)))
+      : items.findIndex((item) => item.kind === 'row' && compareRowHasLineIdx(item.row, lineIdx));
     if (exactIndex >= 0) {
       markProgrammaticScroll(420);
       scrollToIndex(exactIndex, align, behavior);
@@ -729,14 +888,16 @@ const WorkbookComparePanel = memo(({
       setPendingScrollTarget({ lineIdx, align });
       return false;
     }
-    const nearestIndex = items.findIndex((item) => item.kind === 'row' && compareRowTouchesOrAfter(item.row, lineIdx));
+    const nearestIndex = mode === 'stacked'
+      ? stackedVirtualItems.findIndex((item) => item.kind === 'rows' && item.rows.some((row) => compareRowTouchesOrAfter(row.row, lineIdx)))
+      : items.findIndex((item) => item.kind === 'row' && compareRowTouchesOrAfter(item.row, lineIdx));
     if (nearestIndex >= 0) {
       markProgrammaticScroll(420);
       scrollToIndex(nearestIndex, align, behavior);
       return true;
     }
     return false;
-  }, [items, markProgrammaticScroll, revealLineIfCollapsed, scrollToIndex]);
+  }, [items, markProgrammaticScroll, mode, revealLineIfCollapsed, scrollToIndex, stackedVirtualItems]);
 
   useEffect(() => {
     if (!active) return;
@@ -776,18 +937,6 @@ const WorkbookComparePanel = memo(({
     };
   }, [active, onScrollerReady, scrollToResolvedLine]);
 
-  const sheetPresentation = useMemo(() => {
-    return buildWorkbookSheetPresentation(
-      sectionRows,
-      activeWorkbookSection?.name ?? '',
-      baseWorkbookMetadata,
-      mineWorkbookMetadata,
-      activeWorkbookSection?.maxColumns ?? 1,
-      showHiddenColumns,
-      compareMode,
-      activeHiddenState.hiddenColumns,
-    );
-  }, [activeHiddenState.hiddenColumns, activeWorkbookSection?.maxColumns, activeWorkbookSection?.name, baseWorkbookMetadata, compareMode, mineWorkbookMetadata, sectionRows, showHiddenColumns]);
   const activeSheetName = activeWorkbookSection?.name ?? '';
   const resolveColumnWidth = useCallback(
     (column: number) => getWorkbookColumnWidth(columnWidthBySheet, activeSheetName, column),
@@ -880,11 +1029,50 @@ const WorkbookComparePanel = memo(({
 
     return next;
   }, [activeSheetName, baseVersion, mineVersion, sectionRows, sheetPresentation.visibleColumns]);
+  const compareCellsByRowNumber = useMemo(() => {
+    const next = {
+      base: new Map<number, ReturnType<typeof buildWorkbookSplitRowCompareState>['cellDeltas']>(),
+      mine: new Map<number, ReturnType<typeof buildWorkbookSplitRowCompareState>['cellDeltas']>(),
+    };
+
+    sectionRows.forEach((row) => {
+      const rowDelta = buildWorkbookSplitRowCompareState(
+        row,
+        sheetPresentation.visibleColumns,
+        compareMode,
+      );
+      const baseRowNumber = getWorkbookSideRowNumber(row, 'base');
+      if (baseRowNumber != null) next.base.set(baseRowNumber, rowDelta.cellDeltas);
+
+      const mineRowNumber = getWorkbookSideRowNumber(row, 'mine');
+      if (mineRowNumber != null) next.mine.set(mineRowNumber, rowDelta.cellDeltas);
+    });
+
+    return next;
+  }, [compareMode, sectionRows, sheetPresentation.visibleColumns]);
   const rowItemIndexBySide = useMemo(() => {
     const next = {
       base: new Map<number, number>(),
       mine: new Map<number, number>(),
     };
+
+    if (mode === 'stacked') {
+      stackedVirtualItems.forEach((item, index) => {
+        if (item.kind !== 'rows') return;
+        item.rows.forEach((row) => {
+          const baseRowNumber = getWorkbookSideRowNumber(row.row, 'base');
+          if (baseRowNumber != null && !next.base.has(baseRowNumber)) {
+            next.base.set(baseRowNumber, index);
+          }
+
+          const mineRowNumber = getWorkbookSideRowNumber(row.row, 'mine');
+          if (mineRowNumber != null && !next.mine.has(mineRowNumber)) {
+            next.mine.set(mineRowNumber, index);
+          }
+        });
+      });
+      return next;
+    }
 
     items.forEach((item, index) => {
       if (item.kind !== 'row') return;
@@ -901,7 +1089,7 @@ const WorkbookComparePanel = memo(({
     });
 
     return next;
-  }, [items]);
+  }, [items, mode, stackedVirtualItems]);
   const frozenRowsHeight = useMemo(
     () => frozenRows.reduce((sum, row) => sum + (
       mode === 'stacked'
@@ -928,6 +1116,52 @@ const WorkbookComparePanel = memo(({
     })),
     [frozenRows, mode, rowHeight],
   );
+  const stackedFrozenCanvasGroups = useMemo<WorkbookCanvasRenderGroup[]>(() => {
+    if (stackedFrozenCanvasRows.length === 0) return [];
+
+    const layoutRows = buildWorkbookStackedLayoutRows({
+      rows: stackedFrozenCanvasRows.map((row) => ({
+        row: row.row,
+        renderMode: row.renderMode,
+        height: row.height,
+      })),
+      sheetName: activeWorkbookSection?.name ?? '',
+      baseVersion,
+      mineVersion,
+      visibleColumns: sheetPresentation.visibleColumns,
+    });
+    const visualGroups = buildWorkbookStackedVisualGroups({
+      rows: layoutRows,
+      baseMergeRanges: sheetPresentation.baseMergeRanges,
+      mineMergeRanges: sheetPresentation.mineMergeRanges,
+    });
+
+    return visualGroups.map((group) => {
+      const rows = stackedFrozenCanvasRows.slice(group.startIndex, group.endIndex + 1);
+      return {
+        key: group.key,
+        rows,
+        height: rows.reduce((sum, row) => sum + row.height, 0),
+        hasVerticalMerge: group.reason === 'merge',
+        baseTrack: group.baseTrack.map((track) => ({
+          sourceRowIndex: track.sourceRowIndex,
+          rowNumber: track.entry.rowNumber,
+        })),
+        mineTrack: group.mineTrack.map((track) => ({
+          sourceRowIndex: track.sourceRowIndex,
+          rowNumber: track.entry.rowNumber,
+        })),
+      };
+    });
+  }, [
+    activeWorkbookSection?.name,
+    baseVersion,
+    mineVersion,
+    sheetPresentation.baseMergeRanges,
+    sheetPresentation.mineMergeRanges,
+    sheetPresentation.visibleColumns,
+    stackedFrozenCanvasRows,
+  ]);
   const columnsFrozenCanvasRows = useMemo<WorkbookColumnsCanvasRow[]>(
     () => frozenRows.map((row) => ({
       row,
@@ -941,82 +1175,76 @@ const WorkbookComparePanel = memo(({
     [frozenRows],
   );
   const bodySegments = useMemo(() => {
-    const slice = items.slice(startIdx, endIdx);
+    if (mode !== 'stacked') return [];
+
+    const slice = stackedVirtualItems.slice(startIdx, endIdx);
     const segments: Array<
-      | { kind: 'rows'; rows: WorkbookCanvasRenderRow[]; top: number; height: number }
-      | { kind: 'collapse'; item: Extract<typeof slice[number], { kind: 'collapse' }>; top: number; height: number }
-      | { kind: 'hidden-rows'; item: Extract<typeof slice[number], { kind: 'hidden-rows' }>; top: number; height: number }
+      | { kind: 'rows'; group: WorkbookCanvasRenderGroup; top: number; height: number }
+      | { kind: 'collapse'; item: Extract<WorkbookCompareRenderItem, { kind: 'collapse' }>; top: number; height: number }
+      | { kind: 'hidden-rows'; item: Extract<WorkbookCompareRenderItem, { kind: 'hidden-rows' }>; top: number; height: number }
     > = [];
-    let currentRows: WorkbookCanvasRenderRow[] = [];
     let cursorTop = 0;
-    let currentRowsTop = 0;
 
-    const flushRows = () => {
-      if (currentRows.length === 0) return;
-      const height = currentRows.reduce((sum, row) => sum + row.height, 0);
-      segments.push({
-        kind: 'rows',
-        rows: currentRows,
-        top: currentRowsTop,
-        height,
-      });
-      currentRows = [];
-    };
-
-    slice.forEach((item, localIndex) => {
-      const itemIndex = startIdx + localIndex;
-      const itemHeight = itemHeights[itemIndex] ?? rowHeight;
+    slice.forEach((item) => {
       if (item.kind === 'collapse') {
-        flushRows();
         segments.push({
           kind: 'collapse',
-          item,
+          item: item.item,
           top: cursorTop,
-          height: itemHeight,
+          height: item.height,
         });
-        cursorTop += itemHeight;
-        currentRowsTop = cursorTop;
+        cursorTop += item.height;
         return;
       }
 
       if (item.kind === 'hidden-rows') {
-        flushRows();
         segments.push({
           kind: 'hidden-rows',
-          item,
+          item: item.item,
           top: cursorTop,
-          height: itemHeight,
+          height: item.height,
         });
-        cursorTop += itemHeight;
-        currentRowsTop = cursorTop;
+        cursorTop += item.height;
         return;
       }
 
-      if (currentRows.length === 0) currentRowsTop = cursorTop;
-      const renderMode = getWorkbookCompactRenderMode(item.row);
-      const isGuided = rowTouchesGuidedHunk(item.row, guidedHunkRange);
-      const prevGuided = itemIndex > 0
-        && items[itemIndex - 1]?.kind === 'row'
-        && rowTouchesGuidedHunk((items[itemIndex - 1] as Extract<typeof items[number], { kind: 'row' }>).row, guidedHunkRange);
-      const nextGuided = itemIndex + 1 < items.length
-        && items[itemIndex + 1]?.kind === 'row'
-        && rowTouchesGuidedHunk((items[itemIndex + 1] as Extract<typeof items[number], { kind: 'row' }>).row, guidedHunkRange);
-      currentRows.push({
-        row: item.row,
-        renderMode,
-        height: itemHeight,
-        isSearchMatch: item.row.lineIdxs.some(idx => searchMatchSet.has(idx)),
-        isActiveSearch: item.row.lineIdxs.includes(activeSearchLineIdx),
-        isGuided,
-        isGuidedStart: isGuided && !prevGuided,
-        isGuidedEnd: isGuided && !nextGuided,
+      segments.push({
+        kind: 'rows',
+        group: {
+          key: item.groupKey,
+          rows: item.rows,
+          height: item.height,
+          hasVerticalMerge: item.hasVerticalMerge,
+          baseTrack: item.baseTrack,
+          mineTrack: item.mineTrack,
+        },
+        top: cursorTop,
+        height: item.height,
       });
-      cursorTop += itemHeight;
+      cursorTop += item.height;
     });
 
-    flushRows();
     return segments;
-  }, [activeSearchLineIdx, endIdx, guidedHunkRange, itemHeights, items, rowHeight, searchMatchSet, startIdx]);
+  }, [
+    endIdx,
+    mode,
+    startIdx,
+    stackedVirtualItems,
+  ]);
+  const stackedVisibleMergeGroupCount = useMemo(() => {
+    if (mode !== 'stacked') return 0;
+
+    const visibleKeys = new Set<string>();
+    stackedFrozenCanvasGroups.forEach((group) => {
+      if (group.hasVerticalMerge) visibleKeys.add(group.key);
+    });
+    bodySegments.forEach((segment) => {
+      if (segment.kind !== 'rows') return;
+      if (segment.group.hasVerticalMerge) visibleKeys.add(segment.group.key);
+    });
+
+    return visibleKeys.size;
+  }, [bodySegments, mode, stackedFrozenCanvasGroups]);
   const columnsBodySegments = useMemo(() => {
     if (mode !== 'columns') return null;
 
@@ -1117,7 +1345,7 @@ const WorkbookComparePanel = memo(({
       bodySegments.forEach((segment) => {
         if (segment.kind !== 'rows') return;
         let cursorTop = stickyHeaderHeight + rowWindowOffsetTop + segment.top;
-        segment.rows.forEach((renderRow) => {
+        segment.group.rows.forEach((renderRow) => {
           const rowIndex = sectionRowIndexByKey.get(getWorkbookCompareRowKey(renderRow.row));
           if (rowIndex == null) {
             cursorTop += renderRow.height;
@@ -1197,12 +1425,11 @@ const WorkbookComparePanel = memo(({
         }
       }
 
-      return geometries.map(({ geometry, sideKey }) => ({
-        key: `${activeDiffRegion.id}:${patchIndex}:${sideKey}`,
-        top: Math.max(0, top),
-        left: Math.max(0, geometry.left),
-        width: Math.max(0, geometry.right - geometry.left),
-        height: Math.max(0, bottom - top),
+      return geometries.flatMap(({ geometry, sideKey }) => buildWorkbookRegionOverlayBoxesFromGeometry({
+        geometry,
+        keyPrefix: `${activeDiffRegion.id}:${patchIndex}:${sideKey}`,
+        top,
+        bottom,
         openTop: firstVisibleRowIndex > patch.startRowIndex,
         openBottom: lastVisibleRowIndex < patch.endRowIndex,
       }));
@@ -1212,7 +1439,7 @@ const WorkbookComparePanel = memo(({
       .filter((box) => box.width > 6 && box.height > 6);
     if (mergedBoxes.length > 0) return mergedBoxes;
 
-    const fallbackBox = buildWorkbookRegionOverlayBox({
+    const fallbackBoxes = buildWorkbookRegionOverlayBoxes({
       region: activeDiffRegion,
       visibleRowFrames,
       boundsModes: mode === 'stacked'
@@ -1229,9 +1456,9 @@ const WorkbookComparePanel = memo(({
       key: `${activeDiffRegion.id}:fallback`,
     });
 
-    return fallbackBox && fallbackBox.width > 6 && fallbackBox.height > 6
-      ? [fallbackBox]
-      : [];
+    const mergedFallbackBoxes = mergeWorkbookDiffRegionOverlayBoxes(fallbackBoxes)
+      .filter((box) => box.width > 6 && box.height > 6);
+    return mergedFallbackBoxes.length > 0 ? mergedFallbackBoxes : [];
   }, [
     activeDiffRegion,
     activeWorkbookSection?.name,
@@ -1429,12 +1656,16 @@ const WorkbookComparePanel = memo(({
   }, [compareMode, frozenRows, itemHeights, items, mode, rowHeight, searchMatchSet, sheetPresentation.visibleColumns, showColumnHeader]);
   const miniMapSegments = miniMapMeasured.value;
   const collapseIndexes = useMemo(
-    () => getCollapseIndexes(items, (item) => item.kind === 'collapse'),
-    [items],
+    () => mode === 'stacked'
+      ? getCollapseIndexes(stackedVirtualItems, (item) => item.kind === 'collapse')
+      : getCollapseIndexes(items, (item) => item.kind === 'collapse'),
+    [items, mode, stackedVirtualItems],
   );
   const totalCollapseCount = useMemo(
-    () => countRemainingCollapses(items, 0, (item) => item.kind === 'collapse'),
-    [items],
+    () => mode === 'stacked'
+      ? countRemainingCollapses(stackedVirtualItems, 0, (item) => item.kind === 'collapse')
+      : countRemainingCollapses(items, 0, (item) => item.kind === 'collapse'),
+    [items, mode, stackedVirtualItems],
   );
   const activeCollapsePosition = useMemo(
     () => resolveActiveCollapsePosition(collapseIndexes, lastCollapseJumpIndexRef.current, startIdx),
@@ -1443,9 +1674,11 @@ const WorkbookComparePanel = memo(({
   const perfStats = useMemo<WorkbookPerfDebugStats>(() => ({
     panel: mode,
     sheetName: activeWorkbookSection?.name ?? '',
-    totalRows: items.length,
+    totalRows: mode === 'stacked' ? stackedVirtualItems.length : items.length,
     renderedRows: Math.max(0, endIdx - startIdx),
-    collapseBlocks: items.filter(item => item.kind === 'collapse').length,
+    collapseBlocks: mode === 'stacked'
+      ? stackedVirtualItems.filter(item => item.kind === 'collapse').length
+      : items.filter(item => item.kind === 'collapse').length,
     totalColumns: sheetPresentation.visibleColumns.length,
     renderedColumns: virtualColumns.columnEntries.length,
     frozenRows: frozenRows.length,
@@ -1486,6 +1719,7 @@ const WorkbookComparePanel = memo(({
     rowVirtualDebug.rangeUpdates,
     rowVirtualDebug.viewportHeight,
     sheetPresentation.visibleColumns.length,
+    stackedVirtualItems,
     startIdx,
     virtualColumns.columnEntries.length,
     virtualColumns.debug.lastCalcMs,
@@ -1659,10 +1893,10 @@ const WorkbookComparePanel = memo(({
               />
             </div>
           )}
-          {stackedFrozenCanvasRows.length > 0 && (
+          {stackedFrozenCanvasGroups.length > 0 && (
             <div style={{ position: 'sticky', left: 0, width: virtualColumns.debug.viewportWidth, overflow: 'hidden' }}>
               <WorkbookStackedCanvasStrip
-                rows={stackedFrozenCanvasRows}
+                groups={stackedFrozenCanvasGroups}
                 viewportWidth={virtualColumns.debug.viewportWidth}
                 scrollRef={scrollRef as RefObject<HTMLDivElement>}
                 freezeColumnCount={freezeColumnCount}
@@ -1682,6 +1916,8 @@ const WorkbookComparePanel = memo(({
                 mineMergedRanges={sheetPresentation.mineMergeRanges}
                 baseRowEntryByRowNumber={rowEntryByRowNumber.base}
                 mineRowEntryByRowNumber={rowEntryByRowNumber.mine}
+                baseCompareCellsByRowNumber={compareCellsByRowNumber.base}
+                mineCompareCellsByRowNumber={compareCellsByRowNumber.mine}
                 compareMode={compareMode}
               />
             </div>
@@ -1739,6 +1975,8 @@ const WorkbookComparePanel = memo(({
               mineMergedRanges={sheetPresentation.mineMergeRanges}
               baseRowEntryByRowNumber={rowEntryByRowNumber.base}
               mineRowEntryByRowNumber={rowEntryByRowNumber.mine}
+              baseCompareCellsByRowNumber={compareCellsByRowNumber.base}
+              mineCompareCellsByRowNumber={compareCellsByRowNumber.mine}
               compareMode={compareMode}
             />
           </div>
@@ -1750,6 +1988,41 @@ const WorkbookComparePanel = memo(({
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
       {showPerfDebug && <WorkbookPerfDebugPanel stats={perfStats} />}
+      {stackedVisibleMergeGroupCount > 0 && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            margin: '0 10px 8px',
+            padding: '8px 12px',
+            borderRadius: 12,
+            border: `1px solid ${T.chgTx}35`,
+            background: `linear-gradient(180deg, ${T.bg0} 0%, ${T.bg1} 100%)`,
+            boxShadow: `0 10px 20px -24px ${T.chgTx}55, inset 0 1px 0 ${T.bg0}`,
+            flexShrink: 0,
+          }}>
+          <div
+            style={{
+              color: T.chgTx,
+              fontFamily: FONT_UI,
+              fontSize: FONT_SIZE.sm,
+              fontWeight: 800,
+              lineHeight: 1.35,
+            }}>
+            {t('workbookStackedMergeNoticeTitle', { count: stackedVisibleMergeGroupCount })}
+          </div>
+          <div
+            style={{
+              marginTop: 4,
+              color: T.t1,
+              fontFamily: FONT_UI,
+              fontSize: FONT_SIZE.sm,
+              lineHeight: 1.45,
+            }}>
+            {t('workbookStackedMergeNoticeBody')}
+          </div>
+        </div>
+      )}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
         <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
           <div
@@ -1830,7 +2103,7 @@ const WorkbookComparePanel = memo(({
 
                     return (
                   <div
-                        key={`canvas-rows-${segment.rows[0]?.row.lineIdx ?? segment.top}-${segment.rows[segment.rows.length - 1]?.row.lineIdx ?? segment.height}`}
+                        key={segment.group.key}
                     style={{
                       position: 'absolute',
                       top: segment.top,
@@ -1841,7 +2114,7 @@ const WorkbookComparePanel = memo(({
                     }}>
                     <div style={{ position: 'sticky', left: 0, width: virtualColumns.debug.viewportWidth, overflow: 'hidden' }}>
                         <WorkbookStackedCanvasStrip
-                        rows={segment.rows}
+                        groups={[segment.group]}
                         viewportWidth={virtualColumns.debug.viewportWidth}
                         scrollRef={scrollRef as RefObject<HTMLDivElement>}
                         freezeColumnCount={freezeColumnCount}
@@ -1861,6 +2134,8 @@ const WorkbookComparePanel = memo(({
                         mineMergedRanges={sheetPresentation.mineMergeRanges}
                         baseRowEntryByRowNumber={rowEntryByRowNumber.base}
                         mineRowEntryByRowNumber={rowEntryByRowNumber.mine}
+                        baseCompareCellsByRowNumber={compareCellsByRowNumber.base}
+                        mineCompareCellsByRowNumber={compareCellsByRowNumber.mine}
                         compareMode={compareMode}
                       />
                     </div>
@@ -1949,6 +2224,8 @@ const WorkbookComparePanel = memo(({
                             mineMergedRanges={sheetPresentation.mineMergeRanges}
                             baseRowEntryByRowNumber={rowEntryByRowNumber.base}
                             mineRowEntryByRowNumber={rowEntryByRowNumber.mine}
+                            baseCompareCellsByRowNumber={compareCellsByRowNumber.base}
+                            mineCompareCellsByRowNumber={compareCellsByRowNumber.mine}
                             compareMode={compareMode}
                           />
                         </div>
