@@ -41,7 +41,7 @@
       "zh-CN"
     ],
     "win": {
-      "target": "nsis-web",
+      "target": "nsis",
       "icon": "assets/icon.ico",
       "executableName": "SvnDiffTool"
     },
@@ -83,20 +83,6 @@
       ],
       "include": "build/installer.nsh"
     },
-    "nsisWeb": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowElevation": true,
-      "allowToChangeInstallationDirectory": true,
-      "deleteAppDataOnUninstall": false,
-      "installerHeader": "installerHeader.bmp",
-      "installerSidebar": "installerSidebar.bmp",
-      "installerLanguages": [
-        "en_US",
-        "zh_CN"
-      ],
-      "include": "build/installer.nsh"
-    },
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -114,8 +100,6 @@
     "eslint-plugin-react-hooks": "^7.0.0",
     "globals": "^16.4.0",
     "jiti": "^2.6.1",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
     "tsx": "^4.21.0",
     "typescript": "^5.3.0",
     "typescript-eslint": "^8.46.2",
@@ -124,6 +108,8 @@
   "dependencies": {
     "electron-updater": "^6.3.9",
     "fast-xml-parser": "^5.5.6",
-    "fflate": "^0.8.2"
+    "fflate": "^0.8.2",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
   }
 }

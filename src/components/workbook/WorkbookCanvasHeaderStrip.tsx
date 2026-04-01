@@ -15,10 +15,15 @@ import { ROW_H } from '@/hooks/virtualization/useVirtual';
 import { getWorkbookColumnLabel } from '@/utils/workbook/workbookSections';
 import { buildWorkbookSelectionLookup } from '@/utils/workbook/workbookSelectionState';
 import {
+  getWorkbookCanvasDevicePixelRatio,
+  syncWorkbookCanvasSurface,
+} from '@/utils/workbook/workbookCanvasSurface';
+import {
   clipWorkbookCanvasToViewport,
   getWorkbookCanvasCellViewportRect,
   getWorkbookCanvasLayerViewports,
 } from '@/utils/workbook/workbookMergeLayout';
+import { createWorkbookCanvasBorderRegistry } from '@/utils/workbook/workbookCanvasBorders';
 import WorkbookAnchorTooltip, { type WorkbookAnchorTooltipState } from '@/components/workbook/WorkbookAnchorTooltip';
 
 type WorkbookCanvasHeaderMode = 'single' | 'paired-wide' | 'paired-compact';
@@ -245,15 +250,12 @@ const WorkbookCanvasHeaderStrip = memo(({
     if (!canvas) return;
 
     const draw = () => {
-      const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+      const dpr = getWorkbookCanvasDevicePixelRatio();
       const width = Math.max(1, Math.ceil(viewportWidth));
       const height = ROW_H;
       const currentScrollLeft = scrollRef.current?.scrollLeft ?? 0;
       const contentRight = Math.min(width, contentWidth);
-      canvas.width = Math.max(1, Math.ceil(width * dpr));
-      canvas.height = Math.max(1, Math.ceil(height * dpr));
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
+      syncWorkbookCanvasSurface(canvas, width, height, dpr);
 
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
@@ -271,6 +273,8 @@ const WorkbookCanvasHeaderStrip = memo(({
       ctx.moveTo(0, height - 0.5);
       ctx.lineTo(contentRight, height - 0.5);
       ctx.stroke();
+      const borderRegistry = createWorkbookCanvasBorderRegistry();
+      const deferredFocusDraws: Array<() => void> = [];
 
       const contentLeft = LN_W + 3;
       const frozenWidth = renderColumns
@@ -321,8 +325,14 @@ const WorkbookCanvasHeaderStrip = memo(({
             ctx.fillStyle = accent;
             ctx.fillRect(drawX, 0, 3, height);
           }
-          ctx.strokeStyle = isSelectedColumn ? `${accent}88` : T.border;
-          ctx.strokeRect(drawX + 0.5, 0.5, entry.width - 1, height - 1);
+          borderRegistry.addRect({
+            x: drawX,
+            y: 0,
+            width: entry.width,
+            height,
+            color: isSelectedColumn ? `${accent}88` : T.border,
+            priority: isSelectedColumn ? 1 : 0,
+          });
           ctx.fillStyle = isBaseFocused || isMineFocused ? T.t0 : T.t1;
           ctx.font = `${sizes.header}px ${FONT_CODE}`;
           ctx.textAlign = 'center';
@@ -354,14 +364,21 @@ const WorkbookCanvasHeaderStrip = memo(({
           ctx.fillStyle = T.acc;
           ctx.fillRect(mineX, 0, 3, height);
 
-          ctx.strokeStyle = T.border;
-          ctx.strokeRect(drawX + 0.5, 0.5, pairWidth - 1, height - 1);
+          borderRegistry.addRect({
+            x: drawX,
+            y: 0,
+            width: pairWidth,
+            height,
+            color: T.border,
+          });
           if (isSelectedColumn) {
             const focusAccent = primarySelection?.side === 'base' ? T.acc2 : T.acc;
-            ctx.strokeStyle = `${focusAccent}96`;
-            ctx.lineWidth = 2;
-            ctx.strokeRect(drawX + 1, 1, pairWidth - 2, height - 2);
-            ctx.lineWidth = 1;
+            deferredFocusDraws.push(() => {
+              ctx.strokeStyle = `${focusAccent}96`;
+              ctx.lineWidth = 2;
+              ctx.strokeRect(drawX + 1, 1, pairWidth - 2, height - 2);
+              ctx.lineWidth = 1;
+            });
           }
 
           ctx.font = `${sizes.header}px ${FONT_CODE}`;
@@ -402,6 +419,9 @@ const WorkbookCanvasHeaderStrip = memo(({
         });
       }
 
+      borderRegistry.flush(ctx);
+      deferredFocusDraws.forEach((drawFocus) => drawFocus());
+
       resolveHiddenIndicatorLayouts(currentScrollLeft).forEach((indicator) => {
         ctx.fillStyle = T.bg0;
         ctx.strokeStyle = T.acc2;
@@ -421,8 +441,11 @@ const WorkbookCanvasHeaderStrip = memo(({
     };
 
     const scheduleDraw = () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      rafRef.current = requestAnimationFrame(draw);
+      if (rafRef.current) return;
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = 0;
+        draw();
+      });
     };
 
     const scroller = scrollRef.current;
@@ -432,6 +455,7 @@ const WorkbookCanvasHeaderStrip = memo(({
     return () => {
       scroller?.removeEventListener('scroll', scheduleDraw);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
     };
   }, [
     contentWidth,

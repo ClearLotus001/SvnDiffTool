@@ -1,5 +1,4 @@
-import { memo, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
-import { flushSync } from 'react-dom';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import type { HorizontalVirtualColumnEntry } from '@/hooks/virtualization/useHorizontalVirtualColumns';
 import type { WorkbookDiffRegion } from '@/types';
 import {
@@ -11,6 +10,7 @@ import {
   getWorkbookCanvasSpanGeometry,
   getWorkbookColumnSpanBounds,
 } from '@/utils/workbook/workbookMergeLayout';
+import { isWorkbookDebugEnabled, workbookDebugLog } from '@/utils/workbook/workbookDebug';
 import { resolveWorkbookRegionTone } from '@/utils/workbook/workbookRowVisuals';
 import WorkbookDiffRegionOverlay, {
   mergeWorkbookDiffRegionOverlayBoxes,
@@ -19,6 +19,7 @@ import WorkbookDiffRegionOverlay, {
 interface WorkbookActiveRegionOverlayLayerProps {
   scrollRef: RefObject<HTMLDivElement>;
   viewportWidth: number;
+  stickyHeaderHeight: number;
   activeDiffRegion: WorkbookDiffRegion | null;
   activeSheetName: string | null;
   visibleRowFrames: Map<number, { top: number; height: number }>;
@@ -34,6 +35,7 @@ interface WorkbookActiveRegionOverlayLayerProps {
 }
 
 const MIN_OVERLAY_BOX_SIZE = 4;
+const OVERLAY_DEBUG_THROTTLE_MS = 120;
 
 function findVisibleRowBounds(
   visibleRows: Array<[number, { top: number; height: number }]>,
@@ -85,9 +87,35 @@ function findVisibleRowBounds(
   };
 }
 
+function summarizeOverlayBoxes(boxes: ReturnType<typeof mergeWorkbookDiffRegionOverlayBoxes>) {
+  return boxes.slice(0, 8).map((box) => ({
+    key: box.key,
+    left: box.left,
+    top: box.top,
+    width: box.width,
+    height: box.height,
+    tone: box.tone ?? null,
+    openTop: Boolean(box.openTop),
+    openBottom: Boolean(box.openBottom),
+  }));
+}
+
+const CANVAS_BUFFER_FACTOR = 1;
+
+function computeCanvasAnchor(
+  scrollTop: number,
+  viewportHeight: number,
+): { anchorTop: number; canvasHeight: number } {
+  const buffer = viewportHeight * CANVAS_BUFFER_FACTOR;
+  const anchorTop = Math.max(0, scrollTop - buffer);
+  const canvasHeight = viewportHeight + (buffer * 2);
+  return { anchorTop, canvasHeight };
+}
+
 const WorkbookActiveRegionOverlayLayer = memo(({
   scrollRef,
   viewportWidth,
+  stickyHeaderHeight,
   activeDiffRegion,
   activeSheetName,
   visibleRowFrames,
@@ -101,31 +129,33 @@ const WorkbookActiveRegionOverlayLayer = memo(({
   pulseNonce = 0,
   label,
 }: WorkbookActiveRegionOverlayLayerProps) => {
-  const [scrollLeft, setScrollLeft] = useState(0);
-  const scrollLeftRef = useRef(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [canvasAnchorTop, setCanvasAnchorTop] = useState(0);
+  const [canvasHeight, setCanvasHeight] = useState(0);
+  const lastDebugLogAtRef = useRef(0);
 
   useLayoutEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller) return;
 
-    const applyScrollLeft = (sync = false) => {
-      const nextScrollLeft = Math.max(0, scroller.scrollLeft);
-      if (Math.abs(scrollLeftRef.current - nextScrollLeft) < 0.01) return;
-      scrollLeftRef.current = nextScrollLeft;
-      if (sync) {
-        setScrollLeft(nextScrollLeft);
-        return;
-      }
-      flushSync(() => {
-        setScrollLeft(nextScrollLeft);
-      });
+    const applyViewportHeight = () => {
+      const nextViewportHeight = Math.max(0, scroller.clientHeight);
+      setViewportHeight((current) => (
+        current === nextViewportHeight ? current : nextViewportHeight
+      ));
+      const anchor = computeCanvasAnchor(
+        Math.max(0, scroller.scrollTop),
+        nextViewportHeight,
+      );
+      setCanvasAnchorTop(anchor.anchorTop);
+      setCanvasHeight(anchor.canvasHeight);
     };
 
-    applyScrollLeft(true);
-    const handleScroll = () => applyScrollLeft();
-    scroller.addEventListener('scroll', handleScroll, { passive: true });
+    const resizeObserver = new ResizeObserver(() => applyViewportHeight());
+    resizeObserver.observe(scroller);
+    applyViewportHeight();
     return () => {
-      scroller.removeEventListener('scroll', handleScroll);
+      resizeObserver.disconnect();
     };
   }, [scrollRef]);
 
@@ -134,7 +164,7 @@ const WorkbookActiveRegionOverlayLayer = memo(({
     [visibleRowFrames],
   );
 
-  const boxes = useMemo(() => {
+  const resolveBoxes = useCallback((scrollLeft: number) => {
     if (
       !activeDiffRegion
       || activeDiffRegion.sheetName !== activeSheetName
@@ -156,6 +186,11 @@ const WorkbookActiveRegionOverlayLayer = memo(({
         patch.endRowIndex,
       );
       if (!visibleBounds) return [];
+      // NOTE:
+      // visibleRowFrames stores overlay content-space row coordinates. The
+      // canvas is now positioned at canvasAnchorTop in content-space, so box
+      // coordinates are mapped to canvas-space by subtracting canvasAnchorTop
+      // in the WorkbookDiffRegionOverlay draw function.
 
       return boundsModes.flatMap((boundsMode, boundsIndex) => {
         const bounds = getWorkbookColumnSpanBounds(
@@ -209,13 +244,95 @@ const WorkbookActiveRegionOverlayLayer = memo(({
     freezeColumnCount,
     frozenWidth,
     resolvePatchBoundsModes,
-    scrollLeft,
     sortedVisibleRows,
     viewportWidth,
     visibleRowFrames,
   ]);
 
-  if (boxes.length === 0) return null;
+  const handleRepositionNeeded = useCallback((scrollTop: number) => {
+    const anchor = computeCanvasAnchor(scrollTop, viewportHeight);
+    setCanvasAnchorTop(anchor.anchorTop);
+    setCanvasHeight(anchor.canvasHeight);
+  }, [viewportHeight]);
+
+  useEffect(() => {
+    if (!isWorkbookDebugEnabled()) return;
+    if (!activeDiffRegion || activeDiffRegion.sheetName !== activeSheetName) return;
+
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (now - lastDebugLogAtRef.current < OVERLAY_DEBUG_THROTTLE_MS) return;
+    lastDebugLogAtRef.current = now;
+
+    const scroller = scrollRef.current;
+    const scrollLeft = Math.max(0, scroller?.scrollLeft ?? 0);
+    const scrollTop = Math.max(0, scroller?.scrollTop ?? 0);
+    const resolvedBoxes = resolveBoxes(scrollLeft);
+    const visibleRowFrameSample = Array.from(visibleRowFrames.entries())
+      .filter(([rowIndex]) => (
+        rowIndex >= Math.max(0, activeDiffRegion.startRowIndex - 2)
+        && rowIndex <= activeDiffRegion.endRowIndex + 2
+      ))
+      .sort((left, right) => left[0] - right[0])
+      .slice(0, 12)
+      .map(([rowIndex, frame]) => ({
+        rowIndex,
+        top: frame.top,
+        height: frame.height,
+      }));
+
+    workbookDebugLog('WorkbookActiveRegionOverlayLayer/state', {
+      region: {
+        id: activeDiffRegion.id,
+        sheetName: activeDiffRegion.sheetName,
+        startRowIndex: activeDiffRegion.startRowIndex,
+        endRowIndex: activeDiffRegion.endRowIndex,
+        startCol: activeDiffRegion.startCol,
+        endCol: activeDiffRegion.endCol,
+      },
+      scroll: {
+        top: scrollTop,
+        left: scrollLeft,
+        clientHeight: scroller?.clientHeight ?? 0,
+        clientWidth: scroller?.clientWidth ?? 0,
+      },
+      viewport: {
+        width: viewportWidth,
+        height: viewportHeight,
+        stickyHeaderHeight,
+      },
+      patches: activeDiffRegion.patches.slice(0, 12).map((patch, index) => ({
+        index,
+        startRowIndex: patch.startRowIndex,
+        endRowIndex: patch.endRowIndex,
+        startCol: patch.startCol,
+        endCol: patch.endCol,
+        hasBaseSide: patch.hasBaseSide,
+        hasMineSide: patch.hasMineSide,
+        baseRowStart: patch.baseRowStart,
+        baseRowEnd: patch.baseRowEnd,
+        mineRowStart: patch.mineRowStart,
+        mineRowEnd: patch.mineRowEnd,
+      })),
+      visibleRowFrameSample,
+      resolvedBoxCount: resolvedBoxes.length,
+      resolvedBoxes: summarizeOverlayBoxes(resolvedBoxes),
+      label: label ?? null,
+      pulseNonce,
+    });
+  }, [
+    activeDiffRegion,
+    activeSheetName,
+    label,
+    pulseNonce,
+    resolveBoxes,
+    scrollRef,
+    stickyHeaderHeight,
+    viewportHeight,
+    viewportWidth,
+    visibleRowFrames,
+  ]);
+
+  if (!activeDiffRegion || activeDiffRegion.sheetName !== activeSheetName || viewportHeight <= 0) return null;
 
   return (
     <div
@@ -225,21 +342,45 @@ const WorkbookActiveRegionOverlayLayer = memo(({
         pointerEvents: 'none',
         zIndex: 6,
       }}>
+      {/* Vertical positioning layer: places the canvas at the correct
+          content-space Y offset. Uses left:0/right:0 so it spans the full
+          scrollable content width, giving the inner sticky div room to slide. */}
       <div
         style={{
-          position: 'sticky',
-          top: 0,
+          position: 'absolute',
+          top: canvasAnchorTop,
           left: 0,
-          height: '100%',
-          width: viewportWidth,
-          overflow: 'hidden',
+          right: 0,
+          minWidth: '100%',
+          height: canvasHeight,
           pointerEvents: 'none',
         }}>
-        <WorkbookDiffRegionOverlay
-          boxes={boxes}
-          pulseNonce={pulseNonce}
-          {...(label ? { label } : {})}
-        />
+        {/* Horizontal sticky layer: sticks to the viewport left edge during
+            horizontal scroll, exactly like the WorkbookPaneCanvasStrip wrappers.
+            This eliminates the 1-frame desync that JS-driven left updates cause. */}
+        <div
+          style={{
+            position: 'sticky',
+            left: 0,
+            width: viewportWidth,
+            height: canvasHeight,
+            overflow: 'hidden',
+            pointerEvents: 'none',
+          }}>
+          <WorkbookDiffRegionOverlay
+            scrollRef={scrollRef}
+            resolveBoxes={resolveBoxes}
+            viewportWidth={viewportWidth}
+            viewportHeight={viewportHeight}
+            stickyHeaderHeight={stickyHeaderHeight}
+            debugRegionId={activeDiffRegion.id}
+            pulseNonce={pulseNonce}
+            canvasAnchorTop={canvasAnchorTop}
+            canvasHeight={canvasHeight}
+            onRepositionNeeded={handleRepositionNeeded}
+            {...(label ? { label } : {})}
+          />
+        </div>
       </div>
     </div>
   );

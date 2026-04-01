@@ -93,23 +93,30 @@ export default function useElectronLifecycleEffects({
       }
 
       setIsElectron(true);
-      try {
-        const devMode = await window.svnDiff.isDevMode?.();
-        if (!cancelled) setIsDevMode(Boolean(devMode));
-      } catch {
-        if (!cancelled) setIsDevMode(false);
-      }
-      try {
-        const nativeWindowControls = await window.svnDiff.usesNativeWindowControls?.();
-        if (!cancelled) setUsesNativeWindowControls(Boolean(nativeWindowControls));
-      } catch {
-        if (!cancelled) setUsesNativeWindowControls(false);
-      }
+
+      // Fire all independent IPC calls in parallel to reduce startup latency.
+      // isDevMode and usesNativeWindowControls are independent of getDiffData.
+      const devModePromise = window.svnDiff.isDevMode?.().catch(() => false);
+      const nativeWindowControlsPromise = window.svnDiff.usesNativeWindowControls?.().catch(() => false);
 
       let seq = 0;
       try {
-        seq = await beginDiffLoad();
-        const data = await window.svnDiff.getDiffData(workbookCompareModeRef.current);
+        // Start loading state and fire getDiffData in parallel with the above.
+        const [devMode, nativeWindowControls, seqAndData] = await Promise.all([
+          devModePromise,
+          nativeWindowControlsPromise,
+          (async () => {
+            const loadSeq = await beginDiffLoad();
+            const data = await window.svnDiff!.getDiffData(workbookCompareModeRef.current);
+            return { seq: loadSeq, data };
+          })(),
+        ]);
+        if (!cancelled) {
+          setIsDevMode(Boolean(devMode));
+          setUsesNativeWindowControls(Boolean(nativeWindowControls));
+        }
+        seq = seqAndData.seq;
+        const data = seqAndData.data;
         const hasDiffPayload = Boolean(
           data
           && (

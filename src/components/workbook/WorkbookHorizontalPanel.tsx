@@ -102,51 +102,17 @@ import WorkbookPerfDebugPanel, { type WorkbookPerfDebugStats } from '@/component
 import WorkbookSheetTabs from '@/components/workbook/WorkbookSheetTabs';
 import WorkbookActiveRegionOverlayLayer from '@/components/workbook/WorkbookActiveRegionOverlayLayer';
 import WorkbookHiddenRowsBar from '@/components/workbook/WorkbookHiddenRowsBar';
-
-const CONTEXT_LINES = 3;
-
-function splitRowHasLineIdx(row: SplitRow, lineIdx: number): boolean {
-  return row.lineIdxs.includes(lineIdx);
-}
-
-function splitRowTouchesOrAfter(row: SplitRow, lineIdx: number): boolean {
-  return row.lineIdxs.some(idx => idx >= lineIdx);
-}
-
-function getWorkbookMiniMapTone(
-  row: SplitRow,
-  visibleColumns: number[],
-  compareMode: WorkbookCompareMode,
-): WorkbookMiniMapTone {
-  return buildWorkbookSplitRowCompareState(row, visibleColumns, compareMode).tone;
-}
-
-function isEqualSplitRow(row: SplitRow): boolean {
-  return row.left?.type === 'equal' && row.right?.type === 'equal';
-}
-
-function rowTouchesGuidedHunk(row: SplitRow, guidedHunkRange: Hunk | null): boolean {
-  if (!guidedHunkRange) return false;
-  return row.lineIdxs.some(idx => idx >= guidedHunkRange.startIdx && idx <= guidedHunkRange.endIdx);
-}
-
-function getWorkbookHorizontalRowKey(row: SplitRow): string {
-  return row.lineIdxs.length > 0 ? row.lineIdxs.join(':') : String(row.lineIdx);
-}
-
-function buildSelectionAutoScrollKey(
-  sheetName: string,
-  selection: WorkbookSelectedCell | null,
-): string {
-  if (!selection) return '';
-  return [
-    sheetName,
-    selection.kind,
-    selection.side,
-    selection.rowNumber,
-    selection.colIndex,
-  ].join(':');
-}
+import {
+  WORKBOOK_CONTEXT_LINES as CONTEXT_LINES,
+  workbookRowHasLineIdx as splitRowHasLineIdx,
+  workbookRowTouchesOrAfter as splitRowTouchesOrAfter,
+  isEqualWorkbookRow as isEqualSplitRow,
+  rowTouchesGuidedHunk,
+  getWorkbookRowKey as getWorkbookHorizontalRowKey,
+  buildSelectionAutoScrollKey,
+  getWorkbookMiniMapTone,
+  type SelectionAutoScrollLock,
+} from '@/utils/workbook/workbookPanelHelpers';
 
 type WorkbookHorizontalRenderItem =
   | { kind: 'split-line'; row: SplitRow; lineIdx: number }
@@ -749,7 +715,7 @@ const WorkbookHorizontalPanel = memo(({
   }, [active, activeDiffRegion?.id, activeWorkbookSection?.name, expandedBlocks, onLayoutSnapshotChange]);
   const scheduleLayoutSnapshot = useCallback(() => {
     if (!active || !onLayoutSnapshotChange) return;
-    if (snapshotEmitRafRef.current) cancelAnimationFrame(snapshotEmitRafRef.current);
+    if (snapshotEmitRafRef.current) return;
     snapshotEmitRafRef.current = requestAnimationFrame(() => {
       snapshotEmitRafRef.current = 0;
       emitLayoutSnapshot();
@@ -1644,6 +1610,7 @@ const WorkbookHorizontalPanel = memo(({
           <WorkbookActiveRegionOverlayLayer
             scrollRef={ref}
             viewportWidth={virtualColumns.debug.viewportWidth}
+            stickyHeaderHeight={stickyHeaderHeight}
             activeDiffRegion={activeDiffRegion}
             activeSheetName={activeWorkbookSection?.name ?? null}
             visibleRowFrames={activeRegionOverlayVisibleRowFrames}

@@ -129,9 +129,25 @@ class TextDiffWorkerClient {
       );
     }
   }
+  /**
+   * Pre-create the Worker so the first diff computation doesn't pay the
+   * cold-start cost (module parse + JIT) of Worker initialization.
+   */
+  warmup() {
+    if (typeof Worker === 'undefined') return;
+    try {
+      this.ensureWorker();
+    } catch {
+      // Worker creation failed — will fall back to sync on first compute.
+    }
+  }
 }
 
 const textDiffWorkerClient = new TextDiffWorkerClient();
+
+// Eagerly warm up the Worker at module load time so the first diff
+// computation doesn't block on Worker initialization (~20-50ms).
+textDiffWorkerClient.warmup();
 
 export function computeTextDiffAsync(
   baseText: string,

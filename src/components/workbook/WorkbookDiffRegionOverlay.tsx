@@ -1,6 +1,11 @@
-import { memo, useMemo, type CSSProperties } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { FONT_SIZE, FONT_UI } from '@/constants/typography';
 import { useTheme } from '@/context/theme';
+import { isWorkbookDebugEnabled, workbookDebugLog } from '@/utils/workbook/workbookDebug';
+import {
+  getWorkbookCanvasDevicePixelRatio,
+  syncWorkbookCanvasSurface,
+} from '@/utils/workbook/workbookCanvasSurface';
 import type { WorkbookRegionOverlayBox as WorkbookDiffRegionOverlayBox } from '@/utils/workbook/workbookRegionOverlay';
 import {
   mergeWorkbookSemanticTone,
@@ -17,6 +22,8 @@ const EDGE_WIDTH = 2;
 const EDGE_OFFSET = -1;
 const CONTINUATION_HEIGHT = 4;
 const OUTLINE_MERGE_EPSILON = 0.5;
+const PULSE_DURATION_MS = 560;
+const OVERLAY_DRAW_DEBUG_THROTTLE_MS = 120;
 
 function clampAlpha(alpha: number): number {
   if (!Number.isFinite(alpha)) return 1;
@@ -365,27 +372,365 @@ export function buildWorkbookDiffRegionOverlayOutlineSegments(
 }
 
 interface WorkbookDiffRegionOverlayProps {
-  boxes: WorkbookDiffRegionOverlayBox[];
+  scrollRef: RefObject<HTMLDivElement>;
+  resolveBoxes: (scrollLeft: number) => WorkbookDiffRegionOverlayBox[];
+  viewportWidth: number;
+  viewportHeight: number;
+  stickyHeaderHeight: number;
+  debugRegionId?: string;
   pulseNonce?: number;
   label?: string;
+  /**
+   * When provided, the canvas is positioned in content-space at this Y offset
+   * (non-sticky). Boxes are mapped to canvas coordinates by subtracting this
+   * anchor instead of scrollTop, so the compositor scrolls the canvas together
+   * with the workbook content, eliminating the 1-frame desync that sticky
+   * positioning causes during compositor-driven scroll.
+   */
+  canvasAnchorTop?: number;
+  canvasHeight?: number;
+  /**
+   * Called when the current scrollTop falls outside the canvas buffer range.
+   * The parent should update canvasAnchorTop accordingly.
+   */
+  onRepositionNeeded?: (scrollTop: number) => void;
 }
 
-const WorkbookDiffRegionOverlay = memo(({ boxes, pulseNonce = 0, label }: WorkbookDiffRegionOverlayProps) => {
+function ellipsizeCanvasText(
+  ctx: CanvasRenderingContext2D,
+  value: string,
+  maxWidth: number,
+): string {
+  if (maxWidth <= 0) return '';
+  if (ctx.measureText(value).width <= maxWidth) return value;
+
+  const ellipsis = '…';
+  const ellipsisWidth = ctx.measureText(ellipsis).width;
+  if (ellipsisWidth >= maxWidth) return ellipsis;
+
+  let low = 0;
+  let high = value.length;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    const candidate = `${value.slice(0, mid)}${ellipsis}`;
+    if (ctx.measureText(candidate).width <= maxWidth) {
+      low = mid;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return `${value.slice(0, low)}${ellipsis}`;
+}
+
+const WorkbookDiffRegionOverlay = memo(({
+  scrollRef,
+  resolveBoxes,
+  viewportWidth,
+  viewportHeight,
+  stickyHeaderHeight,
+  debugRegionId,
+  pulseNonce = 0,
+  label,
+  canvasAnchorTop,
+  canvasHeight: canvasHeightProp,
+  onRepositionNeeded,
+}: WorkbookDiffRegionOverlayProps) => {
   const T = useTheme();
-  const outlineSegments = useMemo(
-    () => buildWorkbookDiffRegionOverlayOutlineSegments(boxes),
-    [boxes],
-  );
-  const pulseAnimation = pulseNonce > 0 ? 'regionGlowPulse 560ms cubic-bezier(0.22, 1, 0.36, 1) 1' : undefined;
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const drawRef = useRef<((reason?: string) => void) | null>(null);
+  const lastDebugLogAtRef = useRef(0);
+  const lastScrollLeftRef = useRef(0);
+  const scrollRafRef = useRef(0);
+  const [pulseProgress, setPulseProgress] = useState(1);
+  const isContentSpaceMode = canvasAnchorTop != null;
+  const effectiveCanvasHeight = isContentSpaceMode
+    ? (canvasHeightProp ?? viewportHeight)
+    : viewportHeight;
 
-  if (boxes.length === 0) return null;
+  useEffect(() => {
+    if (pulseNonce <= 0) {
+      setPulseProgress(1);
+      return;
+    }
 
-  const labelAnchor = boxes.reduce<WorkbookDiffRegionOverlayBox | null>((best, box) => {
-    if (!best) return box;
-    if (box.top < best.top) return box;
-    if (box.top === best.top && box.left < best.left) return box;
-    return best;
-  }, null);
+    let frame = 0;
+    const start = typeof performance !== 'undefined' ? performance.now() : Date.now();
+
+    const tick = () => {
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const nextProgress = Math.min(1, (now - start) / PULSE_DURATION_MS);
+      setPulseProgress(nextProgress);
+      if (nextProgress < 1) {
+        frame = requestAnimationFrame(tick);
+      }
+    };
+
+    setPulseProgress(0);
+    frame = requestAnimationFrame(tick);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [pulseNonce]);
+
+  useLayoutEffect(() => {
+    drawRef.current = (reason = 'layout') => {
+      const canvas = canvasRef.current;
+      const scroller = scrollRef.current;
+      if (!canvas || !scroller || viewportWidth <= 0 || effectiveCanvasHeight <= 0) return;
+
+      const scrollLeft = Math.max(0, scroller.scrollLeft);
+      const scrollTop = Math.max(0, scroller.scrollTop);
+      const anchorTop = isContentSpaceMode ? (canvasAnchorTop ?? 0) : 0;
+
+      // In content-space mode the canvas lives inside the scrollable content
+      // (not sticky), so the compositor scrolls it together with the workbook
+      // rows. We map box coordinates from content-space to canvas-space by
+      // subtracting the canvas anchor instead of scrollTop. This eliminates
+      // the 1-frame visual lag caused by compositor-driven scroll.
+      const boxes = resolveBoxes(scrollLeft)
+        .map((box) => {
+          if (isContentSpaceMode) {
+            // Frozen rows have viewport-relative top (< stickyHeaderHeight).
+            // Convert them to content-space first (add scrollTop), then to
+            // canvas-space (subtract anchorTop) so they remain visible.
+            if (box.top < stickyHeaderHeight) {
+              return { ...box, top: box.top + scrollTop - anchorTop };
+            }
+            return {
+              ...box,
+              top: box.top - anchorTop,
+            };
+          }
+          return {
+            ...box,
+            top: box.top < stickyHeaderHeight
+              ? box.top
+              : box.top - scrollTop,
+          };
+        })
+        .filter((box) => (
+          box.width > 0
+          && box.height > 0
+          && box.top < effectiveCanvasHeight
+          && box.top + box.height > 0
+        ));
+
+      const dpr = getWorkbookCanvasDevicePixelRatio();
+      syncWorkbookCanvasSurface(canvas, viewportWidth, effectiveCanvasHeight, dpr);
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      ctx.save();
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, viewportWidth, effectiveCanvasHeight);
+      if (boxes.length === 0) {
+        ctx.restore();
+        return;
+      }
+
+      const outlineSegments = buildWorkbookDiffRegionOverlayOutlineSegments(boxes);
+      const pulseStrength = pulseNonce > 0 && pulseProgress < 1
+        ? Math.sin(pulseProgress * Math.PI)
+        : 0;
+
+      if (isWorkbookDebugEnabled()) {
+        const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        if (reason !== 'scroll' || now - lastDebugLogAtRef.current >= OVERLAY_DRAW_DEBUG_THROTTLE_MS) {
+          lastDebugLogAtRef.current = now;
+          workbookDebugLog('WorkbookDiffRegionOverlay/draw', {
+            reason,
+            regionId: debugRegionId ?? null,
+            scroll: {
+              top: scrollTop,
+              left: scrollLeft,
+            },
+            viewport: {
+              width: viewportWidth,
+              height: viewportHeight,
+              stickyHeaderHeight,
+            },
+            pulse: {
+              nonce: pulseNonce,
+              progress: pulseProgress,
+              strength: pulseStrength,
+            },
+            boxCount: boxes.length,
+            boxes: boxes.slice(0, 8).map((box) => ({
+              key: box.key,
+              left: box.left,
+              top: box.top,
+              width: box.width,
+              height: box.height,
+              tone: box.tone ?? null,
+              openTop: Boolean(box.openTop),
+              openBottom: Boolean(box.openBottom),
+            })),
+            outlineSegmentCount: outlineSegments.length,
+            outlineSegments: outlineSegments.slice(0, 12).map((segment) => ({
+              key: segment.key,
+              left: segment.left,
+              top: segment.top,
+              width: segment.width,
+              height: segment.height,
+              tone: segment.tone ?? null,
+            })),
+            label: label ?? null,
+          });
+        }
+      }
+
+      boxes.forEach((box) => {
+        const palette = resolveWorkbookOverlayPalette(T, box.tone ?? 'mixed');
+        const fillGradient = ctx.createLinearGradient(0, box.top, 0, box.top + box.height);
+        fillGradient.addColorStop(0, applyOverlayAlpha(palette.mid, 0.07 + (pulseStrength * 0.06)));
+        fillGradient.addColorStop(1, applyOverlayAlpha(palette.shine, 0.05 + (pulseStrength * 0.045)));
+        ctx.fillStyle = fillGradient;
+        ctx.fillRect(box.left, box.top, box.width, box.height);
+
+        const continuationGradient = ctx.createLinearGradient(box.left, 0, box.left + box.width, 0);
+        continuationGradient.addColorStop(0, 'transparent');
+        continuationGradient.addColorStop(0.2, palette.continuation);
+        continuationGradient.addColorStop(0.5, palette.shine);
+        continuationGradient.addColorStop(0.8, palette.continuation);
+        continuationGradient.addColorStop(1, 'transparent');
+        ctx.fillStyle = continuationGradient;
+        if (resolveOpenTop(box)) {
+          ctx.fillRect(
+            box.left + EDGE_WIDTH,
+            box.top + EDGE_OFFSET,
+            Math.max(0, box.width - (EDGE_WIDTH * 2)),
+            CONTINUATION_HEIGHT,
+          );
+        }
+        if (resolveOpenBottom(box)) {
+          ctx.fillRect(
+            box.left + EDGE_WIDTH,
+            box.top + box.height - CONTINUATION_HEIGHT - EDGE_OFFSET,
+            Math.max(0, box.width - (EDGE_WIDTH * 2)),
+            CONTINUATION_HEIGHT,
+          );
+        }
+      });
+
+      outlineSegments.forEach((segment) => {
+        const palette = resolveWorkbookOverlayPalette(T, segment.tone ?? 'mixed');
+        ctx.save();
+        if (pulseStrength > 0) {
+          ctx.shadowColor = applyOverlayAlpha(palette.mid, 0.28 + (pulseStrength * 0.26));
+          ctx.shadowBlur = 6 + (pulseStrength * 8);
+        }
+        ctx.fillStyle = palette.mid;
+        ctx.fillRect(segment.left, segment.top, segment.width, segment.height);
+        ctx.restore();
+      });
+
+      if (label) {
+        const labelAnchor = boxes.reduce<WorkbookDiffRegionOverlayBox | null>((best, box) => {
+          if (!best) return box;
+          if (box.top < best.top) return box;
+          if (box.top === best.top && box.left < best.left) return box;
+          return best;
+        }, null);
+        if (labelAnchor) {
+          const palette = resolveWorkbookOverlayPalette(T, labelAnchor.tone ?? 'mixed');
+          const labelPaddingX = 8;
+          const labelHeight = 20;
+          const labelTop = Math.max(
+            2,
+            Math.min(
+              effectiveCanvasHeight - labelHeight - 2,
+              labelAnchor.top >= 26 ? labelAnchor.top - 22 : labelAnchor.top + 4,
+            ),
+          );
+          const labelLeft = Math.max(2, labelAnchor.left + 6);
+          const labelMaxWidth = Math.max(140, Math.min(360, labelAnchor.width - 12 || 240));
+          const labelWidth = Math.max(0, Math.min(labelMaxWidth, viewportWidth - labelLeft - 2));
+
+          if (labelWidth > 0) {
+            ctx.save();
+            ctx.font = `700 ${FONT_SIZE.xs}px ${FONT_UI}`;
+            const text = ellipsizeCanvasText(ctx, label, Math.max(0, labelWidth - (labelPaddingX * 2)));
+            ctx.shadowColor = `${T.t0}14`;
+            ctx.shadowBlur = 8 + (pulseStrength * 3);
+            ctx.fillStyle = applyOverlayAlpha(T.bg1, 0.95);
+            ctx.strokeStyle = applyOverlayAlpha(palette.mid, 0.53);
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.rect(labelLeft, labelTop, labelWidth, labelHeight);
+            ctx.fill();
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = palette.mid;
+            ctx.textBaseline = 'middle';
+            ctx.textAlign = 'left';
+            ctx.fillText(text, labelLeft + labelPaddingX, labelTop + (labelHeight / 2));
+            ctx.restore();
+          }
+        }
+      }
+
+      ctx.restore();
+    };
+    drawRef.current('layout');
+  }, [T, canvasAnchorTop, debugRegionId, effectiveCanvasHeight, isContentSpaceMode, label, pulseNonce, pulseProgress, resolveBoxes, scrollRef, stickyHeaderHeight, viewportHeight, viewportWidth]);
+
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+
+    const scheduleDraw = (reason: string) => {
+      if (scrollRafRef.current) return;
+      scrollRafRef.current = requestAnimationFrame(() => {
+        scrollRafRef.current = 0;
+        drawRef.current?.(reason);
+      });
+    };
+
+    const handleScroll = () => {
+      if (isContentSpaceMode) {
+        // In content-space mode the compositor scrolls the canvas with the
+        // workbook content, so we only need to redraw when:
+        // 1. The horizontal scroll position changed (column visibility)
+        // 2. The viewport has scrolled outside the canvas buffer range
+        const scrollLeft = Math.max(0, scroller.scrollLeft);
+        const scrollTop = Math.max(0, scroller.scrollTop);
+        const anchor = canvasAnchorTop ?? 0;
+        const canvasH = canvasHeightProp ?? viewportHeight;
+        const outOfBounds = scrollTop < anchor || scrollTop + viewportHeight > anchor + canvasH;
+
+        // Keep the canvas container horizontally aligned with the viewport.
+        // The parent uses `position: sticky; left: 0` so the browser
+        // compositor handles horizontal alignment natively — no JS update
+        // needed here.
+
+        if (outOfBounds) {
+          onRepositionNeeded?.(scrollTop);
+          return;
+        }
+
+        if (scrollLeft !== lastScrollLeftRef.current) {
+          lastScrollLeftRef.current = scrollLeft;
+          scheduleDraw('scroll');
+        }
+        return;
+      }
+
+      // Legacy sticky mode: redraw synchronously every scroll event so the
+      // overlay stays attached to the workbook canvas during vertical
+      // scrolling.
+      scheduleDraw('scroll');
+    };
+
+    scroller.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      scroller.removeEventListener('scroll', handleScroll);
+      if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
+    };
+  }, [canvasAnchorTop, canvasHeightProp, isContentSpaceMode, onRepositionNeeded, scrollRef, viewportHeight]);
+
+  if (viewportWidth <= 0 || viewportHeight <= 0) return null;
 
   return (
     <div
@@ -397,79 +742,16 @@ const WorkbookDiffRegionOverlay = memo(({ boxes, pulseNonce = 0, label }: Workbo
         pointerEvents: 'none',
         zIndex: 8,
       }}>
-      {boxes.map((box) => {
-        const openTop = resolveOpenTop(box);
-        const openBottom = resolveOpenBottom(box);
-        const palette = resolveWorkbookOverlayPalette(T, box.tone ?? 'mixed');
-        const fillStyle: CSSProperties = {
+      <canvas
+        ref={canvasRef}
+        style={{
           position: 'absolute',
-          top: box.top,
-          left: box.left,
-          width: box.width,
-          height: box.height,
-          background: `linear-gradient(180deg, ${applyOverlayAlpha(palette.mid, 0.07)} 0%, ${applyOverlayAlpha(palette.shine, 0.05)} 100%)`,
-          animation: pulseAnimation,
-          transformOrigin: 'center',
-        };
-        const continuationStyle: CSSProperties = {
-          position: 'absolute',
-          left: EDGE_WIDTH,
-          right: EDGE_WIDTH,
-          height: CONTINUATION_HEIGHT,
-          background: `linear-gradient(90deg, transparent 0%, ${palette.continuation} 20%, ${palette.shine} 50%, ${palette.continuation} 80%, transparent 100%)`,
-          opacity: 0.92,
-        };
-
-        return (
-          <div key={`${pulseNonce}:${box.key}`} style={fillStyle}>
-            {openTop && <div style={{ ...continuationStyle, top: EDGE_OFFSET }} />}
-            {openBottom && <div style={{ ...continuationStyle, bottom: EDGE_OFFSET }} />}
-          </div>
-        );
-      })}
-      {outlineSegments.map((segment) => {
-        const palette = resolveWorkbookOverlayPalette(T, segment.tone ?? 'mixed');
-        return (
-          <div
-            key={`${pulseNonce}:${segment.key}`}
-            style={{
-              position: 'absolute',
-              left: segment.left,
-              top: segment.top,
-              width: segment.width,
-              height: segment.height,
-              background: palette.mid,
-              animation: pulseAnimation,
-              transformOrigin: 'center',
-            }}
-          />
-        );
-      })}
-      {label && labelAnchor && (
-        <div
-          style={{
-            position: 'absolute',
-            top: labelAnchor.top >= 26 ? labelAnchor.top - 22 : labelAnchor.top + 4,
-            left: labelAnchor.left + 6,
-            maxWidth: Math.max(140, Math.min(360, labelAnchor.width - 12 || 240)),
-            padding: '2px 8px',
-            border: `1px solid ${applyOverlayAlpha(resolveWorkbookOverlayPalette(T, labelAnchor.tone ?? 'mixed').mid, 0.53)}`,
-            background: applyOverlayAlpha(T.bg1, 0.95),
-            color: resolveWorkbookOverlayPalette(T, labelAnchor.tone ?? 'mixed').mid,
-            fontFamily: FONT_UI,
-            fontSize: FONT_SIZE.xs,
-            fontWeight: 700,
-            lineHeight: '16px',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            boxShadow: `0 2px 8px ${T.t0}14`,
-            animation: pulseAnimation,
-            transformOrigin: 'left center',
-          }}>
-          {label}
-        </div>
-      )}
+          inset: 0,
+          width: viewportWidth,
+          height: effectiveCanvasHeight,
+          pointerEvents: 'none',
+        }}
+      />
     </div>
   );
 });

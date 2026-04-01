@@ -37,6 +37,14 @@ import {
   layoutWorkbookCanvasTextLines,
   normalizeWorkbookCanvasText,
 } from '@/utils/workbook/workbookCanvasText';
+import {
+  createWorkbookCanvasBorderRegistry,
+  resolveWorkbookCanvasCellBorderPriority,
+} from '@/utils/workbook/workbookCanvasBorders';
+import {
+  getWorkbookCanvasDevicePixelRatio,
+  syncWorkbookCanvasSurface,
+} from '@/utils/workbook/workbookCanvasSurface';
 import { useTheme } from '@/context/theme';
 import type {
   SplitRow,
@@ -163,15 +171,12 @@ const WorkbookPaneCanvasStrip = memo(({
     if (!canvas) return;
 
     const draw = () => {
-      const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+      const dpr = getWorkbookCanvasDevicePixelRatio();
       const width = Math.max(1, Math.ceil(viewportWidth));
       const canvasHeight = Math.max(1, Math.ceil(height));
       const currentScrollLeft = scrollRef.current?.scrollLeft ?? 0;
       const contentRight = Math.min(width, contentWidth);
-      canvas.width = Math.max(1, Math.ceil(width * dpr));
-      canvas.height = Math.max(1, Math.ceil(canvasHeight * dpr));
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${canvasHeight}px`;
+      syncWorkbookCanvasSurface(canvas, width, canvasHeight, dpr);
 
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
@@ -183,6 +188,9 @@ const WorkbookPaneCanvasStrip = memo(({
       ctx.fillRect(0, 0, width, canvasHeight);
       const floatingMergedDraws: Array<() => void> = [];
       const frozenMergedDraws: Array<() => void> = [];
+      const deferredSelectionDraws: Array<() => void> = [];
+      const scrollBorderRegistry = createWorkbookCanvasBorderRegistry();
+      const frozenBorderRegistry = createWorkbookCanvasBorderRegistry();
 
       const frozenWidth = renderColumns
         .filter(entry => entry.position < freezeColumnCount)
@@ -261,6 +269,7 @@ const WorkbookPaneCanvasStrip = memo(({
         const entry = renderRow.entry;
         const rowNumber = renderRow.rowNumber;
         const deferredMergedDraws = layer === 'floating' ? floatingMergedDraws : frozenMergedDraws;
+        const borderRegistry = layer === 'floating' ? scrollBorderRegistry : frozenBorderRegistry;
         const drawCell = (entryMeta: HorizontalVirtualColumnEntry, drawX: number) => {
           if (drawX >= contentRight || drawX + entryMeta.width <= contentLeft) return;
 
@@ -290,8 +299,14 @@ const WorkbookPaneCanvasStrip = memo(({
               ctx.fillStyle = cellVisual.maskOverlay;
               ctx.fillRect(drawX, y, entryMeta.width, ROW_H);
             }
-            ctx.strokeStyle = cellVisual.border;
-            ctx.strokeRect(drawX + 0.5, y + 0.5, Math.max(0, entryMeta.width - 1), ROW_H - 1);
+            borderRegistry.addRect({
+              x: drawX,
+              y,
+              width: entryMeta.width,
+              height: ROW_H,
+              color: cellVisual.border,
+              priority: resolveWorkbookCanvasCellBorderPriority(compareCell, false),
+            });
 
             if (hasContent) {
               ctx.save();
@@ -403,15 +418,23 @@ const WorkbookPaneCanvasStrip = memo(({
                 });
               });
             }
-            ctx.strokeStyle = cellVisual.border;
             withRowSegmentClip(() => {
               regionSegments.forEach((segment) => {
-                ctx.strokeRect(segment.left + 0.5, regionTop + 0.5, segment.width - 1, regionHeight - 1);
+                borderRegistry.addRect({
+                  x: segment.left,
+                  y: regionTop,
+                  width: segment.width,
+                  height: regionHeight,
+                  color: cellVisual.border,
+                  priority: resolveWorkbookCanvasCellBorderPriority(compareCell, Boolean(entry)),
+                });
               });
             });
-            withRowSegmentClip(() => {
-              selectionSegments.forEach((segment) => {
-                drawWorkbookCanvasSelectionFrame(ctx, segment.left, selectionTop, segment.width, selectionHeight, selectionVisual);
+            deferredSelectionDraws.push(() => {
+              withRowSegmentClip(() => {
+                selectionSegments.forEach((segment) => {
+                  drawWorkbookCanvasSelectionFrame(ctx, segment.left, selectionTop, segment.width, selectionHeight, selectionVisual);
+                });
               });
             });
 
@@ -516,6 +539,18 @@ const WorkbookPaneCanvasStrip = memo(({
         });
       }
 
+      if (scrollViewport.width > 0) {
+        clipWorkbookCanvasToViewport(ctx, scrollViewport, 0, canvasHeight, () => {
+          scrollBorderRegistry.flush(ctx);
+        });
+      }
+      if (frozenViewport) {
+        clipWorkbookCanvasToViewport(ctx, frozenViewport, 0, canvasHeight, () => {
+          frozenBorderRegistry.flush(ctx);
+        });
+      }
+      deferredSelectionDraws.forEach((drawSelection) => drawSelection());
+
       if (frozenViewport) {
         ctx.fillStyle = `${T.border2}55`;
         ctx.fillRect(frozenViewport.left + frozenViewport.width - 1, 0, 1, canvasHeight);
@@ -525,8 +560,11 @@ const WorkbookPaneCanvasStrip = memo(({
     };
 
     const scheduleDraw = () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      rafRef.current = requestAnimationFrame(draw);
+      if (rafRef.current) return;
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = 0;
+        draw();
+      });
     };
 
     const scroller = scrollRef.current;
@@ -536,6 +574,7 @@ const WorkbookPaneCanvasStrip = memo(({
     return () => {
       scroller?.removeEventListener('scroll', scheduleDraw);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
     };
   }, [columnLayoutByColumn, compareCellsByRowNumber, compareMode, contentWidth, freezeColumnCount, height, mergedRanges, renderedColumnNumbers, renderColumns, renderRows, renderedRowNumbers, rowEntryByRowNumber, rowLayoutByRowNumber, scrollRef, selectionLookup, sheetName, side, sizes.line, sizes.ui, T, viewportWidth]);
 

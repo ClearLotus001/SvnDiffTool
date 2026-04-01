@@ -55,6 +55,36 @@ interface HorizontalWindow {
   overscan: number;
 }
 
+function shouldRetainHorizontalWindow(
+  nonFrozenPrefixSums: number[],
+  currentRange: HorizontalWindow,
+  scrollLeft: number,
+  viewportWidth: number,
+  frozenWidth: number,
+): boolean {
+  if (currentRange.endIndex <= currentRange.startIndex) return false;
+
+  const totalNonFrozenWidth = nonFrozenPrefixSums[nonFrozenPrefixSums.length - 1] ?? 0;
+  const availableWidth = Math.max(1, viewportWidth - frozenWidth);
+  const maxScrollLeft = Math.max(0, totalNonFrozenWidth - availableWidth);
+  const clampedScrollLeft = Math.max(0, Math.min(scrollLeft, maxScrollLeft));
+  const windowStart = nonFrozenPrefixSums[currentRange.startIndex] ?? 0;
+  const windowEnd = nonFrozenPrefixSums[currentRange.endIndex] ?? totalNonFrozenWidth;
+  const visibleStart = clampedScrollLeft;
+  const visibleEnd = clampedScrollLeft + availableWidth;
+  const windowWidth = Math.max(0, windowEnd - windowStart);
+
+  if (windowWidth <= availableWidth) return true;
+
+  const margin = Math.max(
+    160,
+    Math.min(windowWidth * 0.25, availableWidth * 0.5),
+  );
+
+  return visibleStart >= windowStart + margin
+    && visibleEnd <= windowEnd - margin;
+}
+
 function getNow() {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
@@ -248,6 +278,17 @@ export function useHorizontalVirtualColumns({
 
   const applyWindowRange = useMemo(() => (
     (scrollLeft: number, nextViewportWidth: number) => {
+      const prevRange = windowRangeRef.current;
+      if (shouldRetainHorizontalWindow(
+        layout.nonFrozenPrefixSums,
+        prevRange,
+        scrollLeft,
+        nextViewportWidth,
+        layout.frozenWidth,
+      )) {
+        return;
+      }
+
       const calcStart = getNow();
       const nextRange = computeHorizontalWindow(
         layout.nonFrozenDisplayWidths,
@@ -261,7 +302,6 @@ export function useHorizontalVirtualColumns({
       );
       lastCalcMsRef.current = getNow() - calcStart;
 
-      const prevRange = windowRangeRef.current;
       if (
         prevRange.startIndex === nextRange.startIndex
         && prevRange.endIndex === nextRange.endIndex
@@ -275,7 +315,7 @@ export function useHorizontalVirtualColumns({
       rangeUpdateCountRef.current += 1;
       setWindowRange(nextRange);
     }
-  ), [layout.clampedFrozenCount, layout.frozenWidth, layout.nonFrozenDisplayWidths, layout.positionedMergedRanges, overscanFactor, overscanMin]);
+  ), [layout.clampedFrozenCount, layout.frozenWidth, layout.nonFrozenDisplayWidths, layout.nonFrozenPrefixSums, layout.positionedMergedRanges, overscanFactor, overscanMin]);
 
   useEffect(() => {
     const el = scrollRef.current;

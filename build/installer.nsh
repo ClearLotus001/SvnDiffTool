@@ -28,6 +28,19 @@ Var InstallOptionsDiffAllRadio
 Var InstallOptionsCacheParentText
 Var InstallOptionsDesktopShortcutCheckbox
 
+LangString INSTALL_WELCOME_TITLE 1033 "Workbook-aware SVN diff viewer"
+LangString INSTALL_WELCOME_TITLE 2052 "面向工作簿差异的 SVN 对比工具"
+LangString INSTALL_WELCOME_DESC 1033 "SvnDiffTool is optimized for text, Excel, and workbook compare workflows."
+LangString INSTALL_WELCOME_DESC 2052 "SvnDiffTool 专注于文本、Excel 与工作簿差异查看。"
+LangString INSTALL_WELCOME_POINT1 1033 "• Review text and workbook diffs with one app"
+LangString INSTALL_WELCOME_POINT1 2052 "• 一个应用同时处理文本与工作簿差异"
+LangString INSTALL_WELCOME_POINT2 1033 "• Optionally connect TortoiseSVN Diff Viewer during install"
+LangString INSTALL_WELCOME_POINT2 2052 "• 安装时可选择是否接管 TortoiseSVN Diff Viewer"
+LangString INSTALL_WELCOME_POINT3 1033 "• Customize cache location and desktop shortcut creation"
+LangString INSTALL_WELCOME_POINT3 2052 "• 可自定义缓存目录与桌面快捷方式"
+LangString INSTALL_WELCOME_HINT 1033 "Click Next to continue."
+LangString INSTALL_WELCOME_HINT 2052 "单击“下一步”继续。"
+
 LangString INSTALL_OPTIONS_TITLE 1033 "Choose how SvnDiffTool should integrate after installation."
 LangString INSTALL_OPTIONS_TITLE 2052 "选择安装完成后的 SvnDiffTool 默认集成方式。"
 LangString INSTALL_OPTIONS_DIFF_KEEP 1033 "Keep the current TortoiseSVN Diff Viewer configuration"
@@ -192,6 +205,33 @@ Function InstallerOptionsBrowseCacheParent
   ${NSD_SetText} $InstallOptionsCacheParentText $SelectedCacheParent
 FunctionEnd
 
+Function InstallerWelcomePageCreate
+  nsDialogs::Create 1018
+  Pop $0
+
+  ${If} $0 == error
+    Abort
+  ${EndIf}
+
+  ${NSD_CreateLabel} 0 4u 100% 16u "$(INSTALL_WELCOME_TITLE)"
+  Pop $1
+  CreateFont $2 "$(^Font)" "15" "700"
+  SendMessage $1 ${WM_SETFONT} $2 1
+
+  ${NSD_CreateLabel} 0 28u 100% 18u "$(INSTALL_WELCOME_DESC)"
+  Pop $1
+  ${NSD_CreateLabel} 0 56u 100% 12u "$(INSTALL_WELCOME_POINT1)"
+  Pop $1
+  ${NSD_CreateLabel} 0 72u 100% 12u "$(INSTALL_WELCOME_POINT2)"
+  Pop $1
+  ${NSD_CreateLabel} 0 88u 100% 12u "$(INSTALL_WELCOME_POINT3)"
+  Pop $1
+  ${NSD_CreateLabel} 0 116u 100% 12u "$(INSTALL_WELCOME_HINT)"
+  Pop $1
+
+  nsDialogs::Show
+FunctionEnd
+
 Function InstallerOptionsPageCreate
   nsDialogs::Create 1018
   Pop $0
@@ -272,7 +312,7 @@ FunctionEnd
 !macroend
 
 !macro customWelcomePage
-  !insertmacro MUI_PAGE_WELCOME
+  Page custom InstallerWelcomePageCreate
 !macroend
 
 !macro customPageAfterChangeDir
@@ -292,9 +332,8 @@ FunctionEnd
   Call WriteInstallerBootstrap
 
   IfFileExists "$INSTDIR\${APP_EXECUTABLE_FILENAME}" 0 done
-    DetailPrint "Running post-install maintenance..."
-    ExecWait '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" "--maintenance=post-install"' $0
-    DetailPrint "Post-install maintenance exit code: $0"
+    DetailPrint "Starting post-install maintenance in the background..."
+    Exec '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" "--maintenance=post-install"'
   done:
 !macroend
 

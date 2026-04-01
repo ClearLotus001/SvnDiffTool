@@ -5,6 +5,7 @@ import { resolveWorkbookRowSelectionAccent } from '@/utils/workbook/workbookRowV
 export interface WorkbookSelectionVisualState {
   accent: string;
   axisAccent: string;
+  contrastStroke: string;
   isPrimarySelected: boolean;
   isSecondarySelected: boolean;
   isMirroredSelection: boolean;
@@ -107,6 +108,7 @@ export function getWorkbookSelectionVisualState(
   return {
     accent,
     axisAccent,
+    contrastStroke: T.bg0,
     isPrimarySelected,
     isSecondarySelected,
     isMirroredSelection,
@@ -121,7 +123,7 @@ export function getWorkbookSelectionVisualState(
 }
 
 export function getWorkbookSelectionOverlay(
-  state: Pick<WorkbookSelectionVisualState, 'accent' | 'axisAccent' | 'hasAxisSelection' | 'isMirroredSelection' | 'isPrimarySelected' | 'isSecondarySelected'>,
+  state: Pick<WorkbookSelectionVisualState, 'accent' | 'axisAccent' | 'contrastStroke' | 'hasAxisSelection' | 'isMirroredSelection' | 'isPrimarySelected' | 'isSecondarySelected'>,
 ): string | null {
   return getWorkbookSelectionPaint({
     ...state,
@@ -139,24 +141,60 @@ export function getWorkbookSelectionPaint(
 ): WorkbookSelectionPaint {
   return {
     overlay: state.isPrimarySelected
-      ? `${state.accent}2c`
+      ? `${state.accent}14`
       : state.isSecondarySelected || state.isMirroredSelection
-      ? `${state.accent}18`
+      ? `${state.accent}0d`
       : state.hasAxisSelection
-      ? `${state.axisAccent}12`
+      ? `${state.axisAccent}0a`
       : null,
-    rowAxisFill: state.isSelectedRow ? `${state.axisAccent}8f` : null,
-    columnAxisFill: state.isSelectedColumn ? `${state.axisAccent}9f` : null,
-    focusStroke: state.hasFocusedAnchor ? `${state.accent}38` : null,
-    primaryOuterStroke: state.isPrimarySelected ? `${state.accent}48` : null,
+    rowAxisFill: state.isSelectedRow ? `${state.axisAccent}70` : null,
+    columnAxisFill: state.isSelectedColumn ? `${state.axisAccent}78` : null,
+    focusStroke: state.hasFocusedAnchor ? `${state.accent}24` : null,
+    primaryOuterStroke: state.isPrimarySelected ? `${state.contrastStroke}e6` : null,
     primaryInnerStroke: state.isPrimarySelected ? state.accent : null,
-    secondaryStroke: state.isSecondarySelected ? `${state.accent}82` : null,
-    mirroredOuterStroke: state.isMirroredSelection ? `${state.accent}36` : null,
-    mirroredInnerStroke: state.isMirroredSelection ? `${state.accent}9a` : null,
+    secondaryStroke: state.isSecondarySelected ? `${state.accent}78` : null,
+    mirroredOuterStroke: state.isMirroredSelection ? `${state.contrastStroke}c8` : null,
+    mirroredInnerStroke: state.isMirroredSelection ? `${state.accent}7a` : null,
     anchorStroke: !state.isPrimarySelected && !state.isSecondarySelected && !state.isMirroredSelection && state.hasFocusedAnchor
-      ? `${state.accent}c8`
+      ? `${state.accent}9e`
       : null,
   };
+}
+
+function drawInsetFrame(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  color: string,
+  thickness: number,
+  inset = 0,
+) {
+  const left = Math.round(x + inset);
+  const top = Math.round(y + inset);
+  const frameWidth = Math.max(0, Math.round(width - (inset * 2)));
+  const frameHeight = Math.max(0, Math.round(height - (inset * 2)));
+  if (frameWidth <= 0 || frameHeight <= 0 || thickness <= 0) return;
+
+  const frameThickness = Math.max(1, Math.min(
+    thickness,
+    Math.ceil(frameWidth / 2),
+    Math.ceil(frameHeight / 2),
+  ));
+  const verticalHeight = Math.max(0, frameHeight - (frameThickness * 2));
+
+  ctx.fillStyle = color;
+  ctx.fillRect(left, top, frameWidth, frameThickness);
+  if (frameHeight > frameThickness) {
+    ctx.fillRect(left, top + frameHeight - frameThickness, frameWidth, frameThickness);
+  }
+  if (verticalHeight > 0) {
+    ctx.fillRect(left, top + frameThickness, frameThickness, verticalHeight);
+    if (frameWidth > frameThickness) {
+      ctx.fillRect(left + frameWidth - frameThickness, top + frameThickness, frameThickness, verticalHeight);
+    }
+  }
 }
 
 export function drawWorkbookCanvasSelectionFrame(
@@ -170,10 +208,6 @@ export function drawWorkbookCanvasSelectionFrame(
   if (!state.hasSelectionHighlight && !state.hasFocusedAnchor) return;
 
   const axisThickness = Math.min(2, Math.max(1, Math.floor(Math.min(width, height) / 8)));
-  const innerWidth = Math.max(0, width - 2);
-  const innerHeight = Math.max(0, height - 2);
-  const outerWidth = Math.max(0, width - 1);
-  const outerHeight = Math.max(0, height - 1);
   const paint = getWorkbookSelectionPaint(state);
 
   ctx.save();
@@ -191,35 +225,24 @@ export function drawWorkbookCanvasSelectionFrame(
   }
 
   if (paint.focusStroke) {
-    ctx.strokeStyle = paint.focusStroke;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x + 0.5, y + 0.5, outerWidth, outerHeight);
+    drawInsetFrame(ctx, x, y, width, height, paint.focusStroke, 1, 0);
   }
 
   if (paint.primaryOuterStroke && paint.primaryInnerStroke) {
-    ctx.strokeStyle = paint.primaryOuterStroke;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x + 0.5, y + 0.5, outerWidth, outerHeight);
-    ctx.strokeStyle = paint.primaryInnerStroke;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x + 1, y + 1, innerWidth, innerHeight);
+    drawInsetFrame(ctx, x, y, width, height, paint.primaryOuterStroke, 1, 0);
+    drawInsetFrame(ctx, x, y, width, height, paint.primaryInnerStroke, 2, 1);
   } else if (paint.secondaryStroke) {
-    ctx.strokeStyle = paint.secondaryStroke;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x + 1, y + 1, innerWidth, innerHeight);
+    drawInsetFrame(ctx, x, y, width, height, paint.secondaryStroke, 1, 1);
   } else if (paint.mirroredOuterStroke && paint.mirroredInnerStroke) {
+    drawInsetFrame(ctx, x, y, width, height, paint.mirroredOuterStroke, 1, 0);
     ctx.strokeStyle = paint.mirroredOuterStroke;
     ctx.setLineDash([4, 3]);
     ctx.lineWidth = 1;
-    ctx.strokeRect(x + 0.5, y + 0.5, outerWidth, outerHeight);
+    ctx.strokeRect(x + 1.5, y + 1.5, Math.max(0, width - 3), Math.max(0, height - 3));
     ctx.setLineDash([]);
-    ctx.strokeStyle = paint.mirroredInnerStroke;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x + 1, y + 1, innerWidth, innerHeight);
+    drawInsetFrame(ctx, x, y, width, height, paint.mirroredInnerStroke, 1, 1);
   } else if (paint.anchorStroke) {
-    ctx.strokeStyle = paint.anchorStroke;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x + 1, y + 1, innerWidth, innerHeight);
+    drawInsetFrame(ctx, x, y, width, height, paint.anchorStroke, 1, 1);
   }
 
   ctx.restore();

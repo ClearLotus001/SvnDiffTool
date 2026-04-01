@@ -19,7 +19,18 @@ export function waitForNextPaint() {
       setTimeout(resolve, 0);
       return;
     }
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    // Single rAF is sufficient to let the browser commit the current frame.
+    // Using MessageChannel for a micro-task yield after rAF avoids the extra
+    // ~16ms cost of double-rAF while still guaranteeing paint completion.
+    requestAnimationFrame(() => {
+      if (typeof MessageChannel !== 'undefined') {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = () => resolve();
+        channel.port2.postMessage(undefined);
+      } else {
+        setTimeout(resolve, 0);
+      }
+    });
   });
 }
 

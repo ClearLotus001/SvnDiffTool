@@ -206,8 +206,8 @@ function writeExternalDiffDebugLog(event: string, payload?: unknown) {
     try {
       fs.mkdirSync(path.dirname(targetPath), { recursive: true });
       fs.appendFileSync(targetPath, `${JSON.stringify(entry)}\n`, 'utf-8');
-    } catch {
-      // Ignore best-effort debug logging failures.
+    } catch (error) {
+      console.debug('[debug-log] write skipped:', targetPath, error instanceof Error ? error.message : String(error));
     }
   });
 }
@@ -332,6 +332,7 @@ let mainWindow: BrowserWindow | null = null;
 let cachedSvnTarget: string | null | undefined;
 let cachedTimelineTarget: string | null | undefined;
 let activeCliArgs: CliArgs = { ...cliArgs };
+const REVISION_OPTION_PAGES_CACHE_LIMIT = 24;
 const cachedRevisionOptionPages = new Map<string, RevisionOptionsPayload>();
 const filePayloadCache = new Map<string, FilePayloadCacheEntry>();
 const revisionPayloadCache = new Map<string, RevisionPayloadCacheEntry>();
@@ -1941,7 +1942,7 @@ async function queryRevisionOptions(query: RevisionOptionsQuery | undefined): Pr
       anchorRevisionId: null,
       queryDateTime: normalized.anchorDateTime || null,
     };
-    if (!shouldBypassCache) cachedRevisionOptionPages.set(cacheKey, payload);
+    if (!shouldBypassCache) rememberLimitedEntry(cachedRevisionOptionPages, cacheKey, payload, REVISION_OPTION_PAGES_CACHE_LIMIT);
     logDebugTiming('revision-options:skip', {
       ms: Number((performance.now() - start).toFixed(1)),
       count: payload.items.length,
@@ -1959,7 +1960,7 @@ async function queryRevisionOptions(query: RevisionOptionsQuery | undefined): Pr
         anchorRevisionId: null,
         queryDateTime: normalized.anchorDateTime || null,
       };
-      if (!shouldBypassCache) cachedRevisionOptionPages.set(cacheKey, payload);
+      if (!shouldBypassCache) rememberLimitedEntry(cachedRevisionOptionPages, cacheKey, payload, REVISION_OPTION_PAGES_CACHE_LIMIT);
       return payload;
     }
   }
@@ -1985,7 +1986,7 @@ async function queryRevisionOptions(query: RevisionOptionsQuery | undefined): Pr
       anchorRevisionId: null,
       queryDateTime: normalized.anchorDateTime || null,
     };
-    if (!shouldBypassCache) cachedRevisionOptionPages.set(cacheKey, payload);
+    if (!shouldBypassCache) rememberLimitedEntry(cachedRevisionOptionPages, cacheKey, payload, REVISION_OPTION_PAGES_CACHE_LIMIT);
     logDebugTiming('revision-options:fallback', {
       ms: Number((performance.now() - start).toFixed(1)),
       count: payload.items.length,
@@ -2004,7 +2005,7 @@ async function queryRevisionOptions(query: RevisionOptionsQuery | undefined): Pr
     anchorRevisionId: normalized.anchorDateTime ? (pageRevisions[0]?.id ?? null) : null,
     queryDateTime: normalized.anchorDateTime || null,
   };
-  if (!shouldBypassCache) cachedRevisionOptionPages.set(cacheKey, payload);
+  if (!shouldBypassCache) rememberLimitedEntry(cachedRevisionOptionPages, cacheKey, payload, REVISION_OPTION_PAGES_CACHE_LIMIT);
   logDebugTiming('revision-options:loaded', {
     ms: Number((performance.now() - start).toFixed(1)),
     count: payload.items.length,
@@ -2306,7 +2307,8 @@ async function getLocalWorkbookPairCacheContext(
       leftSize: leftStat.size,
       rightSize: rightStat.size,
     };
-  } catch {
+  } catch (error) {
+    console.debug('[cache-context] stat skipped:', leftPath, rightPath, error instanceof Error ? error.message : String(error));
     return null;
   }
 }
@@ -3089,48 +3091,70 @@ function createWindow() {
   });
 }
 
-ipcMain.handle('get-diff-data', async (_, payload: { compareMode?: WorkbookCompareMode } | undefined) => (
-  buildDiffData({
+// Wrap ipcMain.handle with a unified error boundary to prevent leaking
+// internal details (file paths, stack traces) to the renderer process.
+function safeHandle(
+  channel: string,
+  handler: (event: Electron.IpcMainInvokeEvent, ...args: unknown[]) => unknown,
+) {
+  ipcMain.handle(channel, async (event, ...args: unknown[]) => {
+    try {
+      return await handler(event, ...args);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[ipc:${channel}] handler error:`, message);
+      throw new Error(message);
+    }
+  });
+}
+
+safeHandle('get-diff-data', async (_, ...args: unknown[]) => {
+  const payload = args[0] as { compareMode?: WorkbookCompareMode } | undefined;
+  return buildDiffData({
     workbookCompareMode: payload?.compareMode ?? 'strict',
-  })
-));
-ipcMain.handle('load-revision-diff', async (_, payload: {
-  baseRevisionId?: string;
-  mineRevisionId?: string;
-  compareMode?: WorkbookCompareMode;
-} | undefined) => (
-  buildDiffData({
+  });
+});
+safeHandle('load-revision-diff', async (_, ...args: unknown[]) => {
+  const payload = args[0] as {
+    baseRevisionId?: string;
+    mineRevisionId?: string;
+    compareMode?: WorkbookCompareMode;
+  } | undefined;
+  return buildDiffData({
     baseRevisionId: payload?.baseRevisionId,
     mineRevisionId: payload?.mineRevisionId,
     workbookCompareMode: payload?.compareMode ?? 'strict',
-  })
-));
-ipcMain.handle('get-revision-options', async () => getRevisionOptions());
-ipcMain.handle('query-revision-options', async (_, payload: RevisionOptionsQuery | undefined) => (
-  queryRevisionOptions(payload)
-));
-ipcMain.handle('load-workbook-compare-mode', async (_, payload: {
-  compareMode?: WorkbookCompareMode;
-  baseRevisionId?: string;
-  mineRevisionId?: string;
-} | undefined) => (
-  loadWorkbookCompareModeData(
+  });
+});
+safeHandle('get-revision-options', async () => getRevisionOptions());
+safeHandle('query-revision-options', async (_, ...args: unknown[]) => {
+  const payload = args[0] as RevisionOptionsQuery | undefined;
+  return queryRevisionOptions(payload);
+});
+safeHandle('load-workbook-compare-mode', async (_, ...args: unknown[]) => {
+  const payload = args[0] as {
+    compareMode?: WorkbookCompareMode;
+    baseRevisionId?: string;
+    mineRevisionId?: string;
+  } | undefined;
+  return loadWorkbookCompareModeData(
     payload?.compareMode ?? 'strict',
     payload?.baseRevisionId,
     payload?.mineRevisionId,
-  )
-));
-ipcMain.handle('load-workbook-metadata', async (_, payload: {
-  baseRevisionId?: string;
-  mineRevisionId?: string;
-} | undefined) => (
-  loadWorkbookMetadataData(
+  );
+});
+safeHandle('load-workbook-metadata', async (_, ...args: unknown[]) => {
+  const payload = args[0] as {
+    baseRevisionId?: string;
+    mineRevisionId?: string;
+  } | undefined;
+  return loadWorkbookMetadataData(
     payload?.baseRevisionId,
     payload?.mineRevisionId,
-  )
-));
-ipcMain.handle('is-dev-mode', () => process.env.NODE_ENV === 'development');
-ipcMain.handle('pick-diff-file', async () => {
+  );
+});
+safeHandle('is-dev-mode', () => process.env.NODE_ENV === 'development');
+safeHandle('pick-diff-file', async () => {
   if (!mainWindow) return null;
   const result = await dialog.showOpenDialog(mainWindow, {
     title: 'Select working copy file',
@@ -3144,40 +3168,47 @@ ipcMain.handle('pick-diff-file', async () => {
     name: path.basename(selectedPath),
   };
 });
-ipcMain.handle('load-dev-working-copy-diff', async (_, payload: {
-  filePath?: string;
-  compareMode?: WorkbookCompareMode;
-} | undefined) => (
-  buildDevWorkingCopyDiffData(payload?.filePath ?? '', payload?.compareMode ?? 'strict')
-));
-ipcMain.handle('load-local-diff', async (_, payload: {
-  basePath?: string;
-  minePath?: string;
-  compareMode?: WorkbookCompareMode;
-} | undefined) => (
-  buildLocalDiffData(payload?.basePath ?? '', payload?.minePath ?? '', payload?.compareMode ?? 'strict')
-));
-ipcMain.handle('get-svn-diff-viewer-status', async () => getSvnDiffViewerStatus());
-ipcMain.handle('configure-svn-diff-viewer', async (_, payload: {
-  scope?: SvnDiffViewerScope;
-} | undefined) => (
-  configureSvnDiffViewer(payload?.scope ?? 'excel-only')
-));
-ipcMain.handle('restore-svn-default-diff-viewer-configuration', async () => (
+safeHandle('load-dev-working-copy-diff', async (_, ...args: unknown[]) => {
+  const payload = args[0] as {
+    filePath?: string;
+    compareMode?: WorkbookCompareMode;
+  } | undefined;
+  return buildDevWorkingCopyDiffData(payload?.filePath ?? '', payload?.compareMode ?? 'strict');
+});
+safeHandle('load-local-diff', async (_, ...args: unknown[]) => {
+  const payload = args[0] as {
+    basePath?: string;
+    minePath?: string;
+    compareMode?: WorkbookCompareMode;
+  } | undefined;
+  return buildLocalDiffData(payload?.basePath ?? '', payload?.minePath ?? '', payload?.compareMode ?? 'strict');
+});
+safeHandle('get-svn-diff-viewer-status', async () => getSvnDiffViewerStatus());
+safeHandle('configure-svn-diff-viewer', async (_, ...args: unknown[]) => {
+  const payload = args[0] as {
+    scope?: SvnDiffViewerScope;
+  } | undefined;
+  return configureSvnDiffViewer(payload?.scope ?? 'excel-only');
+});
+safeHandle('restore-svn-default-diff-viewer-configuration', async () => (
   restoreSvnDefaultDiffViewerConfiguration()
 ));
-ipcMain.handle('get-theme', () => (nativeTheme.shouldUseDarkColors ? 'dark' : 'light'));
-ipcMain.handle('uses-native-window-controls', () => USE_NATIVE_WINDOW_CONTROLS);
-ipcMain.handle('get-window-frame-state', () => ({
+safeHandle('get-theme', () => (nativeTheme.shouldUseDarkColors ? 'dark' : 'light'));
+safeHandle('uses-native-window-controls', () => USE_NATIVE_WINDOW_CONTROLS);
+safeHandle('get-window-frame-state', () => ({
   isMaximized: Boolean(mainWindow?.isMaximized()),
 }));
-ipcMain.handle('get-update-state', () => appUpdater.getState());
-ipcMain.handle('check-app-update', async (_, payload: { manual?: boolean } | undefined) => (
-  appUpdater.checkForUpdates({ manual: payload?.manual ?? false })
-));
-ipcMain.handle('download-app-update', async () => appUpdater.downloadUpdate());
-ipcMain.handle('install-downloaded-update', async () => appUpdater.installUpdate());
-ipcMain.handle('launch-uninstaller', async (_, payload: { silent?: boolean } | undefined) => launchInstalledUninstaller(payload?.silent));
+safeHandle('get-update-state', () => appUpdater.getState());
+safeHandle('check-app-update', async (_, ...args: unknown[]) => {
+  const payload = args[0] as { manual?: boolean } | undefined;
+  return appUpdater.checkForUpdates({ manual: payload?.manual ?? false });
+});
+safeHandle('download-app-update', async () => appUpdater.downloadUpdate());
+safeHandle('install-downloaded-update', async () => appUpdater.installUpdate());
+safeHandle('launch-uninstaller', async (_, ...args: unknown[]) => {
+  const payload = args[0] as { silent?: boolean } | undefined;
+  return launchInstalledUninstaller(payload?.silent);
+});
 
 ipcMain.on('clipboard-write-text', (_, text: unknown) => {
   if (typeof text === 'string') {

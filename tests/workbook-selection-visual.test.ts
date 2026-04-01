@@ -30,8 +30,8 @@ test('mirrored workbook cell selection uses the mirrored side accent', () => {
 
   assert.equal(mirrored.accent, theme.acc);
   assert.equal(focused.accent, theme.acc2);
-  assert.equal(getWorkbookSelectionOverlay(mirrored), `${theme.acc}18`);
-  assert.equal(getWorkbookSelectionOverlay(focused), `${theme.acc2}2c`);
+  assert.equal(getWorkbookSelectionOverlay(mirrored), `${theme.acc}0d`);
+  assert.equal(getWorkbookSelectionOverlay(focused), `${theme.acc2}14`);
 });
 
 test('mirrored workbook selection still resolves when the mirrored side has no local entry row number', () => {
@@ -53,7 +53,7 @@ test('mirrored workbook selection still resolves when the mirrored side has no l
   const mirrored = getWorkbookSelectionVisualState(theme, selectionLookup, 'Thing', 'base', 57287, 1);
 
   assert.equal(mirrored.isMirroredSelection, true);
-  assert.equal(getWorkbookSelectionOverlay(mirrored), `${theme.acc2}18`);
+  assert.equal(getWorkbookSelectionOverlay(mirrored), `${theme.acc2}0d`);
 });
 
 test('secondary cell selections render with a lighter direct-selection overlay', () => {
@@ -80,7 +80,7 @@ test('secondary cell selections render with a lighter direct-selection overlay',
   const visual = getWorkbookSelectionVisualState(theme, selectionLookup, 'Thing', 'base', 13, 4);
 
   assert.equal(visual.isSecondarySelected, true);
-  assert.equal(getWorkbookSelectionOverlay(visual), `${theme.acc2}18`);
+  assert.equal(getWorkbookSelectionOverlay(visual), `${theme.acc2}0d`);
 });
 
 test('selection paint derives shared frame and overlay tokens from visual state', () => {
@@ -102,7 +102,7 @@ test('selection paint derives shared frame and overlay tokens from visual state'
   const visual = getWorkbookSelectionVisualState(theme, selectionLookup, 'Thing', 'base', 12, 4);
   const paint = getWorkbookSelectionPaint(visual);
 
-  assert.equal(paint.overlay, `${theme.acc2}2c`);
-  assert.equal(paint.primaryOuterStroke, `${theme.acc2}48`);
+  assert.equal(paint.overlay, `${theme.acc2}14`);
+  assert.equal(paint.primaryOuterStroke, `${theme.bg0}e6`);
   assert.equal(paint.primaryInnerStroke, theme.acc2);
 });

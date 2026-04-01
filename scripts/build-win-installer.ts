@@ -97,7 +97,7 @@ async function buildInstallerArtifacts(
 
     try {
       const result = await runBuildCommand(
-        `npx electron-builder --win nsis-web --publish=${publishMode} --config.directories.output=${tempOutputDirName}`,
+        `npx electron-builder --win nsis --publish=${publishMode} --config.directories.output=${tempOutputDirName}`,
         rootDir,
       );
       if (result.suppressedCount > 0) {
@@ -105,7 +105,7 @@ async function buildInstallerArtifacts(
       }
       return {
         tempOutputDir,
-        artifactsOutputDir: path.join(tempOutputDir, 'nsis-web'),
+        artifactsOutputDir: tempOutputDir,
       };
     } catch (error) {
       lastError = error;

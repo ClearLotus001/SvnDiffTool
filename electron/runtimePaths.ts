@@ -54,7 +54,8 @@ function tryPrepareCacheRoot(cacheRoot: string) {
     ensureDirectorySync(nextPaths.diskCachePath);
     ensureDirectorySync(nextPaths.tempRootPath);
     return nextPaths;
-  } catch {
+  } catch (error) {
+    console.debug('[runtime-paths] failed to prepare cache root:', cacheRoot, error instanceof Error ? error.message : String(error));
     return null;
   }
 }
@@ -76,7 +77,8 @@ function cleanupEmptyDirectoriesSync(targetPath: string, stopAtPath: string) {
       const entries = fs.readdirSync(currentPath);
       if (entries.length > 0) break;
       fs.rmdirSync(currentPath);
-    } catch {
+    } catch (error) {
+      console.debug('[runtime-paths] cleanup-empty-dir skipped:', currentPath, error instanceof Error ? error.message : String(error));
       break;
     }
 
@@ -96,7 +98,8 @@ function collectFileEntriesSync(rootPath: string): FileEntryInfo[] {
     let currentEntries: fs.Dirent[];
     try {
       currentEntries = fs.readdirSync(currentPath, { withFileTypes: true });
-    } catch {
+    } catch (error) {
+      console.debug('[runtime-paths] readdir skipped:', currentPath, error instanceof Error ? error.message : String(error));
       return;
     }
 
@@ -110,7 +113,8 @@ function collectFileEntriesSync(rootPath: string): FileEntryInfo[] {
       let stat: fs.Stats;
       try {
         stat = fs.statSync(entryPath);
-      } catch {
+      } catch (error) {
+        console.debug('[runtime-paths] stat skipped:', entryPath, error instanceof Error ? error.message : String(error));
         return;
       }
 
@@ -129,7 +133,8 @@ function collectFileEntriesSync(rootPath: string): FileEntryInfo[] {
 function removeFileEntrySync(filePath: string, stopAtPath: string) {
   try {
     fs.rmSync(filePath, { force: true });
-  } catch {
+  } catch (error) {
+    console.debug('[runtime-paths] remove-file skipped:', filePath, error instanceof Error ? error.message : String(error));
     return false;
   }
 
@@ -278,8 +283,8 @@ export function cleanupTrackedManagedTempFilesSync() {
   trackedTempPaths.forEach((tempFilePath) => {
     try {
       fs.rmSync(tempFilePath, { force: true });
-    } catch {
-      // Ignore best-effort cleanup failures.
+    } catch (error) {
+      console.debug('[runtime-paths] cleanup tracked temp skipped:', tempFilePath, error instanceof Error ? error.message : String(error));
     }
 
     if (tempRootPath) {
@@ -296,7 +301,8 @@ export function removeControlledDirectorySync(targetPath: string | null | undefi
   try {
     fs.rmSync(normalized, { recursive: true, force: true });
     return true;
-  } catch {
+  } catch (error) {
+    console.debug('[runtime-paths] remove-controlled-dir skipped:', normalized, error instanceof Error ? error.message : String(error));
     return false;
   }
 }

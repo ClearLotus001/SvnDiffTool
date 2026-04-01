@@ -520,7 +520,7 @@ export default function App() {
     setHunkIdx,
   });
 
-  const panelProps = {
+  const panelProps = useMemo(() => ({
     diffLines, textDiffPresentation, collapseCtx, activeHunkIdx: hunkIdx,
     searchMatches, activeSearchIdx, hunkPositions,
     showWhitespace, fontSize,
@@ -529,7 +529,27 @@ export default function App() {
     guidedPulseNonce,
     onScrollerReady: handleScrollerReady,
     onCollapseNavigationReady: handleCollapseNavigationReady,
-  };
+  }), [
+    diffLines, textDiffPresentation, collapseCtx, hunkIdx,
+    searchMatches, activeSearchIdx, hunkPositions,
+    showWhitespace, fontSize,
+    isWorkbookMode, activeWorkbookGuidedRange, hunks,
+    guidedPulseNonce,
+    handleScrollerReady, handleCollapseNavigationReady,
+  ]);
+
+  const handleHunkPrev = useCallback(() => startTransition(() => {
+    setHunkIdx(i => cycleHunkIndex(i, navigationCount, -1));
+  }), [navigationCount]);
+  const handleHunkNext = useCallback(() => startTransition(() => {
+    setHunkIdx(i => cycleHunkIndex(i, navigationCount, 1));
+  }), [navigationCount]);
+  const handlePickFile = useCallback(() => {
+    void handlePickWorkingCopyFile();
+  }, [handlePickWorkingCopyFile]);
+  const handleToggleGoto = useCallback(() => setShowGoto(v => !v), [setShowGoto]);
+  const handleToggleHelp = useCallback(() => setShowHelp(v => !v), [setShowHelp]);
+  const handleToggleAbout = useCallback(() => setShowAbout(v => !v), [setShowAbout]);
 
   useAppKeyboardShortcuts({
     dialogs,
@@ -643,12 +663,8 @@ export default function App() {
           layout={layout}             setLayout={handleLayoutChange}
           hunkIdx={hunkIdx}           totalHunks={navigationCount}
           hunkTargetLabel={currentNavigationLabel}
-          onPrev={() => startTransition(() => {
-            setHunkIdx(i => cycleHunkIndex(i, navigationCount, -1));
-          })}
-          onNext={() => startTransition(() => {
-            setHunkIdx(i => cycleHunkIndex(i, navigationCount, 1));
-          })}
+          onPrev={handleHunkPrev}
+          onNext={handleHunkNext}
           showSearch={showSearch}     setShowSearch={setShowSearch}
           collapseCtx={collapseCtx}   setCollapseCtx={setCollapseCtx}
           showWhitespace={showWhitespace} setShowWhitespace={setShowWhitespace}
@@ -656,12 +672,10 @@ export default function App() {
           workbookCompareMode={workbookCompareMode}
           setWorkbookCompareMode={handleWorkbookCompareModeChange}
           fontSize={fontSize}         setFontSize={setFontSize}
-          onPickFile={() => {
-            void handlePickWorkingCopyFile();
-          }}
-          onGoto={() => setShowGoto(v => !v)}
-          onHelp={() => setShowHelp(v => !v)}
-          onAbout={() => setShowAbout(v => !v)}
+          onPickFile={handlePickFile}
+          onGoto={handleToggleGoto}
+          onHelp={handleToggleHelp}
+          onAbout={handleToggleAbout}
           isElectron={isElectron}
           usesNativeWindowControls={usesNativeWindowControls}
           isWindowMaximized={isWindowMaximized}
