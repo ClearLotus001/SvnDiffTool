@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import type { WorkbookMergeRange } from '@/utils/workbook/workbookMeta';
 import { clampWorkbookColumnWidth } from '@/utils/workbook/workbookColumnWidths';
 
@@ -20,6 +20,7 @@ interface UseHorizontalVirtualColumnsOptions {
   mergedRanges?: WorkbookMergeRange[];
   overscanMin?: number;
   overscanFactor?: number;
+  syncKey?: string | number | null;
 }
 
 interface HorizontalVirtualColumnsResult {
@@ -190,6 +191,7 @@ export function useHorizontalVirtualColumns({
   mergedRanges = [],
   overscanMin = DEFAULT_MIN_OVERSCAN_COLUMNS,
   overscanFactor = DEFAULT_OVERSCAN_FACTOR,
+  syncKey = null,
 }: UseHorizontalVirtualColumnsOptions): HorizontalVirtualColumnsResult {
   const [viewportWidth, setViewportWidth] = useState(1200);
   const [windowRange, setWindowRange] = useState<HorizontalWindow>({
@@ -204,6 +206,7 @@ export function useHorizontalVirtualColumns({
   const rafRef = useRef(0);
   const rangeUpdateCountRef = useRef(1);
   const lastCalcMsRef = useRef(0);
+  const syncKeyRef = useRef(syncKey);
 
   const layout = useMemo(() => {
     let runningOffset = 0;
@@ -310,6 +313,43 @@ export function useHorizontalVirtualColumns({
     applyWindowRange(scrollLeftRef.current, viewportWidthRef.current);
   }, [applyWindowRange]);
 
+  useLayoutEffect(() => {
+    if (syncKeyRef.current === syncKey) return;
+    syncKeyRef.current = syncKey;
+    scrollLeftRef.current = 0;
+    const el = scrollRef.current;
+    if (el && el.scrollLeft !== 0) {
+      el.scrollTo({ left: 0, behavior: 'auto' });
+    }
+    const nextRange = computeHorizontalWindow(
+      layout.nonFrozenDisplayWidths,
+      layout.clampedFrozenCount,
+      0,
+      viewportWidthRef.current,
+      layout.frozenWidth,
+      layout.positionedMergedRanges,
+      overscanMin,
+      overscanFactor,
+    );
+    windowRangeRef.current = nextRange;
+    setWindowRange(nextRange);
+  }, [layout.clampedFrozenCount, layout.frozenWidth, layout.nonFrozenDisplayWidths, layout.positionedMergedRanges, overscanFactor, overscanMin, scrollRef, syncKey]);
+
+  const effectiveWindowRange = useMemo(() => (
+    syncKeyRef.current !== syncKey
+      ? computeHorizontalWindow(
+        layout.nonFrozenDisplayWidths,
+        layout.clampedFrozenCount,
+        0,
+        viewportWidthRef.current,
+        layout.frozenWidth,
+        layout.positionedMergedRanges,
+        overscanMin,
+        overscanFactor,
+      )
+      : windowRange
+  ), [layout.clampedFrozenCount, layout.frozenWidth, layout.nonFrozenDisplayWidths, layout.positionedMergedRanges, overscanFactor, overscanMin, syncKey, windowRange]);
+
   return useMemo(() => {
     if (columns.length === 0) {
       return {
@@ -323,7 +363,7 @@ export function useHorizontalVirtualColumns({
           viewportWidth,
           scrollLeft: scrollLeftRef.current,
           visibleColumnCount: 0,
-          overscan: windowRange.overscan,
+          overscan: effectiveWindowRange.overscan,
           rangeUpdates: rangeUpdateCountRef.current,
           lastCalcMs: lastCalcMsRef.current,
         },
@@ -351,18 +391,18 @@ export function useHorizontalVirtualColumns({
           viewportWidth,
           scrollLeft: scrollLeftRef.current,
           visibleColumnCount: 0,
-          overscan: windowRange.overscan,
+          overscan: effectiveWindowRange.overscan,
           rangeUpdates: rangeUpdateCountRef.current,
           lastCalcMs: lastCalcMsRef.current,
         },
       };
     }
 
-    const virtualEntries = nonFrozenEntries.slice(windowRange.startIndex, windowRange.endIndex);
-    const leadingSpacerWidth = nonFrozenPrefixSums[windowRange.startIndex] ?? 0;
+    const virtualEntries = nonFrozenEntries.slice(effectiveWindowRange.startIndex, effectiveWindowRange.endIndex);
+    const leadingSpacerWidth = nonFrozenPrefixSums[effectiveWindowRange.startIndex] ?? 0;
     const trailingSpacerWidth = Math.max(
       0,
-      (nonFrozenPrefixSums[nonFrozenPrefixSums.length - 1] ?? 0) - (nonFrozenPrefixSums[windowRange.endIndex] ?? 0),
+      (nonFrozenPrefixSums[nonFrozenPrefixSums.length - 1] ?? 0) - (nonFrozenPrefixSums[effectiveWindowRange.endIndex] ?? 0),
     );
 
     return {
@@ -372,14 +412,14 @@ export function useHorizontalVirtualColumns({
       leadingSpacerWidth,
       trailingSpacerWidth,
       columnLayoutByColumn,
-      debug: {
-        viewportWidth,
-        scrollLeft: scrollLeftRef.current,
-        visibleColumnCount: windowRange.visibleColumnCount,
-        overscan: windowRange.overscan,
-        rangeUpdates: rangeUpdateCountRef.current,
-        lastCalcMs: lastCalcMsRef.current,
-      },
-    };
-  }, [columns.length, layout, viewportWidth, windowRange]);
+        debug: {
+          viewportWidth,
+          scrollLeft: scrollLeftRef.current,
+          visibleColumnCount: effectiveWindowRange.visibleColumnCount,
+          overscan: effectiveWindowRange.overscan,
+          rangeUpdates: rangeUpdateCountRef.current,
+          lastCalcMs: lastCalcMsRef.current,
+        },
+      };
+  }, [columns.length, effectiveWindowRange, layout, viewportWidth]);
 }

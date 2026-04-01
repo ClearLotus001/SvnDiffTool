@@ -17,7 +17,12 @@ import {
   removeManagedTempFile,
   writeManagedTempFile,
 } from './runtimePaths';
-import { configureSvnDiffViewer, getSvnDiffViewerStatus, type SvnDiffViewerScope } from './svnDiffViewerConfig';
+import {
+  configureSvnDiffViewer,
+  getSvnDiffViewerStatus,
+  restoreSvnDefaultDiffViewerConfiguration,
+  type SvnDiffViewerScope,
+} from './svnDiffViewerConfig';
 import { detectWorkbookArtifactOnlyDiff, type WorkbookArtifactDiffSummary } from './workbookArtifactDiff';
 import { ensureLegacyUserDataMigration } from './userDataMigration';
 import { createPlatformUpdater } from './updater';
@@ -595,10 +600,23 @@ function resolveInstalledUninstallerPath(): string | null {
   return null;
 }
 
-async function launchInstalledUninstaller() {
+async function launchInstalledUninstaller(silent?: boolean) {
   const uninstallerPath = resolveInstalledUninstallerPath();
   if (!uninstallerPath) {
     throw new Error('The installed uninstaller could not be found.');
+  }
+
+  if (silent) {
+    return new Promise<void>((resolve, reject) => {
+      const child = spawn(uninstallerPath, ['/S'], {
+        windowsHide: true,
+      });
+      child.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`Uninstall exit code ${code}`));
+      });
+      child.on('error', reject);
+    });
   }
 
   const child = spawn(uninstallerPath, [], {
@@ -1644,6 +1662,20 @@ async function buildPayloadFromBuffer(
     const includeWorkbookBytes = options.includeWorkbookBytes !== false;
     const includeWorkbookMetadata = options.includeWorkbookMetadata !== false;
     const bytes = includeWorkbookBytes ? Uint8Array.from(buffer) : null;
+    if (!includeWorkbookText && !includeWorkbookMetadata) {
+      return {
+        content: null,
+        bytes,
+        metadata: null,
+        perf: {
+          readMs: 0,
+          parserMs: 0,
+          metadataMs: 0,
+          byteLength: bytes?.length ?? buffer.length,
+        },
+      };
+    }
+
     const tempFilePath = await writeManagedTempFile('payload', getExtension(fileName) || '.bin', buffer);
 
     try {
@@ -3131,6 +3163,9 @@ ipcMain.handle('configure-svn-diff-viewer', async (_, payload: {
 } | undefined) => (
   configureSvnDiffViewer(payload?.scope ?? 'excel-only')
 ));
+ipcMain.handle('restore-svn-default-diff-viewer-configuration', async () => (
+  restoreSvnDefaultDiffViewerConfiguration()
+));
 ipcMain.handle('get-theme', () => (nativeTheme.shouldUseDarkColors ? 'dark' : 'light'));
 ipcMain.handle('uses-native-window-controls', () => USE_NATIVE_WINDOW_CONTROLS);
 ipcMain.handle('get-window-frame-state', () => ({
@@ -3142,7 +3177,7 @@ ipcMain.handle('check-app-update', async (_, payload: { manual?: boolean } | und
 ));
 ipcMain.handle('download-app-update', async () => appUpdater.downloadUpdate());
 ipcMain.handle('install-downloaded-update', async () => appUpdater.installUpdate());
-ipcMain.handle('launch-uninstaller', async () => launchInstalledUninstaller());
+ipcMain.handle('launch-uninstaller', async (_, payload: { silent?: boolean } | undefined) => launchInstalledUninstaller(payload?.silent));
 
 ipcMain.on('clipboard-write-text', (_, text: unknown) => {
   if (typeof text === 'string') {
@@ -3198,10 +3233,10 @@ if (maintenanceMode) {
   ensureLegacyUserDataMigration();
   void app.whenReady().then(async () => {
     try {
-      await runMaintenance(app, maintenanceMode);
+      await runMaintenance(app, maintenanceMode, process.argv);
+      app.quit();
     } catch (error) {
       console.error('[maintenance] failed', error);
-    } finally {
       app.quit();
     }
   });

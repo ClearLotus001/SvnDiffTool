@@ -6,7 +6,10 @@ import { hasWorkbookCellContent } from '@/utils/workbook/workbookCellContract';
 import { buildWorkbookSplitRowCompareState } from '@/utils/workbook/workbookCompare';
 import { buildWorkbookRowEntry, buildWorkbookSelectedCell, type WorkbookRowEntry } from '@/utils/workbook/workbookNavigation';
 import { resolveWorkbookCanvasSelectionKind } from '@/utils/workbook/workbookCanvasSelection';
-import { resolveWorkbookCompareCellVisual } from '@/utils/workbook/workbookCompareVisuals';
+import {
+  getWorkbookMergeContinuationVisual,
+  resolveWorkbookCompareCellVisual,
+} from '@/utils/workbook/workbookCompareVisuals';
 import {
   clipWorkbookCanvasToViewport,
   getWorkbookCanvasCellViewportRect,
@@ -32,9 +35,16 @@ import {
   normalizeWorkbookCanvasText,
 } from '@/utils/workbook/workbookCanvasText';
 import {
-  resolveLineNumberColor,
-  resolveSharedWorkbookLineNumberTone,
+  resolveWorkbookStackedLineNumberTone,
 } from '@/utils/diff/lineNumberTone';
+import {
+  resolveWorkbookRowGutterBackground,
+  resolveWorkbookRowSelectionAccent,
+  resolveWorkbookRowBorderColor,
+  resolveWorkbookRowLineNumberColor,
+  resolveWorkbookRowRuleColor,
+  resolveWorkbookRowSurfaceBackground,
+} from '@/utils/workbook/workbookRowVisuals';
 import { useTheme } from '@/context/theme';
 import type {
   SplitRow,
@@ -47,6 +57,11 @@ import type {
 import { ROW_H } from '@/hooks/virtualization/useVirtual';
 import type { WorkbookMergeRange } from '@/utils/workbook/workbookMeta';
 import type { WorkbookCanvasHoverCell } from '@/components/workbook/WorkbookCanvasHoverTooltip';
+import useWorkbookCanvasHoverController from '@/components/workbook/useWorkbookCanvasHoverController';
+import {
+  getWorkbookStackedBandDisplayRowNumber,
+  getWorkbookStackedVisibleBands,
+} from '@/utils/workbook/workbookRowBehavior';
 
 type CanvasRenderMode = 'single-base' | 'single-mine' | 'single-equal' | 'double';
 
@@ -99,8 +114,10 @@ interface WorkbookStackedCanvasStripProps {
 interface CanvasBand {
   groupKey: string;
   entry: WorkbookRowEntry | null;
+  displayRowNumber: number | null;
   side: 'base' | 'mine';
   tone: 'neutral' | 'add' | 'delete';
+  hasCompanionBand: boolean;
   useSideAccentForChanges: boolean;
   compareCells: ReturnType<typeof buildWorkbookSplitRowCompareState>['cellDeltas'];
   hasBaseRow: boolean;
@@ -161,11 +178,6 @@ function getSelectionModeFromMouseEvent(event: Pick<React.MouseEvent<HTMLCanvasE
   return 'replace';
 }
 
-function shouldRenderMineBand(baseEntry: WorkbookRowEntry | null, mineEntry: WorkbookRowEntry | null, rowHeight: number): boolean {
-  if (!mineEntry) return false;
-  return rowHeight > ROW_H || !baseEntry;
-}
-
 const WorkbookStackedCanvasStrip = memo(({
   groups,
   viewportWidth,
@@ -194,7 +206,6 @@ const WorkbookStackedCanvasStrip = memo(({
   const T = useTheme();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef(0);
-  const hoverKeyRef = useRef('');
   const sizes = useMemo(() => getWorkbookFontScale(fontSize), [fontSize]);
   const renderedColumnNumbers = useMemo(() => renderColumns.map(entry => entry.column), [renderColumns]);
   const groupFrames = useMemo<CanvasGroupFrame[]>(
@@ -227,18 +238,17 @@ const WorkbookStackedCanvasStrip = memo(({
         const mineEntry = buildWorkbookRowEntry(renderRow.row, 'mine', sheetName, mineVersion, visibleColumns);
         const rowDelta = buildWorkbookSplitRowCompareState(
           renderRow.row,
-          renderColumns.map(entry => entry.column),
+          visibleColumns,
           compareMode,
         );
         const hasBaseRow = Boolean(baseEntry);
         const hasMineRow = Boolean(mineEntry);
-        const rowHighlightBg = renderRow.isGuided
-          ? `${T.acc2}08`
-          : renderRow.isActiveSearch
-          ? T.searchActiveBg
-          : renderRow.isSearchMatch
-          ? `${T.searchHl}28`
-          : undefined;
+        const rowHighlightBg = resolveWorkbookRowSurfaceBackground({
+          theme: T,
+          isGuided: renderRow.isGuided,
+          isActiveSearch: renderRow.isActiveSearch,
+          isSearchMatch: renderRow.isSearchMatch,
+        });
         const frame = {
           sourceRowIndex,
           top: cursorY,
@@ -302,7 +312,11 @@ const WorkbookStackedCanvasStrip = memo(({
           height: ROW_H,
         });
         const visibleBands = runtime.visibleBandsBySourceRowIndex.get(track.sourceRowIndex) ?? {};
-        if (rowFrame && shouldRenderMineBand(rowFrame.baseEntry, rowFrame.mineEntry, rowFrame.renderRow.height)) {
+        if (rowFrame && getWorkbookStackedVisibleBands(
+          Boolean(rowFrame.baseEntry),
+          Boolean(rowFrame.mineEntry),
+          rowFrame.renderRow.height,
+        ).mine) {
           visibleBands.mine = { top, height: ROW_H };
           runtime.visibleBandsBySourceRowIndex.set(track.sourceRowIndex, visibleBands);
         }
@@ -311,9 +325,28 @@ const WorkbookStackedCanvasStrip = memo(({
         }
       });
 
+      rowFrames.forEach((rowFrame) => {
+        const visibleBandPlan = getWorkbookStackedVisibleBands(
+          Boolean(rowFrame.baseEntry),
+          Boolean(rowFrame.mineEntry),
+          rowFrame.renderRow.height,
+        );
+        const visibleBands = runtime.visibleBandsBySourceRowIndex.get(rowFrame.sourceRowIndex) ?? {};
+        if (visibleBandPlan.base) {
+          visibleBands.base ??= { top: rowFrame.top, height: ROW_H };
+        }
+        if (visibleBandPlan.mine) {
+          visibleBands.mine ??= {
+            top: rowFrame.renderRow.height > ROW_H ? rowFrame.top + ROW_H : rowFrame.top,
+            height: ROW_H,
+          };
+        }
+        runtime.visibleBandsBySourceRowIndex.set(rowFrame.sourceRowIndex, visibleBands);
+      });
+
       return runtime;
     });
-  }, [baseVersion, compareMode, groupFrames, mineVersion, renderColumns, sheetName, T.acc2, T.searchActiveBg, T.searchHl, visibleColumns]);
+  }, [T, baseVersion, compareMode, groupFrames, mineVersion, sheetName, visibleColumns]);
   const groupRuntimeByKey = useMemo(
     () => new Map(groupRuntimes.map((runtime) => [runtime.frame.key, runtime])),
     [groupRuntimes],
@@ -324,57 +357,70 @@ const WorkbookStackedCanvasStrip = memo(({
     groupRuntimes.forEach((runtime) => {
       const groupBands: CanvasBand[] = [];
 
-      runtime.frame.baseTrack.forEach((track) => {
-        const rowFrame = runtime.rowFrameBySourceIndex.get(track.sourceRowIndex);
-        if (!rowFrame?.baseEntry) return;
-        const visibleBands = runtime.visibleBandsBySourceRowIndex.get(track.sourceRowIndex) ?? {};
+      runtime.rowFrames.forEach((rowFrame) => {
+        const visibleBands = runtime.visibleBandsBySourceRowIndex.get(rowFrame.sourceRowIndex) ?? {};
+        const hasCompanionBand = Boolean(visibleBands.base && visibleBands.mine);
+        const useSideAccentForChanges = hasCompanionBand;
 
-        const tone: CanvasBand['tone'] = rowFrame.renderRow.row.left?.type === 'delete'
-          ? 'delete'
-          : 'neutral';
+        if (visibleBands.base) {
+          const tone: CanvasBand['tone'] = rowFrame.renderRow.row.left?.type === 'delete'
+            ? 'delete'
+            : (!rowFrame.baseEntry && rowFrame.renderRow.row.right?.type === 'add')
+            ? 'add'
+            : 'neutral';
 
-        groupBands.push({
-          groupKey: runtime.frame.key,
-          entry: rowFrame.baseEntry,
-          side: 'base',
-          tone,
-          useSideAccentForChanges: Boolean(visibleBands.base && visibleBands.mine),
-          compareCells: rowFrame.rowDelta.cellDeltas,
-          hasBaseRow: rowFrame.hasBaseRow,
-          hasMineRow: rowFrame.hasMineRow,
-          y: visibleBands.base?.top ?? rowFrame.top,
-          height: ROW_H,
-          isGuided: rowFrame.renderRow.isGuided,
-          isActiveSearch: rowFrame.renderRow.isActiveSearch,
-          rowHighlightBg: rowFrame.rowHighlightBg,
-        });
-      });
+          groupBands.push({
+            groupKey: runtime.frame.key,
+            entry: rowFrame.baseEntry,
+            displayRowNumber: getWorkbookStackedBandDisplayRowNumber(
+              'base',
+              rowFrame.baseEntry?.rowNumber ?? null,
+              rowFrame.mineEntry?.rowNumber ?? null,
+            ),
+            side: 'base',
+            tone,
+            hasCompanionBand,
+            useSideAccentForChanges,
+            compareCells: rowFrame.rowDelta.cellDeltas,
+            hasBaseRow: rowFrame.hasBaseRow,
+            hasMineRow: rowFrame.hasMineRow,
+            y: visibleBands.base.top,
+            height: ROW_H,
+            isGuided: rowFrame.renderRow.isGuided,
+            isActiveSearch: rowFrame.renderRow.isActiveSearch,
+            rowHighlightBg: rowFrame.rowHighlightBg,
+          });
+        }
 
-      runtime.frame.mineTrack.forEach((track) => {
-        const rowFrame = runtime.rowFrameBySourceIndex.get(track.sourceRowIndex);
-        if (!rowFrame?.mineEntry) return;
-        const visibleBands = runtime.visibleBandsBySourceRowIndex.get(track.sourceRowIndex) ?? {};
-        if (!visibleBands.mine) return;
+        if (visibleBands.mine) {
+          const tone: CanvasBand['tone'] = rowFrame.renderRow.row.right?.type === 'add'
+            ? 'add'
+            : (!rowFrame.mineEntry && rowFrame.renderRow.row.left?.type === 'delete')
+            ? 'delete'
+            : 'neutral';
 
-        const tone: CanvasBand['tone'] = rowFrame.renderRow.row.right?.type === 'add'
-          ? 'add'
-          : 'neutral';
-
-        groupBands.push({
-          groupKey: runtime.frame.key,
-          entry: rowFrame.mineEntry,
-          side: 'mine',
-          tone,
-          useSideAccentForChanges: Boolean(visibleBands.base && visibleBands.mine),
-          compareCells: rowFrame.rowDelta.cellDeltas,
-          hasBaseRow: rowFrame.hasBaseRow,
-          hasMineRow: rowFrame.hasMineRow,
-          y: visibleBands.mine.top,
-          height: ROW_H,
-          isGuided: rowFrame.renderRow.isGuided,
-          isActiveSearch: rowFrame.renderRow.isActiveSearch,
-          rowHighlightBg: rowFrame.rowHighlightBg,
-        });
+          groupBands.push({
+            groupKey: runtime.frame.key,
+            entry: rowFrame.mineEntry,
+            displayRowNumber: getWorkbookStackedBandDisplayRowNumber(
+              'mine',
+              rowFrame.baseEntry?.rowNumber ?? null,
+              rowFrame.mineEntry?.rowNumber ?? null,
+            ),
+            side: 'mine',
+            tone,
+            hasCompanionBand,
+            useSideAccentForChanges,
+            compareCells: rowFrame.rowDelta.cellDeltas,
+            hasBaseRow: rowFrame.hasBaseRow,
+            hasMineRow: rowFrame.hasMineRow,
+            y: visibleBands.mine.top,
+            height: ROW_H,
+            isGuided: rowFrame.renderRow.isGuided,
+            isActiveSearch: rowFrame.renderRow.isActiveSearch,
+            rowHighlightBg: rowFrame.rowHighlightBg,
+          });
+        }
       });
 
       groupBands.sort((left, right) => (
@@ -422,35 +468,38 @@ const WorkbookStackedCanvasStrip = memo(({
         contentRight,
         frozenWidth,
       });
+      const scrollViewport = layerViewports.scroll ?? layerViewports.content;
       const frozenEntries = renderColumns.filter(column => column.position < freezeColumnCount);
       const floatingEntries = renderColumns.filter(column => column.position >= freezeColumnCount);
       const drawBandChrome = (band: CanvasBand) => {
         const entry = band.entry;
         const y = band.y;
         const h = band.height;
-        const rowNumber = entry?.rowNumber ?? 0;
+        const rowNumber = band.displayRowNumber ?? entry?.rowNumber ?? 0;
         const rowBg = band.rowHighlightBg ?? T.bg0;
-        const selectionAccent = band.side === 'base' ? T.acc2 : T.acc;
-        const semanticBorder = band.tone === 'add' ? T.addBrd : band.tone === 'delete' ? T.delBrd : T.border2;
-        const bandBorder = band.useSideAccentForChanges ? selectionAccent : semanticBorder;
-        const bandRule = band.useSideAccentForChanges ? `${selectionAccent}66` : bandBorder;
+        const selectionAccent = resolveWorkbookRowSelectionAccent(T, band.side);
+        const sideAccent = band.useSideAccentForChanges ? band.side : null;
+        const bandBorder = resolveWorkbookRowBorderColor(T, band.tone, sideAccent);
+        const bandRule = resolveWorkbookRowRuleColor(T, band.tone, sideAccent);
         const isSelectedRow = Boolean(
           selectionLookup.rowKeys.has(`${sheetName}:${rowNumber}`),
         );
-        const lineNumberTone = band.useSideAccentForChanges
-          ? band.side
-          : (
-            band.tone === 'delete'
-              ? 'base'
-              : band.tone === 'add'
-              ? 'mine'
-              : resolveSharedWorkbookLineNumberTone(band.hasBaseRow, band.hasMineRow)
-          );
+        const lineNumberTone = resolveWorkbookStackedLineNumberTone({
+          side: band.side,
+          hasCompanionBand: band.hasCompanionBand,
+          tone: band.tone,
+          hasBaseRow: band.hasBaseRow,
+          hasMineRow: band.hasMineRow,
+        });
 
         ctx.fillStyle = rowBg;
         ctx.fillRect(0, y, contentRight, h);
 
-        ctx.fillStyle = isSelectedRow ? `${selectionAccent}26` : T.lnBg;
+        ctx.fillStyle = resolveWorkbookRowGutterBackground({
+          theme: T,
+          selectionAccent,
+          isSelected: isSelectedRow,
+        });
         ctx.fillRect(3, y, LN_W, h);
         ctx.fillStyle = bandBorder;
         ctx.fillRect(0, y, 3, h);
@@ -470,7 +519,12 @@ const WorkbookStackedCanvasStrip = memo(({
 
         ctx.fillStyle = isSelectedRow
           ? selectionAccent
-          : resolveLineNumberColor(T, lineNumberTone, band.isActiveSearch);
+          : resolveWorkbookRowLineNumberColor({
+            theme: T,
+            tone: band.useSideAccentForChanges ? 'equal' : band.tone,
+            fallbackTone: lineNumberTone,
+            active: band.isActiveSearch,
+          });
         ctx.font = `${sizes.line}px ${FONT_CODE}`;
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
@@ -489,7 +543,53 @@ const WorkbookStackedCanvasStrip = memo(({
         const cellTextColor = band.side === 'mine' ? T.t0 : T.t1;
         const deferredMergedDraws = layer === 'floating' ? floatingMergedDraws : frozenMergedDraws;
         const drawCell = (entryMeta: HorizontalVirtualColumnEntry, drawX: number) => {
-          if (!entry || drawX >= contentRight || drawX + entryMeta.width <= contentLeft) return;
+          if (drawX >= contentRight || drawX + entryMeta.width <= contentLeft) return;
+
+          if (!entry) {
+            const compareCell = band.compareCells.get(entryMeta.column);
+            const placeholderCell = band.side === 'base'
+              ? compareCell?.baseCell
+              : compareCell?.mineCell;
+            const cell = placeholderCell ?? { value: '', formula: '' };
+            const hasContent = hasWorkbookCellContent(cell, compareMode);
+            const cellVisual = resolveWorkbookCompareCellVisual({
+              theme: T,
+              compareCell,
+              side: band.side,
+              hasEntry: false,
+              hasContent,
+              hasBaseRow: band.hasBaseRow,
+              hasMineRow: band.hasMineRow,
+              defaultTextColor: cellTextColor,
+            });
+
+            ctx.fillStyle = cellVisual.background;
+            ctx.fillRect(drawX, y, entryMeta.width, h);
+            if (cellVisual.maskOverlay) {
+              ctx.fillStyle = cellVisual.maskOverlay;
+              ctx.fillRect(drawX, y, entryMeta.width, h);
+            }
+            ctx.strokeStyle = cellVisual.border;
+            ctx.strokeRect(drawX + 0.5, y + 0.5, Math.max(0, entryMeta.width - 1), Math.max(0, h - 1));
+
+            if (hasContent) {
+              ctx.save();
+              ctx.beginPath();
+              ctx.rect(drawX + 8, y + 1, Math.max(0, entryMeta.width - 16), Math.max(0, h - 2));
+              ctx.clip();
+              ctx.fillStyle = cellVisual.textColor;
+              ctx.font = `${sizes.ui}px ${FONT_UI}`;
+              ctx.textAlign = 'left';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(
+                normalizeWorkbookCanvasText(cell.value || '\u00A0').replace(/\n/g, ' / '),
+                drawX + 8,
+                y + (h / 2),
+              );
+              ctx.restore();
+            }
+            return;
+          }
 
           const column = entryMeta.column;
           const mergedRanges = band.side === 'base' ? baseMergedRanges : mineMergedRanges;
@@ -593,6 +693,7 @@ const WorkbookStackedCanvasStrip = memo(({
               });
             }
             if (continuationRowSegments.length > 0) {
+              const continuationVisual = getWorkbookMergeContinuationVisual(T, cellVisual.border);
               withRowSegmentClip([anchorRowSegment], () => {
                 ctx.strokeStyle = cellVisual.border;
                 regionSegments.forEach((segment) => {
@@ -604,13 +705,13 @@ const WorkbookStackedCanvasStrip = memo(({
                   );
                 });
               });
-              ctx.fillStyle = `${T.bg0}1c`;
+              ctx.fillStyle = continuationVisual.background;
               continuationRowSegments.forEach((rowSegment) => {
                 regionSegments.forEach((segment) => {
                   ctx.fillRect(segment.left, rowSegment.top, segment.width, rowSegment.height);
                 });
               });
-              ctx.strokeStyle = `${cellVisual.border}66`;
+              ctx.strokeStyle = continuationVisual.guideStroke;
               ctx.lineWidth = 1;
               continuationRowSegments.forEach((rowSegment) => {
                 regionSegments.forEach((segment) => {
@@ -728,16 +829,16 @@ const WorkbookStackedCanvasStrip = memo(({
 
       renderBands.forEach(drawBandChrome);
 
-      if (layerViewports.content.width > 0) {
+      if (scrollViewport.width > 0) {
         renderBands.forEach((band) => {
-          clipWorkbookCanvasToViewport(ctx, layerViewports.content, band.y, band.height, () => {
+          clipWorkbookCanvasToViewport(ctx, scrollViewport, band.y, band.height, () => {
             drawBandCells(band, floatingEntries, 'floating');
           });
         });
       }
 
-      if (floatingMergedDraws.length > 0 && layerViewports.content.width > 0) {
-        clipWorkbookCanvasToViewport(ctx, layerViewports.content, 0, height, () => {
+      if (floatingMergedDraws.length > 0 && scrollViewport.width > 0) {
+        clipWorkbookCanvasToViewport(ctx, scrollViewport, 0, height, () => {
           floatingMergedDraws.forEach((paintRegion) => paintRegion());
         });
       }
@@ -754,8 +855,8 @@ const WorkbookStackedCanvasStrip = memo(({
         });
       }
 
-      if (frozenMergedDraws.length > 0 && layerViewports.content.width > 0) {
-        clipWorkbookCanvasToViewport(ctx, layerViewports.content, 0, height, () => {
+      if (frozenMergedDraws.length > 0 && frozenViewport) {
+        clipWorkbookCanvasToViewport(ctx, frozenViewport, 0, height, () => {
           frozenMergedDraws.forEach((paintRegion) => paintRegion());
         });
       }
@@ -985,6 +1086,22 @@ const WorkbookStackedCanvasStrip = memo(({
     return null;
   };
 
+  const resolveHoverAtPointer = (
+    canvas: HTMLCanvasElement,
+    clientX: number,
+    clientY: number,
+  ): WorkbookCanvasHoverCell | null => {
+    const canvasRect = canvas.getBoundingClientRect();
+    const hit = resolveHit(
+      clientX - canvasRect.left,
+      clientY - canvasRect.top,
+      canvasRect,
+    );
+    return hit?.hover ?? null;
+  };
+
+  const { handleMouseMove, clearHover } = useWorkbookCanvasHoverController(resolveHoverAtPointer, onHoverChange);
+
   const handleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const canvasRect = event.currentTarget.getBoundingClientRect();
     const hit = resolveHit(
@@ -993,32 +1110,12 @@ const WorkbookStackedCanvasStrip = memo(({
       canvasRect,
     );
     if (!hit) return;
-    hoverKeyRef.current = '';
-    onHoverChange?.(null);
+    clearHover();
     onSelectionRequest({
       target: hit.selection,
       mode: getSelectionModeFromMouseEvent(event),
       reason: 'click',
     });
-  };
-
-  const handleMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!onHoverChange) return;
-    const canvasRect = event.currentTarget.getBoundingClientRect();
-    const hit = resolveHit(
-      event.clientX - canvasRect.left,
-      event.clientY - canvasRect.top,
-      canvasRect,
-    );
-    const nextKey = hit?.hover?.key ?? '';
-    if (hoverKeyRef.current === nextKey) return;
-    hoverKeyRef.current = nextKey;
-    onHoverChange(hit?.hover ?? null);
-  };
-
-  const handleMouseLeave = () => {
-    hoverKeyRef.current = '';
-    onHoverChange?.(null);
   };
 
   const handleContextMenu = (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -1030,8 +1127,7 @@ const WorkbookStackedCanvasStrip = memo(({
     );
     if (!hit) return;
     event.preventDefault();
-    hoverKeyRef.current = '';
-    onHoverChange?.(null);
+    clearHover();
     onSelectionRequest({
       target: hit.selection,
       mode: getSelectionModeFromMouseEvent(event),
@@ -1050,7 +1146,7 @@ const WorkbookStackedCanvasStrip = memo(({
       onClick={handleClick}
       onContextMenu={handleContextMenu}
       onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
+      onMouseLeave={clearHover}
       style={{
         display: 'block',
         cursor: 'pointer',

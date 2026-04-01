@@ -9,7 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
-  useState, useRef, useCallback, useMemo, startTransition, type SetStateAction,
+  useState, useRef, useEffect, useCallback, useMemo, startTransition, type SetStateAction,
 } from 'react';
 
 import type {
@@ -44,6 +44,11 @@ import {
   createEmptyWorkbookLayoutSnapshots,
   type WorkbookLayoutSnapshotsByMode,
 } from '@/utils/workbook/workbookLayoutState';
+import { parseWorkbookRowLine } from '@/utils/workbook/workbookCompare';
+import {
+  setWorkbookDebugEnabled,
+  workbookDebugLog,
+} from '@/utils/workbook/workbookDebug';
 import { getStoredAppSettings } from '@/utils/app/settings';
 import {
   type WorkbookColumnWidthBySheet,
@@ -135,6 +140,7 @@ export default function App() {
   const [svnDiffViewerStatus, setSvnDiffViewerStatus] = useState<SvnDiffViewerStatus | null>(null);
   const [isLoadingSvnDiffViewerStatus, setIsLoadingSvnDiffViewerStatus] = useState(false);
   const [applyingSvnDiffViewerScope, setApplyingSvnDiffViewerScope] = useState<SvnDiffViewerScope | null>(null);
+  const [isRestoringSvnDiffViewerDefault, setIsRestoringSvnDiffViewerDefault] = useState(false);
   const [svnDiffViewerError, setSvnDiffViewerError] = useState('');
   const loadSeqRef = useRef(0);
   const hasLoadedDiffRef = useRef(false);
@@ -345,6 +351,7 @@ export default function App() {
     loadSvnDiffViewerStatus,
     handleOpenSvnConfig,
     handleApplySvnDiffViewerScope,
+    handleRestoreSvnDiffViewerDefault,
     reloadCliDiffData,
   } = useDiffLoader({
     loadSeqRef,
@@ -382,6 +389,7 @@ export default function App() {
     setSvnDiffViewerError,
     setSvnDiffViewerStatus,
     setApplyingSvnDiffViewerScope,
+    setIsRestoringSvnDiffViewerDefault,
   });
 
   const {
@@ -557,6 +565,62 @@ export default function App() {
     diffLines,
   });
 
+  useEffect(() => {
+    setWorkbookDebugEnabled(isDevMode);
+  }, [isDevMode]);
+
+  useEffect(() => {
+    if (!isDevMode || !isWorkbookMode) return;
+    const activeSheetName = activeWorkbookSheetName ?? workbookSections[0]?.name ?? null;
+    if (!activeSheetName) return;
+    const activeSectionRows = workbookSectionRowIndex.get(activeSheetName)?.rows ?? [];
+    const activePayloadSection = precomputedWorkbookDelta?.sections.find((section) => section.name === activeSheetName) ?? null;
+
+    workbookDebugLog('app/workbook-sheet-state', {
+      activeSheetName,
+      compareMode: workbookCompareMode,
+      sectionCount: workbookSections.length,
+      payloadSectionCount: precomputedWorkbookDelta?.sections.length ?? 0,
+      activePayloadRowCount: activePayloadSection?.rows.length ?? 0,
+      activeSectionRowCount: activeSectionRows.length,
+      activeSectionPreview: activeSectionRows.slice(0, 8).map((row) => ({
+        lineIdx: row.lineIdx,
+        lineIdxs: row.lineIdxs,
+        leftRowNumber: parseWorkbookRowLine(row.left)?.rowNumber ?? null,
+        rightRowNumber: parseWorkbookRowLine(row.right)?.rowNumber ?? null,
+        leftColumnCount: parseWorkbookRowLine(row.left)?.cells.length ?? 0,
+        rightColumnCount: parseWorkbookRowLine(row.right)?.cells.length ?? 0,
+        changedColumns: row.workbookRowDelta?.changedColumns ?? [],
+      })),
+      workbookSections: workbookSections.map((section) => ({
+        name: section.name,
+        changeType: section.changeType,
+        startLineIdx: section.startLineIdx,
+        endLineIdx: section.endLineIdx,
+        maxColumns: section.maxColumns,
+      })),
+      activeDiffRegion: activeWorkbookDiffRegion
+        ? {
+          id: activeWorkbookDiffRegion.id,
+          sheetName: activeWorkbookDiffRegion.sheetName,
+          startRowIndex: activeWorkbookDiffRegion.startRowIndex,
+          endRowIndex: activeWorkbookDiffRegion.endRowIndex,
+          startCol: activeWorkbookDiffRegion.startCol,
+          endCol: activeWorkbookDiffRegion.endCol,
+        }
+        : null,
+    });
+  }, [
+    activeWorkbookDiffRegion,
+    activeWorkbookSheetName,
+    isDevMode,
+    isWorkbookMode,
+    precomputedWorkbookDelta,
+    workbookCompareMode,
+    workbookSectionRowIndex,
+    workbookSections,
+  ]);
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -579,8 +643,12 @@ export default function App() {
           layout={layout}             setLayout={handleLayoutChange}
           hunkIdx={hunkIdx}           totalHunks={navigationCount}
           hunkTargetLabel={currentNavigationLabel}
-          onPrev={() => setHunkIdx(i => cycleHunkIndex(i, navigationCount, -1))}
-          onNext={() => setHunkIdx(i => cycleHunkIndex(i, navigationCount, 1))}
+          onPrev={() => startTransition(() => {
+            setHunkIdx(i => cycleHunkIndex(i, navigationCount, -1));
+          })}
+          onNext={() => startTransition(() => {
+            setHunkIdx(i => cycleHunkIndex(i, navigationCount, 1));
+          })}
           showSearch={showSearch}     setShowSearch={setShowSearch}
           collapseCtx={collapseCtx}   setCollapseCtx={setCollapseCtx}
           showWhitespace={showWhitespace} setShowWhitespace={setShowWhitespace}
@@ -616,7 +684,7 @@ export default function App() {
           />
         )}
 
-        {(isLoadingDiff || hasLoadedDiff) && (
+        {hasLoadedDiff && !isLoadingDiff && (
           <SplitHeader
             baseName={displayBaseName}
             mineName={displayMineName}
@@ -731,6 +799,7 @@ export default function App() {
           isWorkbookMode={isWorkbookMode}
           workbookCompareMode={workbookCompareMode}
           workbookArtifactDiff={workbookArtifactDiff}
+          workbookSections={workbookSections}
         />
 
         <AppDialogs
@@ -756,9 +825,13 @@ export default function App() {
           svnDiffViewerStatus={svnDiffViewerStatus}
           isLoadingSvnDiffViewerStatus={isLoadingSvnDiffViewerStatus}
           applyingSvnDiffViewerScope={applyingSvnDiffViewerScope}
+          isRestoringSvnDiffViewerDefault={isRestoringSvnDiffViewerDefault}
           svnDiffViewerError={svnDiffViewerError}
           onApplySvnDiffViewerScope={(scope) => {
             void handleApplySvnDiffViewerScope(scope);
+          }}
+          onRestoreSvnDiffViewerDefault={() => {
+            void handleRestoreSvnDiffViewerDefault();
           }}
           onRefreshSvnDiffViewerStatus={() => {
             void loadSvnDiffViewerStatus();

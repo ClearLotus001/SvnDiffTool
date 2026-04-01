@@ -3,6 +3,11 @@ import { FONT_CODE, FONT_SIZE, FONT_UI } from '@/constants/typography';
 import { useI18n } from '@/context/i18n';
 import { useTheme } from '@/context/theme';
 import type { DiffPerformanceMetrics } from '@/types';
+import { copyText } from '@/utils/app/clipboard';
+import {
+  clearWorkbookDebugLogs,
+  getWorkbookDebugLogSnapshot,
+} from '@/utils/workbook/workbookDebug';
 
 interface PerfBarProps {
   metrics: DiffPerformanceMetrics | null;
@@ -57,6 +62,12 @@ const PerfBar = memo(({ metrics }: PerfBarProps) => {
     'revision-switch': t('perfSource_revision-switch'),
     'local-dev': t('perfSource_local-dev'),
   }[metrics.source];
+  const handleCopyWorkbookDebug = () => {
+    copyText(getWorkbookDebugLogSnapshot());
+  };
+  const handleClearWorkbookDebug = () => {
+    clearWorkbookDebugLogs();
+  };
 
   return (
     <div
@@ -93,6 +104,40 @@ const PerfBar = memo(({ metrics }: PerfBarProps) => {
       {chip(t('perfBaseBytes'), formatBytes(metrics.baseBytes), T.acc2)}
       {chip(t('perfMineBytes'), formatBytes(metrics.mineBytes), T.acc)}
       {chip(t('perfDiffLines'), typeof metrics.diffLineCount === 'number' ? String(metrics.diffLineCount) : '—', T.acc2)}
+      <button
+        type="button"
+        onClick={handleCopyWorkbookDebug}
+        style={{
+          border: `1px solid ${T.acc2}66`,
+          background: `${T.acc2}10`,
+          color: T.acc2,
+          borderRadius: 999,
+          padding: '4px 10px',
+          fontFamily: FONT_UI,
+          fontSize: FONT_SIZE.xs,
+          fontWeight: 700,
+          cursor: 'pointer',
+          flexShrink: 0,
+        }}>
+        复制Workbook日志
+      </button>
+      <button
+        type="button"
+        onClick={handleClearWorkbookDebug}
+        style={{
+          border: `1px solid ${T.border}`,
+          background: T.bg2,
+          color: T.t1,
+          borderRadius: 999,
+          padding: '4px 10px',
+          fontFamily: FONT_UI,
+          fontSize: FONT_SIZE.xs,
+          fontWeight: 700,
+          cursor: 'pointer',
+          flexShrink: 0,
+        }}>
+        清空Workbook日志
+      </button>
     </div>
   );
 });

@@ -6,12 +6,14 @@ import type {
 } from '@/types';
 import type { WorkbookSection } from '@/utils/workbook/workbookSections';
 import { parseWorkbookDisplayLine } from '@/utils/workbook/workbookDisplay';
+import { buildWorkbookLineSheetContexts } from '@/utils/workbook/workbookSections';
 import {
   buildWorkbookRowSignature,
   alignWorkbookEntries,
   createWorkbookAlignmentEntry,
 } from '@/utils/workbook/workbookAlignment';
-import { hydrateWorkbookRowDelta } from '@/utils/workbook/workbookDelta';
+import { buildWorkbookRowDelta, hydrateWorkbookRowDelta } from '@/utils/workbook/workbookDelta';
+import { workbookDebugLog, isWorkbookDebugEnabled } from '@/utils/workbook/workbookDebug';
 
 export interface IndexedWorkbookSectionRows {
   rows: SplitRow[];
@@ -52,6 +54,25 @@ function makeSideScopedEqualLine(
       };
 }
 
+function makeSideScopedLine(
+  line: DiffLine,
+  side: 'base' | 'mine',
+): DiffLine {
+  return side === 'base'
+    ? {
+        ...line,
+        mine: null,
+        mineLineNo: null,
+        mineCharSpans: null,
+      }
+    : {
+        ...line,
+        base: null,
+        baseLineNo: null,
+        baseCharSpans: null,
+      };
+}
+
 function alignWorkbookChangeRows(
   baseRows: Array<ReturnType<typeof createWorkbookAlignmentEntry<{ line: DiffLine; lineIdx: number }>>>,
   mineRows: Array<ReturnType<typeof createWorkbookAlignmentEntry<{ line: DiffLine; lineIdx: number }>>>,
@@ -70,18 +91,18 @@ function alignWorkbookChangeRows(
 }
 
 function buildWorkbookSplitRows(
-  sectionDiffLines: DiffLine[],
-  lineIdxOffset: number,
+  sectionDiffLines: Array<{ line: DiffLine; lineIdx: number }>,
   compareMode: WorkbookCompareMode = 'strict',
 ): SplitRow[] {
   const rows: SplitRow[] = [];
   let index = 0;
 
   while (index < sectionDiffLines.length) {
-    const line = sectionDiffLines[index]!;
+    const entry = sectionDiffLines[index]!;
+    const line = entry.line;
 
     if (line.type === 'equal') {
-      const lineIdx = index + lineIdxOffset;
+      const lineIdx = entry.lineIdx;
       const leftParsed = line.base ? parseWorkbookDisplayLine(line.base) : null;
       const rightParsed = line.mine ? parseWorkbookDisplayLine(line.mine) : null;
       const rowNumbersDiffer = leftParsed?.kind === 'row' && rightParsed?.kind === 'row'
@@ -111,24 +132,28 @@ function buildWorkbookSplitRows(
     }
 
     const deleteStart = index;
-    while (index < sectionDiffLines.length && sectionDiffLines[index]!.type === 'delete') index += 1;
+    while (index < sectionDiffLines.length && sectionDiffLines[index]!.line.type === 'delete') index += 1;
     const addStart = index;
-    while (index < sectionDiffLines.length && sectionDiffLines[index]!.type === 'add') index += 1;
+    while (index < sectionDiffLines.length && sectionDiffLines[index]!.line.type === 'add') index += 1;
 
     const baseRows = sectionDiffLines
       .slice(deleteStart, addStart)
-      .map((entry, entryIndex) => createWorkbookAlignmentEntry(entry.base ?? entry.mine ?? '', {
-        line: entry,
-        lineIdx: lineIdxOffset + deleteStart + entryIndex,
+      .map((scopedEntry) => createWorkbookAlignmentEntry(scopedEntry.line.base ?? scopedEntry.line.mine ?? '', {
+        line: scopedEntry.line,
+        lineIdx: scopedEntry.lineIdx,
       }, compareMode));
     const mineRows = sectionDiffLines
       .slice(addStart, index)
-      .map((entry, entryIndex) => createWorkbookAlignmentEntry(entry.base ?? entry.mine ?? '', {
-        line: entry,
-        lineIdx: lineIdxOffset + addStart + entryIndex,
+      .map((scopedEntry) => createWorkbookAlignmentEntry(scopedEntry.line.base ?? scopedEntry.line.mine ?? '', {
+        line: scopedEntry.line,
+        lineIdx: scopedEntry.lineIdx,
       }, compareMode));
 
-    rows.push(...alignWorkbookChangeRows(baseRows, mineRows, lineIdxOffset + deleteStart));
+    rows.push(...alignWorkbookChangeRows(
+      baseRows,
+      mineRows,
+      sectionDiffLines[deleteStart]?.lineIdx ?? 0,
+    ));
 
     if (index === deleteStart) index += 1;
   }
@@ -149,11 +174,56 @@ export function buildWorkbookSectionRowIndex(
   compareMode: WorkbookCompareMode = 'strict',
 ): Map<string, IndexedWorkbookSectionRows> {
   const sectionMap = new Map<string, IndexedWorkbookSectionRows>();
+  const lineSheetContexts = buildWorkbookLineSheetContexts(diffLines);
 
   sections.forEach((section) => {
     const contentStartIdx = Math.min(section.startLineIdx + 1, section.endLineIdx + 1);
-    const sectionDiffLines = diffLines.slice(contentStartIdx, section.endLineIdx + 1);
-    const splitRows = buildWorkbookSplitRows(sectionDiffLines, contentStartIdx, compareMode)
+    const scopedSectionDiffLines = diffLines
+      .slice(contentStartIdx, section.endLineIdx + 1)
+      .flatMap((line, localIndex) => {
+        const lineIdx = contentStartIdx + localIndex;
+        const context = lineSheetContexts[lineIdx];
+        const parsedBase = line.base ? parseWorkbookDisplayLine(line.base) : null;
+        const parsedMine = line.mine ? parseWorkbookDisplayLine(line.mine) : null;
+      const keepBase = parsedBase?.kind === 'row' && context?.baseSheetName === section.name;
+      const keepMine = parsedMine?.kind === 'row' && context?.mineSheetName === section.name;
+      if (!keepBase && !keepMine) return [];
+
+      if (
+        isWorkbookDebugEnabled()
+        && parsedBase?.kind === 'row'
+        && parsedMine?.kind === 'row'
+        && context?.baseSheetName !== context?.mineSheetName
+      ) {
+        workbookDebugLog('sheet-index/js-cross-sheet-row', {
+          sectionName: section.name,
+          lineIdx,
+          baseSheetName: context?.baseSheetName ?? null,
+          mineSheetName: context?.mineSheetName ?? null,
+          keepBase,
+          keepMine,
+          baseRowNumber: parsedBase.rowNumber,
+          mineRowNumber: parsedMine.rowNumber,
+          baseColumnCount: parsedBase.cells.length,
+          mineColumnCount: parsedMine.cells.length,
+        });
+      }
+
+      return [{
+        lineIdx,
+          line: {
+            ...line,
+            type: keepBase && keepMine ? 'equal' : keepBase ? 'delete' : 'add',
+            base: keepBase ? line.base : null,
+            mine: keepMine ? line.mine : null,
+            baseLineNo: keepBase ? line.baseLineNo : null,
+            mineLineNo: keepMine ? line.mineLineNo : null,
+            baseCharSpans: keepBase ? line.baseCharSpans : null,
+            mineCharSpans: keepMine ? line.mineCharSpans : null,
+          } satisfies DiffLine,
+        }];
+      });
+    const splitRows = buildWorkbookSplitRows(scopedSectionDiffLines, compareMode)
       .filter(isWorkbookDataRow);
     sectionMap.set(section.name, { rows: splitRows });
   });
@@ -167,15 +237,59 @@ export function buildWorkbookSectionRowIndexFromPrecomputedDelta(
 ): Map<string, IndexedWorkbookSectionRows> {
   const sectionMap = new Map<string, IndexedWorkbookSectionRows>();
   if (!payload) return sectionMap;
+  const lineSheetContexts = buildWorkbookLineSheetContexts(diffLines);
 
   payload.sections.forEach((section) => {
-    const rows: SplitRow[] = section.rows.map((row) => ({
-      left: row.leftLineIdx != null ? (diffLines[row.leftLineIdx] ?? null) : null,
-      right: row.rightLineIdx != null ? (diffLines[row.rightLineIdx] ?? null) : null,
-      lineIdx: row.lineIdx,
-      lineIdxs: row.lineIdxs,
-      workbookRowDelta: hydrateWorkbookRowDelta(row),
-    }));
+    const rows: SplitRow[] = section.rows.flatMap((row) => {
+      const leftLine = row.leftLineIdx != null ? (diffLines[row.leftLineIdx] ?? null) : null;
+      const rightLine = row.rightLineIdx != null ? (diffLines[row.rightLineIdx] ?? null) : null;
+      const leftContext = row.leftLineIdx != null ? lineSheetContexts[row.leftLineIdx] : null;
+      const rightContext = row.rightLineIdx != null ? lineSheetContexts[row.rightLineIdx] : null;
+      const keepLeft = Boolean(leftLine && leftContext?.baseSheetName === section.name);
+      const keepRight = Boolean(rightLine && rightContext?.mineSheetName === section.name);
+      if (!keepLeft && !keepRight) return [];
+
+      const scopedLeft = keepLeft && leftLine ? makeSideScopedLine(leftLine, 'base') : null;
+      const scopedRight = keepRight && rightLine ? makeSideScopedLine(rightLine, 'mine') : null;
+      const nextLineIdxs = Array.from(new Set([
+        ...(keepLeft && row.leftLineIdx != null ? [row.leftLineIdx] : []),
+        ...(keepRight && row.rightLineIdx != null ? [row.rightLineIdx] : []),
+      ]));
+      const shouldReusePrecomputedDelta = (
+        keepLeft === Boolean(leftLine)
+        && keepRight === Boolean(rightLine)
+      );
+
+      if (
+        isWorkbookDebugEnabled()
+        && leftLine
+        && rightLine
+        && leftContext?.baseSheetName !== rightContext?.mineSheetName
+      ) {
+        workbookDebugLog('sheet-index/precomputed-cross-sheet-row', {
+          sectionName: section.name,
+          payloadLineIdx: row.lineIdx,
+          leftLineIdx: row.leftLineIdx,
+          rightLineIdx: row.rightLineIdx,
+          leftSheetName: leftContext?.baseSheetName ?? null,
+          rightSheetName: rightContext?.mineSheetName ?? null,
+          keepLeft,
+          keepRight,
+          reusePrecomputedDelta: shouldReusePrecomputedDelta,
+          changedColumns: row.changedColumns,
+        });
+      }
+
+      return [{
+        left: scopedLeft,
+        right: scopedRight,
+        lineIdx: nextLineIdxs[0] ?? row.lineIdx,
+        lineIdxs: nextLineIdxs.length > 0 ? nextLineIdxs : row.lineIdxs,
+        workbookRowDelta: shouldReusePrecomputedDelta
+          ? hydrateWorkbookRowDelta(row)
+          : buildWorkbookRowDelta(scopedLeft, scopedRight, undefined, payload.compareMode),
+      }];
+    });
     sectionMap.set(section.name, { rows });
   });
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 
 export interface VariableVirtualDebugInfo {
   viewportHeight: number;
@@ -19,6 +19,7 @@ export interface VariableVirtualResult {
 interface UseVariableVirtualOptions {
   overscanMin?: number;
   overscanFactor?: number;
+  syncKey?: string | number | null;
 }
 
 const DEFAULT_OVERSCAN_MIN = 12;
@@ -44,6 +45,48 @@ function findIndexForOffset(prefixSums: number[], offset: number): number {
   return Math.max(0, low - 1);
 }
 
+function computeVariableRange(params: {
+  heightsLength: number;
+  prefixSums: number[];
+  totalH: number;
+  averageHeight: number;
+  scrollTop: number;
+  viewH: number;
+  overscanMin: number;
+  overscanFactor: number;
+}) {
+  const {
+    heightsLength,
+    prefixSums,
+    totalH,
+    averageHeight,
+    scrollTop,
+    viewH,
+    overscanMin,
+    overscanFactor,
+  } = params;
+  const maxScrollTop = Math.max(0, totalH - Math.max(0, viewH));
+  const clampedScrollTop = Math.max(0, Math.min(scrollTop, maxScrollTop));
+  const visibleItemCount = Math.max(1, Math.ceil(viewH / Math.max(averageHeight, 1)));
+  const overscan = Math.max(overscanMin, Math.ceil(visibleItemCount * overscanFactor));
+  const overscanPx = overscan * averageHeight;
+  const startOffset = Math.max(0, clampedScrollTop - overscanPx);
+  const endOffset = Math.min(totalH, clampedScrollTop + viewH + overscanPx);
+  const startIdx = Math.max(0, Math.min(heightsLength, findIndexForOffset(prefixSums, startOffset)));
+  const endIdx = Math.max(
+    startIdx,
+    Math.min(heightsLength, findIndexForOffset(prefixSums, endOffset) + 1),
+  );
+  const offsetTop = prefixSums[startIdx] ?? 0;
+
+  return {
+    startIdx,
+    endIdx,
+    offsetTop,
+    overscan,
+  };
+}
+
 export function useVariableVirtual(
   heights: number[],
   scrollRef: RefObject<HTMLDivElement>,
@@ -51,6 +94,7 @@ export function useVariableVirtual(
 ): VariableVirtualResult {
   const overscanMin = options.overscanMin ?? DEFAULT_OVERSCAN_MIN;
   const overscanFactor = options.overscanFactor ?? DEFAULT_OVERSCAN_FACTOR;
+  const syncKey = options.syncKey ?? null;
   const [viewH, setViewH] = useState(600);
   const [rangeState, setRangeState] = useState({ startIdx: 0, endIdx: 0, offsetTop: 0, overscan: overscanMin });
   const latestScrollTopRef = useRef(0);
@@ -59,6 +103,7 @@ export function useVariableVirtual(
   const rangeUpdateCountRef = useRef(1);
   const lastCalcMsRef = useRef(0);
   const rangeRef = useRef(rangeState);
+  const syncKeyRef = useRef(syncKey);
 
   const prefixSums = useMemo(() => {
     const sums = new Array<number>(heights.length + 1).fill(0);
@@ -73,30 +118,28 @@ export function useVariableVirtual(
 
   const applyRange = useCallback((nextScrollTop: number, nextViewH: number) => {
     const calcStart = getNow();
-    const visibleItemCount = Math.max(1, Math.ceil(nextViewH / Math.max(averageHeight, 1)));
-    const overscan = Math.max(overscanMin, Math.ceil(visibleItemCount * overscanFactor));
-    const overscanPx = overscan * averageHeight;
-    const startOffset = Math.max(0, nextScrollTop - overscanPx);
-    const endOffset = Math.min(totalH, nextScrollTop + nextViewH + overscanPx);
-    const startIdx = Math.max(0, Math.min(heights.length, findIndexForOffset(prefixSums, startOffset)));
-    const endIdx = Math.max(
-      startIdx,
-      Math.min(heights.length, findIndexForOffset(prefixSums, endOffset) + 1),
-    );
-    const offsetTop = prefixSums[startIdx] ?? 0;
+    const next = computeVariableRange({
+      heightsLength: heights.length,
+      prefixSums,
+      totalH,
+      averageHeight,
+      scrollTop: nextScrollTop,
+      viewH: nextViewH,
+      overscanMin,
+      overscanFactor,
+    });
     lastCalcMsRef.current = getNow() - calcStart;
 
     const prev = rangeRef.current;
     if (
-      prev.startIdx === startIdx
-      && prev.endIdx === endIdx
-      && prev.offsetTop === offsetTop
-      && prev.overscan === overscan
+      prev.startIdx === next.startIdx
+      && prev.endIdx === next.endIdx
+      && prev.offsetTop === next.offsetTop
+      && prev.overscan === next.overscan
     ) {
       return;
     }
 
-    const next = { startIdx, endIdx, offsetTop, overscan };
     rangeRef.current = next;
     rangeUpdateCountRef.current += 1;
     setRangeState(next);
@@ -146,6 +189,32 @@ export function useVariableVirtual(
     applyRange(latestScrollTopRef.current, viewHRef.current);
   }, [applyRange]);
 
+  useLayoutEffect(() => {
+    if (syncKeyRef.current === syncKey) return;
+    syncKeyRef.current = syncKey;
+    latestScrollTopRef.current = 0;
+    const el = scrollRef.current;
+    if (el && el.scrollTop !== 0) {
+      el.scrollTo({ top: 0, behavior: 'auto' });
+    }
+    applyRange(0, viewHRef.current);
+  }, [applyRange, scrollRef, syncKey]);
+
+  const effectiveRangeState = useMemo(() => (
+    syncKeyRef.current !== syncKey
+      ? computeVariableRange({
+        heightsLength: heights.length,
+        prefixSums,
+        totalH,
+        averageHeight,
+        scrollTop: 0,
+        viewH: viewHRef.current,
+        overscanMin,
+        overscanFactor,
+      })
+      : rangeState
+  ), [averageHeight, heights.length, overscanFactor, overscanMin, prefixSums, rangeState, syncKey, totalH]);
+
   const scrollToIndex = useCallback((idx: number, align: 'start' | 'center' = 'start', behavior: 'auto' | 'smooth' | 'smart' = 'smart') => {
     const el = scrollRef.current;
     if (!el) return;
@@ -168,13 +237,13 @@ export function useVariableVirtual(
 
   return {
     totalH,
-    startIdx: rangeState.startIdx,
-    endIdx: rangeState.endIdx,
-    offsetTop: rangeState.offsetTop,
+    startIdx: effectiveRangeState.startIdx,
+    endIdx: effectiveRangeState.endIdx,
+    offsetTop: effectiveRangeState.offsetTop,
     scrollToIndex,
     debug: {
       viewportHeight: viewH,
-      overscan: rangeState.overscan,
+      overscan: effectiveRangeState.overscan,
       rangeUpdates: rangeUpdateCountRef.current,
       lastCalcMs: lastCalcMsRef.current,
     },

@@ -1,16 +1,20 @@
-import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { promisify } from 'node:util';
 import {
   getBuildWorkspaceDir,
-  getBootstrapperPayloadDir,
-  getBootstrapperPayloadPath,
   removeDirectoryWithRetries,
 } from './build-workspace';
+import { runBuildCommand } from './buildCommand';
+import {
+  getDirectorySizeBytes,
+  getFileSizeBytes,
+  getReleaseDir,
+  listLocaleFileNames,
+  updatePackageSizeReport,
+} from './packageSizeReport';
 
-const execFileAsync = promisify(execFile);
 const rootDir = path.resolve(__dirname, '..');
+type PublishMode = 'never' | 'always' | 'onTag' | 'onTagOrDraft';
 
 interface PackageJsonShape {
   version?: string;
@@ -26,49 +30,125 @@ function readPackageVersion(): string {
   return version;
 }
 
-async function removeIfExists(targetPath: string) {
-  await fs.promises.rm(targetPath, { force: true }).catch(() => {});
+function parsePublishMode(): PublishMode {
+  const args = process.argv.slice(2);
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (!arg) continue;
+    if (arg.startsWith('--publish=')) {
+      const value = arg.slice('--publish='.length);
+      if (value === 'never' || value === 'always' || value === 'onTag' || value === 'onTagOrDraft') {
+        return value;
+      }
+      break;
+    }
+    if (arg === '--publish') {
+      const value = args[index + 1];
+      if (value === 'never' || value === 'always' || value === 'onTag' || value === 'onTagOrDraft') {
+        return value;
+      }
+      break;
+    }
+  }
+  return 'never';
+}
+
+function shouldCopyReleaseArtifact(entry: fs.Dirent): boolean {
+  if (!entry.isFile()) return false;
+  if (entry.name === 'builder-debug.yml') return false;
+  if (entry.name.startsWith('__uninstaller-')) return false;
+  return true;
+}
+
+async function copyReleaseArtifacts(tempOutputDir: string, releaseDir: string) {
+  const entries = await fs.promises.readdir(tempOutputDir, { withFileTypes: true });
+  const copiedArtifacts: Array<{ fileName: string; bytes: number }> = [];
+
+  for (const entry of entries) {
+    if (!shouldCopyReleaseArtifact(entry)) continue;
+    const sourcePath = path.join(tempOutputDir, entry.name);
+    const targetPath = path.join(releaseDir, entry.name);
+    await fs.promises.copyFile(sourcePath, targetPath);
+    copiedArtifacts.push({
+      fileName: entry.name,
+      bytes: await getFileSizeBytes(sourcePath),
+    });
+  }
+
+  copiedArtifacts.sort((left, right) => left.fileName.localeCompare(right.fileName));
+  return copiedArtifacts;
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function buildInstallerArtifacts(
+  workspaceDir: string,
+  publishMode: PublishMode,
+): Promise<{ tempOutputDir: string; artifactsOutputDir: string }> {
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    const tempOutputDir = path.join(workspaceDir, `installer-run-${Date.now()}-${attempt}`);
+    const tempOutputDirName = path.relative(rootDir, tempOutputDir).replace(/\\/g, '/');
+
+    await removeDirectoryWithRetries(tempOutputDir).catch(() => {});
+
+    try {
+      const result = await runBuildCommand(
+        `npx electron-builder --win nsis-web --publish=${publishMode} --config.directories.output=${tempOutputDirName}`,
+        rootDir,
+      );
+      if (result.suppressedCount > 0) {
+        console.warn(`[build-win-installer] Suppressed ${result.suppressedCount} transient rcedit warnings.`);
+      }
+      return {
+        tempOutputDir,
+        artifactsOutputDir: path.join(tempOutputDir, 'nsis-web'),
+      };
+    } catch (error) {
+      lastError = error;
+      if (attempt >= 4) break;
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[build-win-installer] Packaging attempt ${attempt} failed, retrying with a fresh output directory...`);
+      console.warn(message);
+      await removeDirectoryWithRetries(tempOutputDir, { retries: 12, delayMs: 500 }).catch(() => {});
+      await delay(1500 * attempt);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 async function main() {
   const workspaceDir = getBuildWorkspaceDir();
   const version = readPackageVersion();
-  const tempOutputDir = path.join(workspaceDir, `installer-run-${Date.now()}`);
-  const tempOutputDirName = path.relative(rootDir, tempOutputDir).replace(/\\/g, '/');
-  const installerPath = path.join(tempOutputDir, `SvnDiffTool-${version}.exe`);
-  const payloadDir = getBootstrapperPayloadDir();
-  const payloadPath = getBootstrapperPayloadPath();
+  const publishMode = parsePublishMode();
+  const releaseDir = getReleaseDir(rootDir);
 
   await fs.promises.mkdir(workspaceDir, { recursive: true });
-  await removeDirectoryWithRetries(tempOutputDir).catch(() => {});
-  await removeIfExists(payloadPath);
-  await fs.promises.rm(payloadDir, { recursive: true, force: true }).catch(() => {});
+  await fs.promises.rm(releaseDir, { recursive: true, force: true }).catch(() => {});
+  await fs.promises.mkdir(releaseDir, { recursive: true });
 
-  const electronBuilderCommand = process.platform === 'win32'
-    ? path.join(rootDir, 'node_modules', '.bin', 'electron-builder.cmd')
-    : path.join(rootDir, 'node_modules', '.bin', 'electron-builder');
-  if (process.platform === 'win32') {
-    await execFileAsync(
-      'cmd.exe',
-      ['/d', '/s', '/c', `${electronBuilderCommand} --win nsis --config.directories.output=${tempOutputDirName}`],
-      {
-        cwd: rootDir,
-        windowsHide: true,
-      },
-    );
-  } else {
-  await execFileAsync(
-    electronBuilderCommand,
-    ['--win', 'nsis', `--config.directories.output=${tempOutputDirName}`],
-    {
-      cwd: rootDir,
-      windowsHide: true,
-      },
-    );
-  }
+  const { tempOutputDir, artifactsOutputDir } = await buildInstallerArtifacts(workspaceDir, publishMode);
+  const installerPath = path.join(artifactsOutputDir, `SvnDiffTool-${version}.exe`);
+  const winUnpackedDir = path.join(tempOutputDir, 'win-unpacked');
+  const localesDir = path.join(winUnpackedDir, 'locales');
+  const appAsarPath = path.join(winUnpackedDir, 'resources', 'app.asar');
 
-  await fs.promises.mkdir(payloadDir, { recursive: true });
-  await fs.promises.copyFile(installerPath, payloadPath);
+  const copiedArtifacts = await copyReleaseArtifacts(artifactsOutputDir, releaseDir);
+  await updatePackageSizeReport(rootDir, version, {
+    innerInstaller: {
+      installerFileName: path.basename(installerPath),
+      installerBytes: await getFileSizeBytes(installerPath),
+      winUnpackedBytes: await getDirectorySizeBytes(winUnpackedDir),
+      localesBytes: await getDirectorySizeBytes(localesDir),
+      localesKept: await listLocaleFileNames(localesDir),
+      appAsarBytes: await getFileSizeBytes(appAsarPath),
+      artifacts: copiedArtifacts,
+    },
+  });
   await removeDirectoryWithRetries(tempOutputDir, { retries: 12, delayMs: 500 }).catch(() => {});
 }
 

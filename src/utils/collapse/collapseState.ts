@@ -5,6 +5,8 @@ export interface CollapseRevealRange {
 
 export type CollapseExpansionState = Record<string, CollapseRevealRange[]>;
 
+export const EMPTY_COLLAPSE_EXPANSION_STATE: CollapseExpansionState = Object.freeze({});
+
 const TARGET_REVEAL_RADIUS = 24;
 
 function normalizeRevealRanges(
@@ -42,6 +44,25 @@ function areRangesEqual(left: CollapseRevealRange[], right: CollapseRevealRange[
       return false;
     }
   }
+  return true;
+}
+
+export function areCollapseExpansionStatesEqual(
+  left: CollapseExpansionState,
+  right: CollapseExpansionState,
+): boolean {
+  if (left === right) return true;
+
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) return false;
+
+  for (let index = 0; index < leftKeys.length; index += 1) {
+    const key = leftKeys[index]!;
+    if (!(key in right)) return false;
+    if (!areRangesEqual(left[key] ?? [], right[key] ?? [])) return false;
+  }
+
   return true;
 }
 

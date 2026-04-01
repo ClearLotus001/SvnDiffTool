@@ -28,7 +28,10 @@ import {
   getWorkbookColumnLabel,
   type WorkbookSection,
 } from '@/utils/workbook/workbookSections';
-import { workbookDiffRegionContainsSelection } from '@/utils/workbook/workbookDiffRegion';
+import {
+  formatWorkbookDiffRegionSummary,
+  workbookDiffRegionContainsSelection,
+} from '@/utils/workbook/workbookDiffRegion';
 import {
   buildWorkbookSheetPresentation,
   type WorkbookMetadataMap,
@@ -49,16 +52,15 @@ import {
   type WorkbookRowEntry,
 } from '@/utils/workbook/workbookNavigation';
 import type { IndexedWorkbookSectionRows } from '@/utils/workbook/workbookSheetIndex';
-import { buildWorkbookSplitRowCompareState } from '@/utils/workbook/workbookCompare';
 import {
-  getWorkbookCanvasSpanGeometry,
-  getWorkbookColumnSpanBounds,
+  buildWorkbookSplitRowCompareState,
+  parseWorkbookRowLine,
+} from '@/utils/workbook/workbookCompare';
+import {
   getWorkbookSelectionSpanForSelection,
 } from '@/utils/workbook/workbookMergeLayout';
-import {
-  buildWorkbookRegionOverlayBoxes,
-  buildWorkbookRegionOverlayBoxesFromGeometry,
-} from '@/utils/workbook/workbookRegionOverlay';
+import { resolveWorkbookRegionHorizontalBounds } from '@/utils/workbook/workbookRegionOverlay';
+import { workbookDebugLog } from '@/utils/workbook/workbookDebug';
 import {
   getWorkbookColumnWidth,
   measureWorkbookAutoFitColumnWidth,
@@ -79,8 +81,9 @@ import {
 } from '@/utils/collapse/collapsibleRows';
 import { overlayHiddenWorkbookRowsOnItems } from '@/utils/workbook/workbookManualVisibility';
 import {
+  getWorkbookColumnsRenderMode,
   getStackedWorkbookRowRenderHeight,
-  getWorkbookCompactRenderMode,
+  getWorkbookStackedRenderMode,
 } from '@/utils/workbook/workbookRowBehavior';
 import {
   buildWorkbookStackedLayoutRows,
@@ -90,6 +93,7 @@ import {
   buildWorkbookCompareLayoutSnapshot,
   shouldRestoreWorkbookLayoutSnapshot,
 } from '@/utils/workbook/workbookLayoutSnapshot';
+import { resolveWorkbookAuxBarPalette } from '@/utils/workbook/workbookRowVisuals';
 import {
   countRemainingCollapses,
   findCyclicCollapseIndex,
@@ -112,10 +116,7 @@ import WorkbookStackedCanvasStrip, {
 } from '@/components/workbook/WorkbookStackedCanvasStrip';
 import WorkbookPerfDebugPanel, { type WorkbookPerfDebugStats } from '@/components/workbook/WorkbookPerfDebugPanel';
 import WorkbookSheetTabs from '@/components/workbook/WorkbookSheetTabs';
-import WorkbookDiffRegionOverlay, {
-  mergeWorkbookDiffRegionOverlayBoxes,
-  type WorkbookDiffRegionOverlayBox,
-} from '@/components/workbook/WorkbookDiffRegionOverlay';
+import WorkbookActiveRegionOverlayLayer from '@/components/workbook/WorkbookActiveRegionOverlayLayer';
 import WorkbookHiddenRowsBar from '@/components/workbook/WorkbookHiddenRowsBar';
 
 const CONTEXT_LINES = 3;
@@ -139,6 +140,26 @@ type WorkbookStackedVirtualItem =
   }
   | { kind: 'collapse'; item: Extract<WorkbookCompareRenderItem, { kind: 'collapse' }>; height: number; sourceItemIndex: number }
   | { kind: 'hidden-rows'; item: Extract<WorkbookCompareRenderItem, { kind: 'hidden-rows' }>; height: number; sourceItemIndex: number };
+
+interface WorkbookStackedScrollTarget {
+  itemIndex: number;
+  rowOffsetTop: number;
+  rowHeight: number;
+}
+
+function buildWorkbookStackedBandScrollTarget(
+  itemIndex: number,
+  rowOffsetTop: number,
+  rowHeight: number,
+  side: 'base' | 'mine',
+): WorkbookStackedScrollTarget {
+  const hasDoubleBand = rowHeight > ROW_H;
+  return {
+    itemIndex,
+    rowOffsetTop: rowOffsetTop + (hasDoubleBand && side === 'mine' ? ROW_H : 0),
+    rowHeight: hasDoubleBand ? ROW_H : rowHeight,
+  };
+}
 
 interface SelectionAutoScrollLock {
   sheetName: string;
@@ -299,8 +320,8 @@ const WorkbookComparePanel = memo(({
   const snapshotEmitRafRef = useRef(0);
   const restoreRafRef = useRef(0);
   const lastRestoredSnapshotKeyRef = useRef('');
+  const lastViewportSheetNameRef = useRef<string | null>(activeWorkbookSection?.name ?? null);
   const [hoveredCanvasCell, setHoveredCanvasCell] = useState<WorkbookCanvasHoverCell | null>(null);
-  const [scrollLeft, setScrollLeft] = useState(0);
   const [pendingScrollTarget, setPendingScrollTarget] = useState<{ lineIdx: number; align: 'start' | 'center' } | null>(null);
   const visibleRowsCacheRef = useRef(new Map<string, SplitRow[]>());
   const collapsedItemsCacheRef = useRef(new WeakMap<CollapseExpansionState, Map<string, { value: Array<Extract<WorkbookCompareRenderItem, { kind: 'row' | 'collapse' }>>; duration: number }>>());
@@ -602,7 +623,7 @@ const WorkbookComparePanel = memo(({
         return;
       }
 
-      const renderMode = getWorkbookCompactRenderMode(item.row);
+      const renderMode = getWorkbookStackedRenderMode(item.row);
       const isGuided = rowTouchesGuidedHunk(item.row, guidedHunkRange);
       const prevGuided = index > 0
         && items[index - 1]?.kind === 'row'
@@ -647,16 +668,101 @@ const WorkbookComparePanel = memo(({
     () => stackedVirtualItems.map((item) => item.height),
     [stackedVirtualItems],
   );
+  const stackedVirtualOffsets = useMemo(() => {
+    const offsets = new Array<number>(stackedVirtualItems.length + 1).fill(0);
+    for (let index = 0; index < stackedVirtualItems.length; index += 1) {
+      offsets[index + 1] = offsets[index]! + (stackedVirtualItems[index]?.height ?? 0);
+    }
+    return offsets;
+  }, [stackedVirtualItems]);
+  const stackedRowScrollTargetsBySide = useMemo(() => {
+    const next = {
+      base: new Map<number, WorkbookStackedScrollTarget>(),
+      mine: new Map<number, WorkbookStackedScrollTarget>(),
+    };
+
+    stackedVirtualItems.forEach((item, itemIndex) => {
+      if (item.kind !== 'rows') return;
+      let rowOffsetTop = 0;
+      item.rows.forEach((renderRow) => {
+        const baseRowNumber = getWorkbookSideRowNumber(renderRow.row, 'base');
+        if (baseRowNumber != null && !next.base.has(baseRowNumber)) {
+          next.base.set(baseRowNumber, buildWorkbookStackedBandScrollTarget(
+            itemIndex,
+            rowOffsetTop,
+            renderRow.height,
+            'base',
+          ));
+        }
+
+        const mineRowNumber = getWorkbookSideRowNumber(renderRow.row, 'mine');
+        if (mineRowNumber != null && !next.mine.has(mineRowNumber)) {
+          next.mine.set(mineRowNumber, buildWorkbookStackedBandScrollTarget(
+            itemIndex,
+            rowOffsetTop,
+            renderRow.height,
+            'mine',
+          ));
+        }
+
+        rowOffsetTop += renderRow.height;
+      });
+    });
+
+    return next;
+  }, [stackedVirtualItems]);
+  const stackedLineScrollTargets = useMemo(() => {
+    const next = new Map<number, WorkbookStackedScrollTarget>();
+
+    stackedVirtualItems.forEach((item, itemIndex) => {
+      if (item.kind !== 'rows') return;
+      let rowOffsetTop = 0;
+      item.rows.forEach((renderRow) => {
+        const baseTarget = buildWorkbookStackedBandScrollTarget(
+          itemIndex,
+          rowOffsetTop,
+          renderRow.height,
+          'base',
+        );
+        const mineTarget = buildWorkbookStackedBandScrollTarget(
+          itemIndex,
+          rowOffsetTop,
+          renderRow.height,
+          'mine',
+        );
+        const leftLineIdx = renderRow.row.lineIdxs[0];
+        const rightLineIdx = renderRow.row.lineIdxs.length > 1
+          ? renderRow.row.lineIdxs[1]
+          : undefined;
+        const hasBaseRow = getWorkbookSideRowNumber(renderRow.row, 'base') != null;
+        const hasMineRow = getWorkbookSideRowNumber(renderRow.row, 'mine') != null;
+
+        if (leftLineIdx != null) {
+          next.set(leftLineIdx, hasBaseRow ? baseTarget : mineTarget);
+        }
+        if (rightLineIdx != null) {
+          next.set(rightLineIdx, hasMineRow ? mineTarget : baseTarget);
+        }
+        if (rightLineIdx == null && leftLineIdx != null) {
+          next.set(leftLineIdx, hasMineRow && !hasBaseRow ? mineTarget : baseTarget);
+        }
+
+        rowOffsetTop += renderRow.height;
+      });
+    });
+
+    return next;
+  }, [stackedVirtualItems]);
   const constantVirtual = useVirtual(
     items.length,
     scrollRef as RefObject<HTMLDivElement>,
     rowHeight,
-    { overscanMin: 12, overscanFactor: 1.5 },
+    { overscanMin: 12, overscanFactor: 1.5, syncKey: activeWorkbookSection?.name ?? '' },
   );
   const stackedVariableVirtual = useVariableVirtual(
     stackedVirtualHeights,
     scrollRef as RefObject<HTMLDivElement>,
-    { overscanMin: 12, overscanFactor: 1.5 },
+    { overscanMin: 12, overscanFactor: 1.5, syncKey: activeWorkbookSection?.name ?? '' },
   );
   const activeVirtual = mode === 'stacked' ? stackedVariableVirtual : constantVirtual;
   const {
@@ -670,6 +776,33 @@ const WorkbookComparePanel = memo(({
   const markProgrammaticScroll = useCallback((duration = 320) => {
     programmaticScrollUntilRef.current = Math.max(programmaticScrollUntilRef.current, getNow() + duration);
   }, []);
+  const scrollToStackedTarget = useCallback((
+    target: WorkbookStackedScrollTarget,
+    align: 'start' | 'center' = 'center',
+    behavior: 'auto' | 'smooth' | 'smart' = 'smart',
+  ) => {
+    const container = scrollRef.current;
+    if (!container) return false;
+
+    const itemTop = stackedVirtualOffsets[target.itemIndex] ?? 0;
+    const targetTop = itemTop + target.rowOffsetTop;
+    const viewportHeight = rowVirtualDebug.viewportHeight;
+    const offset = align === 'center'
+      ? Math.max(0, (viewportHeight / 2) - (target.rowHeight / 2))
+      : 60;
+    const nextTop = Math.max(0, targetTop - offset);
+    const distance = Math.abs(container.scrollTop - nextTop);
+    const resolvedBehavior = behavior === 'smart'
+      ? (distance > Math.max(viewportHeight * 4, target.rowHeight * 200) ? 'auto' : 'smooth')
+      : behavior;
+
+    markProgrammaticScroll(420);
+    container.scrollTo({
+      top: nextTop,
+      behavior: resolvedBehavior,
+    });
+    return true;
+  }, [markProgrammaticScroll, rowVirtualDebug.viewportHeight, scrollRef, stackedVirtualOffsets]);
   const isUserScrollPaused = useCallback(
     () => getNow() < userScrollPauseUntilRef.current,
     [],
@@ -702,23 +835,42 @@ const WorkbookComparePanel = memo(({
     const el = scrollRef.current;
     if (!el) return;
     const onScroll = () => {
-      setScrollLeft((prev) => {
-        const next = el.scrollLeft;
-        return Math.abs(prev - next) < 0.5 ? prev : next;
-      });
       scheduleLayoutSnapshot();
       const now = getNow();
       if (now < programmaticScrollUntilRef.current) return;
       userScrollPauseUntilRef.current = now + 260;
     };
     el.addEventListener('scroll', onScroll, { passive: true });
-    setScrollLeft(el.scrollLeft);
     return () => {
       el.removeEventListener('scroll', onScroll);
       if (snapshotEmitRafRef.current) cancelAnimationFrame(snapshotEmitRafRef.current);
       if (restoreRafRef.current) cancelAnimationFrame(restoreRafRef.current);
     };
   }, [scheduleLayoutSnapshot]);
+
+  useEffect(() => {
+    const nextSheetName = activeWorkbookSection?.name ?? null;
+    const previousSheetName = lastViewportSheetNameRef.current;
+    lastViewportSheetNameRef.current = nextSheetName;
+
+    if (!previousSheetName || !nextSheetName || previousSheetName === nextSheetName) return;
+
+    const container = scrollRef.current;
+    if (!container) return;
+
+    if (snapshotEmitRafRef.current) {
+      cancelAnimationFrame(snapshotEmitRafRef.current);
+      snapshotEmitRafRef.current = 0;
+    }
+
+    lastRestoredSnapshotKeyRef.current = '';
+    pendingScrollAdjustRef.current = 0;
+    suppressAutoScrollUntilRef.current = Math.max(suppressAutoScrollUntilRef.current, getNow() + 520);
+    userScrollPauseUntilRef.current = Math.max(userScrollPauseUntilRef.current, getNow() + 520);
+    markProgrammaticScroll(520);
+    setHoveredCanvasCell(null);
+    container.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [activeWorkbookSection?.name, markProgrammaticScroll]);
 
   useEffect(() => {
     if (!isExpandedBlocksContextSettled) return;
@@ -779,7 +931,6 @@ const WorkbookComparePanel = memo(({
         markProgrammaticScroll(420);
         container.scrollTop = snapshot.scrollTop;
         container.scrollLeft = snapshot.scrollLeft;
-        setScrollLeft(snapshot.scrollLeft);
       });
       restoreRafRef.current = raf2;
     });
@@ -873,9 +1024,18 @@ const WorkbookComparePanel = memo(({
     align: 'start' | 'center' = 'center',
     behavior: 'auto' | 'smooth' | 'smart' = 'smart',
   ) => {
-    const exactIndex = mode === 'stacked'
-      ? stackedVirtualItems.findIndex((item) => item.kind === 'rows' && item.rows.some((row) => compareRowHasLineIdx(row.row, lineIdx)))
-      : items.findIndex((item) => item.kind === 'row' && compareRowHasLineIdx(item.row, lineIdx));
+    if (mode === 'stacked') {
+      const exactTarget = stackedLineScrollTargets.get(lineIdx);
+      if (exactTarget) {
+        scrollToStackedTarget(exactTarget, align, behavior);
+        setPendingScrollTarget((prev) => (
+          prev && prev.lineIdx === lineIdx && prev.align === align ? null : prev
+        ));
+        return true;
+      }
+    }
+
+    const exactIndex = items.findIndex((item) => item.kind === 'row' && compareRowHasLineIdx(item.row, lineIdx));
     if (exactIndex >= 0) {
       markProgrammaticScroll(420);
       scrollToIndex(exactIndex, align, behavior);
@@ -892,12 +1052,27 @@ const WorkbookComparePanel = memo(({
       ? stackedVirtualItems.findIndex((item) => item.kind === 'rows' && item.rows.some((row) => compareRowTouchesOrAfter(row.row, lineIdx)))
       : items.findIndex((item) => item.kind === 'row' && compareRowTouchesOrAfter(item.row, lineIdx));
     if (nearestIndex >= 0) {
+      if (mode === 'stacked') {
+        const nearestItem = stackedVirtualItems[nearestIndex];
+        if (nearestItem?.kind === 'rows') {
+          const nearestRow = nearestItem.rows.find((row) => compareRowTouchesOrAfter(row.row, lineIdx)) ?? nearestItem.rows[0];
+          if (nearestRow) {
+            return scrollToStackedTarget({
+              itemIndex: nearestIndex,
+              rowOffsetTop: nearestItem.rows
+                .slice(0, nearestItem.rows.indexOf(nearestRow))
+                .reduce((sum, row) => sum + row.height, 0),
+              rowHeight: nearestRow.height,
+            }, align, behavior);
+          }
+        }
+      }
       markProgrammaticScroll(420);
       scrollToIndex(nearestIndex, align, behavior);
       return true;
     }
     return false;
-  }, [items, markProgrammaticScroll, mode, revealLineIfCollapsed, scrollToIndex, stackedVirtualItems]);
+  }, [items, markProgrammaticScroll, mode, revealLineIfCollapsed, scrollToIndex, scrollToStackedTarget, stackedLineScrollTargets, stackedVirtualItems]);
 
   useEffect(() => {
     if (!active) return;
@@ -954,6 +1129,7 @@ const WorkbookComparePanel = memo(({
       : [],
     overscanMin: 6,
     overscanFactor: 1.5,
+    syncKey: activeWorkbookSection?.name ?? '',
   });
   const focusWorkbookCell = useCallback((
     cell: WorkbookSelectedCell,
@@ -1009,6 +1185,50 @@ const WorkbookComparePanel = memo(({
     mode,
     sheetPresentation.baseMergeRanges,
     sheetPresentation.mineMergeRanges,
+    virtualColumns.columnLayoutByColumn,
+    virtualColumns.frozenWidth,
+  ]);
+  const focusWorkbookDiffRegion = useCallback((region: WorkbookDiffRegion) => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    const bounds = resolveWorkbookRegionHorizontalBounds({
+      region,
+      columnLayoutByColumn: virtualColumns.columnLayoutByColumn,
+      freezeColumnCount,
+      resolvePatchBoundsModes: () => (
+        mode === 'stacked'
+          ? ['single']
+          : ['paired-shared']
+      ),
+      fallbackBoundsModes: mode === 'stacked'
+        ? ['single']
+        : ['paired-shared'],
+    });
+    if (!bounds) return;
+
+    const frozenWidth = LN_W + 3 + virtualColumns.frozenWidth;
+    const contentOrigin = LN_W + 3;
+    const targetLeft = contentOrigin + bounds.leftOffset;
+    const targetRight = contentOrigin + bounds.rightOffset;
+    const targetWidth = Math.max(1, bounds.width);
+    const desiredPadding = 24;
+    const desiredScrollLeft = Math.max(0, targetLeft - frozenWidth - desiredPadding);
+    const leftBoundary = container.scrollLeft + frozenWidth + desiredPadding;
+    const rightBoundary = container.scrollLeft + container.clientWidth - desiredPadding;
+
+    if (targetLeft < leftBoundary || targetRight > rightBoundary) {
+      markProgrammaticScroll(260);
+      if (targetLeft < leftBoundary || targetWidth >= container.clientWidth - frozenWidth - (desiredPadding * 2)) {
+        container.scrollLeft = desiredScrollLeft;
+      } else {
+        container.scrollLeft = Math.max(0, targetRight - container.clientWidth + desiredPadding);
+      }
+    }
+  }, [
+    freezeColumnCount,
+    markProgrammaticScroll,
+    mode,
     virtualColumns.columnLayoutByColumn,
     virtualColumns.frozenWidth,
   ]);
@@ -1104,7 +1324,7 @@ const WorkbookComparePanel = memo(({
   const stackedFrozenCanvasRows = useMemo<WorkbookCanvasRenderRow[]>(
     () => frozenRows.map((row) => ({
       row,
-      renderMode: getWorkbookCompactRenderMode(row),
+      renderMode: getWorkbookStackedRenderMode(row),
       height: mode === 'stacked'
         ? getStackedWorkbookRowRenderHeight(row, rowHeight, ROW_H)
         : rowHeight,
@@ -1165,7 +1385,7 @@ const WorkbookComparePanel = memo(({
   const columnsFrozenCanvasRows = useMemo<WorkbookColumnsCanvasRow[]>(
     () => frozenRows.map((row) => ({
       row,
-      renderMode: getWorkbookCompactRenderMode(row),
+      renderMode: getWorkbookColumnsRenderMode(row),
       isSearchMatch: false,
       isActiveSearch: false,
       isGuided: false,
@@ -1299,7 +1519,7 @@ const WorkbookComparePanel = memo(({
       }
 
       if (currentRows.length === 0) currentRowsTop = cursorTop;
-      const renderMode = getWorkbookCompactRenderMode(item.row);
+      const renderMode = getWorkbookColumnsRenderMode(item.row);
       const isGuided = rowTouchesGuidedHunk(item.row, guidedHunkRange);
       const prevGuided = itemIndex > 0
         && items[itemIndex - 1]?.kind === 'row'
@@ -1326,9 +1546,7 @@ const WorkbookComparePanel = memo(({
     () => new Map(sectionRows.map((row, index) => [getWorkbookCompareRowKey(row), index])),
     [sectionRows],
   );
-  const activeRegionOverlayBoxes = useMemo<WorkbookDiffRegionOverlayBox[]>(() => {
-    if (!activeDiffRegion || activeDiffRegion.sheetName !== activeWorkbookSection?.name) return [];
-
+  const activeRegionOverlayVisibleRowFrames = useMemo(() => {
     const visibleRowFrames = new Map<number, { top: number; height: number }>();
     let frozenCursorTop = showColumnHeader ? ROW_H : 0;
     frozenRows.forEach((row) => {
@@ -1370,111 +1588,17 @@ const WorkbookComparePanel = memo(({
         });
       });
     }
-
-    const contentLeft = LN_W + 3;
-    const boxes = activeDiffRegion.patches.flatMap((patch, patchIndex) => {
-      const visibleRows = Array.from(visibleRowFrames.entries())
-        .filter(([rowIndex]) => rowIndex >= patch.startRowIndex && rowIndex <= patch.endRowIndex)
-        .sort((left, right) => left[0] - right[0]);
-      if (visibleRows.length === 0) return [];
-
-      const firstVisibleRowIndex = visibleRows[0]?.[0] ?? patch.startRowIndex;
-      const lastVisibleRowIndex = visibleRows[visibleRows.length - 1]?.[0] ?? patch.endRowIndex;
-      const top = Math.min(...visibleRows.map(([, frame]) => frame.top));
-      const bottom = Math.max(...visibleRows.map(([, frame]) => frame.top + frame.height));
-      const geometries = [];
-
-      if (mode === 'stacked') {
-        const bounds = getWorkbookColumnSpanBounds(
-          patch.startCol,
-          patch.endCol,
-          virtualColumns.columnLayoutByColumn,
-          'single',
-          freezeColumnCount,
-        );
-        const geometry = bounds
-          ? getWorkbookCanvasSpanGeometry(bounds, contentLeft, scrollLeft, virtualColumns.frozenWidth)
-          : null;
-        if (geometry) geometries.push({ geometry, sideKey: 'stacked' });
-      } else {
-        if (patch.hasBaseSide) {
-          const bounds = getWorkbookColumnSpanBounds(
-            patch.startCol,
-            patch.endCol,
-            virtualColumns.columnLayoutByColumn,
-            'paired-base',
-            freezeColumnCount,
-          );
-          const geometry = bounds
-            ? getWorkbookCanvasSpanGeometry(bounds, contentLeft, scrollLeft, virtualColumns.frozenWidth)
-            : null;
-          if (geometry) geometries.push({ geometry, sideKey: 'base' });
-        }
-        if (patch.hasMineSide) {
-          const bounds = getWorkbookColumnSpanBounds(
-            patch.startCol,
-            patch.endCol,
-            virtualColumns.columnLayoutByColumn,
-            'paired-mine',
-            freezeColumnCount,
-          );
-          const geometry = bounds
-            ? getWorkbookCanvasSpanGeometry(bounds, contentLeft, scrollLeft, virtualColumns.frozenWidth)
-            : null;
-          if (geometry) geometries.push({ geometry, sideKey: 'mine' });
-        }
-      }
-
-      return geometries.flatMap(({ geometry, sideKey }) => buildWorkbookRegionOverlayBoxesFromGeometry({
-        geometry,
-        keyPrefix: `${activeDiffRegion.id}:${patchIndex}:${sideKey}`,
-        top,
-        bottom,
-        openTop: firstVisibleRowIndex > patch.startRowIndex,
-        openBottom: lastVisibleRowIndex < patch.endRowIndex,
-      }));
-    });
-
-    const mergedBoxes = mergeWorkbookDiffRegionOverlayBoxes(boxes)
-      .filter((box) => box.width > 6 && box.height > 6);
-    if (mergedBoxes.length > 0) return mergedBoxes;
-
-    const fallbackBoxes = buildWorkbookRegionOverlayBoxes({
-      region: activeDiffRegion,
-      visibleRowFrames,
-      boundsModes: mode === 'stacked'
-        ? ['single']
-        : [
-            ...(activeDiffRegion.hasBaseSide ? ['paired-base' as const] : []),
-            ...(activeDiffRegion.hasMineSide ? ['paired-mine' as const] : []),
-          ],
-      columnLayoutByColumn: virtualColumns.columnLayoutByColumn,
-      contentLeft,
-      scrollLeft,
-      frozenWidth: virtualColumns.frozenWidth,
-      freezeColumnCount,
-      key: `${activeDiffRegion.id}:fallback`,
-    });
-
-    const mergedFallbackBoxes = mergeWorkbookDiffRegionOverlayBoxes(fallbackBoxes)
-      .filter((box) => box.width > 6 && box.height > 6);
-    return mergedFallbackBoxes.length > 0 ? mergedFallbackBoxes : [];
+    return visibleRowFrames;
   }, [
-    activeDiffRegion,
-    activeWorkbookSection?.name,
     bodySegments,
     columnsBodySegments,
-    freezeColumnCount,
     frozenRows,
     mode,
     rowHeight,
     rowWindowOffsetTop,
-    scrollLeft,
     sectionRowIndexByKey,
     showColumnHeader,
     stickyHeaderHeight,
-    virtualColumns.columnLayoutByColumn,
-    virtualColumns.frozenWidth,
   ]);
   const workbookNavigationRows = useMemo(() => {
     if (!activeWorkbookSection || !selectedCell) return [];
@@ -1513,45 +1637,73 @@ const WorkbookComparePanel = memo(({
   }, [active, handleWorkbookMove, onWorkbookNavigationReady]);
 
   useEffect(() => {
-    if (!active) return;
-    if (!activeDiffRegion || !navigationTargetCell || !activeWorkbookSection) return;
-    if (activeDiffRegion.sheetName !== activeWorkbookSection.name) return;
-    if (navigationTargetCell.sheetName !== activeWorkbookSection.name) return;
-    if (selectedCell && workbookDiffRegionContainsSelection(activeDiffRegion, selectedCell)) return;
+    lastGuidedNavigationKeyRef.current = '';
+  }, [activeDiffRegion?.id, activeHunkIdx, activeWorkbookSection?.name]);
 
-    const navigationKey = `${activeHunkIdx}:${activeDiffRegion.id}:${buildSelectionAutoScrollKey(activeWorkbookSection.name, navigationTargetCell)}`;
+  useEffect(() => {
+    if (!active) return;
+    if (!activeDiffRegion || !activeWorkbookSection) return;
+    if (activeDiffRegion.sheetName !== activeWorkbookSection.name) return;
+    const navigationKey = `${activeHunkIdx}:${activeDiffRegion.id}`;
     if (lastGuidedNavigationKeyRef.current === navigationKey) return;
 
     lastGuidedNavigationKeyRef.current = navigationKey;
     lastForcedRevealHunkIdxRef.current = activeHunkIdx;
-    const targetRowIndex = navigationTargetCell.kind !== 'column'
-      ? (rowItemIndexBySide[navigationTargetCell.side].get(navigationTargetCell.rowNumber) ?? -1)
+    const preferredNavigationTarget = (
+      navigationTargetCell
+      && navigationTargetCell.sheetName === activeWorkbookSection.name
+      && navigationTargetCell.kind !== 'column'
+      && navigationTargetCell.rowNumber > 0
+    ) ? navigationTargetCell : null;
+    const anchorPatch = activeDiffRegion.patches[0] ?? null;
+    const anchorSide: 'base' | 'mine' = preferredNavigationTarget?.side
+      ?? (anchorPatch?.hasBaseSide ? 'base' : 'mine');
+    const anchorRowNumber = preferredNavigationTarget?.rowNumber
+      ?? (anchorSide === 'base'
+        ? (anchorPatch?.baseRowStart ?? anchorPatch?.baseRowEnd ?? null)
+        : (anchorPatch?.mineRowStart ?? anchorPatch?.mineRowEnd ?? null));
+    const stackedTarget = mode === 'stacked' && anchorRowNumber != null
+      ? (stackedRowScrollTargetsBySide[anchorSide].get(anchorRowNumber) ?? null)
+      : null;
+    const targetRowIndex = anchorRowNumber != null
+      ? (rowItemIndexBySide[anchorSide].get(anchorRowNumber) ?? -1)
       : -1;
-    if (targetRowIndex >= 0) {
+    if (stackedTarget) {
+      scrollToStackedTarget(stackedTarget, 'start', 'auto');
+    } else if (targetRowIndex >= 0) {
       markProgrammaticScroll(420);
       scrollToIndex(targetRowIndex, 'start', 'auto');
     } else {
       scrollToResolvedLine(activeDiffRegion.lineStartIdx, 'start', 'auto');
     }
 
-    if (navigationTargetCell.kind === 'row') return;
+    focusWorkbookDiffRegion(activeDiffRegion);
+    let followUpRafId = 0;
     const rafId = requestAnimationFrame(() => {
-      focusWorkbookCell(navigationTargetCell, 'focus');
+      focusWorkbookDiffRegion(activeDiffRegion);
+      followUpRafId = requestAnimationFrame(() => {
+        focusWorkbookDiffRegion(activeDiffRegion);
+      });
     });
 
-    return () => cancelAnimationFrame(rafId);
+    return () => {
+      cancelAnimationFrame(rafId);
+      if (followUpRafId) cancelAnimationFrame(followUpRafId);
+    };
   }, [
     active,
     activeDiffRegion,
     activeHunkIdx,
     activeWorkbookSection,
-    focusWorkbookCell,
+    focusWorkbookDiffRegion,
     markProgrammaticScroll,
+    mode,
     navigationTargetCell,
     rowItemIndexBySide,
     scrollToIndex,
     scrollToResolvedLine,
-    selectedCell,
+    scrollToStackedTarget,
+    stackedRowScrollTargetsBySide,
   ]);
 
   const isSelectionAutoScrollLocked = useCallback((selectionKey: string, target: 'row' | 'cell') => {
@@ -1573,14 +1725,21 @@ const WorkbookComparePanel = memo(({
     const selectionKey = buildSelectionAutoScrollKey(activeWorkbookSection.name, selectedCell);
     if (!shouldForceReveal && isSelectionAutoScrollLocked(selectionKey, 'row')) return;
     if (!shouldForceReveal && lastAutoRowKeyRef.current === selectionKey) return;
+    const stackedTarget = mode === 'stacked'
+      ? (stackedRowScrollTargetsBySide[selectedCell.side].get(selectedCell.rowNumber) ?? null)
+      : null;
     const idx = rowItemIndexBySide[selectedCell.side].get(selectedCell.rowNumber) ?? -1;
-    if (idx >= 0) {
+    if (stackedTarget) {
+      if (shouldForceReveal) lastForcedRevealHunkIdxRef.current = activeHunkIdx;
+      lastAutoRowKeyRef.current = selectionKey;
+      scrollToStackedTarget(stackedTarget, 'center', 'smart');
+    } else if (idx >= 0) {
       if (shouldForceReveal) lastForcedRevealHunkIdxRef.current = activeHunkIdx;
       lastAutoRowKeyRef.current = selectionKey;
       markProgrammaticScroll(360);
       scrollToIndex(idx, 'center', 'smart');
     }
-  }, [active, activeDiffRegion, activeHunkIdx, activeWorkbookSection, isAutoScrollSuppressed, isSelectionAutoScrollLocked, isUserScrollPaused, markProgrammaticScroll, navigationTargetCell, rowItemIndexBySide, scrollToIndex, selectedCell]);
+  }, [active, activeDiffRegion, activeHunkIdx, activeWorkbookSection, isAutoScrollSuppressed, isSelectionAutoScrollLocked, isUserScrollPaused, markProgrammaticScroll, mode, navigationTargetCell, rowItemIndexBySide, scrollToIndex, scrollToStackedTarget, selectedCell, stackedRowScrollTargetsBySide]);
 
   useEffect(() => {
     if (!active) return;
@@ -1727,6 +1886,62 @@ const WorkbookComparePanel = memo(({
     virtualColumns.debug.rangeUpdates,
     virtualColumns.debug.viewportWidth,
   ]);
+  const sheetRenderKey = `${mode}:${activeWorkbookSection?.name ?? 'none'}`;
+  useEffect(() => {
+    if (!showPerfDebug || !activeWorkbookSection) return;
+    workbookDebugLog('WorkbookComparePanel/render-state', {
+      panel: mode,
+      sheetName: activeWorkbookSection.name,
+      sectionRowCount: sectionRows.length,
+      frozenRowCount: frozenRows.length,
+      itemCount: items.length,
+      visibleColumns: sheetPresentation.visibleColumns,
+      allColumns: sheetPresentation.allColumns,
+      startIdx,
+      endIdx,
+      rowWindowOffsetTop,
+      contentHeight,
+      minBodyWidth,
+      activeDiffRegion: activeDiffRegion
+        ? {
+          id: activeDiffRegion.id,
+          sheetName: activeDiffRegion.sheetName,
+          startRowIndex: activeDiffRegion.startRowIndex,
+          endRowIndex: activeDiffRegion.endRowIndex,
+          startCol: activeDiffRegion.startCol,
+          endCol: activeDiffRegion.endCol,
+        }
+        : null,
+      rowPreview: sectionRows.slice(0, 8).map((row) => {
+        const left = parseWorkbookRowLine(row.left);
+        const right = parseWorkbookRowLine(row.right);
+        return {
+          lineIdx: row.lineIdx,
+          lineIdxs: row.lineIdxs,
+          leftRowNumber: left?.rowNumber ?? null,
+          rightRowNumber: right?.rowNumber ?? null,
+          leftColumnCount: left?.cells.length ?? 0,
+          rightColumnCount: right?.cells.length ?? 0,
+          changedColumns: row.workbookRowDelta?.changedColumns ?? [],
+        };
+      }),
+    });
+  }, [
+    activeDiffRegion,
+    activeWorkbookSection,
+    contentHeight,
+    endIdx,
+    frozenRows.length,
+    items.length,
+    minBodyWidth,
+    mode,
+    rowWindowOffsetTop,
+    sectionRows,
+    sheetPresentation.allColumns,
+    sheetPresentation.visibleColumns,
+    showPerfDebug,
+    startIdx,
+  ]);
   const pinnedCollapseWidth = virtualColumns.debug.viewportWidth > 0
     ? virtualColumns.debug.viewportWidth
     : '100%';
@@ -1796,9 +2011,15 @@ const WorkbookComparePanel = memo(({
         overflow: 'hidden',
         zIndex: 5,
       }}>
-      <CollapseBar count={count} expandCount={expandCount} onExpand={onExpand} onExpandAll={onExpandAll} />
+      <CollapseBar
+        count={count}
+        expandCount={expandCount}
+        onExpand={onExpand}
+        onExpandAll={onExpandAll}
+        palette={resolveWorkbookAuxBarPalette(T, 'mixed')}
+      />
     </div>
-  ), [pinnedCollapseWidth]);
+  ), [T, pinnedCollapseWidth]);
 
   const handleSelectSheet = useCallback((index: number) => {
     onSelectionRequest({
@@ -2037,7 +2258,7 @@ const WorkbookComparePanel = memo(({
               minHeight: 0,
               background: T.bg0,
             }}>
-            <div style={{ position: 'relative', minWidth: minBodyWidth, height: contentHeight }}>
+            <div key={sheetRenderKey} style={{ position: 'relative', minWidth: minBodyWidth, height: contentHeight }}>
               <div
                 style={{
                   position: 'sticky',
@@ -2234,33 +2455,27 @@ const WorkbookComparePanel = memo(({
                   })
                 )}
               </div>
-              {activeRegionOverlayBoxes.length > 0 && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    pointerEvents: 'none',
-                    zIndex: 6,
-                  }}>
-                  <div
-                    style={{
-                      position: 'sticky',
-                      top: 0,
-                      left: 0,
-                      height: '100%',
-                      width: virtualColumns.debug.viewportWidth,
-                      overflow: 'hidden',
-                      pointerEvents: 'none',
-                    }}>
-                    <WorkbookDiffRegionOverlay
-                      boxes={activeRegionOverlayBoxes.map((box) => ({
-                        ...box,
-                        key: `${guidedPulseNonce}:${box.key}`,
-                      }))}
-                    />
-                  </div>
-                </div>
-              )}
+              <WorkbookActiveRegionOverlayLayer
+                scrollRef={scrollRef as RefObject<HTMLDivElement>}
+                viewportWidth={virtualColumns.debug.viewportWidth}
+                activeDiffRegion={activeDiffRegion}
+                activeSheetName={activeWorkbookSection?.name ?? null}
+                visibleRowFrames={activeRegionOverlayVisibleRowFrames}
+                columnLayoutByColumn={virtualColumns.columnLayoutByColumn}
+                contentLeft={LN_W + 3}
+                frozenWidth={virtualColumns.frozenWidth}
+                freezeColumnCount={freezeColumnCount}
+                resolvePatchBoundsModes={() => (
+                  mode === 'stacked'
+                    ? ['single']
+                    : ['paired-shared']
+                )}
+                fallbackBoundsModes={mode === 'stacked'
+                  ? ['single']
+                  : ['paired-shared']}
+                pulseNonce={guidedPulseNonce}
+                label={formatWorkbookDiffRegionSummary(activeDiffRegion)}
+              />
             </div>
           </div>
           <CollapseJumpButton

@@ -10,6 +10,7 @@ export type WorkbookSelectionKind = 'cell' | 'row' | 'column';
 export type WorkbookCompareMode = 'strict' | 'content';
 export type WorkbookSelectionRequestReason = 'click' | 'contextmenu' | 'keyboard' | 'programmatic';
 export type WorkbookSelectionMode = 'replace' | 'range' | 'toggle';
+export type WorkbookSectionChangeType = 'equal' | 'add' | 'delete' | 'rename';
 
 export interface WorkbookSelectedCell {
   kind: WorkbookSelectionKind;

@@ -75,6 +75,8 @@ export interface WorkbookCanvasLayerViewports {
   frozenBoundaryX: number;
 }
 
+const workbookMergeRangeRowIndexCache = new WeakMap<WorkbookMergeRange[], Map<number, WorkbookMergeRange[]>>();
+
 export function clipWorkbookCanvasToViewport(
   ctx: CanvasRenderingContext2D,
   viewportRect: WorkbookCanvasCellViewportRect,
@@ -138,20 +140,59 @@ export function findWorkbookMergeRange(
   rowNumber: number,
   column: number,
 ): WorkbookMergeRange | null {
-  for (const range of mergedRanges) {
-    if (
-      rowNumber >= range.startRow
-      && rowNumber <= range.endRow
-      && column >= range.startCol
-      && column <= range.endCol
-    ) {
-      return range;
+  const rowRanges = getWorkbookMergeRangesForRow(mergedRanges, rowNumber);
+  if (!rowRanges || rowRanges.length === 0) return null;
+
+  let low = 0;
+  let high = rowRanges.length;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if ((rowRanges[mid]?.startCol ?? 0) <= column) {
+      low = mid + 1;
+    } else {
+      high = mid;
     }
   }
+
+  for (let index = low - 1; index >= 0; index -= 1) {
+    const range = rowRanges[index]!;
+    if (range.endCol < column) break;
+    if (column <= range.endCol) return range;
+  }
+
   return null;
 }
 
-export function getWorkbookSelectionColumnSpan(
+function getWorkbookMergeRangesForRow(
+  mergedRanges: WorkbookMergeRange[],
+  rowNumber: number,
+): WorkbookMergeRange[] | null {
+  let cachedRowIndex = workbookMergeRangeRowIndexCache.get(mergedRanges);
+  if (!cachedRowIndex) {
+    const nextRowIndex = new Map<number, WorkbookMergeRange[]>();
+    mergedRanges.forEach((range) => {
+      for (let currentRow = range.startRow; currentRow <= range.endRow; currentRow += 1) {
+        const rangesForRow = nextRowIndex.get(currentRow);
+        if (rangesForRow) {
+          rangesForRow.push(range);
+          continue;
+        }
+        nextRowIndex.set(currentRow, [range]);
+      }
+    });
+    nextRowIndex.forEach((rangesForRow) => {
+      rangesForRow.sort((left, right) => (
+        left.startCol - right.startCol || left.endCol - right.endCol
+      ));
+    });
+    workbookMergeRangeRowIndexCache.set(mergedRanges, nextRowIndex);
+    cachedRowIndex = nextRowIndex;
+  }
+
+  return cachedRowIndex.get(rowNumber) ?? null;
+}
+
+function getWorkbookSelectionColumnSpan(
   rowNumber: number,
   column: number,
   mergedRanges: WorkbookMergeRange[],
@@ -529,13 +570,7 @@ export function getWorkbookCanvasHoverRowSegmentBounds(
   };
 }
 
-export function getWorkbookCanvasRowSegmentContentHeight(
-  segments: WorkbookCanvasRowSegment[],
-): number {
-  return segments.reduce((sum, segment) => sum + Math.max(0, segment.height), 0);
-}
-
-export function getWorkbookCanvasRowSegmentLineSlotCenters(
+function getWorkbookCanvasRowSegmentLineSlotCenters(
   segments: WorkbookCanvasRowSegment[],
   lineCount: number,
   lineHeight: number,

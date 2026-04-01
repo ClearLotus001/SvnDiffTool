@@ -10,9 +10,9 @@ export interface InstallerBootstrapConfig {
   cacheRoot: string;
 }
 
-export const INSTALLER_BOOTSTRAP_VERSION = 1;
-export const INSTALLER_BOOTSTRAP_FILE_NAME = 'installer-bootstrap.properties';
-export const INSTALLER_BOOTSTRAP_PREVIOUS_FILE_NAME = 'installer-bootstrap.previous.properties';
+const INSTALLER_BOOTSTRAP_VERSION = 1;
+const INSTALLER_BOOTSTRAP_FILE_NAME = 'installer-bootstrap.properties';
+const INSTALLER_BOOTSTRAP_PREVIOUS_FILE_NAME = 'installer-bootstrap.previous.properties';
 export const CACHE_CONTAINER_DIR_NAME = 'SvnDiffTool';
 export const CACHE_LEAF_DIR_NAME = 'Cache';
 
@@ -26,7 +26,7 @@ export function getDefaultInstallerCacheRoot(): string {
   return path.join(resolveLocalAppDataRoot(), CACHE_CONTAINER_DIR_NAME, CACHE_LEAF_DIR_NAME);
 }
 
-export function getInstallerDirectory(execPath: string = process.execPath): string {
+function getInstallerDirectory(execPath: string = process.execPath): string {
   return path.dirname(execPath);
 }
 
@@ -38,7 +38,7 @@ export function getPreviousInstallerBootstrapPath(execPath: string = process.exe
   return path.join(getInstallerDirectory(execPath), INSTALLER_BOOTSTRAP_PREVIOUS_FILE_NAME);
 }
 
-export function isInstallerDiffViewerMode(value: string): value is InstallerDiffViewerMode {
+function isInstallerDiffViewerMode(value: string): value is InstallerDiffViewerMode {
   return value === 'keep' || value === 'excel-only' || value === 'all-files';
 }
 

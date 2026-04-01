@@ -9,9 +9,6 @@ logs/
 
 release-debug*/
 release-inner*/
-release-bootstrapper-*/
-
-bootstrapper/payload/*.exe
 
 rust/target/
 

@@ -309,26 +309,6 @@ function buildLegacyPairs(deleteCount: number, addCount: number): TextChangeAlig
   return pairs;
 }
 
-export function getTextReplacementScore(baseText: string, mineText: string): number {
-  return getReplacementScoreFromFeatures(
-    buildTextFeatures(baseText),
-    buildTextFeatures(mineText),
-  );
-}
-
-export function isLikelyTextReplacement(baseText: string, mineText: string): boolean {
-  return getTextReplacementScore(baseText, mineText) >= REPLACEMENT_SCORE_THRESHOLD;
-}
-
-export function isLikelyReplacementPair(
-  left: DiffLine | null,
-  right: DiffLine | null | undefined,
-): boolean {
-  if (!left || !right) return false;
-  if (left.type !== 'delete' || right.type !== 'add') return false;
-  return isLikelyTextReplacement(left.base ?? '', right.mine ?? '');
-}
-
 export function alignTextChangeBlock(
   deleteTexts: readonly string[],
   addTexts: readonly string[],

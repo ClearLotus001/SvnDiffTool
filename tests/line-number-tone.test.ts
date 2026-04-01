@@ -5,7 +5,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import Ln from '../src/components/diff/Ln';
 import { THEMES } from '../src/theme';
-import { resolveSharedWorkbookLineNumberTone } from '../src/utils/diff/lineNumberTone';
+import {
+  resolveSharedWorkbookLineNumberTone,
+  resolveWorkbookStackedLineNumberTone,
+} from '../src/utils/diff/lineNumberTone';
 
 test('Ln uses side-specific tones for base and mine line numbers', () => {
   const baseHtml = renderToStaticMarkup(
@@ -31,4 +34,21 @@ test('shared workbook line number tone only uses side accents for single-sided r
   assert.equal(resolveSharedWorkbookLineNumberTone(true, false), 'base');
   assert.equal(resolveSharedWorkbookLineNumberTone(false, true), 'mine');
   assert.equal(resolveSharedWorkbookLineNumberTone(true, true), 'neutral');
+});
+
+test('stacked workbook line numbers use side colors when both bands are visible', () => {
+  assert.equal(resolveWorkbookStackedLineNumberTone({
+    side: 'mine',
+    hasCompanionBand: true,
+    tone: 'delete',
+    hasBaseRow: true,
+    hasMineRow: false,
+  }), 'mine');
+  assert.equal(resolveWorkbookStackedLineNumberTone({
+    side: 'base',
+    hasCompanionBand: true,
+    tone: 'add',
+    hasBaseRow: false,
+    hasMineRow: true,
+  }), 'base');
 });

@@ -3,13 +3,19 @@ import type {
   WorkbookHorizontalLayoutSnapshot,
   WorkbookLayoutSnapshot,
 } from '@/types';
-import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
+import {
+  EMPTY_COLLAPSE_EXPANSION_STATE,
+  type CollapseExpansionState,
+} from '@/utils/collapse/collapseState';
 
 export function cloneCollapseExpansionState(
   state: CollapseExpansionState,
 ): CollapseExpansionState {
+  const entries = Object.entries(state);
+  if (entries.length === 0) return EMPTY_COLLAPSE_EXPANSION_STATE;
+
   return Object.fromEntries(
-    Object.entries(state).map(([blockId, ranges]) => [
+    entries.map(([blockId, ranges]) => [
       blockId,
       ranges.map((range) => ({ ...range })),
     ]),
@@ -34,9 +40,9 @@ export function resolveWorkbookExpandedBlocksForContext(
 ): CollapseExpansionState {
   if (sharedExpandedBlocks) return sharedExpandedBlocks;
   if (shouldRestoreWorkbookLayoutSnapshot(snapshot, activeRegionId, sheetName)) {
-    return snapshot?.expandedBlocks ?? {};
+    return snapshot?.expandedBlocks ?? EMPTY_COLLAPSE_EXPANSION_STATE;
   }
-  return {};
+  return EMPTY_COLLAPSE_EXPANSION_STATE;
 }
 
 export function buildWorkbookCompareLayoutSnapshot(

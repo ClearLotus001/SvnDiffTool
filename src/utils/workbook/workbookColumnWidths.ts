@@ -6,8 +6,8 @@ import { getWorkbookColumnLabel } from '@/utils/workbook/workbookSections';
 
 export type WorkbookColumnWidthBySheet = Record<string, Record<number, number>>;
 
-export const MIN_WORKBOOK_COLUMN_WIDTH = 72;
-export const MAX_WORKBOOK_COLUMN_WIDTH = 420;
+const MIN_WORKBOOK_COLUMN_WIDTH = 72;
+const MAX_WORKBOOK_COLUMN_WIDTH = 420;
 const AUTO_FIT_HORIZONTAL_PADDING = 24;
 
 let sharedMeasureCanvas: HTMLCanvasElement | null = null;

@@ -16,6 +16,13 @@ test('computeVirtualWindow keeps the rendered range stable for tiny scroll delta
   assert.ok(Math.abs(atTop.endIdx - slightScroll.endIdx) <= 1);
 });
 
+test('computeVirtualWindow clamps overscrolled viewports back into the available row range', () => {
+  const window = computeVirtualWindow(10, 21, 84, 9999, 0, 0);
+
+  assert.equal(window.startIdx, 6);
+  assert.equal(window.endIdx, 10);
+});
+
 test('computeHorizontalWindow expands the virtual range to fully cover merged columns', () => {
   const columns = Array.from({ length: 20 }, (_, index) => index);
   const mergedRanges = preparePositionedMergedColumnRanges(columns, [

@@ -10,15 +10,12 @@ const typedProjects = [
   './tsconfig.json',
   './tsconfig.electron.json',
   './tsconfig.scripts.json',
-  './tsconfig.bootstrapper.json',
-  './tsconfig.bootstrapper.renderer.json',
 ];
 
 const lintedFiles = [
   'src/**/*.{ts,tsx}',
   'electron/**/*.ts',
   'scripts/**/*.ts',
-  'bootstrapper/**/*.ts',
 ];
 
 export default tseslint.config(
@@ -88,14 +85,11 @@ export default tseslint.config(
               '../scripts/*',
               '../../scripts/*',
               '../../../scripts/*',
-              '../bootstrapper/*',
-              '../../bootstrapper/*',
-              '../../../bootstrapper/*',
               '../rust/*',
               '../../rust/*',
               '../../../rust/*',
             ],
-            message: 'Renderer code must not import Electron main, scripts, bootstrapper, or Rust implementation files.',
+            message: 'Renderer code must not import Electron main, scripts, or Rust implementation files.',
           },
         ],
       }],
@@ -126,7 +120,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['scripts/**/*.ts', 'bootstrapper/main.ts', 'bootstrapper/preload.ts'],
+    files: ['scripts/**/*.ts'],
     languageOptions: {
       globals: globals.node,
     },
@@ -140,32 +134,7 @@ export default tseslint.config(
               '../src/context/*',
               '../src/hooks/*',
             ],
-            message: 'Build and bootstrapper code must stay independent from renderer UI layers.',
-          },
-        ],
-      }],
-    },
-  },
-  {
-    files: ['bootstrapper/renderer/**/*.ts'],
-    languageOptions: {
-      globals: globals.browser,
-    },
-    rules: {
-      'no-restricted-imports': ['error', {
-        patterns: [
-          {
-            group: [
-              '../../electron/*',
-              '../../../electron/*',
-              '../../scripts/*',
-              '../../../scripts/*',
-              '../../src/app/*',
-              '../../src/components/*',
-              '../../src/context/*',
-              '../../src/hooks/*',
-            ],
-            message: 'Bootstrapper renderer must not reach into the main app or build/runtime internals.',
+            message: 'Build scripts must stay independent from renderer UI layers.',
           },
         ],
       }],

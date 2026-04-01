@@ -1,4 +1,4 @@
-import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { startTransition, useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 
 import type { WorkbookMoveDirection, WorkbookSelectedCell } from '@/types';
 import { cycleHunkIndex } from '@/hooks/app/helpers';
@@ -84,7 +84,9 @@ export default function useAppKeyboardShortcuts({
       }
       if (e.key === 'F7') {
         e.preventDefault();
-        setHunkIdx((i) => cycleHunkIndex(i, navigationCount, e.shiftKey ? -1 : 1));
+        startTransition(() => {
+          setHunkIdx((i) => cycleHunkIndex(i, navigationCount, e.shiftKey ? -1 : 1));
+        });
         return;
       }
       if (e.key === 'f' && (e.ctrlKey || e.metaKey)) {

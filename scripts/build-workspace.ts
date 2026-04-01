@@ -7,18 +7,6 @@ export function getBuildWorkspaceDir(): string {
   return buildWorkspaceDir;
 }
 
-export function getBootstrapperShellDir(): string {
-  return path.join(buildWorkspaceDir, 'bootstrapper-dist');
-}
-
-export function getBootstrapperPayloadDir(): string {
-  return path.join(buildWorkspaceDir, 'payload');
-}
-
-export function getBootstrapperPayloadPath(): string {
-  return path.join(getBootstrapperPayloadDir(), 'SvnDiffTool-installer.exe');
-}
-
 export async function removeDirectoryWithRetries(
   targetPath: string,
   options: { retries?: number; delayMs?: number } = {},

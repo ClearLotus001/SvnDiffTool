@@ -16,6 +16,15 @@ export interface WorkbookCompareBadgeVisual {
   textColor: string;
 }
 
+export type WorkbookCompareSemanticKind = 'equal' | 'add' | 'delete' | 'modify' | 'strict-only';
+
+export type WorkbookCompareHintVisual = WorkbookCompareBadgeVisual;
+
+export interface WorkbookMergeContinuationVisual {
+  background: string;
+  guideStroke: string;
+}
+
 function getWorkbookStrictOnlyVisual(theme: Theme): WorkbookCompareCellVisual {
   return {
     background: `${theme.acc2}16`,
@@ -48,6 +57,22 @@ function getWorkbookSideAccentVisual(theme: Theme, side: 'base' | 'mine'): Workb
   };
 }
 
+export function resolveWorkbookCompareCellKind(
+  compareCell: WorkbookCompareCellState | undefined,
+  compareMode: WorkbookCompareMode = 'strict',
+): WorkbookCompareSemanticKind {
+  if (!compareCell?.changed) return 'equal';
+  if (compareCell.strictOnly) return 'strict-only';
+
+  const kind = compareCell.kind ?? (
+    getWorkbookCellChangeKind(compareCell.baseCell, compareCell.mineCell, compareMode) === 'mixed'
+      ? 'modify'
+      : getWorkbookCellChangeKind(compareCell.baseCell, compareCell.mineCell, compareMode)
+  );
+
+  return kind === 'modify' ? 'modify' : kind;
+}
+
 export function getWorkbookCompareBadgeVisual(
   theme: Theme,
   kind: WorkbookCompareCellState['kind'],
@@ -70,6 +95,34 @@ export function getWorkbookCompareBadgeVisual(
     background: `${theme.chgTx}12`,
     border: `${theme.chgTx}33`,
     textColor: theme.chgTx,
+  };
+}
+
+export function getWorkbookCompareHintVisual(
+  theme: Theme,
+  kind: Exclude<WorkbookCompareSemanticKind, 'equal'>,
+): WorkbookCompareHintVisual {
+  if (kind === 'strict-only') {
+    return {
+      background: `${theme.acc2}14`,
+      border: `${theme.acc2}33`,
+      textColor: theme.acc2,
+    };
+  }
+
+  return getWorkbookCompareBadgeVisual(
+    theme,
+    kind === 'modify' ? 'modify' : kind,
+  );
+}
+
+export function getWorkbookMergeContinuationVisual(
+  theme: Theme,
+  borderColor: string,
+): WorkbookMergeContinuationVisual {
+  return {
+    background: `${theme.bg0}1c`,
+    guideStroke: `${borderColor}66`,
   };
 }
 
@@ -98,11 +151,7 @@ export function resolveWorkbookCompareCellVisual({
     return getWorkbookStrictOnlyVisual(T);
   }
 
-  const kind = compareCell.kind ?? (
-    getWorkbookCellChangeKind(compareCell.baseCell, compareCell.mineCell, compareMode) === 'mixed'
-      ? 'modify'
-      : getWorkbookCellChangeKind(compareCell.baseCell, compareCell.mineCell, compareMode)
-  );
+  const kind = resolveWorkbookCompareCellKind(compareCell, compareMode);
 
   if (kind === 'add') {
     return {

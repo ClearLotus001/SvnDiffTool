@@ -65,28 +65,3 @@ export function navigateSearch(
   if (next >= total) next = 0;
   return next;
 }
-
-export interface ContentSegment {
-  text: string;
-  isMatch: boolean;
-  isActive: boolean;
-}
-
-export function buildHighlightSegments(
-  content: string,
-  lineMatches: SearchMatch[],
-  activeMatchIdx: number,
-): ContentSegment[] {
-  if (!content || lineMatches.length === 0) {
-    return [{ text: content, isMatch: false, isActive: false }];
-  }
-  const segs: ContentSegment[] = [];
-  let pos = 0;
-  lineMatches.forEach((m, i) => {
-    if (pos < m.start) segs.push({ text: content.slice(pos, m.start), isMatch: false, isActive: false });
-    segs.push({ text: content.slice(m.start, m.end), isMatch: true, isActive: i === activeMatchIdx });
-    pos = m.end;
-  });
-  if (pos < content.length) segs.push({ text: content.slice(pos), isMatch: false, isActive: false });
-  return segs;
-}

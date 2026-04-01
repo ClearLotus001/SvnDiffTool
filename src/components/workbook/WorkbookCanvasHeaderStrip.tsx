@@ -281,6 +281,7 @@ const WorkbookCanvasHeaderStrip = memo(({
         contentRight,
         frozenWidth,
       });
+      const scrollViewport = layerViewports.scroll ?? layerViewports.content;
       const frozenEntries = renderColumns.filter(entry => entry.position < freezeColumnCount);
       const floatingEntries = renderColumns.filter(entry => entry.position >= freezeColumnCount);
       const drawColumn = (entry: HorizontalVirtualColumnEntry) => {
@@ -383,8 +384,8 @@ const WorkbookCanvasHeaderStrip = memo(({
         }
       };
 
-      if (layerViewports.content.width > 0) {
-        clipWorkbookCanvasToViewport(ctx, layerViewports.content, 0, height, () => {
+      if (scrollViewport.width > 0) {
+        clipWorkbookCanvasToViewport(ctx, scrollViewport, 0, height, () => {
           floatingEntries.forEach((entry) => {
             drawColumn(entry);
           });

@@ -3,6 +3,11 @@ import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { promisify } from 'node:util';
+import {
+  canRestoreSvnDefaultDiffViewer,
+  getOwnedSvnDiffRegistryEntries,
+  normalizeSvnDiffViewerCommand,
+} from './svnDiffViewerConfigShared';
 
 export type SvnDiffViewerScope = 'all-files' | 'excel-only';
 export type SvnDiffViewerMode = SvnDiffViewerScope | 'mixed' | 'unconfigured' | 'unsupported';
@@ -14,6 +19,7 @@ export interface SvnDiffViewerStatus {
   executablePath: string | null;
   command: string | null;
   currentMode: SvnDiffViewerMode;
+  canRestoreDefault: boolean;
   globalDiffCommand: string | null;
   workbookDiffCommands: Record<string, string | null>;
   workbookExtensions: string[];
@@ -40,12 +46,7 @@ function normalizeKeyName(value: string) {
   return value.trim().toLowerCase();
 }
 
-function normalizeCommand(value: string | null | undefined) {
-  return (value ?? '')
-    .trim()
-    .replace(/\s+/g, ' ')
-    .toLowerCase();
-}
+const normalizeCommand = normalizeSvnDiffViewerCommand;
 
 function isWorkbookKey(value: string) {
   return WORKBOOK_EXTENSION_SET.has(normalizeKeyName(value));
@@ -159,6 +160,47 @@ async function writeBackup(backup: SvnDiffViewerBackup) {
   const backupPath = getBackupFilePath();
   await fs.promises.mkdir(path.dirname(backupPath), { recursive: true });
   await fs.promises.writeFile(backupPath, JSON.stringify(backup, null, 2), 'utf-8');
+}
+
+async function clearBackupEntries(options: {
+  clearGlobal?: boolean;
+  keys?: string[];
+}) {
+  const backup = await readBackup();
+  let changed = false;
+
+  if (options.clearGlobal && backup.globalDiffCommand !== undefined) {
+    delete backup.globalDiffCommand;
+    changed = true;
+  }
+
+  if (options.keys?.length) {
+    if (!backup.diffToolCommands) backup.diffToolCommands = {};
+
+    for (const rawKey of options.keys) {
+      const key = normalizeKeyName(rawKey);
+      if (backup.diffToolCommands[key] === undefined) continue;
+      delete backup.diffToolCommands[key];
+      changed = true;
+    }
+
+    if (Object.keys(backup.diffToolCommands).length === 0) {
+      delete backup.diffToolCommands;
+    }
+  }
+
+  if (!changed) return;
+
+  const nextBackup: SvnDiffViewerBackup = {};
+
+  if (backup.globalDiffCommand !== undefined) {
+    nextBackup.globalDiffCommand = backup.globalDiffCommand;
+  }
+  if (backup.diffToolCommands !== undefined) {
+    nextBackup.diffToolCommands = backup.diffToolCommands;
+  }
+
+  await writeBackup(nextBackup);
 }
 
 async function rememberBackupIfNeeded(
@@ -276,16 +318,17 @@ async function restoreOrDeleteRegistryValue(key: string, valueName: string, valu
 export async function getSvnDiffViewerStatus(): Promise<SvnDiffViewerStatus> {
   const reason = getAvailabilityReason();
   const command = buildDiffCommand();
-  const { globalDiffCommand, diffToolCommands } = await getCurrentRegistryState();
+  const registryState = await getCurrentRegistryState();
 
   return {
     available: reason === 'ready',
     reason,
     executablePath: getDiffLauncherPath(),
     command,
-    currentMode: resolveCurrentMode(command, globalDiffCommand, diffToolCommands),
-    globalDiffCommand,
-    workbookDiffCommands: createWorkbookDiffCommandMap(diffToolCommands),
+    currentMode: resolveCurrentMode(command, registryState.globalDiffCommand, registryState.diffToolCommands),
+    canRestoreDefault: canRestoreSvnDefaultDiffViewer(command, registryState),
+    globalDiffCommand: registryState.globalDiffCommand,
+    workbookDiffCommands: createWorkbookDiffCommandMap(registryState.diffToolCommands),
     workbookExtensions: [...WORKBOOK_EXTENSIONS],
   };
 }
@@ -330,39 +373,30 @@ export async function configureSvnDiffViewer(scope: SvnDiffViewerScope): Promise
   return getSvnDiffViewerStatus();
 }
 
-export async function restoreSvnDiffViewerConfiguration(): Promise<SvnDiffViewerStatus> {
+export async function restoreSvnDefaultDiffViewerConfiguration(): Promise<SvnDiffViewerStatus> {
   const command = buildDiffCommand();
   if (!command) {
     return getSvnDiffViewerStatus();
   }
 
-  const backup = await readBackup();
-  const { globalDiffCommand, diffToolCommands } = await getCurrentRegistryState();
-  const normalizedOurCommand = normalizeCommand(command);
+  const registryState = await getCurrentRegistryState();
+  const {
+    ownsGlobalDiffCommand,
+    ownedDiffToolKeys,
+  } = getOwnedSvnDiffRegistryEntries(command, registryState);
 
-  if (normalizeCommand(globalDiffCommand) === normalizedOurCommand) {
-    await restoreOrDeleteRegistryValue(TORTOISE_REG_PATH, 'Diff', backup.globalDiffCommand);
+  if (ownsGlobalDiffCommand) {
+    await deleteRegistryValue(TORTOISE_REG_PATH, 'Diff');
   }
 
-  const keysToRestore = new Set<string>([
-    ...Object.keys(diffToolCommands),
-    ...Object.keys(backup.diffToolCommands ?? {}),
-  ]);
-
-  for (const rawKey of keysToRestore) {
-    const key = normalizeKeyName(rawKey);
-    const currentValue = diffToolCommands[key] ?? null;
-    const backupValue = backup.diffToolCommands?.[key];
-
-    if (normalizeCommand(currentValue) !== normalizedOurCommand && backupValue === undefined) {
-      continue;
-    }
-    if (normalizeCommand(currentValue) !== normalizedOurCommand) {
-      continue;
-    }
-
-    await restoreOrDeleteRegistryValue(TORTOISE_DIFF_TOOLS_REG_PATH, key, backupValue);
+  for (const key of ownedDiffToolKeys) {
+    await deleteRegistryValue(TORTOISE_DIFF_TOOLS_REG_PATH, key);
   }
+
+  await clearBackupEntries({
+    clearGlobal: ownsGlobalDiffCommand,
+    keys: ownedDiffToolKeys,
+  });
 
   return getSvnDiffViewerStatus();
 }

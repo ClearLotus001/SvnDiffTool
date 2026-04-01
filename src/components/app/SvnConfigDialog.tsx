@@ -8,10 +8,19 @@ interface SvnConfigDialogProps {
   status: SvnDiffViewerStatus | null;
   loading: boolean;
   applyingScope: SvnDiffViewerScope | null;
+  isRestoringDefault: boolean;
   error: string;
   onApply: (scope: SvnDiffViewerScope) => void;
+  onRestoreDefault: () => void;
   onRefresh: () => void;
   onClose: () => void;
+}
+
+function normalizeCommand(value: string | null | undefined) {
+  return (value ?? '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
 }
 
 function ConfigIcon() {
@@ -42,21 +51,29 @@ const SvnConfigDialog = memo(({
   status,
   loading,
   applyingScope,
+  isRestoringDefault,
   error,
   onApply,
+  onRestoreDefault,
   onRefresh,
   onClose,
 }: SvnConfigDialogProps) => {
   const T = useTheme();
   const { t } = useI18n();
+  const isBusy = applyingScope !== null || isRestoringDefault;
+  const normalizedCommand = normalizeCommand(status?.command);
 
   const workbookCoverage = status
     ? status.workbookExtensions.filter((extension) => (
         status.workbookDiffCommands[extension] != null
-        && status.command
-        && status.workbookDiffCommands[extension]?.trim().toLowerCase() === status.command.trim().toLowerCase()
+        && normalizedCommand
+        && normalizeCommand(status.workbookDiffCommands[extension]) === normalizedCommand
       )).length
     : 0;
+  const canRestoreDefault = Boolean(
+    status?.available
+    && status.canRestoreDefault,
+  );
 
   const currentModeLabel = (() => {
     switch (status?.currentMode) {
@@ -215,21 +232,21 @@ const SvnConfigDialog = memo(({
         <button
           className="svn-config-action-btn"
           type="button"
-          disabled={!status?.available || loading || applyingScope !== null}
+          disabled={!status?.available || loading || isBusy}
           onClick={() => onApply(scope)}
           style={{
             height: 44,
             borderRadius: 14,
             border: 'none',
-            background: !status?.available || loading || applyingScope !== null
+            background: !status?.available || loading || isBusy
               ? T.bg3
               : `linear-gradient(135deg, ${accent} 0%, ${accent}dd 100%)`,
-            color: !status?.available || loading || applyingScope !== null ? T.t2 : '#fff',
+            color: !status?.available || loading || isBusy ? T.t2 : '#fff',
             fontFamily: FONT_UI,
             fontSize: FONT_SIZE.sm,
             fontWeight: 800,
-            cursor: !status?.available || loading || applyingScope !== null ? 'not-allowed' : 'pointer',
-            boxShadow: !status?.available || loading || applyingScope !== null ? 'none' : `0 18px 34px -26px ${accent}`,
+            cursor: !status?.available || loading || isBusy ? 'not-allowed' : 'pointer',
+            boxShadow: !status?.available || loading || isBusy ? 'none' : `0 18px 34px -26px ${accent}`,
             transition: 'transform 160ms ease, filter 160ms ease, box-shadow 160ms ease',
           }}>
           {busy ? t('svnConfigApplying') : scope === 'all-files' ? t('svnConfigApplyAllFiles') : t('svnConfigApplyExcelOnly')}
@@ -447,12 +464,75 @@ const SvnConfigDialog = memo(({
           {t('svnConfigSupportHint')}
         </section>
 
+        <section
+          style={{
+            borderRadius: 18,
+            padding: '16px 18px',
+            background: `linear-gradient(180deg, ${T.delBg}22 0%, ${T.bg0} 100%)`,
+            border: `1px solid ${T.delBrd}33`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 16,
+            flexWrap: 'wrap',
+          }}>
+          <div style={{ display: 'grid', gap: 6, flex: '1 1 320px', minWidth: 0 }}>
+            <div
+              style={{
+                color: T.t0,
+                fontSize: FONT_SIZE.sm,
+                fontWeight: 820,
+              }}>
+              {t('svnConfigRestoreDefaultTitle')}
+            </div>
+            <div
+              style={{
+                color: T.t2,
+                fontSize: FONT_SIZE.sm,
+                lineHeight: 1.75,
+              }}>
+              {t('svnConfigRestoreDefaultBody')}
+            </div>
+            <div
+              style={{
+                color: T.t2,
+                fontSize: FONT_SIZE.xs,
+                lineHeight: 1.7,
+              }}>
+              {t('svnConfigRestoreDefaultHint')}
+            </div>
+          </div>
+
+          <button
+            className="svn-config-reset-btn"
+            type="button"
+            onClick={onRestoreDefault}
+            disabled={!canRestoreDefault || loading || isBusy}
+            style={{
+              height: 42,
+              minWidth: 176,
+              padding: '0 18px',
+              borderRadius: 12,
+              border: `1px solid ${T.delBrd}`,
+              background: !canRestoreDefault || loading || isBusy ? T.bg3 : `${T.delBg}cc`,
+              color: !canRestoreDefault || loading || isBusy ? T.t2 : T.delTx,
+              fontFamily: FONT_UI,
+              fontSize: FONT_SIZE.sm,
+              fontWeight: 800,
+              cursor: !canRestoreDefault || loading || isBusy ? 'not-allowed' : 'pointer',
+              transition: 'background 160ms ease, color 160ms ease, transform 160ms ease, border-color 160ms ease',
+              flexShrink: 0,
+            }}>
+            {isRestoringDefault ? t('svnConfigRestoringDefault') : t('svnConfigRestoreDefaultAction')}
+          </button>
+        </section>
+
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button
             className="svn-config-ghost-btn"
             type="button"
             onClick={onRefresh}
-            disabled={loading || applyingScope !== null}
+            disabled={loading || isBusy}
             style={{
               height: 38,
               minWidth: 98,
@@ -460,11 +540,11 @@ const SvnConfigDialog = memo(({
               borderRadius: 12,
               border: `1px solid ${T.border2}`,
               background: 'transparent',
-              color: loading || applyingScope !== null ? T.t2 : T.t1,
+              color: loading || isBusy ? T.t2 : T.t1,
               fontFamily: FONT_UI,
               fontSize: FONT_SIZE.sm,
               fontWeight: 700,
-              cursor: loading || applyingScope !== null ? 'not-allowed' : 'pointer',
+              cursor: loading || isBusy ? 'not-allowed' : 'pointer',
               transition: 'background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease',
             }}>
             {t('svnConfigRefresh')}
@@ -494,6 +574,7 @@ const SvnConfigDialog = memo(({
 
         <style>{`
           .svn-config-action-btn:not(:disabled):hover,
+          .svn-config-reset-btn:not(:disabled):hover,
           .svn-config-primary-btn:not(:disabled):hover {
             transform: translateY(-1px);
             filter: brightness(1.03) saturate(1.04);

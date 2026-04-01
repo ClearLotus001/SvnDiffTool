@@ -8,6 +8,7 @@ import {
   buildWorkbookNavigationRegions,
   findWorkbookDiffRegionIndexForSelection,
   formatWorkbookDiffRegionLabel,
+  formatWorkbookDiffRegionSummary,
 } from '../src/utils/workbook/workbookDiffRegion';
 import { createWorkbookRowLine, createWorkbookSheetLine } from '../src/utils/workbook/workbookDisplay';
 import {
@@ -83,13 +84,14 @@ test('workbook diff regions expose region-level labels and selection lookup', ()
 
   assert.ok(activeRegion);
   assert.equal(formatWorkbookDiffRegionLabel(activeRegion), 'Thing!B3');
+  assert.equal(formatWorkbookDiffRegionSummary(activeRegion), 'B3 · 1×1');
   assert.equal(
     findWorkbookDiffRegionIndexForSelection(regions, activeRegion?.anchorSelection ?? null),
     0,
   );
 });
 
-test('buildWorkbookDiffRegions merges diagonal workbook cells into one normalized region', () => {
+test('buildWorkbookDiffRegions keeps diagonal workbook cells as separate regions', () => {
   const base = buildWorkbook([
     ['ID', 'Name', 'Type'],
     ['10001', 'Sword', 'Weapon'],
@@ -111,14 +113,48 @@ test('buildWorkbookDiffRegions merges diagonal workbook cells into one normalize
     'MINE',
   );
 
+  assert.equal(regions.length, 2);
+  assert.equal(regions[0]?.startCol, 1);
+  assert.equal(regions[0]?.endCol, 1);
+  assert.equal(regions[0]?.rowNumberStart, 2);
+  assert.equal(regions[0]?.rowNumberEnd, 2);
+  assert.equal(regions[1]?.startCol, 2);
+  assert.equal(regions[1]?.endCol, 2);
+  assert.equal(regions[1]?.rowNumberStart, 3);
+  assert.equal(regions[1]?.rowNumberEnd, 3);
+});
+
+test('buildWorkbookDiffRegions merges edge-connected workbook cells into one visual region', () => {
+  const base = buildWorkbook([
+    ['ID', 'Name', 'Type'],
+    ['10001', 'Sword', 'Weapon'],
+    ['10002', 'Potion', 'Consumable'],
+  ]);
+  const mine = buildWorkbook([
+    ['ID', 'Name', 'Type'],
+    ['10001', 'Long Sword', 'Rare Weapon'],
+    ['10002', 'Hi-Potion', 'Consumable'],
+  ]);
+
+  const diffLines = computeWorkbookDiff(base, mine);
+  const sections = getWorkbookSections(diffLines);
+  const rowIndex = buildWorkbookSectionRowIndex(diffLines, sections);
+  const regions = buildWorkbookDiffRegions(
+    sections,
+    rowIndex,
+    'BASE',
+    'MINE',
+  );
+
   assert.equal(regions.length, 1);
   assert.equal(regions[0]?.startCol, 1);
   assert.equal(regions[0]?.endCol, 2);
   assert.equal(regions[0]?.rowNumberStart, 2);
   assert.equal(regions[0]?.rowNumberEnd, 3);
+  assert.equal(regions[0]?.patches.length, 3);
 });
 
-test('buildWorkbookNavigationRegions groups disjoint cell islands within the same workbook hunk', () => {
+test('buildWorkbookNavigationRegions keeps disjoint cell islands within the same workbook hunk separate', () => {
   const base = buildWorkbook([
     ['ID', 'Name', 'Type', 'Slot', 'Buff', 'Tag', 'Desc'],
     ['10001', 'Sword', 'Weapon', 'L', 'A', 'Alpha', 'Keep'],
@@ -143,22 +179,29 @@ test('buildWorkbookNavigationRegions groups disjoint cell islands within the sam
   const navigationRegions = buildWorkbookNavigationRegions(cellRegions, hunks);
 
   assert.equal(cellRegions.length, 2);
-  assert.equal(navigationRegions.length, 1);
-  assert.equal(navigationRegions[0]?.sheetName, 'Thing');
-  assert.equal(navigationRegions[0]?.startCol, 1);
-  assert.equal(navigationRegions[0]?.endCol, 6);
-  assert.equal(navigationRegions[0]?.rowNumberStart, 2);
-  assert.equal(navigationRegions[0]?.rowNumberEnd, 3);
-  assert.equal(
-    navigationRegions[0]?.patches.length,
-    cellRegions.reduce((count, region) => count + region.patches.length, 0),
+  assert.equal(navigationRegions.length, 2);
+  assert.deepEqual(
+    navigationRegions.map((region) => ({
+      id: region.id,
+      startCol: region.startCol,
+      endCol: region.endCol,
+      rowNumberStart: region.rowNumberStart,
+      rowNumberEnd: region.rowNumberEnd,
+    })),
+    cellRegions.map((region) => ({
+      id: region.id,
+      startCol: region.startCol,
+      endCol: region.endCol,
+      rowNumberStart: region.rowNumberStart,
+      rowNumberEnd: region.rowNumberEnd,
+    })),
   );
   assert.equal(
     findWorkbookDiffRegionIndexForSelection(
       navigationRegions,
       cellRegions[1]?.anchorSelection ?? null,
     ),
-    0,
+    1,
   );
 });
 

@@ -9,24 +9,6 @@ export type WorkbookCompareCellState = WorkbookCellDelta;
 export type WorkbookCompareRowState = WorkbookRowDelta;
 export { parseWorkbookRowLine };
 
-export function getWorkbookMaskedColumns(
-  leftLine: DiffLine | null,
-  rightLine: DiffLine | null,
-  compareMode: WorkbookCompareMode = 'strict',
-): number[] {
-  return Array.from(buildWorkbookCompareCells(leftLine, rightLine, undefined, compareMode).values())
-    .filter((cell) => cell.masked)
-    .map((cell) => cell.column);
-}
-
-export function getWorkbookChangedColumns(
-  leftLine: DiffLine | null,
-  rightLine: DiffLine | null,
-  compareMode: WorkbookCompareMode = 'strict',
-): number[] {
-  return buildWorkbookCompareRowState(leftLine, rightLine, undefined, compareMode).changedColumns;
-}
-
 export function buildWorkbookCompareRowState(
   leftLine: DiffLine | null,
   rightLine: DiffLine | null,

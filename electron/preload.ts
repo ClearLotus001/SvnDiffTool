@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('svnDiff', {
   loadLocalDiff: (basePath: string, minePath: string, compareMode?: 'strict' | 'content') => ipcRenderer.invoke('load-local-diff', { basePath, minePath, compareMode }),
   getSvnDiffViewerStatus: () => ipcRenderer.invoke('get-svn-diff-viewer-status'),
   configureSvnDiffViewer: (scope: 'all-files' | 'excel-only') => ipcRenderer.invoke('configure-svn-diff-viewer', { scope }),
+  restoreSvnDefaultDiffViewerConfiguration: () => ipcRenderer.invoke('restore-svn-default-diff-viewer-configuration'),
   getTheme: () => ipcRenderer.invoke('get-theme'),
   usesNativeWindowControls: () => ipcRenderer.invoke('uses-native-window-controls'),
   getWindowFrameState: () => ipcRenderer.invoke('get-window-frame-state'),
@@ -40,7 +41,7 @@ contextBridge.exposeInMainWorld('svnDiff', {
   checkForAppUpdate: (options?: { manual?: boolean }) => ipcRenderer.invoke('check-app-update', options),
   downloadAppUpdate: () => ipcRenderer.invoke('download-app-update'),
   installDownloadedUpdate: () => ipcRenderer.invoke('install-downloaded-update'),
-  launchUninstaller: () => ipcRenderer.invoke('launch-uninstaller'),
+  launchUninstaller: (options?: { silent?: boolean }) => ipcRenderer.invoke('launch-uninstaller', options),
   onAppUpdateState: (listener: (state: unknown) => void) => {
     const wrapped = (_event: Electron.IpcRendererEvent, state: unknown) => listener(state);
     ipcRenderer.on('app-update-state-changed', wrapped);

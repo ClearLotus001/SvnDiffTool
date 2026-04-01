@@ -1,4 +1,4 @@
-import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { useEffect, useMemo, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 
 import type {
   DiffLine,
@@ -10,7 +10,11 @@ import type {
 import { workbookDiffRegionContainsSelection } from '@/utils/workbook/workbookDiffRegion';
 import { revealWorkbookSelection } from '@/utils/workbook/workbookManualVisibility';
 import { createWorkbookSelectionState } from '@/utils/workbook/workbookSelectionState';
-import { findWorkbookSectionIndex, type WorkbookSection } from '@/utils/workbook/workbookSections';
+import {
+  buildWorkbookLineSheetContexts,
+  resolveWorkbookSheetNameForLineContext,
+  type WorkbookSection,
+} from '@/utils/workbook/workbookSections';
 import type { WorkbookUiController } from '@/hooks/app/contracts';
 
 interface UseWorkbookViewEffectsArgs {
@@ -60,6 +64,10 @@ export default function useWorkbookViewEffects({
       setContextMenu: setWorkbookContextMenu,
     },
   } = workbookUi;
+  const lineSheetContexts = useMemo(
+    () => buildWorkbookLineSheetContexts(diffLines),
+    [diffLines],
+  );
 
   useEffect(() => {
     setHunkIdx((prev) => {
@@ -91,10 +99,14 @@ export default function useWorkbookViewEffects({
     if (!isWorkbookMode || activeSearchIdx < 0) return;
     const lineIdx = searchMatches[activeSearchIdx]?.lineIdx;
     if (lineIdx == null) return;
-    const sheetName = workbookSections[findWorkbookSectionIndex(workbookSections, lineIdx)]?.name;
+    const sheetName = resolveWorkbookSheetNameForLineContext({
+      line: diffLines[lineIdx] ?? null,
+      context: lineSheetContexts[lineIdx] ?? null,
+      preferredSheetName: selectedCell?.sheetName ?? activeWorkbookDiffRegion?.sheetName ?? null,
+    });
     if (!sheetName) return;
     setActiveWorkbookSheetName((prev) => (prev === sheetName ? prev : sheetName));
-  }, [activeSearchIdx, isWorkbookMode, searchMatches, setActiveWorkbookSheetName, workbookSections]);
+  }, [activeSearchIdx, activeWorkbookDiffRegion?.sheetName, diffLines, isWorkbookMode, lineSheetContexts, searchMatches, selectedCell?.sheetName, setActiveWorkbookSheetName]);
 
   useEffect(() => {
     if (!isWorkbookMode) return;
@@ -102,17 +114,23 @@ export default function useWorkbookViewEffects({
       ?? (() => {
         const targetLineIdx = hunkPositions[hunkIdx];
         if (targetLineIdx == null) return null;
-        return workbookSections[findWorkbookSectionIndex(workbookSections, targetLineIdx)]?.name ?? null;
+        return resolveWorkbookSheetNameForLineContext({
+          line: diffLines[targetLineIdx] ?? null,
+          context: lineSheetContexts[targetLineIdx] ?? null,
+          preferredSheetName: selectedCell?.sheetName ?? null,
+        });
       })();
     if (!sheetName) return;
     setActiveWorkbookSheetName((prev) => (prev === sheetName ? prev : sheetName));
   }, [
     activeWorkbookDiffRegion?.sheetName,
+    diffLines,
     hunkIdx,
     hunkPositions,
     isWorkbookMode,
+    lineSheetContexts,
+    selectedCell?.sheetName,
     setActiveWorkbookSheetName,
-    workbookSections,
   ]);
 
   useEffect(() => {

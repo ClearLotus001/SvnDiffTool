@@ -21,7 +21,7 @@
 //     reminding maintainers to update if CSS changes.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect, useCallback, useRef, useMemo, type RefObject } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, type RefObject } from 'react';
 import type { VirtualState } from '@/types';
 
 /**
@@ -35,6 +35,7 @@ const DEFAULT_OVERSCAN_FACTOR = 3;
 export interface UseVirtualOptions {
   overscanMin?: number;
   overscanFactor?: number;
+  syncKey?: string | number | null;
 }
 
 export interface VirtualWindow extends VirtualState {
@@ -67,12 +68,15 @@ export function computeVirtualWindow(
   overscanMin = DEFAULT_OVERSCAN_MIN,
   overscanFactor = DEFAULT_OVERSCAN_FACTOR,
 ): VirtualWindow {
+  const totalH = count * rowHeight;
+  const maxScrollTop = Math.max(0, totalH - Math.max(0, viewH));
+  const clampedScrollTop = Math.max(0, Math.min(scrollTop, maxScrollTop));
   const visibleRowCount = Math.max(1, Math.ceil(viewH / Math.max(rowHeight, 1)));
   const overscan = Math.max(overscanMin, Math.ceil(visibleRowCount * overscanFactor));
-  const startIdx = Math.max(0, Math.floor((scrollTop - overscan * rowHeight) / rowHeight));
-  const endIdx = Math.min(count, Math.ceil((scrollTop + viewH + overscan * rowHeight) / rowHeight));
+  const startIdx = Math.max(0, Math.floor((clampedScrollTop - overscan * rowHeight) / rowHeight));
+  const endIdx = Math.min(count, Math.ceil((clampedScrollTop + viewH + overscan * rowHeight) / rowHeight));
   return {
-    totalH: count * rowHeight,
+    totalH,
     startIdx,
     endIdx,
     visibleRowCount,
@@ -88,6 +92,7 @@ export function useVirtual(
 ): UseVirtualReturn {
   const overscanMin = options.overscanMin ?? DEFAULT_OVERSCAN_MIN;
   const overscanFactor = options.overscanFactor ?? DEFAULT_OVERSCAN_FACTOR;
+  const syncKey = options.syncKey ?? null;
   const [viewH, setViewH] = useState(600);
   const [windowRange, setWindowRange] = useState<VirtualWindow>(() => computeVirtualWindow(
     count,
@@ -103,6 +108,7 @@ export function useVirtual(
   const rafRef = useRef<number>(0);
   const lastCalcMsRef = useRef(0);
   const rangeUpdateCountRef = useRef(1);
+  const syncKeyRef = useRef(syncKey);
 
   const applyWindowRange = useCallback((scrollTop: number, nextViewH: number) => {
     const calcStart = getNow();
@@ -174,7 +180,39 @@ export function useVirtual(
     applyWindowRange(latestScrollTopRef.current, viewHRef.current);
   }, [applyWindowRange]);
 
-  const totalH = count * rowHeight;
+  useLayoutEffect(() => {
+    if (syncKeyRef.current === syncKey) return;
+    syncKeyRef.current = syncKey;
+    latestScrollTopRef.current = 0;
+    const el = scrollRef.current;
+    if (el && el.scrollTop !== 0) {
+      el.scrollTo({ top: 0, behavior: 'auto' });
+    }
+    const nextRange = computeVirtualWindow(
+      count,
+      rowHeight,
+      viewHRef.current,
+      0,
+      overscanMin,
+      overscanFactor,
+    );
+    rangeRef.current = nextRange;
+    setWindowRange(nextRange);
+  }, [count, overscanFactor, overscanMin, rowHeight, scrollRef, syncKey]);
+
+  const effectiveWindowRange = useMemo(() => (
+    syncKeyRef.current !== syncKey
+      ? computeVirtualWindow(
+        count,
+        rowHeight,
+        viewHRef.current,
+        0,
+        overscanMin,
+        overscanFactor,
+      )
+      : windowRange
+  ), [count, overscanFactor, overscanMin, rowHeight, syncKey, windowRange]);
+  const totalH = effectiveWindowRange.totalH;
 
   const scrollToIndex = useCallback(
     (idx: number, align: 'start' | 'center' = 'start', behavior: 'auto' | 'smooth' | 'smart' = 'smart') => {
@@ -200,16 +238,16 @@ export function useVirtual(
 
   const debug = useMemo<VirtualDebugInfo>(() => ({
     viewportHeight: viewH,
-    visibleRowCount: windowRange.visibleRowCount,
-    overscan: windowRange.overscan,
+    visibleRowCount: effectiveWindowRange.visibleRowCount,
+    overscan: effectiveWindowRange.overscan,
     rangeUpdates: rangeUpdateCountRef.current,
     lastCalcMs: lastCalcMsRef.current,
-  }), [viewH, windowRange.overscan, windowRange.visibleRowCount]);
+  }), [effectiveWindowRange.overscan, effectiveWindowRange.visibleRowCount, viewH]);
 
   return {
     totalH,
-    startIdx: windowRange.startIdx,
-    endIdx: windowRange.endIdx,
+    startIdx: effectiveWindowRange.startIdx,
+    endIdx: effectiveWindowRange.endIdx,
     scrollToIndex,
     debug,
   };

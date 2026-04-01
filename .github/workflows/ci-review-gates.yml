@@ -46,3 +46,10 @@ jobs:
 
       - name: Full build
         run: npm run build
+
+      - name: Build Windows packaging smoke
+        run: |
+          npx tsx scripts/build-win-installer.ts
+
+      - name: Package size gates
+        run: npm run report:package-sizes -- --ci

@@ -166,3 +166,44 @@ test('workbook expanded blocks survive realistic layout switches while keeping p
     expandedBlocks,
   );
 });
+
+test('applyWorkbookExpandedBlocksChange reuses cached state objects when expansion payload is unchanged', () => {
+  const sheetName = 'Thing';
+  const activeRegionId = 'region-1';
+  const expandedBlocks: CollapseExpansionState = {
+    blockA: [{ start: 2, end: 8 }],
+  };
+
+  let sharedExpandedBlocksByContext = new Map<string, CollapseExpansionState>();
+  let snapshots = createEmptyWorkbookLayoutSnapshots();
+  snapshots.unified = buildWorkbookCompareLayoutSnapshot(
+    'unified',
+    sheetName,
+    activeRegionId,
+    320,
+    24,
+    expandedBlocks,
+  );
+
+  const first = applyWorkbookExpandedBlocksChange(
+    sharedExpandedBlocksByContext,
+    snapshots,
+    sheetName,
+    activeRegionId,
+    expandedBlocks,
+  );
+
+  sharedExpandedBlocksByContext = first.sharedExpandedBlocksByContext;
+  snapshots = first.snapshots;
+
+  const second = applyWorkbookExpandedBlocksChange(
+    sharedExpandedBlocksByContext,
+    snapshots,
+    sheetName,
+    activeRegionId,
+    expandedBlocks,
+  );
+
+  assert.equal(second.sharedExpandedBlocksByContext, sharedExpandedBlocksByContext);
+  assert.equal(second.snapshots, snapshots);
+});

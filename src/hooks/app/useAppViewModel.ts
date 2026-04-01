@@ -24,6 +24,7 @@ import {
 } from '@/utils/workbook/workbookSheetIndex';
 import {
   buildWorkbookDiffRegions,
+  buildWorkbookNavigationRegions,
 } from '@/utils/workbook/workbookDiffRegion';
 import { getWorkbookSharedExpandedBlocks } from '@/utils/workbook/workbookLayoutState';
 import { getWorkbookSections } from '@/utils/workbook/workbookSections';
@@ -226,8 +227,8 @@ export default function useAppViewModel({
     ],
   );
   const workbookDiffRegions = useMemo<WorkbookDiffRegion[]>(
-    () => workbookCellRegions,
-    [workbookCellRegions],
+    () => buildWorkbookNavigationRegions(workbookCellRegions, hunks),
+    [hunks, workbookCellRegions],
   );
   const activeWorkbookDiffRegion = isWorkbookMode
     ? (workbookDiffRegions[hunkIdx] ?? null)

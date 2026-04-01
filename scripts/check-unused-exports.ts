@@ -8,20 +8,15 @@ interface ExportRecord {
 }
 
 const repoRoot = process.cwd();
-const exportTargetDirs = ['src', 'electron', 'scripts', 'bootstrapper'];
+const exportTargetDirs = ['src', 'electron', 'scripts'];
 const consumerDirs = [...exportTargetDirs, 'tests'];
 const entryPoints = new Set([
   'src/main.tsx',
   'electron/main.ts',
   'electron/preload.ts',
-  'bootstrapper/main.ts',
-  'bootstrapper/preload.ts',
-  'bootstrapper/renderer/renderer.ts',
   'scripts/dev-app.ts',
   'scripts/dev-electron-runner.ts',
   'scripts/build-rust.ts',
-  'scripts/build-bootstrapper.ts',
-  'scripts/build-bootstrapper-shell.ts',
   'scripts/build-win-installer.ts',
   'scripts/build-workspace.ts',
   'scripts/verify-single-instance-cache.ts',

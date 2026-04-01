@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState, type MutableRefObject, type RefObject } from 'react';
 import { useTheme } from '@/context/theme';
+import { resolveWorkbookMiniMapColor } from '@/utils/workbook/workbookRowVisuals';
 
 export type WorkbookMiniMapTone = 'equal' | 'add' | 'delete' | 'mixed';
 
@@ -86,10 +87,7 @@ const WorkbookMiniMap = memo(({
       const y = Math.floor(offset * scale);
       const h = Math.max(1, Math.ceil(segment.height * scale));
 
-      if (segment.tone === 'add') ctx.fillStyle = T.miniAdd;
-      else if (segment.tone === 'delete') ctx.fillStyle = T.miniDel;
-      else if (segment.tone === 'mixed') ctx.fillStyle = T.acc;
-      else ctx.fillStyle = T.bg3;
+      ctx.fillStyle = resolveWorkbookMiniMapColor(T, segment.tone);
 
       ctx.fillRect(0, y, WIDTH, h);
 

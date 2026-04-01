@@ -35,13 +35,13 @@ function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
   return true;
 }
 
-export function hasNonEqualWorkbookDiffLines(
+function hasNonEqualWorkbookDiffLines(
   diffLines: WorkbookArtifactDiffLine[] | null,
 ): boolean {
   return Boolean(diffLines?.some((line) => line.type !== 'equal'));
 }
 
-export function hasWorkbookDeltaChanges(
+function hasWorkbookDeltaChanges(
   workbookDelta: WorkbookArtifactDeltaLike | null | undefined,
 ): boolean {
   return Boolean(

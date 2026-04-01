@@ -25,7 +25,10 @@ import {
   getWorkbookColumnLabel,
   type WorkbookSection,
 } from '@/utils/workbook/workbookSections';
-import { workbookDiffRegionContainsSelection } from '@/utils/workbook/workbookDiffRegion';
+import {
+  formatWorkbookDiffRegionSummary,
+  workbookDiffRegionContainsSelection,
+} from '@/utils/workbook/workbookDiffRegion';
 import {
   buildWorkbookRowEntry,
   findWorkbookSectionIndexByName,
@@ -36,15 +39,14 @@ import {
 } from '@/utils/workbook/workbookNavigation';
 import type { IndexedWorkbookSectionRows } from '@/utils/workbook/workbookSheetIndex';
 import {
-  getWorkbookCanvasSpanGeometry,
-  getWorkbookColumnSpanBounds,
   getWorkbookSelectionSpanForSelection,
 } from '@/utils/workbook/workbookMergeLayout';
 import {
-  buildWorkbookRegionOverlayBoxes,
-  buildWorkbookRegionOverlayBoxesFromGeometry,
-} from '@/utils/workbook/workbookRegionOverlay';
-import { buildWorkbookSplitRowCompareState } from '@/utils/workbook/workbookCompare';
+  buildWorkbookSplitRowCompareState,
+  parseWorkbookRowLine,
+} from '@/utils/workbook/workbookCompare';
+import { resolveWorkbookRegionHorizontalBounds } from '@/utils/workbook/workbookRegionOverlay';
+import { workbookDebugLog } from '@/utils/workbook/workbookDebug';
 import {
   getWorkbookColumnWidth,
   measureWorkbookAutoFitColumnWidth,
@@ -79,6 +81,7 @@ import {
   buildWorkbookHorizontalLayoutSnapshot,
   shouldRestoreWorkbookLayoutSnapshot,
 } from '@/utils/workbook/workbookLayoutSnapshot';
+import { resolveWorkbookAuxBarPalette } from '@/utils/workbook/workbookRowVisuals';
 import {
   countRemainingCollapses,
   findCyclicCollapseIndex,
@@ -97,10 +100,7 @@ import WorkbookCanvasHeaderStrip from '@/components/workbook/WorkbookCanvasHeade
 import WorkbookPaneCanvasStrip, { type WorkbookPaneCanvasRow } from '@/components/workbook/WorkbookPaneCanvasStrip';
 import WorkbookPerfDebugPanel, { type WorkbookPerfDebugStats } from '@/components/workbook/WorkbookPerfDebugPanel';
 import WorkbookSheetTabs from '@/components/workbook/WorkbookSheetTabs';
-import WorkbookDiffRegionOverlay, {
-  mergeWorkbookDiffRegionOverlayBoxes,
-  type WorkbookDiffRegionOverlayBox,
-} from '@/components/workbook/WorkbookDiffRegionOverlay';
+import WorkbookActiveRegionOverlayLayer from '@/components/workbook/WorkbookActiveRegionOverlayLayer';
 import WorkbookHiddenRowsBar from '@/components/workbook/WorkbookHiddenRowsBar';
 
 const CONTEXT_LINES = 3;
@@ -260,8 +260,8 @@ const WorkbookHorizontalPanel = memo(({
   const snapshotEmitRafRef = useRef(0);
   const restoreRafRef = useRef(0);
   const lastRestoredSnapshotKeyRef = useRef('');
+  const lastViewportSheetNameRef = useRef<string | null>(activeWorkbookSection?.name ?? null);
   const [hoveredCanvasCell, setHoveredCanvasCell] = useState<WorkbookCanvasHoverCell | null>(null);
-  const [scrollLeft, setScrollLeft] = useState(0);
   const [pendingScrollTarget, setPendingScrollTarget] = useState<{ lineIdx: number; align: 'start' | 'center' } | null>(null);
   const visibleRowsCacheRef = useRef(new Map<string, SplitRow[]>());
   const itemsCacheRef = useRef(new WeakMap<CollapseExpansionState, Map<string, { value: WorkbookHorizontalRenderItem[]; duration: number }>>());
@@ -473,7 +473,7 @@ const WorkbookHorizontalPanel = memo(({
     items.length,
     leftScrollRef as RefObject<HTMLDivElement>,
     ROW_H,
-    { overscanMin: 12, overscanFactor: 1.5 },
+    { overscanMin: 12, overscanFactor: 1.5, syncKey: activeWorkbookSection?.name ?? '' },
   );
   const sheetPresentation = useMemo(
     () => buildWorkbookSheetPresentation(
@@ -502,6 +502,7 @@ const WorkbookHorizontalPanel = memo(({
     mergedRanges: [...sheetPresentation.baseMergeRanges, ...sheetPresentation.mineMergeRanges],
     overscanMin: 6,
     overscanFactor: 1.5,
+    syncKey: activeWorkbookSection?.name ?? '',
   });
   const rowEntryByRowNumber = useMemo(() => {
     const next = {
@@ -652,10 +653,7 @@ const WorkbookHorizontalPanel = memo(({
     () => new Map(sectionRows.map((row, index) => [getWorkbookHorizontalRowKey(row), index])),
     [sectionRows],
   );
-  const activeRegionOverlayBoxesBySide = useMemo<Record<'left' | 'right', WorkbookDiffRegionOverlayBox[]>>(() => {
-    const empty = { left: [] as WorkbookDiffRegionOverlayBox[], right: [] as WorkbookDiffRegionOverlayBox[] };
-    if (!activeDiffRegion || activeDiffRegion.sheetName !== activeWorkbookSection?.name) return empty;
-
+  const activeRegionOverlayVisibleRowFrames = useMemo(() => {
     const visibleRowFrames = new Map<number, { top: number; height: number }>();
     let frozenCursorTop = ROW_H;
     frozenRows.forEach((row) => {
@@ -677,86 +675,13 @@ const WorkbookHorizontalPanel = memo(({
         cursorTop += ROW_H;
       });
     });
-
-    const contentLeft = LN_W + 3;
-    const buildSideBoxes = (side: 'left' | 'right', regionSide: 'base' | 'mine') => {
-      const regionHasSide = regionSide === 'base'
-        ? activeDiffRegion.hasBaseSide
-        : activeDiffRegion.hasMineSide;
-      if (!regionHasSide) return [];
-
-      const boxes = activeDiffRegion.patches.flatMap((patch, patchIndex) => {
-        const hasSide = regionSide === 'base' ? patch.hasBaseSide : patch.hasMineSide;
-        if (!hasSide) return [];
-
-        const visibleRows = Array.from(visibleRowFrames.entries())
-          .filter(([rowIndex]) => rowIndex >= patch.startRowIndex && rowIndex <= patch.endRowIndex)
-          .sort((left, right) => left[0] - right[0]);
-        if (visibleRows.length === 0) return [];
-
-        const firstVisibleRowIndex = visibleRows[0]?.[0] ?? patch.startRowIndex;
-        const lastVisibleRowIndex = visibleRows[visibleRows.length - 1]?.[0] ?? patch.endRowIndex;
-        const top = Math.min(...visibleRows.map(([, frame]) => frame.top));
-        const bottom = Math.max(...visibleRows.map(([, frame]) => frame.top + frame.height));
-        const bounds = getWorkbookColumnSpanBounds(
-          patch.startCol,
-          patch.endCol,
-          virtualColumns.columnLayoutByColumn,
-          'single',
-          freezeColumnCount,
-        );
-        const geometry = bounds
-          ? getWorkbookCanvasSpanGeometry(bounds, contentLeft, scrollLeft, virtualColumns.frozenWidth)
-          : null;
-        if (!geometry) return [];
-
-        return buildWorkbookRegionOverlayBoxesFromGeometry({
-          geometry,
-          keyPrefix: `${activeDiffRegion.id}:${side}:${patchIndex}`,
-          top,
-          bottom,
-          openTop: firstVisibleRowIndex > patch.startRowIndex,
-          openBottom: lastVisibleRowIndex < patch.endRowIndex,
-        });
-      });
-
-      const mergedBoxes = mergeWorkbookDiffRegionOverlayBoxes(boxes)
-        .filter((box) => box.width > 6 && box.height > 6);
-      if (mergedBoxes.length > 0) return mergedBoxes;
-
-      const fallbackBoxes = buildWorkbookRegionOverlayBoxes({
-        region: activeDiffRegion,
-        visibleRowFrames,
-        boundsModes: ['single'],
-        columnLayoutByColumn: virtualColumns.columnLayoutByColumn,
-        contentLeft,
-        scrollLeft,
-        frozenWidth: virtualColumns.frozenWidth,
-        freezeColumnCount,
-        key: `${activeDiffRegion.id}:${side}:fallback`,
-      });
-
-      const mergedFallbackBoxes = mergeWorkbookDiffRegionOverlayBoxes(fallbackBoxes)
-        .filter((box) => box.width > 6 && box.height > 6);
-      return mergedFallbackBoxes.length > 0 ? mergedFallbackBoxes : [];
-    };
-
-    return {
-      left: buildSideBoxes('left', 'base'),
-      right: buildSideBoxes('right', 'mine'),
-    };
+    return visibleRowFrames;
   }, [
-    activeDiffRegion,
-    activeWorkbookSection?.name,
     bodySegments,
-    freezeColumnCount,
     frozenRows,
-    scrollLeft,
     sectionRowIndexByKey,
     startIdx,
     stickyHeaderHeight,
-    virtualColumns.columnLayoutByColumn,
-    virtualColumns.frozenWidth,
   ]);
 
   const workbookNavigationRows = useMemo(() => {
@@ -831,10 +756,6 @@ const WorkbookHorizontalPanel = memo(({
     });
   }, [active, emitLayoutSnapshot, onLayoutSnapshotChange]);
   const handlePaneScroll = useCallback((source: 'left' | 'right') => {
-    const nextScrollLeft = source === 'left'
-      ? (leftScrollRef.current?.scrollLeft ?? 0)
-      : (rightScrollRef.current?.scrollLeft ?? 0);
-    setScrollLeft((prev) => (Math.abs(prev - nextScrollLeft) < 0.5 ? prev : nextScrollLeft));
     scheduleLayoutSnapshot();
     const now = getNow();
     if (now >= programmaticScrollUntilRef.current[source]) {
@@ -842,6 +763,29 @@ const WorkbookHorizontalPanel = memo(({
     }
     syncScrollPosition(source);
   }, [scheduleLayoutSnapshot, syncScrollPosition]);
+
+  useEffect(() => {
+    const nextSheetName = activeWorkbookSection?.name ?? null;
+    const previousSheetName = lastViewportSheetNameRef.current;
+    lastViewportSheetNameRef.current = nextSheetName;
+
+    if (!previousSheetName || !nextSheetName || previousSheetName === nextSheetName) return;
+
+    if (snapshotEmitRafRef.current) {
+      cancelAnimationFrame(snapshotEmitRafRef.current);
+      snapshotEmitRafRef.current = 0;
+    }
+
+    lastRestoredSnapshotKeyRef.current = '';
+    suppressAutoScrollUntilRef.current = Math.max(suppressAutoScrollUntilRef.current, getNow() + 520);
+    userScrollPauseUntilRef.current = Math.max(userScrollPauseUntilRef.current, getNow() + 520);
+    syncOwnerRef.current = null;
+    markProgrammaticScroll('left', 520);
+    markProgrammaticScroll('right', 520);
+    setHoveredCanvasCell(null);
+    leftScrollRef.current?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    rightScrollRef.current?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [activeWorkbookSection?.name, markProgrammaticScroll]);
 
   const revealLineIfCollapsed = useCallback((lineIdx: number) => {
     const hiddenRowItem = items.find((item): item is Extract<WorkbookHorizontalRenderItem, { kind: 'hidden-rows' }> => (
@@ -960,6 +904,46 @@ const WorkbookHorizontalPanel = memo(({
     virtualColumns.columnLayoutByColumn,
     virtualColumns.frozenWidth,
   ]);
+  const focusWorkbookDiffRegion = useCallback((region: WorkbookDiffRegion) => {
+    const resolvedSide: 'base' | 'mine' = region.hasBaseSide ? 'base' : 'mine';
+    const source = resolvedSide === 'base' ? leftScrollRef.current : rightScrollRef.current;
+    const target = resolvedSide === 'base' ? rightScrollRef.current : leftScrollRef.current;
+    const sourceSide = resolvedSide === 'base' ? 'left' : 'right';
+    if (!source) return;
+
+    const bounds = resolveWorkbookRegionHorizontalBounds({
+      region,
+      columnLayoutByColumn: virtualColumns.columnLayoutByColumn,
+      freezeColumnCount,
+      resolvePatchBoundsModes: () => ['single'],
+      fallbackBoundsModes: ['single'],
+    });
+    if (!bounds) return;
+
+    const frozenWidth = LN_W + 3 + virtualColumns.frozenWidth;
+    const desiredPadding = 24;
+    const targetLeft = LN_W + 3 + bounds.leftOffset;
+    const targetRight = LN_W + 3 + bounds.rightOffset;
+    const targetWidth = Math.max(1, bounds.width);
+    const desiredScrollLeft = Math.max(0, targetLeft - frozenWidth - desiredPadding);
+    const leftBoundary = source.scrollLeft + frozenWidth + desiredPadding;
+    const rightBoundary = source.scrollLeft + source.clientWidth - desiredPadding;
+
+    if (targetLeft < leftBoundary || targetRight > rightBoundary) {
+      markProgrammaticScroll(sourceSide, 260);
+      if (targetLeft < leftBoundary || targetWidth >= source.clientWidth - frozenWidth - (desiredPadding * 2)) {
+        source.scrollLeft = desiredScrollLeft;
+      } else {
+        source.scrollLeft = Math.max(0, targetRight - source.clientWidth + desiredPadding);
+      }
+      if (target) target.scrollLeft = source.scrollLeft;
+    }
+  }, [
+    freezeColumnCount,
+    markProgrammaticScroll,
+    virtualColumns.columnLayoutByColumn,
+    virtualColumns.frozenWidth,
+  ]);
 
   useEffect(() => {
     if (!tooltipDisabled) return;
@@ -1022,7 +1006,6 @@ const WorkbookHorizontalPanel = memo(({
         left.scrollLeft = snapshot.leftScrollLeft;
         right.scrollTop = snapshot.rightScrollTop;
         right.scrollLeft = snapshot.rightScrollLeft;
-        setScrollLeft(snapshot.leftScrollLeft);
       });
       restoreRafRef.current = raf2;
     });
@@ -1129,18 +1112,24 @@ const WorkbookHorizontalPanel = memo(({
   }, [active, handleWorkbookMove, onWorkbookNavigationReady]);
 
   useEffect(() => {
-    if (!active) return;
-    if (!activeDiffRegion || !navigationTargetCell || !activeWorkbookSection) return;
-    if (activeDiffRegion.sheetName !== activeWorkbookSection.name) return;
-    if (navigationTargetCell.sheetName !== activeWorkbookSection.name) return;
-    if (selectedCell && workbookDiffRegionContainsSelection(activeDiffRegion, selectedCell)) return;
+    lastGuidedNavigationKeyRef.current = '';
+  }, [activeDiffRegion?.id, activeWorkbookSection?.name]);
 
-    const navigationKey = `${activeDiffRegion.id}:${buildSelectionAutoScrollKey(activeWorkbookSection.name, navigationTargetCell)}`;
+  useEffect(() => {
+    if (!active) return;
+    if (!activeDiffRegion || !activeWorkbookSection) return;
+    if (activeDiffRegion.sheetName !== activeWorkbookSection.name) return;
+    const navigationKey = activeDiffRegion.id;
     if (lastGuidedNavigationKeyRef.current === navigationKey) return;
 
     lastGuidedNavigationKeyRef.current = navigationKey;
-    const targetRowIndex = navigationTargetCell.kind !== 'column'
-      ? (rowItemIndexBySide[navigationTargetCell.side].get(navigationTargetCell.rowNumber) ?? -1)
+    const anchorPatch = activeDiffRegion.patches[0] ?? null;
+    const anchorSide: 'base' | 'mine' = anchorPatch?.hasBaseSide ? 'base' : 'mine';
+    const anchorRowNumber = anchorSide === 'base'
+      ? (anchorPatch?.baseRowStart ?? anchorPatch?.baseRowEnd ?? null)
+      : (anchorPatch?.mineRowStart ?? anchorPatch?.mineRowEnd ?? null);
+    const targetRowIndex = anchorRowNumber != null
+      ? (rowItemIndexBySide[anchorSide].get(anchorRowNumber) ?? -1)
       : -1;
     if (targetRowIndex >= 0) {
       markProgrammaticScroll('left', 420);
@@ -1150,23 +1139,28 @@ const WorkbookHorizontalPanel = memo(({
       scrollToResolvedLine(activeDiffRegion.lineStartIdx, 'start', 'auto');
     }
 
-    if (navigationTargetCell.kind === 'row') return;
+    focusWorkbookDiffRegion(activeDiffRegion);
+    let followUpRafId = 0;
     const rafId = requestAnimationFrame(() => {
-      focusWorkbookCell(navigationTargetCell, 'focus');
+      focusWorkbookDiffRegion(activeDiffRegion);
+      followUpRafId = requestAnimationFrame(() => {
+        focusWorkbookDiffRegion(activeDiffRegion);
+      });
     });
 
-    return () => cancelAnimationFrame(rafId);
+    return () => {
+      cancelAnimationFrame(rafId);
+      if (followUpRafId) cancelAnimationFrame(followUpRafId);
+    };
   }, [
     active,
     activeDiffRegion,
     activeWorkbookSection,
-    focusWorkbookCell,
+    focusWorkbookDiffRegion,
     markProgrammaticScroll,
-    navigationTargetCell,
     rowItemIndexBySide,
     scrollToIndex,
     scrollToResolvedLine,
-    selectedCell,
     syncScrollPosition,
   ]);
 
@@ -1301,6 +1295,58 @@ const WorkbookHorizontalPanel = memo(({
     virtualColumns.debug.rangeUpdates,
     virtualColumns.debug.viewportWidth,
   ]);
+  const sheetRenderKey = `${activeWorkbookSection?.name ?? 'none'}`;
+  useEffect(() => {
+    if (!showPerfDebug || !activeWorkbookSection) return;
+    workbookDebugLog('WorkbookHorizontalPanel/render-state', {
+      sheetName: activeWorkbookSection.name,
+      sectionRowCount: sectionRows.length,
+      frozenRowCount: frozenRows.length,
+      itemCount: items.length,
+      visibleColumns: sheetPresentation.visibleColumns,
+      allColumns: sheetPresentation.allColumns,
+      startIdx,
+      endIdx,
+      contentHeight,
+      singleGridWidth,
+      activeDiffRegion: activeDiffRegion
+        ? {
+          id: activeDiffRegion.id,
+          sheetName: activeDiffRegion.sheetName,
+          startRowIndex: activeDiffRegion.startRowIndex,
+          endRowIndex: activeDiffRegion.endRowIndex,
+          startCol: activeDiffRegion.startCol,
+          endCol: activeDiffRegion.endCol,
+        }
+        : null,
+      rowPreview: sectionRows.slice(0, 8).map((row) => {
+        const left = parseWorkbookRowLine(row.left);
+        const right = parseWorkbookRowLine(row.right);
+        return {
+          lineIdx: row.lineIdx,
+          lineIdxs: row.lineIdxs,
+          leftRowNumber: left?.rowNumber ?? null,
+          rightRowNumber: right?.rowNumber ?? null,
+          leftColumnCount: left?.cells.length ?? 0,
+          rightColumnCount: right?.cells.length ?? 0,
+          changedColumns: row.workbookRowDelta?.changedColumns ?? [],
+        };
+      }),
+    });
+  }, [
+    activeDiffRegion,
+    activeWorkbookSection,
+    contentHeight,
+    endIdx,
+    frozenRows.length,
+    items.length,
+    sectionRows,
+    sheetPresentation.allColumns,
+    sheetPresentation.visibleColumns,
+    showPerfDebug,
+    singleGridWidth,
+    startIdx,
+  ]);
   const pinnedCollapseWidth = virtualColumns.debug.viewportWidth > 0
     ? virtualColumns.debug.viewportWidth
     : '100%';
@@ -1371,9 +1417,15 @@ const WorkbookHorizontalPanel = memo(({
         overflow: 'hidden',
         zIndex: 5,
       }}>
-      <CollapseBar count={count} expandCount={expandCount} onExpand={onExpand} onExpandAll={onExpandAll} />
+      <CollapseBar
+        count={count}
+        expandCount={expandCount}
+        onExpand={onExpand}
+        onExpandAll={onExpandAll}
+        palette={resolveWorkbookAuxBarPalette(T, 'mixed')}
+      />
     </div>
-  ), [pinnedCollapseWidth]);
+  ), [T, pinnedCollapseWidth]);
 
   const handleSelectSheet = useCallback((index: number) => {
     onSelectionRequest({
@@ -1440,7 +1492,7 @@ const WorkbookHorizontalPanel = memo(({
           minWidth: 0,
           minHeight: 0,
         }}>
-        <div style={{ position: 'relative', minWidth: singleGridWidth, height: totalH + stickyHeaderHeight }}>
+        <div key={`${sheetRenderKey}:${side}`} style={{ position: 'relative', minWidth: singleGridWidth, height: totalH + stickyHeaderHeight }}>
           <div
             style={{
               position: 'sticky',
@@ -1588,34 +1640,24 @@ const WorkbookHorizontalPanel = memo(({
                   </div>
                 );
               })}
-            {activeRegionOverlayBoxesBySide[side].length > 0 && (
-              <div
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  pointerEvents: 'none',
-                  zIndex: 6,
-                }}>
-                <div
-                  style={{
-                    position: 'sticky',
-                    top: 0,
-                    left: 0,
-                    height: '100%',
-                    width: virtualColumns.debug.viewportWidth,
-                    overflow: 'hidden',
-                    pointerEvents: 'none',
-                  }}>
-                  <WorkbookDiffRegionOverlay
-                    boxes={activeRegionOverlayBoxesBySide[side].map((box) => ({
-                      ...box,
-                      key: `${guidedPulseNonce}:${box.key}`,
-                    }))}
-                  />
-                </div>
-              </div>
-            )}
           </div>
+          <WorkbookActiveRegionOverlayLayer
+            scrollRef={ref}
+            viewportWidth={virtualColumns.debug.viewportWidth}
+            activeDiffRegion={activeDiffRegion}
+            activeSheetName={activeWorkbookSection?.name ?? null}
+            visibleRowFrames={activeRegionOverlayVisibleRowFrames}
+            columnLayoutByColumn={virtualColumns.columnLayoutByColumn}
+            contentLeft={LN_W + 3}
+            frozenWidth={virtualColumns.frozenWidth}
+            freezeColumnCount={freezeColumnCount}
+            resolvePatchBoundsModes={() => ['single']}
+            fallbackBoundsModes={['single']}
+            pulseNonce={guidedPulseNonce}
+            {...(side === 'left'
+              ? { label: formatWorkbookDiffRegionSummary(activeDiffRegion) }
+              : {})}
+          />
         </div>
       </div>
     </div>

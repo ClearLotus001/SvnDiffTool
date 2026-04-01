@@ -57,12 +57,17 @@
 - 工作簿解析与差异计算：Rust + `calamine` + `quick-xml`
 - 测试：Node.js 自带测试运行器 + `tsx`
 
+## 维护备注
+
+- 如果你在维护工作簿对比的颜色、高亮、选中态、overlay 或辅助条，建议先阅读 [`docs/workbook-visual-semantics.md`](./docs/workbook-visual-semantics.md)
+
 ## 环境要求
 
 ### 运行安装版
 
 - Windows
 - TortoiseSVN（仅当你需要把它接成外部对比工具时）
+- 首次安装默认需要联网下载主程序包
 
 ### 从源码开发或构建
 
@@ -95,12 +100,21 @@ npm run dev:app
 | `npm run test:workbook` | 运行仓库中的测试集，包含工作簿相关回归测试 |
 | `npm run verify:single-instance-cache` | 验证单实例与缓存相关逻辑 |
 | `npm run build` | 构建前端、Electron 主进程与 Rust 产物 |
-| `npm run build:win` | 生成 Windows NSIS 安装包 |
+| `npm run build:win` | 生成 Windows 原生安装器与自动更新资产 |
+| `npm run report:package-sizes` | 输出当前 Windows 打包体积报告 |
 
 本地打包完成后，安装包默认输出到：
 
 ```text
 release/SvnDiffTool-<version>.exe
+```
+
+同时会在 `release/` 目录保留自动更新资产，例如：
+
+```text
+release/SvnDiffTool-<version>.exe
+release/latest.yml
+release/<package-name>-<version>-x64.nsis.7z
 ```
 
 ## 接入 TortoiseSVN
@@ -133,6 +147,14 @@ release/SvnDiffTool-<version>.exe
 - 可执行文件路径如果包含空格，请保留双引号
 - 参数顺序不要调整，主进程按固定顺序解析
 - 可以在 `Advanced...` 中按扩展名单独指定，例如 `.ts`、`.tsx`、`.js`、`.json`、`.xml`
+
+安装版应用也内置了一个图形化接入面板：
+
+- 可以在首页点击“接入 TortoiseSVN”
+- 支持一键切换“全部文件模式”或“仅 Excel 模式”
+- 支持“恢复默认 Diff”，把 TortoiseSVN 切回默认对比行为
+
+卸载时，程序会先自动恢复 TortoiseSVN 默认 Diff，再继续执行卸载，避免 SVN diff 仍然指向已删除的程序路径。
 
 ## 支持的文件类型与能力边界
 
@@ -187,6 +209,7 @@ release/SvnDiffTool-<version>.exe
 ## 自动更新
 
 - 当前只有 Windows 安装版支持自动更新
+- 下载的 `SvnDiffTool-<version>.exe` 为 Windows 原生安装器，会联网拉取主程序包
 - 应用会从 GitHub 发布页检查稳定版更新
 - 发现新版本后会提示你手动下载
 - 下载完成后可从应用内触发安装
@@ -197,8 +220,8 @@ release/SvnDiffTool-<version>.exe
 
 - 触发条件：推送 `v*` 格式的版本标签
 - 持续集成环境：`windows-latest`
-- 构建内容：Node.js 依赖、Rust 解析器、Electron 安装包
-- 发布方式：`electron-builder --publish always`
+- 构建内容：Node.js 依赖、Rust 解析器、Windows 原生安装器与自动更新资产
+- 发布方式：由 `electron-builder` 直接发布 Windows 安装器和更新元数据
 
 典型发版流程：
 

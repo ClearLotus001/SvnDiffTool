@@ -20,3 +20,24 @@ export function resolveSharedWorkbookLineNumberTone(
   if (hasMineRow && !hasBaseRow) return 'mine';
   return 'neutral';
 }
+
+export function resolveWorkbookStackedLineNumberTone(params: {
+  side: 'base' | 'mine';
+  hasCompanionBand: boolean;
+  tone: 'neutral' | 'add' | 'delete';
+  hasBaseRow: boolean;
+  hasMineRow: boolean;
+}): LineNumberTone {
+  const {
+    side,
+    hasCompanionBand,
+    tone,
+    hasBaseRow,
+    hasMineRow,
+  } = params;
+
+  if (hasCompanionBand) return side;
+  if (tone === 'delete') return 'base';
+  if (tone === 'add') return 'mine';
+  return resolveSharedWorkbookLineNumberTone(hasBaseRow, hasMineRow);
+}

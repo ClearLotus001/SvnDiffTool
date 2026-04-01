@@ -5,7 +5,7 @@ import type { WorkbookCompareCellState } from '@/utils/workbook/workbookCompare'
 
 export type WorkbookCompareTone = WorkbookRowDeltaTone;
 
-export function getWorkbookCompareCellTone(
+function getWorkbookCompareCellTone(
   cell: WorkbookCompareCellState,
   compareMode: WorkbookCompareMode = 'strict',
 ): WorkbookCompareTone {

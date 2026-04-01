@@ -1,10 +1,16 @@
 import type { HorizontalVirtualColumnEntry } from '@/hooks/virtualization/useHorizontalVirtualColumns';
-import type { WorkbookDiffRegion } from '@/types';
+import type { WorkbookDiffRegion, WorkbookRowDeltaTone } from '@/types';
 import {
+  type WorkbookColumnSpanBounds,
   type WorkbookCanvasSpanGeometry,
   getWorkbookCanvasSpanGeometry,
   getWorkbookColumnSpanBounds,
 } from '@/utils/workbook/workbookMergeLayout';
+import {
+  mergeWorkbookSemanticTone,
+  resolveWorkbookRegionTone,
+  type WorkbookRowSemanticTone,
+} from '@/utils/workbook/workbookRowVisuals';
 
 export interface WorkbookRegionOverlayBox {
   key: string;
@@ -12,11 +18,18 @@ export interface WorkbookRegionOverlayBox {
   left: number;
   width: number;
   height: number;
+  tone?: WorkbookRowSemanticTone;
   openTop?: boolean;
   openBottom?: boolean;
 }
 
-export type WorkbookRegionOverlayBoundsMode = 'single' | 'paired-base' | 'paired-mine';
+export type WorkbookRegionOverlayBoundsMode = 'single' | 'paired-shared' | 'paired-base' | 'paired-mine';
+
+export interface WorkbookRegionHorizontalBounds {
+  leftOffset: number;
+  rightOffset: number;
+  width: number;
+}
 
 interface WorkbookRegionOverlayGeometryOptions {
   region: WorkbookDiffRegion;
@@ -57,11 +70,74 @@ function getWorkbookRegionOverlayVerticalBounds(
   };
 }
 
+function mergeWorkbookRegionHorizontalBounds(
+  bounds: WorkbookColumnSpanBounds[],
+): WorkbookRegionHorizontalBounds | null {
+  if (bounds.length === 0) return null;
+
+  const leftOffset = Math.min(...bounds.map((entry) => entry.leftOffset));
+  const rightOffset = Math.max(...bounds.map((entry) => entry.rightOffset));
+  return {
+    leftOffset,
+    rightOffset,
+    width: Math.max(0, rightOffset - leftOffset),
+  };
+}
+
+export function resolveWorkbookRegionHorizontalBounds(params: {
+  region: WorkbookDiffRegion;
+  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
+  freezeColumnCount: number;
+  resolvePatchBoundsModes: (patch: WorkbookDiffRegion['patches'][number]) => WorkbookRegionOverlayBoundsMode[];
+  fallbackBoundsModes?: WorkbookRegionOverlayBoundsMode[];
+  filterPatch?: ((patch: WorkbookDiffRegion['patches'][number]) => boolean) | undefined;
+}): WorkbookRegionHorizontalBounds | null {
+  const {
+    region,
+    columnLayoutByColumn,
+    freezeColumnCount,
+    resolvePatchBoundsModes,
+    fallbackBoundsModes = [],
+    filterPatch,
+  } = params;
+
+  const patchBounds = region.patches.flatMap((patch) => {
+    if (filterPatch && !filterPatch(patch)) return [];
+
+    return resolvePatchBoundsModes(patch)
+      .map((boundsMode) => getWorkbookColumnSpanBounds(
+        patch.startCol,
+        patch.endCol,
+        columnLayoutByColumn,
+        boundsMode,
+        freezeColumnCount,
+      ))
+      .filter((bounds): bounds is WorkbookColumnSpanBounds => bounds != null);
+  });
+
+  if (patchBounds.length > 0) {
+    return mergeWorkbookRegionHorizontalBounds(patchBounds);
+  }
+
+  const fallbackBounds = fallbackBoundsModes
+    .map((boundsMode) => getWorkbookColumnSpanBounds(
+      region.startCol,
+      region.endCol,
+      columnLayoutByColumn,
+      boundsMode,
+      freezeColumnCount,
+    ))
+    .filter((bounds): bounds is WorkbookColumnSpanBounds => bounds != null);
+
+  return mergeWorkbookRegionHorizontalBounds(fallbackBounds);
+}
+
 export function buildWorkbookRegionOverlayBoxesFromGeometry(params: {
   geometry: WorkbookCanvasSpanGeometry;
   keyPrefix: string;
   top: number;
   bottom: number;
+  tone?: WorkbookRowDeltaTone;
   openTop?: boolean;
   openBottom?: boolean;
 }): WorkbookRegionOverlayBox[] {
@@ -70,6 +146,7 @@ export function buildWorkbookRegionOverlayBoxesFromGeometry(params: {
     keyPrefix,
     top,
     bottom,
+    tone,
     openTop = false,
     openBottom = false,
   } = params;
@@ -82,6 +159,7 @@ export function buildWorkbookRegionOverlayBoxesFromGeometry(params: {
       left: Math.max(0, segment.left),
       width: Math.max(0, segment.width),
       height: Math.max(0, bottom - top),
+      ...(tone ? { tone } : {}),
       openTop,
       openBottom,
     }));
@@ -122,6 +200,7 @@ export function buildWorkbookRegionOverlayBoxes(
           keyPrefix: `${key}:${mode}:${modeIndex}`,
           top: verticalBounds.top,
           bottom: verticalBounds.bottom,
+          tone: resolveWorkbookRegionTone(region.hasBaseSide, region.hasMineSide),
           openTop: verticalBounds.openTop,
           openBottom: verticalBounds.openBottom,
         })
@@ -141,6 +220,9 @@ export function buildWorkbookRegionOverlayBox(
   const bottom = Math.max(...boxes.map((box) => box.top + box.height));
   const openTop = boxes.some((box) => box.openTop);
   const openBottom = boxes.some((box) => box.openBottom);
+  const tone = boxes.reduce<WorkbookRowSemanticTone | undefined>((mergedTone, box) => (
+    mergeWorkbookSemanticTone(mergedTone, box.tone)
+  ), undefined);
 
   return {
     key: options.key,
@@ -148,6 +230,7 @@ export function buildWorkbookRegionOverlayBox(
     left: Math.max(0, left),
     width: Math.max(0, right - left),
     height: Math.max(0, bottom - top),
+    ...(tone ? { tone } : {}),
     openTop,
     openBottom,
   };

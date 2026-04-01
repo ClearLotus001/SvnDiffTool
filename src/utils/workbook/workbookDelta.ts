@@ -18,6 +18,7 @@ import { parseWorkbookDisplayLine } from '@/utils/workbook/workbookDisplay';
 const EMPTY_CELL: WorkbookCellDisplay = { value: '', formula: '' };
 const NULL_LINE_CACHE_KEY: object = {};
 const rowDeltaCache = new WeakMap<object, WeakMap<object, Map<string, WorkbookRowDelta>>>();
+const splitRowSubsetDeltaCache = new WeakMap<object, Map<string, WorkbookRowDelta>>();
 
 export function parseWorkbookRowLine(line: DiffLine | null): WorkbookRowDisplayLine | null {
   if (!line) return null;
@@ -199,13 +200,23 @@ export function buildWorkbookSplitRowDelta(
   }
   if (!columns || columns.length === 0) return precomputed;
 
+  const subsetCacheKey = `${compareMode}::${columns.join(',')}`;
+  let subsetCache = splitRowSubsetDeltaCache.get(row as object);
+  if (!subsetCache) {
+    subsetCache = new Map<string, WorkbookRowDelta>();
+    splitRowSubsetDeltaCache.set(row as object, subsetCache);
+  }
+
+  const cachedSubset = subsetCache.get(subsetCacheKey);
+  if (cachedSubset) return cachedSubset;
+
   const nextCellDeltas = new Map<number, WorkbookCellDelta>();
   columns.forEach((column) => {
     const delta = precomputed.cellDeltas.get(column);
     if (delta) nextCellDeltas.set(column, delta);
   });
   const deltas = [...nextCellDeltas.values()];
-  return {
+  const subsetDelta = {
     cellDeltas: nextCellDeltas,
     changedColumns: deltas.filter((delta) => delta.changed).map((delta) => delta.column),
     strictOnlyColumns: deltas.filter((delta) => delta.strictOnly).map((delta) => delta.column),
@@ -213,4 +224,7 @@ export function buildWorkbookSplitRowDelta(
     hasChanges: deltas.some((delta) => delta.changed),
     tone: resolveWorkbookRowDeltaTone(deltas),
   };
+
+  subsetCache.set(subsetCacheKey, subsetDelta);
+  return subsetDelta;
 }

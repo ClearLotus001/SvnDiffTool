@@ -39,7 +39,7 @@ function getWorkbookColumnLabel(index: number): string {
   return label;
 }
 
-export function buildWorkbookSelectionKey(selection: WorkbookSelectedCell): string {
+function buildWorkbookSelectionKey(selection: WorkbookSelectedCell): string {
   if (selection.kind === 'row') {
     return `row:${buildAxisKey(selection.sheetName, selection.rowNumber)}`;
   }
@@ -180,7 +180,7 @@ function buildWorkbookRangeSelection(
   return [target];
 }
 
-export function selectionContainsCell(
+function selectionContainsCell(
   selection: WorkbookSelectionState,
   target: WorkbookSelectedCell | null,
 ): boolean {

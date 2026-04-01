@@ -2,7 +2,11 @@ import type {
   WorkbookCompareLayoutSnapshot,
   WorkbookHorizontalLayoutSnapshot,
 } from '@/types';
-import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
+import {
+  EMPTY_COLLAPSE_EXPANSION_STATE,
+  areCollapseExpansionStatesEqual,
+  type CollapseExpansionState,
+} from '@/utils/collapse/collapseState';
 import { cloneCollapseExpansionState } from '@/utils/workbook/workbookLayoutSnapshot';
 
 export interface WorkbookLayoutSnapshotsByMode {
@@ -19,7 +23,7 @@ export function createEmptyWorkbookLayoutSnapshots(): WorkbookLayoutSnapshotsByM
   };
 }
 
-export function buildWorkbookLayoutContextKey(
+function buildWorkbookLayoutContextKey(
   sheetName: string | null,
   activeRegionId: string | null,
 ): string {
@@ -37,23 +41,38 @@ function cloneSnapshotWithExpandedBlocks<
   if (buildWorkbookLayoutContextKey(snapshot.sheetName, snapshot.activeRegionId) !== contextKey) {
     return snapshot;
   }
+  if (areCollapseExpansionStatesEqual(snapshot.expandedBlocks, expandedBlocks)) {
+    return snapshot;
+  }
   return {
     ...snapshot,
     expandedBlocks: cloneCollapseExpansionState(expandedBlocks),
   };
 }
 
-export function syncWorkbookSnapshotExpandedBlocks(
+function syncWorkbookSnapshotExpandedBlocks(
   snapshots: WorkbookLayoutSnapshotsByMode,
   sheetName: string | null,
   activeRegionId: string | null,
   expandedBlocks: CollapseExpansionState,
 ): WorkbookLayoutSnapshotsByMode {
   const contextKey = buildWorkbookLayoutContextKey(sheetName, activeRegionId);
+  const unified = cloneSnapshotWithExpandedBlocks(snapshots.unified, contextKey, expandedBlocks);
+  const splitV = cloneSnapshotWithExpandedBlocks(snapshots['split-v'], contextKey, expandedBlocks);
+  const splitH = cloneSnapshotWithExpandedBlocks(snapshots['split-h'], contextKey, expandedBlocks);
+
+  if (
+    unified === snapshots.unified
+    && splitV === snapshots['split-v']
+    && splitH === snapshots['split-h']
+  ) {
+    return snapshots;
+  }
+
   return {
-    unified: cloneSnapshotWithExpandedBlocks(snapshots.unified, contextKey, expandedBlocks),
-    'split-v': cloneSnapshotWithExpandedBlocks(snapshots['split-v'], contextKey, expandedBlocks),
-    'split-h': cloneSnapshotWithExpandedBlocks(snapshots['split-h'], contextKey, expandedBlocks),
+    unified,
+    'split-v': splitV,
+    'split-h': splitH,
   };
 }
 
@@ -77,19 +96,22 @@ export function applyWorkbookExpandedBlocksChange(
   snapshots: WorkbookLayoutSnapshotsByMode;
 } {
   const nextExpandedBlocks = cloneCollapseExpansionState(expandedBlocks);
-  const nextShared = new Map(sharedExpandedBlocksByContext);
-  nextShared.set(
-    buildWorkbookLayoutContextKey(sheetName, activeRegionId),
+  const contextKey = buildWorkbookLayoutContextKey(sheetName, activeRegionId);
+  const previousExpandedBlocks = sharedExpandedBlocksByContext.get(contextKey) ?? EMPTY_COLLAPSE_EXPANSION_STATE;
+  const nextShared = areCollapseExpansionStatesEqual(previousExpandedBlocks, nextExpandedBlocks)
+    ? sharedExpandedBlocksByContext
+    : new Map(sharedExpandedBlocksByContext).set(contextKey, nextExpandedBlocks);
+
+  const nextSnapshots = syncWorkbookSnapshotExpandedBlocks(
+    snapshots,
+    sheetName,
+    activeRegionId,
     nextExpandedBlocks,
   );
+
   return {
     sharedExpandedBlocksByContext: nextShared,
-    snapshots: syncWorkbookSnapshotExpandedBlocks(
-      snapshots,
-      sheetName,
-      activeRegionId,
-      nextExpandedBlocks,
-    ),
+    snapshots: nextSnapshots,
   };
 }
 

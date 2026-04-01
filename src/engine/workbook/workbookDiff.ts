@@ -24,7 +24,7 @@ function splitLines(text: string): string[] {
   return lines.map(line => line.endsWith('\r') ? line.slice(0, -1) : line);
 }
 
-export function isWorkbookText(text: string): boolean {
+function isWorkbookText(text: string): boolean {
   const firstNonEmptyLine = splitLines(text).find(line => line.trim().length > 0) ?? '';
   const parsed = parseWorkbookDisplayLine(firstNonEmptyLine);
   return parsed?.kind === 'sheet' || parsed?.kind === 'row';

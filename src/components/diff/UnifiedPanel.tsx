@@ -104,6 +104,8 @@ const UnifiedPanel = memo(({
   const { totalH, startIdx, endIdx, scrollToIndex } = useVirtual(
     items.length,
     scrollRef as RefObject<HTMLDivElement>,
+    ROW_H,
+    { overscanMin: 40, overscanFactor: 2 },
   );
 
   const revealLineIfCollapsed = useCallback((lineIdx: number) => {

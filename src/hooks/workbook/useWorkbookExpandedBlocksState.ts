@@ -1,6 +1,9 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { WorkbookLayoutSnapshot } from '@/types';
-import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
+import {
+  areCollapseExpansionStatesEqual,
+  type CollapseExpansionState,
+} from '@/utils/collapse/collapseState';
 import {
   cloneCollapseExpansionState,
   resolveWorkbookExpandedBlocksForContext,
@@ -34,6 +37,7 @@ export function useWorkbookExpandedBlocksState({
   );
   const contextKeyRef = useRef(contextKey);
   const syncStateKeyRef = useRef(syncStateKey);
+  const [settledSyncStateKey, setSettledSyncStateKey] = useState(syncStateKey);
   const [expandedBlocks, setExpandedBlocks] = useState<CollapseExpansionState>(() => (
     cloneCollapseExpansionState(resolvedExpandedBlocks)
   ));
@@ -42,12 +46,17 @@ export function useWorkbookExpandedBlocksState({
     if (contextKeyRef.current === contextKey && syncStateKeyRef.current === syncStateKey) return;
     contextKeyRef.current = contextKey;
     syncStateKeyRef.current = syncStateKey;
-    setExpandedBlocks(cloneCollapseExpansionState(resolvedExpandedBlocks));
+    setExpandedBlocks((previous) => (
+      areCollapseExpansionStatesEqual(previous, resolvedExpandedBlocks)
+        ? previous
+        : cloneCollapseExpansionState(resolvedExpandedBlocks)
+    ));
+    setSettledSyncStateKey(syncStateKey);
   }, [contextKey, resolvedExpandedBlocks, syncStateKey]);
 
   return {
     expandedBlocks,
     setExpandedBlocks,
-    isContextSettled: contextKeyRef.current === contextKey,
+    isContextSettled: settledSyncStateKey === syncStateKey,
   };
 }

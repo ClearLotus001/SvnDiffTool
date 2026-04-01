@@ -22,6 +22,16 @@ interface WorkbookDiffRegionNode extends WorkbookDiffRegionPatch {
   anchorLineIdx: number;
 }
 
+interface WorkbookDiffRegionBlock {
+  startRowIndex: number;
+  endRowIndex: number;
+  startCol: number;
+  endCol: number;
+  hasBaseSide: boolean;
+  hasMineSide: boolean;
+  patches: WorkbookDiffRegionNode[];
+}
+
 function findParent(parent: number[], index: number): number {
   if (parent[index] === index) return index;
   parent[index] = findParent(parent, parent[index]!);
@@ -34,6 +44,15 @@ function unionParent(parent: number[], left: number, right: number) {
   if (leftRoot !== rightRoot) parent[rightRoot] = leftRoot;
 }
 
+function intervalsOverlap(
+  startA: number,
+  endA: number,
+  startB: number,
+  endB: number,
+): boolean {
+  return startA <= endB && endA >= startB;
+}
+
 function intervalsTouch(
   startA: number,
   endA: number,
@@ -43,9 +62,168 @@ function intervalsTouch(
   return startA <= (endB + 1) && endA >= (startB - 1);
 }
 
-function patchesTouch(left: WorkbookDiffRegionPatch, right: WorkbookDiffRegionPatch): boolean {
-  return intervalsTouch(left.startRowIndex, left.endRowIndex, right.startRowIndex, right.endRowIndex)
-    && intervalsTouch(left.startCol, left.endCol, right.startCol, right.endCol);
+function compareWorkbookDiffRegionNodes(
+  left: WorkbookDiffRegionNode,
+  right: WorkbookDiffRegionNode,
+): number {
+  return left.startRowIndex - right.startRowIndex
+    || left.startCol - right.startCol
+    || left.endRowIndex - right.endRowIndex
+    || left.endCol - right.endCol
+    || Number(left.hasBaseSide) - Number(right.hasBaseSide)
+    || Number(left.hasMineSide) - Number(right.hasMineSide)
+    || (left.baseRowStart ?? -1) - (right.baseRowStart ?? -1)
+    || (left.baseRowEnd ?? -1) - (right.baseRowEnd ?? -1)
+    || (left.mineRowStart ?? -1) - (right.mineRowStart ?? -1)
+    || (left.mineRowEnd ?? -1) - (right.mineRowEnd ?? -1)
+    || left.anchorLineIdx - right.anchorLineIdx;
+}
+
+function compareWorkbookDiffRegionBlocks(
+  left: WorkbookDiffRegionBlock,
+  right: WorkbookDiffRegionBlock,
+): number {
+  return left.startRowIndex - right.startRowIndex
+    || left.startCol - right.startCol
+    || left.endRowIndex - right.endRowIndex
+    || left.endCol - right.endCol
+    || Number(left.hasBaseSide) - Number(right.hasBaseSide)
+    || Number(left.hasMineSide) - Number(right.hasMineSide);
+}
+
+function mergeLineIdxs(lineIdxArrays: number[][]): number[] {
+  return Array.from(new Set(lineIdxArrays.flatMap((lineIdxs) => lineIdxs)))
+    .sort((left, right) => left - right);
+}
+
+function buildWorkbookDiffRegionNodeKey(node: WorkbookDiffRegionNode): string {
+  return [
+    node.startRowIndex,
+    node.endRowIndex,
+    node.startCol,
+    node.endCol,
+    node.baseRowStart ?? '',
+    node.baseRowEnd ?? '',
+    node.mineRowStart ?? '',
+    node.mineRowEnd ?? '',
+    Number(node.hasBaseSide),
+    Number(node.hasMineSide),
+  ].join(':');
+}
+
+function normalizeWorkbookDiffRegionNodes(nodes: WorkbookDiffRegionNode[]): WorkbookDiffRegionNode[] {
+  if (nodes.length <= 1) return nodes.slice().sort(compareWorkbookDiffRegionNodes);
+
+  const groups = new Map<string, WorkbookDiffRegionNode[]>();
+  nodes.forEach((node) => {
+    const key = buildWorkbookDiffRegionNodeKey(node);
+    const group = groups.get(key);
+    if (group) group.push(node);
+    else groups.set(key, [node]);
+  });
+
+  return Array.from(groups.values())
+    .map((group) => {
+      const anchorNode = group
+        .slice()
+        .sort(compareWorkbookDiffRegionNodes)
+        .find((node) => node.anchorSelection != null) ?? group[0]!;
+      const rowNumberCandidates = group
+        .flatMap((node) => [node.rowNumberStart, node.rowNumberEnd])
+        .filter((value) => value > 0);
+
+      return {
+        ...anchorNode,
+        lineIdxs: mergeLineIdxs(group.map((node) => node.lineIdxs)),
+        rowNumberStart: rowNumberCandidates.length > 0 ? Math.min(...rowNumberCandidates) : 0,
+        rowNumberEnd: rowNumberCandidates.length > 0 ? Math.max(...rowNumberCandidates) : 0,
+        anchorSelection: anchorNode.anchorSelection,
+        anchorLineIdx: Math.min(...group.map((node) => node.anchorLineIdx)),
+      };
+    })
+    .sort(compareWorkbookDiffRegionNodes);
+}
+
+function buildWorkbookDiffRegionBlock(
+  patches: WorkbookDiffRegionNode[],
+): WorkbookDiffRegionBlock {
+  return {
+    startRowIndex: Math.min(...patches.map((patch) => patch.startRowIndex)),
+    endRowIndex: Math.max(...patches.map((patch) => patch.endRowIndex)),
+    startCol: Math.min(...patches.map((patch) => patch.startCol)),
+    endCol: Math.max(...patches.map((patch) => patch.endCol)),
+    hasBaseSide: patches.some((patch) => patch.hasBaseSide),
+    hasMineSide: patches.some((patch) => patch.hasMineSide),
+    patches: patches.slice().sort(compareWorkbookDiffRegionNodes),
+  };
+}
+
+function patchesBelongToSameVisualRegion(
+  left: WorkbookDiffRegionNode,
+  right: WorkbookDiffRegionNode,
+): boolean {
+  const rowsOverlap = intervalsOverlap(
+    left.startRowIndex,
+    left.endRowIndex,
+    right.startRowIndex,
+    right.endRowIndex,
+  );
+  const colsOverlap = intervalsOverlap(
+    left.startCol,
+    left.endCol,
+    right.startCol,
+    right.endCol,
+  );
+
+  return (
+    rowsOverlap
+    && intervalsTouch(left.startCol, left.endCol, right.startCol, right.endCol)
+  ) || (
+    colsOverlap
+    && intervalsTouch(left.startRowIndex, left.endRowIndex, right.startRowIndex, right.endRowIndex)
+  );
+}
+
+function buildWorkbookDiffRegionBlocks(
+  nodes: WorkbookDiffRegionNode[],
+): WorkbookDiffRegionBlock[] {
+  const normalizedNodes = normalizeWorkbookDiffRegionNodes(nodes);
+  if (normalizedNodes.length === 0) return [];
+
+  const sortedNodeIndexes = normalizedNodes
+    .map((node, index) => ({ node, index }))
+    .sort((left, right) => compareWorkbookDiffRegionNodes(left.node, right.node))
+    .map((entry) => entry.index);
+  const parent = normalizedNodes.map((_, index) => index);
+  const activeNodeIndexes: number[] = [];
+
+  sortedNodeIndexes.forEach((nodeIndex) => {
+    const node = normalizedNodes[nodeIndex]!;
+    for (let activeIndex = activeNodeIndexes.length - 1; activeIndex >= 0; activeIndex -= 1) {
+      const otherIndex = activeNodeIndexes[activeIndex]!;
+      const otherNode = normalizedNodes[otherIndex]!;
+      if (otherNode.endRowIndex < node.startRowIndex - 1) {
+        activeNodeIndexes.splice(activeIndex, 1);
+        continue;
+      }
+      if (patchesBelongToSameVisualRegion(node, otherNode)) {
+        unionParent(parent, otherIndex, nodeIndex);
+      }
+    }
+    activeNodeIndexes.push(nodeIndex);
+  });
+
+  const groupedNodes = new Map<number, WorkbookDiffRegionNode[]>();
+  normalizedNodes.forEach((node, index) => {
+    const root = findParent(parent, index);
+    const group = groupedNodes.get(root);
+    if (group) group.push(node);
+    else groupedNodes.set(root, [node]);
+  });
+
+  return Array.from(groupedNodes.values())
+    .map((groupNodes) => buildWorkbookDiffRegionBlock(groupNodes))
+    .sort(compareWorkbookDiffRegionBlocks);
 }
 
 function resolveRowIndex(
@@ -75,11 +253,11 @@ function buildNodeAnchorSelection(
   if (row.left?.type === 'delete' && baseEntry) {
     return buildWorkbookSelectedCell(baseEntry, column, baseMergeRanges);
   }
-  if (mineEntry) {
-    return buildWorkbookSelectedCell(mineEntry, column, mineMergeRanges);
-  }
   if (baseEntry) {
     return buildWorkbookSelectedCell(baseEntry, column, baseMergeRanges);
+  }
+  if (mineEntry) {
+    return buildWorkbookSelectedCell(mineEntry, column, mineMergeRanges);
   }
   return null;
 }
@@ -185,70 +363,29 @@ function aggregateWorkbookDiffRegions(
 ): WorkbookDiffRegion[] {
   if (nodes.length === 0) return [];
 
-  const sortedNodeIndexes = nodes
-    .map((node, index) => ({ node, index }))
-    .sort((left, right) => (
-      left.node.startRowIndex - right.node.startRowIndex
-      || left.node.startCol - right.node.startCol
-      || left.node.endRowIndex - right.node.endRowIndex
-      || left.node.endCol - right.node.endCol
-    ))
-    .map((entry) => entry.index);
-  const parent = nodes.map((_, index) => index);
-  const activeNodeIndexes: number[] = [];
-
-  sortedNodeIndexes.forEach((nodeIndex) => {
-    const node = nodes[nodeIndex]!;
-    for (let activeIndex = activeNodeIndexes.length - 1; activeIndex >= 0; activeIndex -= 1) {
-      const otherIndex = activeNodeIndexes[activeIndex]!;
-      const otherNode = nodes[otherIndex]!;
-      if (otherNode.endRowIndex < node.startRowIndex - 1) {
-        activeNodeIndexes.splice(activeIndex, 1);
-        continue;
-      }
-      if (patchesTouch(node, otherNode)) {
-        unionParent(parent, otherIndex, nodeIndex);
-      }
-    }
-    activeNodeIndexes.push(nodeIndex);
-  });
-
-  const groupedNodes = new Map<number, WorkbookDiffRegionNode[]>();
-  nodes.forEach((node, index) => {
-    const root = findParent(parent, index);
-    const group = groupedNodes.get(root);
-    if (group) group.push(node);
-    else groupedNodes.set(root, [node]);
-  });
-
-  return Array.from(groupedNodes.values())
-    .map((groupNodes, regionIndex) => {
-      const patches = groupNodes.slice().sort((left, right) => (
-        left.startRowIndex - right.startRowIndex
-        || left.startCol - right.startCol
-        || left.endRowIndex - right.endRowIndex
-        || left.endCol - right.endCol
-      ));
+  return buildWorkbookDiffRegionBlocks(nodes)
+    .map((block, regionIndex) => {
+      const patches = block.patches.slice().sort(compareWorkbookDiffRegionNodes);
       const anchorPatch = patches[0]!;
-      const lineIdxs = patches.flatMap((patch) => patch.lineIdxs);
+      const lineIdxs = mergeLineIdxs(patches.map((patch) => patch.lineIdxs));
       const rowNumberCandidates = patches
         .flatMap((patch) => [patch.rowNumberStart, patch.rowNumberEnd])
         .filter((value) => value > 0);
 
       return {
-        id: `${sheetName}:${anchorPatch.startRowIndex}:${anchorPatch.startCol}:${regionIndex}`,
+        id: `${sheetName}:${block.startRowIndex}:${block.startCol}:${regionIndex}`,
         sheetName,
-        startRowIndex: Math.min(...patches.map((patch) => patch.startRowIndex)),
-        endRowIndex: Math.max(...patches.map((patch) => patch.endRowIndex)),
-        startCol: Math.min(...patches.map((patch) => patch.startCol)),
-        endCol: Math.max(...patches.map((patch) => patch.endCol)),
+        startRowIndex: block.startRowIndex,
+        endRowIndex: block.endRowIndex,
+        startCol: block.startCol,
+        endCol: block.endCol,
         rowNumberStart: rowNumberCandidates.length > 0 ? Math.min(...rowNumberCandidates) : 0,
         rowNumberEnd: rowNumberCandidates.length > 0 ? Math.max(...rowNumberCandidates) : 0,
         lineStartIdx: Math.min(...lineIdxs),
         lineEndIdx: Math.max(...lineIdxs),
         anchorLineIdx: anchorPatch.anchorLineIdx,
-        hasBaseSide: patches.some((patch) => patch.hasBaseSide),
-        hasMineSide: patches.some((patch) => patch.hasMineSide),
+        hasBaseSide: block.hasBaseSide,
+        hasMineSide: block.hasMineSide,
         anchorSelection: anchorPatch.anchorSelection,
         patches,
       };
@@ -307,60 +444,16 @@ export function buildWorkbookNavigationRegions(
   const navigationRegions: WorkbookDiffRegion[] = [];
   const usedRegionIds = new Set<string>();
 
-  hunks.forEach((hunk, hunkIndex) => {
+  hunks.forEach((hunk) => {
     const matchingRegions = regions
       .filter((region) => workbookDiffRegionIntersectsHunk(region, hunk))
       .sort(compareWorkbookDiffRegions);
-    if (matchingRegions.length === 0) return;
 
-    const groupsBySheet = new Map<string, WorkbookDiffRegion[]>();
     matchingRegions.forEach((region) => {
+      if (usedRegionIds.has(region.id)) return;
       usedRegionIds.add(region.id);
-      const group = groupsBySheet.get(region.sheetName);
-      if (group) group.push(region);
-      else groupsBySheet.set(region.sheetName, [region]);
+      navigationRegions.push(region);
     });
-
-    Array.from(groupsBySheet.entries())
-      .sort((left, right) => compareWorkbookDiffRegions(left[1][0]!, right[1][0]!))
-      .forEach(([sheetName, sheetRegions]) => {
-        const sortedRegions = sheetRegions.slice().sort(compareWorkbookDiffRegions);
-        const patches = sortedRegions
-          .flatMap((region) => region.patches)
-          .sort((left, right) => (
-            left.startRowIndex - right.startRowIndex
-            || left.startCol - right.startCol
-            || left.endRowIndex - right.endRowIndex
-            || left.endCol - right.endCol
-          ));
-        const rowNumberCandidates = patches
-          .flatMap((patch) => [
-            patch.baseRowStart,
-            patch.baseRowEnd,
-            patch.mineRowStart,
-            patch.mineRowEnd,
-          ])
-          .filter((value): value is number => value != null && value > 0);
-        const anchorRegion = sortedRegions.find((region) => region.anchorSelection != null) ?? sortedRegions[0]!;
-
-        navigationRegions.push({
-          id: `${sheetName}:${hunk.startIdx}:${hunk.endIdx}:nav:${hunkIndex}`,
-          sheetName,
-          startRowIndex: Math.min(...patches.map((patch) => patch.startRowIndex)),
-          endRowIndex: Math.max(...patches.map((patch) => patch.endRowIndex)),
-          startCol: Math.min(...patches.map((patch) => patch.startCol)),
-          endCol: Math.max(...patches.map((patch) => patch.endCol)),
-          rowNumberStart: rowNumberCandidates.length > 0 ? Math.min(...rowNumberCandidates) : 0,
-          rowNumberEnd: rowNumberCandidates.length > 0 ? Math.max(...rowNumberCandidates) : 0,
-          lineStartIdx: Math.min(...sortedRegions.map((region) => region.lineStartIdx)),
-          lineEndIdx: Math.max(...sortedRegions.map((region) => region.lineEndIdx)),
-          anchorLineIdx: Math.min(...sortedRegions.map((region) => region.anchorLineIdx)),
-          hasBaseSide: patches.some((patch) => patch.hasBaseSide),
-          hasMineSide: patches.some((patch) => patch.hasMineSide),
-          anchorSelection: anchorRegion.anchorSelection,
-          patches,
-        });
-      });
   });
 
   regions
@@ -394,6 +487,20 @@ export function formatWorkbookDiffRegionLabel(
     );
 
   return includeSheetName ? `${region.sheetName}!${body}` : body;
+}
+
+export function formatWorkbookDiffRegionSummary(
+  region: WorkbookDiffRegion | null | undefined,
+): string {
+  if (!region) return '';
+
+  const rangeLabel = formatWorkbookDiffRegionLabel(region, false);
+  const rowCount = region.rowNumberStart > 0 && region.rowNumberEnd > 0
+    ? Math.max(1, region.rowNumberEnd - region.rowNumberStart + 1)
+    : Math.max(1, region.endRowIndex - region.startRowIndex + 1);
+  const columnCount = Math.max(1, region.endCol - region.startCol + 1);
+
+  return `${rangeLabel} · ${rowCount}×${columnCount}`;
 }
 
 export function workbookDiffRegionContainsSelection(

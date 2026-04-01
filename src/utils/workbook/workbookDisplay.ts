@@ -1,5 +1,5 @@
-export const WORKBOOK_SHEET_PREFIX = '@@sheet';
-export const WORKBOOK_ROW_PREFIX = '@@row';
+const WORKBOOK_SHEET_PREFIX = '@@sheet';
+const WORKBOOK_ROW_PREFIX = '@@row';
 export const WORKBOOK_CELL_WIDTH = 148;
 const WORKBOOK_FORMULA_SEPARATOR = '\u001F';
 
@@ -62,6 +62,7 @@ export function createWorkbookRowLine(rowNumber: number, cells: Array<string | W
 }
 
 export function parseWorkbookDisplayLine(line: string): WorkbookDisplayLine | null {
+  if (typeof line !== 'string') return null;
   const cached = parsedDisplayLineCache.get(line);
   if (cached !== undefined) return cached;
 
@@ -89,15 +90,4 @@ export function parseWorkbookDisplayLine(line: string): WorkbookDisplayLine | nu
   }
   parsedDisplayLineCache.set(line, parsed);
   return parsed;
-}
-
-export function getWorkbookCopyText(parsed: WorkbookDisplayLine): string {
-  if (parsed.kind === 'sheet') return parsed.sheetName;
-  return parsed.cells.map(cell => cell.value).join('\t').trimEnd();
-}
-
-export function getWorkbookVisualWidth(parsed: WorkbookDisplayLine, displayColumns?: number): number {
-  if (parsed.kind === 'sheet') return 280;
-  const columnCount = displayColumns ?? Math.max(parsed.cells.length, 1);
-  return Math.max(280, Math.max(columnCount, 1) * WORKBOOK_CELL_WIDTH);
 }

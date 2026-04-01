@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 
 import { THEMES } from '../src/theme';
 import { getWorkbookCompareCellsTone } from '../src/utils/workbook/workbookCompareTone';
-import { resolveWorkbookCompareCellVisual } from '../src/utils/workbook/workbookCompareVisuals';
+import {
+  getWorkbookCompareHintVisual,
+  getWorkbookMergeContinuationVisual,
+  resolveWorkbookCompareCellKind,
+  resolveWorkbookCompareCellVisual,
+} from '../src/utils/workbook/workbookCompareVisuals';
 
 const changedCell = {
   column: 2,
@@ -242,5 +247,24 @@ test('masked workbook cells preserve the normal palette and overlay', () => {
     border: THEMES.light.border2,
     textColor: THEMES.light.t0,
     maskOverlay: `${THEMES.light.bg1}22`,
+  });
+});
+
+test('compare visuals expose shared semantic hint palettes and merge continuation visuals', () => {
+  assert.equal(resolveWorkbookCompareCellKind({
+    ...changedCell,
+    strictOnly: true,
+    kind: 'delete',
+  }), 'strict-only');
+
+  assert.deepEqual(getWorkbookCompareHintVisual(THEMES.light, 'strict-only'), {
+    background: `${THEMES.light.acc2}14`,
+    border: `${THEMES.light.acc2}33`,
+    textColor: THEMES.light.acc2,
+  });
+
+  assert.deepEqual(getWorkbookMergeContinuationVisual(THEMES.light, THEMES.light.delBrd), {
+    background: `${THEMES.light.bg0}1c`,
+    guideStroke: `${THEMES.light.delBrd}66`,
   });
 });

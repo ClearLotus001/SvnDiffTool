@@ -10,9 +10,18 @@ interface CollapseBarProps {
   expandCount: number;
   onExpand: () => void;
   onExpandAll?: (() => void) | undefined;
+  palette?: {
+    background: string;
+    border: string;
+    accent: string;
+    buttonBorder: string;
+    buttonText: string;
+    labelText?: string;
+    subduedText?: string;
+  } | undefined;
 }
 
-const CollapseBar = memo(({ count, expandCount, onExpand, onExpandAll }: CollapseBarProps) => {
+const CollapseBar = memo(({ count, expandCount, onExpand, onExpandAll, palette }: CollapseBarProps) => {
   const T = useTheme();
   const { t } = useI18n();
   const shouldShowPartialExpand = expandCount < count;
@@ -28,16 +37,16 @@ const CollapseBar = memo(({ count, expandCount, onExpand, onExpandAll }: Collaps
         flexWrap: 'wrap',
         padding: '0 10px',
         gap: 6,
-        background: T.bg2,
-        borderTop: `1px dashed ${T.border}`,
-        borderBottom: `1px dashed ${T.border}`,
-        color: T.t2,
+        background: palette?.background ?? T.bg2,
+        borderTop: `1px dashed ${palette?.border ?? T.border}`,
+        borderBottom: `1px dashed ${palette?.border ?? T.border}`,
+        color: palette?.subduedText ?? T.t2,
         fontSize: FONT_SIZE.sm,
         fontFamily: FONT_UI,
         userSelect: 'none',
       }}>
       <span style={{ fontFamily: FONT_CODE }}>···</span>
-      <span style={{ color: T.acc2, fontFamily: FONT_CODE }}>{t('collapseBarLines', { count })}</span>
+      <span style={{ color: palette?.accent ?? T.acc2, fontFamily: FONT_CODE }}>{t('collapseBarLines', { count })}</span>
       <button
         type="button"
         onClick={singleActionHandler}
@@ -45,9 +54,9 @@ const CollapseBar = memo(({ count, expandCount, onExpand, onExpandAll }: Collaps
           height: 20,
           padding: '0 8px',
           borderRadius: 999,
-          border: `1px solid ${T.border}`,
+          border: `1px solid ${palette?.buttonBorder ?? T.border}`,
           background: T.bg1,
-          color: T.t1,
+          color: palette?.buttonText ?? T.t1,
           fontSize: 10,
           fontFamily: FONT_UI,
           fontWeight: 700,
@@ -66,9 +75,9 @@ const CollapseBar = memo(({ count, expandCount, onExpand, onExpandAll }: Collaps
             height: 20,
             padding: '0 8px',
             borderRadius: 999,
-            border: `1px solid ${T.border}`,
+            border: `1px solid ${palette?.buttonBorder ?? T.border}`,
             background: T.bg1,
-            color: T.t1,
+            color: palette?.buttonText ?? T.t1,
             fontSize: 10,
             fontFamily: FONT_UI,
             fontWeight: 700,

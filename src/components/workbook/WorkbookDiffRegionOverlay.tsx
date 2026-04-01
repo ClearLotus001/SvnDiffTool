@@ -1,16 +1,70 @@
-import { memo, useId, type CSSProperties } from 'react';
+import { memo, useMemo, type CSSProperties } from 'react';
+import { FONT_SIZE, FONT_UI } from '@/constants/typography';
 import { useTheme } from '@/context/theme';
 import type { WorkbookRegionOverlayBox as WorkbookDiffRegionOverlayBox } from '@/utils/workbook/workbookRegionOverlay';
+import {
+  mergeWorkbookSemanticTone,
+  resolveWorkbookOverlayPalette,
+  type WorkbookRowSemanticTone,
+} from '@/utils/workbook/workbookRowVisuals';
 
 export type { WorkbookDiffRegionOverlayBox };
 
 const MERGE_GAP = 6;
 const EDGE_ALIGN_TOLERANCE = 20;
 const MIN_HORIZONTAL_OVERLAP_RATIO = 0.72;
-const BORDER_RADIUS = 12;
 const EDGE_WIDTH = 2;
-const EDGE_INSET = 6;
-const CORNER_SIZE = 14;
+const EDGE_OFFSET = -1;
+const CONTINUATION_HEIGHT = 4;
+const OUTLINE_MERGE_EPSILON = 0.5;
+
+function clampAlpha(alpha: number): number {
+  if (!Number.isFinite(alpha)) return 1;
+  return Math.max(0, Math.min(1, alpha));
+}
+
+function parseHexColor(color: string): { red: number; green: number; blue: number } | null {
+  const hex = color.trim();
+  if (!hex.startsWith('#')) return null;
+
+  const raw = hex.slice(1);
+  if (raw.length === 3 || raw.length === 4) {
+    const [r = '', g = '', b = ''] = raw.split('');
+    return {
+      red: Number.parseInt(`${r}${r}`, 16),
+      green: Number.parseInt(`${g}${g}`, 16),
+      blue: Number.parseInt(`${b}${b}`, 16),
+    };
+  }
+
+  if (raw.length === 6 || raw.length === 8) {
+    return {
+      red: Number.parseInt(raw.slice(0, 2), 16),
+      green: Number.parseInt(raw.slice(2, 4), 16),
+      blue: Number.parseInt(raw.slice(4, 6), 16),
+    };
+  }
+
+  return null;
+}
+
+function parseRgbColor(color: string): { red: number; green: number; blue: number } | null {
+  const match = color.trim().match(/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
+  if (!match) return null;
+
+  return {
+    red: Number(match[1]),
+    green: Number(match[2]),
+    blue: Number(match[3]),
+  };
+}
+
+export function applyOverlayAlpha(color: string, alpha: number): string {
+  const normalizedAlpha = clampAlpha(alpha);
+  const rgb = parseHexColor(color) ?? parseRgbColor(color);
+  if (!rgb) return color;
+  return `rgba(${rgb.red}, ${rgb.green}, ${rgb.blue}, ${normalizedAlpha})`;
+}
 
 function resolveOpenTop(box: WorkbookDiffRegionOverlayBox) {
   return Boolean(box.openTop);
@@ -55,12 +109,14 @@ export function mergeWorkbookDiffRegionOverlayBoxes(
         const top = Math.min(nextBox.top, candidate.top);
         const right = Math.max(seedRight, candidateRight);
         const bottom = Math.max(seedBottom, candidateBottom);
+        const tone = mergeWorkbookSemanticTone(nextBox.tone, candidate.tone);
         nextBox = {
           key: `${nextBox.key}:${candidate.key}`,
           left,
           top,
           width: right - left,
           height: bottom - top,
+          ...(tone ? { tone } : {}),
           openTop: top === nextBox.top
             ? resolveOpenTop(nextBox)
             : resolveOpenTop(candidate),
@@ -84,43 +140,257 @@ export function mergeWorkbookDiffRegionOverlayBoxes(
   ));
 }
 
+interface WorkbookDiffRegionOverlayBoundarySegment {
+  coord: number;
+  start: number;
+  end: number;
+  tone?: WorkbookRowSemanticTone;
+}
+
+export interface WorkbookDiffRegionOverlayOutlineSegment {
+  key: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  tone?: WorkbookRowSemanticTone;
+}
+
+function sortUniqueNumbers(values: number[]): number[] {
+  return [...new Set(values)].sort((left, right) => left - right);
+}
+
+function buildBoundaryGrid<T>(rows: number, cols: number, initialValue: T): T[][] {
+  return Array.from({ length: rows }, () => Array.from({ length: cols }, () => initialValue));
+}
+
+function mergeHorizontalBoundarySegments(
+  segments: WorkbookDiffRegionOverlayBoundarySegment[],
+): WorkbookDiffRegionOverlayOutlineSegment[] {
+  const grouped = new Map<string, WorkbookDiffRegionOverlayBoundarySegment[]>();
+
+  segments.forEach((segment) => {
+    const key = `${segment.coord}:${segment.tone ?? ''}`;
+    const bucket = grouped.get(key);
+    if (bucket) {
+      bucket.push(segment);
+      return;
+    }
+    grouped.set(key, [segment]);
+  });
+
+  const merged: WorkbookDiffRegionOverlayOutlineSegment[] = [];
+  grouped.forEach((bucket, keyPrefix) => {
+    bucket
+      .slice()
+      .sort((left, right) => left.start - right.start || left.end - right.end)
+      .forEach((segment) => {
+        const previous = merged[merged.length - 1];
+        if (
+          previous
+          && previous.height === EDGE_WIDTH
+          && previous.top === segment.coord + EDGE_OFFSET
+          && previous.tone === segment.tone
+          && segment.start <= previous.left + previous.width + OUTLINE_MERGE_EPSILON
+        ) {
+          previous.width = Math.max(previous.width, segment.end - previous.left);
+          return;
+        }
+        merged.push({
+          key: `${keyPrefix}:${segment.start}:${segment.end}`,
+          left: segment.start,
+          top: segment.coord + EDGE_OFFSET,
+          width: Math.max(0, segment.end - segment.start),
+          height: EDGE_WIDTH,
+          ...(segment.tone ? { tone: segment.tone } : {}),
+        });
+      });
+  });
+
+  return merged;
+}
+
+function mergeVerticalBoundarySegments(
+  segments: WorkbookDiffRegionOverlayBoundarySegment[],
+): WorkbookDiffRegionOverlayOutlineSegment[] {
+  const grouped = new Map<string, WorkbookDiffRegionOverlayBoundarySegment[]>();
+
+  segments.forEach((segment) => {
+    const key = `${segment.coord}:${segment.tone ?? ''}`;
+    const bucket = grouped.get(key);
+    if (bucket) {
+      bucket.push(segment);
+      return;
+    }
+    grouped.set(key, [segment]);
+  });
+
+  const merged: WorkbookDiffRegionOverlayOutlineSegment[] = [];
+  grouped.forEach((bucket, keyPrefix) => {
+    bucket
+      .slice()
+      .sort((left, right) => left.start - right.start || left.end - right.end)
+      .forEach((segment) => {
+        const previous = merged[merged.length - 1];
+        if (
+          previous
+          && previous.width === EDGE_WIDTH
+          && previous.left === segment.coord + EDGE_OFFSET
+          && previous.tone === segment.tone
+          && segment.start <= previous.top + previous.height + OUTLINE_MERGE_EPSILON
+        ) {
+          previous.height = Math.max(previous.height, segment.end - previous.top);
+          return;
+        }
+        merged.push({
+          key: `${keyPrefix}:${segment.start}:${segment.end}`,
+          left: segment.coord + EDGE_OFFSET,
+          top: segment.start,
+          width: EDGE_WIDTH,
+          height: Math.max(0, segment.end - segment.start),
+          ...(segment.tone ? { tone: segment.tone } : {}),
+        });
+      });
+  });
+
+  return merged;
+}
+
+export function buildWorkbookDiffRegionOverlayOutlineSegments(
+  boxes: WorkbookDiffRegionOverlayBox[],
+): WorkbookDiffRegionOverlayOutlineSegment[] {
+  const normalizedBoxes = boxes
+    .filter((box) => box.width > 0 && box.height > 0)
+    .map((box) => ({
+      ...box,
+      right: box.left + box.width,
+      bottom: box.top + box.height,
+    }));
+  if (normalizedBoxes.length === 0) return [];
+
+  const xs = sortUniqueNumbers(normalizedBoxes.flatMap((box) => [box.left, box.right]));
+  const ys = sortUniqueNumbers(normalizedBoxes.flatMap((box) => [box.top, box.bottom]));
+  if (xs.length < 2 || ys.length < 2) return [];
+
+  const colCount = xs.length - 1;
+  const rowCount = ys.length - 1;
+  const occupied = buildBoundaryGrid<boolean>(rowCount, colCount, false);
+  const drawTop = buildBoundaryGrid<boolean>(rowCount, colCount, false);
+  const drawBottom = buildBoundaryGrid<boolean>(rowCount, colCount, false);
+  const cellTone = buildBoundaryGrid<WorkbookRowSemanticTone | undefined>(rowCount, colCount, undefined);
+  const xIndex = new Map(xs.map((value, index) => [value, index]));
+  const yIndex = new Map(ys.map((value, index) => [value, index]));
+
+  normalizedBoxes.forEach((box) => {
+    const xStart = xIndex.get(box.left);
+    const xEnd = xIndex.get(box.right);
+    const yStart = yIndex.get(box.top);
+    const yEnd = yIndex.get(box.bottom);
+    if (xStart == null || xEnd == null || yStart == null || yEnd == null) return;
+
+    for (let rowIndex = yStart; rowIndex < yEnd; rowIndex += 1) {
+      const isTopRow = ys[rowIndex] === box.top;
+      const isBottomRow = ys[rowIndex + 1] === box.bottom;
+      for (let colIndex = xStart; colIndex < xEnd; colIndex += 1) {
+        occupied[rowIndex]![colIndex] = true;
+        cellTone[rowIndex]![colIndex] = mergeWorkbookSemanticTone(
+          cellTone[rowIndex]![colIndex],
+          box.tone,
+        );
+        if (isTopRow && !resolveOpenTop(box)) {
+          drawTop[rowIndex]![colIndex] = true;
+        }
+        if (isBottomRow && !resolveOpenBottom(box)) {
+          drawBottom[rowIndex]![colIndex] = true;
+        }
+      }
+    }
+  });
+
+  const horizontalSegments: WorkbookDiffRegionOverlayBoundarySegment[] = [];
+  const verticalSegments: WorkbookDiffRegionOverlayBoundarySegment[] = [];
+
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+    for (let colIndex = 0; colIndex < colCount; colIndex += 1) {
+      if (!occupied[rowIndex]![colIndex]) continue;
+      const tone = cellTone[rowIndex]![colIndex];
+
+      if ((rowIndex === 0 || !occupied[rowIndex - 1]![colIndex]) && drawTop[rowIndex]![colIndex]) {
+        horizontalSegments.push({
+          coord: ys[rowIndex]!,
+          start: xs[colIndex]!,
+          end: xs[colIndex + 1]!,
+          ...(tone ? { tone } : {}),
+        });
+      }
+
+      if ((rowIndex === rowCount - 1 || !occupied[rowIndex + 1]![colIndex]) && drawBottom[rowIndex]![colIndex]) {
+        horizontalSegments.push({
+          coord: ys[rowIndex + 1]!,
+          start: xs[colIndex]!,
+          end: xs[colIndex + 1]!,
+          ...(tone ? { tone } : {}),
+        });
+      }
+
+      if (colIndex === 0 || !occupied[rowIndex]![colIndex - 1]) {
+        verticalSegments.push({
+          coord: xs[colIndex]!,
+          start: ys[rowIndex]!,
+          end: ys[rowIndex + 1]!,
+          ...(tone ? { tone } : {}),
+        });
+      }
+
+      if (colIndex === colCount - 1 || !occupied[rowIndex]![colIndex + 1]) {
+        verticalSegments.push({
+          coord: xs[colIndex + 1]!,
+          start: ys[rowIndex]!,
+          end: ys[rowIndex + 1]!,
+          ...(tone ? { tone } : {}),
+        });
+      }
+    }
+  }
+
+  return [
+    ...mergeHorizontalBoundarySegments(horizontalSegments),
+    ...mergeVerticalBoundarySegments(verticalSegments),
+  ].sort((left, right) => (
+    left.top - right.top
+    || left.left - right.left
+    || left.width - right.width
+    || left.height - right.height
+  ));
+}
+
 interface WorkbookDiffRegionOverlayProps {
   boxes: WorkbookDiffRegionOverlayBox[];
+  pulseNonce?: number;
+  label?: string;
 }
 
-function buildOverlayPath(
-  width: number,
-  height: number,
-  radius: number,
-  openTop: boolean,
-  openBottom: boolean,
-) {
-  const w = Math.max(0, width);
-  const h = Math.max(0, height);
-  const r = Math.max(0, Math.min(radius, Math.floor(Math.min(w, h) / 2)));
-
-  if (w <= 0 || h <= 0) return '';
-  if (openTop && openBottom) {
-    return `M 0 0 L 0 ${h} M ${w} 0 L ${w} ${h}`;
-  }
-  if (openTop) {
-    return `M 0 0 L 0 ${Math.max(0, h - r)} Q 0 ${h} ${r} ${h} L ${Math.max(r, w - r)} ${h} Q ${w} ${h} ${w} ${Math.max(0, h - r)} L ${w} 0`;
-  }
-  if (openBottom) {
-    return `M 0 ${h} L 0 ${r} Q 0 0 ${r} 0 L ${Math.max(r, w - r)} 0 Q ${w} 0 ${w} ${r} L ${w} ${h}`;
-  }
-  return `M ${r} 0 L ${Math.max(r, w - r)} 0 Q ${w} 0 ${w} ${r} L ${w} ${Math.max(r, h - r)} Q ${w} ${h} ${Math.max(r, w - r)} ${h} L ${r} ${h} Q 0 ${h} 0 ${Math.max(r, h - r)} L 0 ${r} Q 0 0 ${r} 0`;
-}
-
-const WorkbookDiffRegionOverlay = memo(({ boxes }: WorkbookDiffRegionOverlayProps) => {
+const WorkbookDiffRegionOverlay = memo(({ boxes, pulseNonce = 0, label }: WorkbookDiffRegionOverlayProps) => {
   const T = useTheme();
-  const gradientSeed = useId().replace(/:/g, '');
+  const outlineSegments = useMemo(
+    () => buildWorkbookDiffRegionOverlayOutlineSegments(boxes),
+    [boxes],
+  );
+  const pulseAnimation = pulseNonce > 0 ? 'regionGlowPulse 560ms cubic-bezier(0.22, 1, 0.36, 1) 1' : undefined;
 
   if (boxes.length === 0) return null;
+
+  const labelAnchor = boxes.reduce<WorkbookDiffRegionOverlayBox | null>((best, box) => {
+    if (!best) return box;
+    if (box.top < best.top) return box;
+    if (box.top === best.top && box.left < best.left) return box;
+    return best;
+  }, null);
 
   return (
     <div
       aria-hidden="true"
+      data-pulse={pulseNonce}
       style={{
         position: 'absolute',
         inset: 0,
@@ -130,204 +400,76 @@ const WorkbookDiffRegionOverlay = memo(({ boxes }: WorkbookDiffRegionOverlayProp
       {boxes.map((box) => {
         const openTop = resolveOpenTop(box);
         const openBottom = resolveOpenBottom(box);
-        const radius = Math.max(7, Math.min(BORDER_RADIUS, Math.floor(Math.min(box.width, box.height) / 5)));
-        const cornerRadius = `${openTop ? 0 : radius}px ${openTop ? 0 : radius}px ${openBottom ? 0 : radius}px ${openBottom ? 0 : radius}px`;
-        const path = buildOverlayPath(box.width, box.height, radius, openTop, openBottom);
-        const gradientId = `region-rainbow-${gradientSeed}-${box.key}`;
-        const shineId = `region-shine-${gradientSeed}-${box.key}`;
-
-        const outerStyle: CSSProperties = {
+        const palette = resolveWorkbookOverlayPalette(T, box.tone ?? 'mixed');
+        const fillStyle: CSSProperties = {
           position: 'absolute',
           top: box.top,
           left: box.left,
           width: box.width,
           height: box.height,
-          borderRadius: cornerRadius,
-          boxSizing: 'border-box',
-          overflow: 'visible',
-          animation: 'guidedPulse 0.82s cubic-bezier(0.22, 1, 0.36, 1) 1',
-        };
-        const baseFrameStyle: CSSProperties = {
-          position: 'absolute',
-          inset: 0,
-          borderRadius: cornerRadius,
-          boxSizing: 'border-box',
-          background: 'transparent',
-          boxShadow: `inset 0 0 0 1px ${T.t0}10`,
-        };
-        const railStyle: CSSProperties = {
-          position: 'absolute',
-          top: openTop ? 0 : EDGE_INSET,
-          bottom: openBottom ? 0 : EDGE_INSET,
-          width: EDGE_WIDTH,
-          borderRadius: EDGE_WIDTH,
-          background: `linear-gradient(180deg, ${T.acc2}d0 0%, ${T.chgTx}a8 45%, ${T.acc}d0 100%)`,
-          opacity: 0.68,
+          background: `linear-gradient(180deg, ${applyOverlayAlpha(palette.mid, 0.07)} 0%, ${applyOverlayAlpha(palette.shine, 0.05)} 100%)`,
+          animation: pulseAnimation,
+          transformOrigin: 'center',
         };
         const continuationStyle: CSSProperties = {
           position: 'absolute',
-          left: 2,
-          right: 2,
-          height: 6,
-          background: `linear-gradient(90deg, transparent 0%, ${T.acc2}38 18%, ${T.chgTx}44 50%, ${T.acc}38 82%, transparent 100%)`,
-          opacity: 0.65,
+          left: EDGE_WIDTH,
+          right: EDGE_WIDTH,
+          height: CONTINUATION_HEIGHT,
+          background: `linear-gradient(90deg, transparent 0%, ${palette.continuation} 20%, ${palette.shine} 50%, ${palette.continuation} 80%, transparent 100%)`,
+          opacity: 0.92,
         };
 
         return (
-          <div key={box.key} style={outerStyle}>
-            <div style={baseFrameStyle} />
-            <div style={{ ...railStyle, left: 0 }} />
-            <div style={{ ...railStyle, right: 0 }} />
-
-            {!openTop && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: EDGE_INSET,
-                  right: EDGE_INSET,
-                  height: EDGE_WIDTH,
-                  borderRadius: EDGE_WIDTH,
-                  background: `linear-gradient(90deg, ${T.acc2}c6 0%, ${T.chgTx}a2 52%, ${T.acc}c6 100%)`,
-                  opacity: 0.68,
-                }}
-              />
-            )}
-            {!openBottom && (
-              <div
-                style={{
-                  position: 'absolute',
-                  bottom: 0,
-                  left: EDGE_INSET,
-                  right: EDGE_INSET,
-                  height: EDGE_WIDTH,
-                  borderRadius: EDGE_WIDTH,
-                  background: `linear-gradient(90deg, ${T.acc2}c6 0%, ${T.chgTx}a2 52%, ${T.acc}c6 100%)`,
-                  opacity: 0.68,
-                }}
-              />
-            )}
-
-            {openTop && <div style={{ ...continuationStyle, top: -1 }} />}
-            {openBottom && <div style={{ ...continuationStyle, bottom: -1 }} />}
-
-            {!openTop && (
-              <>
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: CORNER_SIZE,
-                    height: CORNER_SIZE,
-                    borderTop: `${EDGE_WIDTH}px solid ${T.acc2}`,
-                    borderLeft: `${EDGE_WIDTH}px solid ${T.acc2}`,
-                    borderTopLeftRadius: radius,
-                    opacity: 0.8,
-                  }}
-                />
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    right: 0,
-                    width: CORNER_SIZE,
-                    height: CORNER_SIZE,
-                    borderTop: `${EDGE_WIDTH}px solid ${T.acc}`,
-                    borderRight: `${EDGE_WIDTH}px solid ${T.acc}`,
-                    borderTopRightRadius: radius,
-                    opacity: 0.8,
-                  }}
-                />
-              </>
-            )}
-
-            {!openBottom && (
-              <>
-                <div
-                  style={{
-                    position: 'absolute',
-                    bottom: 0,
-                    left: 0,
-                    width: CORNER_SIZE,
-                    height: CORNER_SIZE,
-                    borderBottom: `${EDGE_WIDTH}px solid ${T.acc}`,
-                    borderLeft: `${EDGE_WIDTH}px solid ${T.acc}`,
-                    borderBottomLeftRadius: radius,
-                    opacity: 0.76,
-                  }}
-                />
-                <div
-                  style={{
-                    position: 'absolute',
-                    bottom: 0,
-                    right: 0,
-                    width: CORNER_SIZE,
-                    height: CORNER_SIZE,
-                    borderBottom: `${EDGE_WIDTH}px solid ${T.acc2}`,
-                    borderRight: `${EDGE_WIDTH}px solid ${T.acc2}`,
-                    borderBottomRightRadius: radius,
-                    opacity: 0.76,
-                  }}
-                />
-              </>
-            )}
-
-            <svg
-              width={Math.max(0, box.width)}
-              height={Math.max(0, box.height)}
-              viewBox={`0 0 ${Math.max(0, box.width)} ${Math.max(0, box.height)}`}
-              style={{
-                position: 'absolute',
-                inset: 0,
-                overflow: 'visible',
-              }}>
-              <defs>
-                <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor={T.acc2} />
-                  <stop offset="18%" stopColor={T.addBrd} />
-                  <stop offset="42%" stopColor={T.chgTx} />
-                  <stop offset="66%" stopColor={T.acc} />
-                  <stop offset="100%" stopColor={T.acc2} />
-                </linearGradient>
-                <linearGradient id={shineId} x1="0%" y1="50%" x2="100%" y2="50%">
-                  <stop offset="0%" stopColor={T.t0} stopOpacity="0" />
-                  <stop offset="42%" stopColor={T.t0} stopOpacity="0.1" />
-                  <stop offset="52%" stopColor={T.t0} stopOpacity="0.92" />
-                  <stop offset="66%" stopColor={T.acc2} stopOpacity="0.72" />
-                  <stop offset="100%" stopColor={T.t0} stopOpacity="0" />
-                </linearGradient>
-              </defs>
-              <path
-                d={path}
-                fill="none"
-                stroke={`url(#${gradientId})`}
-                strokeWidth="1.8"
-                opacity="0.82"
-                pathLength="100"
-                strokeDasharray="18 46"
-                strokeLinecap="round"
-                style={{
-                  animation: 'regionDashTravel 2.4s linear infinite',
-                }}
-              />
-              <path
-                d={path}
-                fill="none"
-                stroke={`url(#${shineId})`}
-                strokeWidth="1.05"
-                opacity="0.68"
-                pathLength="100"
-                strokeDasharray="7 74"
-                strokeLinecap="round"
-                style={{
-                  animation: 'regionDashTravelReverse 1.55s linear infinite',
-                }}
-              />
-            </svg>
+          <div key={`${pulseNonce}:${box.key}`} style={fillStyle}>
+            {openTop && <div style={{ ...continuationStyle, top: EDGE_OFFSET }} />}
+            {openBottom && <div style={{ ...continuationStyle, bottom: EDGE_OFFSET }} />}
           </div>
         );
       })}
+      {outlineSegments.map((segment) => {
+        const palette = resolveWorkbookOverlayPalette(T, segment.tone ?? 'mixed');
+        return (
+          <div
+            key={`${pulseNonce}:${segment.key}`}
+            style={{
+              position: 'absolute',
+              left: segment.left,
+              top: segment.top,
+              width: segment.width,
+              height: segment.height,
+              background: palette.mid,
+              animation: pulseAnimation,
+              transformOrigin: 'center',
+            }}
+          />
+        );
+      })}
+      {label && labelAnchor && (
+        <div
+          style={{
+            position: 'absolute',
+            top: labelAnchor.top >= 26 ? labelAnchor.top - 22 : labelAnchor.top + 4,
+            left: labelAnchor.left + 6,
+            maxWidth: Math.max(140, Math.min(360, labelAnchor.width - 12 || 240)),
+            padding: '2px 8px',
+            border: `1px solid ${applyOverlayAlpha(resolveWorkbookOverlayPalette(T, labelAnchor.tone ?? 'mixed').mid, 0.53)}`,
+            background: applyOverlayAlpha(T.bg1, 0.95),
+            color: resolveWorkbookOverlayPalette(T, labelAnchor.tone ?? 'mixed').mid,
+            fontFamily: FONT_UI,
+            fontSize: FONT_SIZE.xs,
+            fontWeight: 700,
+            lineHeight: '16px',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            boxShadow: `0 2px 8px ${T.t0}14`,
+            animation: pulseAnimation,
+            transformOrigin: 'left center',
+          }}>
+          {label}
+        </div>
+      )}
     </div>
   );
 });

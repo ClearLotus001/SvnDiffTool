@@ -165,11 +165,12 @@ const SplitPanel = memo(({
     items.length,
     scrollRef as RefObject<HTMLDivElement>,
     vertical ? DOUBLE_ROW_H : ROW_H,
+    { overscanMin: 40, overscanFactor: 2 },
   );
   const variableVirtual = useVariableVirtual(
     itemHeights,
     scrollRef as RefObject<HTMLDivElement>,
-    { overscanMin: 80, overscanFactor: 3 },
+    { overscanMin: 40, overscanFactor: 2 },
   );
   const activeVirtual = vertical ? variableVirtual : constantVirtual;
   const { totalH, startIdx, endIdx, scrollToIndex } = activeVirtual;

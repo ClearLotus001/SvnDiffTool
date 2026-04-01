@@ -13,28 +13,6 @@ function resolveManualChunk(id: string): string | undefined {
     return 'vendor';
   }
 
-  if (normalized.includes('/src/components/workbook/')
-    || normalized.includes('/src/components/diff/')
-    || normalized.includes('/src/components/navigation/')
-    || normalized.includes('/src/components/app-shell/')
-    || normalized.includes('/src/components/app/')
-    || normalized.includes('/src/components/shared/')) {
-    return undefined;
-  }
-
-  if (normalized.includes('/src/utils/workbook/')
-    || normalized.includes('/src/engine/workbook/')
-    || normalized.includes('/src/hooks/workbook/')) {
-    return 'workbook';
-  }
-
-  if (normalized.includes('/src/utils/diff/')
-    || normalized.includes('/src/utils/collapse/')
-    || normalized.includes('/src/engine/text/')
-    || normalized.includes('/src/hooks/virtualization/')) {
-    return 'diff-core';
-  }
-
   return undefined;
 }
 

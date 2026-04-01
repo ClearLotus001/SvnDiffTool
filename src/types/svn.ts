@@ -95,6 +95,7 @@ export interface SvnDiffViewerStatus {
   executablePath: string | null;
   command: string | null;
   currentMode: SvnDiffViewerMode;
+  canRestoreDefault: boolean;
   globalDiffCommand: string | null;
   workbookDiffCommands: Record<string, string | null>;
   workbookExtensions: string[];

@@ -9,8 +9,35 @@ import { I18nProvider } from '../src/context/i18n';
 import { ThemeContext } from '../src/context/theme';
 import { buildTextDiffPresentation } from '../src/engine/text/textChangeAlignment';
 import { THEMES } from '../src/theme';
+import type { WorkbookSection } from '../src/utils/workbook/workbookSections';
 
-function renderStatsBar(showArtifactOnlyDiff: boolean, diffLines: DiffLine[] = []): string {
+function makeWorkbookSection(
+  name: string,
+  changeType: WorkbookSection['changeType'],
+  renamePeerName: string | null = null,
+  renameRole: WorkbookSection['renameRole'] = null,
+): WorkbookSection {
+  return {
+    name,
+    displayName: name,
+    changeType,
+    hasBaseSide: changeType !== 'add',
+    hasMineSide: changeType !== 'delete',
+    renamePeerName,
+    renameRole,
+    startLineIdx: 0,
+    endLineIdx: 0,
+    maxColumns: 0,
+    firstDataLineIdx: null,
+    firstDataRowNumber: null,
+  };
+}
+
+function renderStatsBar(
+  showArtifactOnlyDiff: boolean,
+  diffLines: DiffLine[] = [],
+  workbookSections: WorkbookSection[] = [],
+): string {
   return renderToStaticMarkup(
     React.createElement(
       ThemeContext.Provider,
@@ -30,6 +57,7 @@ function renderStatsBar(showArtifactOnlyDiff: boolean, diffLines: DiffLine[] = [
           mineVersionLabel: 'r1825385',
           isWorkbookMode: true,
           workbookCompareMode: 'strict',
+          workbookSections,
           workbookArtifactDiff: showArtifactOnlyDiff
             ? {
                 hasArtifactOnlyDiff: true,
@@ -79,4 +107,20 @@ test('StatsBar uses replacement-aware modified counts for unrelated add/delete l
   ]);
 
   assert.match(html, /~0/);
+});
+
+test('StatsBar renders workbook sheet change counts without double-counting renames', () => {
+  const html = renderStatsBar(false, [], [
+    makeWorkbookSection('Added', 'add'),
+    makeWorkbookSection('Deleted', 'delete'),
+    makeWorkbookSection('OldName', 'rename', 'NewName', 'source'),
+    makeWorkbookSection('NewName', 'rename', 'OldName', 'target'),
+  ]);
+
+  assert.match(html, /新增工作表/);
+  assert.match(html, /删除工作表/);
+  assert.match(html, /重命名工作表/);
+  assert.match(html, /\+1/);
+  assert.match(html, /-1/);
+  assert.match(html, /↦1/);
 });

@@ -3,6 +3,7 @@ import { FONT_CODE, FONT_SIZE, FONT_UI } from '@/constants/typography';
 import { useI18n } from '@/context/i18n';
 import { useTheme } from '@/context/theme';
 import { ROW_H } from '@/hooks/virtualization/useVirtual';
+import { resolveWorkbookAuxBarPalette } from '@/utils/workbook/workbookRowVisuals';
 
 interface WorkbookHiddenRowsBarProps {
   count: number;
@@ -15,6 +16,7 @@ const WorkbookHiddenRowsBar = memo(({
 }: WorkbookHiddenRowsBarProps) => {
   const T = useTheme();
   const { t } = useI18n();
+  const palette = resolveWorkbookAuxBarPalette(T, 'mixed');
 
   return (
     <div
@@ -27,9 +29,9 @@ const WorkbookHiddenRowsBar = memo(({
         userSelect: 'none',
         gap: 12,
         padding: '0 10px',
-        background: T.bg2,
-        borderTop: `1px dashed ${T.border}`,
-        borderBottom: `1px dashed ${T.border}`,
+        background: palette.background,
+        borderTop: `1px dashed ${palette.border}`,
+        borderBottom: `1px dashed ${palette.border}`,
       }}>
       <span style={{ fontFamily: FONT_CODE, color: T.t2 }}>···</span>
       <span
@@ -42,7 +44,7 @@ const WorkbookHiddenRowsBar = memo(({
           alignItems: 'center',
           gap: 6,
         }}>
-        <span style={{ color: T.acc2, fontFamily: FONT_CODE }}>ROWS</span>
+        <span style={{ color: palette.accent, fontFamily: FONT_CODE }}>ROWS</span>
         <span>{t('workbookHiddenRowsLabel', { count })}</span>
       </span>
       <button
@@ -52,9 +54,9 @@ const WorkbookHiddenRowsBar = memo(({
           height: 20,
           padding: '0 8px',
           borderRadius: 999,
-          border: `1px solid ${T.border}`,
+          border: `1px solid ${palette.buttonBorder}`,
           background: T.bg1,
-          color: T.t1,
+          color: palette.buttonText,
           fontFamily: FONT_UI,
           fontSize: 10,
           fontWeight: 700,

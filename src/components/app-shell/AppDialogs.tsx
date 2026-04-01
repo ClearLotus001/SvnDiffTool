@@ -29,8 +29,10 @@ interface AppDialogsProps {
   svnDiffViewerStatus: SvnDiffViewerStatus | null;
   isLoadingSvnDiffViewerStatus: boolean;
   applyingSvnDiffViewerScope: SvnDiffViewerScope | null;
+  isRestoringSvnDiffViewerDefault: boolean;
   svnDiffViewerError: string;
   onApplySvnDiffViewerScope: (scope: SvnDiffViewerScope) => void;
+  onRestoreSvnDiffViewerDefault: () => void;
   onRefreshSvnDiffViewerStatus: () => void;
 }
 
@@ -55,8 +57,10 @@ export default function AppDialogs({
   svnDiffViewerStatus,
   isLoadingSvnDiffViewerStatus,
   applyingSvnDiffViewerScope,
+  isRestoringSvnDiffViewerDefault,
   svnDiffViewerError,
   onApplySvnDiffViewerScope,
+  onRestoreSvnDiffViewerDefault,
   onRefreshSvnDiffViewerStatus,
 }: AppDialogsProps) {
   return (
@@ -94,8 +98,10 @@ export default function AppDialogs({
           status={svnDiffViewerStatus}
           loading={isLoadingSvnDiffViewerStatus}
           applyingScope={applyingSvnDiffViewerScope}
+          isRestoringDefault={isRestoringSvnDiffViewerDefault}
           error={svnDiffViewerError}
           onApply={onApplySvnDiffViewerScope}
+          onRestoreDefault={onRestoreSvnDiffViewerDefault}
           onRefresh={onRefreshSvnDiffViewerStatus}
           onClose={onCloseSvnConfig}
         />

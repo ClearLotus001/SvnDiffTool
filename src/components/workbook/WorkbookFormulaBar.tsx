@@ -6,6 +6,11 @@ import type { WorkbookFreezeState, WorkbookMergeRange, WorkbookSelectionState } 
 import { findWorkbookMergeRange } from '@/utils/workbook/workbookMergeLayout';
 import { getWorkbookColumnLabel } from '@/utils/workbook/workbookSections';
 import { getWorkbookSelectionCount } from '@/utils/workbook/workbookSelectionState';
+import {
+  resolveWorkbookAccentSurfaceVisual,
+  resolveWorkbookAuxBarPalette,
+  resolveWorkbookRowSelectionAccent,
+} from '@/utils/workbook/workbookRowVisuals';
 
 interface WorkbookFormulaBarProps {
   selection: WorkbookSelectionState;
@@ -68,7 +73,10 @@ const WorkbookFormulaBar = memo(({
       ? t('formulaSelectionColumnsCount', { count: selectionCount })
       : t('formulaSelectionCellsCount', { count: selectionCount })
     : '';
-  const sideAccent = primarySelection?.side === 'base' ? T.acc2 : T.acc;
+  const sideAccent = resolveWorkbookRowSelectionAccent(T, primarySelection?.side === 'base' ? 'base' : 'mine');
+  const sideAccentBadge = resolveWorkbookAccentSurfaceVisual(sideAccent);
+  const sideAccentButton = resolveWorkbookAccentSurfaceVisual(sideAccent, 'button');
+  const freezePalette = resolveWorkbookAuxBarPalette(T, 'mixed');
   const mergeRange = primarySelection?.kind === 'cell'
     ? findWorkbookMergeRange(mergeRanges, primarySelection.rowNumber, primarySelection.colIndex)
     : null;
@@ -108,9 +116,9 @@ const WorkbookFormulaBar = memo(({
         height: 28,
         padding: '0 10px',
         borderRadius: 8,
-        border: `1px solid ${active ? `${sideAccent}55` : T.border}`,
-        background: active ? `${sideAccent}16` : T.bg2,
-        color: active ? sideAccent : T.t0,
+        border: `1px solid ${active ? sideAccentButton.border : T.border}`,
+        background: active ? sideAccentButton.background : T.bg2,
+        color: active ? sideAccentButton.textColor : T.t0,
         fontFamily: FONT_UI,
         fontSize: sizes.meta,
         fontWeight: 700,
@@ -187,8 +195,8 @@ const WorkbookFormulaBar = memo(({
               marginLeft: 'auto',
               padding: '1px 8px',
               borderRadius: 999,
-              background: `${sideAccent}14`,
-              color: sideAccent,
+              background: sideAccentBadge.background,
+              color: sideAccentBadge.textColor,
               fontSize: sizes.meta,
               fontWeight: 800,
               whiteSpace: 'nowrap',
@@ -271,12 +279,12 @@ const WorkbookFormulaBar = memo(({
           style={{
             color: T.acc2,
             fontFamily: FONT_UI,
-            fontSize: sizes.meta,
-            fontWeight: 700,
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
-            flexShrink: 0,
-          }}>
+          fontSize: sizes.meta,
+          fontWeight: 700,
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+          flexShrink: 0,
+        }}>
           fx
         </span>
         <span
@@ -304,7 +312,7 @@ const WorkbookFormulaBar = memo(({
         }}>
         <span
           style={{
-            color: T.t2,
+            color: freezePalette.subduedText,
             fontFamily: FONT_UI,
             fontSize: sizes.meta,
             whiteSpace: 'nowrap',

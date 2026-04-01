@@ -23,7 +23,7 @@ function buildSortedUnique(values: number[]): number[] {
   return [...new Set(values)].sort((left, right) => left - right);
 }
 
-export function getWorkbookSheetHiddenState(
+function getWorkbookSheetHiddenState(
   hiddenStateBySheet: WorkbookHiddenStateBySheet,
   sheetName: string,
 ): WorkbookSheetHiddenState {

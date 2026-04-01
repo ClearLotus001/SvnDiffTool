@@ -1,10 +1,12 @@
 // src/components/StatsBar.tsx
-import { memo, useMemo } from 'react';
+import { memo, useMemo, type ReactNode } from 'react';
 import { FONT_CODE, FONT_SIZE, FONT_UI } from '@/constants/typography';
 import { useI18n } from '@/context/i18n';
 import type { TextDiffPresentation, WorkbookArtifactDiff, WorkbookCompareMode } from '@/types';
 import { useTheme } from '@/context/theme';
 import Tooltip from '@/components/shared/Tooltip';
+import type { WorkbookSection } from '@/utils/workbook/workbookSections';
+import { summarizeWorkbookSectionChanges } from '@/utils/workbook/workbookSections';
 
 interface StatsBarProps {
   textDiffPresentation: TextDiffPresentation;
@@ -19,6 +21,7 @@ interface StatsBarProps {
   isWorkbookMode?: boolean;
   workbookCompareMode?: WorkbookCompareMode;
   workbookArtifactDiff?: WorkbookArtifactDiff | null;
+  workbookSections?: WorkbookSection[];
 }
 
 const Dot = ({ c }: { c: string }) => (
@@ -80,6 +83,7 @@ const StatsBar = memo(({
   isWorkbookMode = false,
   workbookCompareMode = 'strict',
   workbookArtifactDiff = null,
+  workbookSections = [],
 }: StatsBarProps) => {
   const T = useTheme();
   const { t } = useI18n();
@@ -87,20 +91,32 @@ const StatsBar = memo(({
   const stats = useMemo(() => {
     return textDiffPresentation.stats;
   }, [textDiffPresentation]);
-
-  const metric = (color: string, value: string, label: string) => (
-    <div style={{
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: 6,
-      flexShrink: 0,
-      lineHeight: 1,
-    }}>
-      <Dot c={color} />
-      <span style={{ color, fontFamily: FONT_CODE, fontSize: FONT_SIZE.sm }}>{value}</span>
-      <span style={{ color: T.t2, fontFamily: FONT_UI, fontSize: FONT_SIZE.sm }}>{label}</span>
-    </div>
+  const workbookSectionSummary = useMemo(
+    () => summarizeWorkbookSectionChanges(workbookSections),
+    [workbookSections],
   );
+
+  const metric = (color: string, value: string, label: string, tooltip?: ReactNode) => {
+    const node = (
+      <div style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        flexShrink: 0,
+        lineHeight: 1,
+      }}>
+        <Dot c={color} />
+        <span style={{ color, fontFamily: FONT_CODE, fontSize: FONT_SIZE.sm }}>{value}</span>
+        <span style={{ color: T.t2, fontFamily: FONT_UI, fontSize: FONT_SIZE.sm }}>{label}</span>
+      </div>
+    );
+
+    return tooltip ? (
+      <Tooltip content={tooltip} maxWidth={320}>
+        {node}
+      </Tooltip>
+    ) : node;
+  };
 
   const metaPill = (
     label: string,
@@ -194,6 +210,24 @@ const StatsBar = memo(({
             </span>
           </div>
         </Tooltip>
+      )}
+      {isWorkbookMode && workbookSectionSummary.added > 0 && metric(
+        T.addTx,
+        `+${workbookSectionSummary.added}`,
+        t('statsWorkbookSheetsAdded'),
+        t('statsWorkbookSheetsAddedHint', { count: workbookSectionSummary.added }),
+      )}
+      {isWorkbookMode && workbookSectionSummary.deleted > 0 && metric(
+        T.delTx,
+        `-${workbookSectionSummary.deleted}`,
+        t('statsWorkbookSheetsDeleted'),
+        t('statsWorkbookSheetsDeletedHint', { count: workbookSectionSummary.deleted }),
+      )}
+      {isWorkbookMode && workbookSectionSummary.renamed > 0 && metric(
+        T.chgTx,
+        `↦${workbookSectionSummary.renamed}`,
+        t('statsWorkbookSheetsRenamed'),
+        t('statsWorkbookSheetsRenamedHint', { count: workbookSectionSummary.renamed }),
       )}
       {isWorkbookMode && workbookArtifactDiff?.hasArtifactOnlyDiff && (
         <Tooltip

@@ -78,6 +78,7 @@ interface UseDiffLoaderArgs {
   setSvnDiffViewerError: SetState<string>;
   setSvnDiffViewerStatus: SetState<SvnDiffViewerStatus | null>;
   setApplyingSvnDiffViewerScope: SetState<SvnDiffViewerScope | null>;
+  setIsRestoringSvnDiffViewerDefault: SetState<boolean>;
 }
 
 export interface UseDiffLoaderResult {
@@ -92,6 +93,7 @@ export interface UseDiffLoaderResult {
   loadSvnDiffViewerStatus: () => Promise<void>;
   handleOpenSvnConfig: () => void;
   handleApplySvnDiffViewerScope: (scope: SvnDiffViewerScope) => Promise<void>;
+  handleRestoreSvnDiffViewerDefault: () => Promise<void>;
   reloadCliDiffData: () => Promise<void>;
 }
 
@@ -131,6 +133,7 @@ export default function useDiffLoader({
   setSvnDiffViewerError,
   setSvnDiffViewerStatus,
   setApplyingSvnDiffViewerScope,
+  setIsRestoringSvnDiffViewerDefault,
 }: UseDiffLoaderArgs): UseDiffLoaderResult {
   const { actions: dialogActions } = dialogs;
   const { actions: diffLoadActions } = diffLoad;
@@ -613,6 +616,20 @@ export default function useDiffLoader({
     }
   }, [setApplyingSvnDiffViewerScope, setSvnDiffViewerError, setSvnDiffViewerStatus]);
 
+  const handleRestoreSvnDiffViewerDefault = useCallback(async () => {
+    if (!window.svnDiff?.restoreSvnDefaultDiffViewerConfiguration) return;
+    setIsRestoringSvnDiffViewerDefault(true);
+    setSvnDiffViewerError('');
+    try {
+      const nextStatus = await window.svnDiff.restoreSvnDefaultDiffViewerConfiguration();
+      setSvnDiffViewerStatus(nextStatus);
+    } catch (error) {
+      setSvnDiffViewerError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRestoringSvnDiffViewerDefault(false);
+    }
+  }, [setIsRestoringSvnDiffViewerDefault, setSvnDiffViewerError, setSvnDiffViewerStatus]);
+
   const reloadCliDiffData = useCallback(async () => {
     if (!window.svnDiff?.getDiffData) return;
     const seq = await beginDiffLoad();
@@ -637,6 +654,7 @@ export default function useDiffLoader({
     loadSvnDiffViewerStatus,
     handleOpenSvnConfig,
     handleApplySvnDiffViewerScope,
+    handleRestoreSvnDiffViewerDefault,
     reloadCliDiffData,
   };
 }

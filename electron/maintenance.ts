@@ -12,12 +12,16 @@ import {
 import {
   cleanupStaleManagedTempFilesSync,
   getRuntimePathState,
-  removeControlledDirectorySync,
 } from './runtimePaths';
+import {
+  cleanupPreviousCacheRoot,
+  cleanupRuntimeArtifactsForUninstall,
+  migratePreviousCacheRoot,
+} from './maintenancePaths';
 import {
   configureSvnDiffViewer,
   getSvnDiffViewerStatus,
-  restoreSvnDiffViewerConfiguration,
+  restoreSvnDefaultDiffViewerConfiguration,
 } from './svnDiffViewerConfig';
 
 export type MaintenanceMode = 'post-install' | 'prepare-uninstall';
@@ -45,16 +49,8 @@ export function getMaintenanceModeFromArgv(argv: string[]): MaintenanceMode | nu
   return null;
 }
 
-function removeDirectorySync(targetPath: string | null | undefined) {
-  const normalized = targetPath?.trim();
-  if (!normalized) return false;
-
-  try {
-    fs.rmSync(normalized, { recursive: true, force: true });
-    return true;
-  } catch {
-    return false;
-  }
+export function shouldDeleteAppDataFromArgv(argv: string[]): boolean {
+  return argv.some((arg) => arg.trim() === '--delete-app-data');
 }
 
 function deleteFileSync(targetPath: string) {
@@ -81,40 +77,35 @@ async function applyDesiredDiffViewerMode(config: InstallerBootstrapConfig | nul
   await configureSvnDiffViewer(desiredScope);
 }
 
-function cleanupPreviousCacheRoot(
-  previousConfig: InstallerBootstrapConfig | null,
-  currentConfig: InstallerBootstrapConfig | null,
-) {
-  const previousCacheRoot = previousConfig?.cacheRoot ?? '';
-  const currentCacheRoot = currentConfig?.cacheRoot ?? '';
-  if (!previousCacheRoot || previousCacheRoot === currentCacheRoot) return;
-  void removeControlledDirectorySync(previousCacheRoot);
-}
-
 function clearBootstrapArtifacts(app: App) {
   deleteFileSync(getInstallerBootstrapPath(app.getPath('exe')));
   deleteFileSync(getPreviousInstallerBootstrapPath(app.getPath('exe')));
 }
 
-export async function runMaintenance(app: App, mode: MaintenanceMode): Promise<void> {
+export async function runMaintenance(app: App, mode: MaintenanceMode, argv: string[] = process.argv): Promise<void> {
   const installerBootstrap = readInstallerBootstrapSync(app.getPath('exe'));
   const previousInstallerBootstrap = readPreviousInstallerBootstrapSync(app.getPath('exe'));
+  const shouldDeleteAppData = shouldDeleteAppDataFromArgv(argv);
 
   if (mode === 'post-install') {
     cleanupStaleManagedTempFilesSync();
+    migratePreviousCacheRoot(previousInstallerBootstrap, installerBootstrap);
     cleanupPreviousCacheRoot(previousInstallerBootstrap, installerBootstrap);
     await applyDesiredDiffViewerMode(installerBootstrap);
     deleteFileSync(getPreviousInstallerBootstrapPath(app.getPath('exe')));
     return;
   }
 
-  await restoreSvnDiffViewerConfiguration();
-  cleanupStaleManagedTempFilesSync();
+  await restoreSvnDefaultDiffViewerConfiguration();
 
-  const runtimePathState = getRuntimePathState();
-  removeDirectorySync(app.getPath('userData'));
-  removeDirectorySync(runtimePathState.sessionDataPath);
-  void removeControlledDirectorySync(installerBootstrap?.cacheRoot ?? runtimePathState.cacheRoot);
-  void removeControlledDirectorySync(previousInstallerBootstrap?.cacheRoot);
+  if (shouldDeleteAppData) {
+    const runtimePathState = getRuntimePathState();
+    cleanupRuntimeArtifactsForUninstall({
+      userDataPath: app.getPath('userData'),
+      sessionDataPath: runtimePathState.sessionDataPath,
+      currentCacheRoot: installerBootstrap?.cacheRoot ?? runtimePathState.cacheRoot,
+      previousCacheRoot: previousInstallerBootstrap?.cacheRoot ?? null,
+    });
+  }
   clearBootstrapArtifacts(app);
 }

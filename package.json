@@ -13,32 +13,35 @@
     "dev:electron:watch": "tsc -p tsconfig.electron.json --watch --preserveWatchOutput",
     "dev:electron:run": "tsx scripts/dev-electron-runner.ts",
     "lint": "npm run lint:eslint && npm run lint:exports",
-    "lint:eslint": "eslint src electron scripts bootstrapper --max-warnings=0",
+    "lint:eslint": "eslint src electron scripts --max-warnings=0",
     "lint:exports": "tsx scripts/check-unused-exports.ts",
     "build": "npm run typecheck && npm run build:renderer && npm run build:electron && npm run build:rust",
     "build:renderer": "vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
     "build:rust": "tsx scripts/build-rust.ts",
-    "build:bootstrapper:shell": "tsx scripts/build-bootstrapper-shell.ts",
     "build:win:installer": "npm run build && tsx scripts/build-win-installer.ts",
-    "build:win:bootstrapper": "tsx scripts/build-bootstrapper.ts",
-    "build:win": "npm run build:win:installer && npm run build:win:bootstrapper",
+    "build:win": "npm run build:win:installer",
     "build:win:release": "npm run build:win",
-    "typecheck": "npm run typecheck:renderer && npm run typecheck:electron && npm run typecheck:scripts && npm run typecheck:bootstrapper",
-    "typecheck:bootstrapper": "tsc -p tsconfig.bootstrapper.json --noEmit && tsc -p tsconfig.bootstrapper.renderer.json --noEmit",
+    "typecheck": "npm run typecheck:renderer && npm run typecheck:electron && npm run typecheck:scripts",
     "typecheck:renderer": "tsc --noEmit",
     "typecheck:electron": "tsc -p tsconfig.electron.json --noEmit",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit",
     "test:workbook": "tsx --test tests/*.test.ts",
+    "verify:install-upgrade": "tsx scripts/verify-install-upgrade.ts",
     "verify:single-instance-cache": "tsx scripts/verify-single-instance-cache.ts",
+    "report:package-sizes": "tsx scripts/report-package-sizes.ts",
     "preview": "vite preview"
   },
   "build": {
     "appId": "com.svnexceldifftool.app",
     "productName": "SvnDiffTool",
     "artifactName": "${productName}-${version}.${ext}",
+    "electronLanguages": [
+      "en-US",
+      "zh-CN"
+    ],
     "win": {
-      "target": "nsis",
+      "target": "nsis-web",
       "icon": "assets/icon.ico",
       "executableName": "SvnDiffTool"
     },
@@ -53,7 +56,8 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
-      "assets/**/*"
+      "assets/**/*",
+      "!**/*.map"
     ],
     "extraResources": [
       {
@@ -69,7 +73,21 @@
       "oneClick": false,
       "perMachine": false,
       "allowElevation": true,
-      "allowToChangeInstallationDirectory": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "installerHeader": "installerHeader.bmp",
+      "installerSidebar": "installerSidebar.bmp",
+      "installerLanguages": [
+        "en_US",
+        "zh_CN"
+      ],
+      "include": "build/installer.nsh"
+    },
+    "nsisWeb": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
       "deleteAppDataOnUninstall": false,
       "installerHeader": "installerHeader.bmp",
       "installerSidebar": "installerSidebar.bmp",

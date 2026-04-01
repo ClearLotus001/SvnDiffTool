@@ -1,7 +1,6 @@
-import type { SplitRow, WorkbookFreezeState, WorkbookMergeRange } from '@/types';
+import type { WorkbookFreezeState, WorkbookMergeRange } from '@/types';
 import type { CollapseExpansionState, CollapseRevealRange } from '@/utils/collapse/collapseState';
 import type { CollapsedRowBlockDescriptor } from '@/utils/collapse/collapsibleRows';
-import { getWorkbookSplitRowNumber } from '@/utils/workbook/workbookNavigation';
 
 export interface WorkbookFreezeDefaults {
   rowNumber: number;
@@ -57,7 +56,7 @@ export function getResolvedWorkbookFreezeColCount(
   return Math.max(defaults.colCount, freezeState?.colCount ?? 0);
 }
 
-export function normalizeWorkbookFreezeState(
+function normalizeWorkbookFreezeState(
   freezeState: WorkbookFreezeState | null | undefined,
   defaults: WorkbookFreezeDefaults,
 ): WorkbookFreezeState | null {
@@ -107,10 +106,6 @@ export function areWorkbookFreezeStatesEqual(
 ): boolean {
   return (left?.rowNumber ?? undefined) === (right?.rowNumber ?? undefined)
     && (left?.colCount ?? undefined) === (right?.colCount ?? undefined);
-}
-
-export function buildWorkbookCollapseRowKey(row: SplitRow): string {
-  return row.lineIdxs.length > 0 ? row.lineIdxs.join(':') : String(row.lineIdx);
 }
 
 function buildContiguousRevealRanges(indexes: number[]): CollapseRevealRange[] {
@@ -166,14 +161,3 @@ export function applyWorkbookFreezeToExpandedBlocks<RowT extends { lineIdx: numb
   return nextState ?? expandedBlocks;
 }
 
-export function filterWorkbookRowsForFreeze(
-  rows: SplitRow[],
-  hiddenLineIdxSet: ReadonlySet<number>,
-  freezeRowNumber: number,
-): SplitRow[] {
-  return rows.filter((row) => {
-    if (row.lineIdxs.some((lineIdx) => hiddenLineIdxSet.has(lineIdx))) return false;
-    const rowNumber = getWorkbookSplitRowNumber(row);
-    return rowNumber == null || rowNumber > freezeRowNumber;
-  });
-}

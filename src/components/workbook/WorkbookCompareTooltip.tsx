@@ -4,8 +4,16 @@ import { useI18n } from '@/context/i18n';
 import { useTheme } from '@/context/theme';
 import type { WorkbookCompareCellState } from '@/utils/workbook/workbookCompare';
 import { splitWorkbookCanvasTextLines } from '@/utils/workbook/workbookCanvasText';
-import { getWorkbookCompareBadgeVisual } from '@/utils/workbook/workbookCompareVisuals';
+import {
+  getWorkbookCompareBadgeVisual,
+  getWorkbookCompareHintVisual,
+  resolveWorkbookCompareCellKind,
+} from '@/utils/workbook/workbookCompareVisuals';
 import type { WorkbookCellDisplay } from '@/utils/workbook/workbookDisplay';
+import {
+  resolveWorkbookAccentSurfaceVisual,
+  resolveWorkbookRowSelectionAccent,
+} from '@/utils/workbook/workbookRowVisuals';
 
 interface WorkbookCompareTooltipProps {
   compareCell: WorkbookCompareCellState;
@@ -26,22 +34,30 @@ const WorkbookCompareTooltip = memo(({
 }: WorkbookCompareTooltipProps) => {
   const T = useTheme();
   const { t } = useI18n();
-  const { baseCell, mineCell, changed, kind, strictOnly } = compareCell;
+  const { baseCell, mineCell, changed, strictOnly } = compareCell;
   const resolvedBaseTitle = baseTitle || t('tooltipBaseLabel');
   const resolvedMineTitle = mineTitle || t('tooltipLocalLabel');
+  const semanticKind = resolveWorkbookCompareCellKind(compareCell);
+  const baseAccent = resolveWorkbookRowSelectionAccent(T, 'base');
+  const mineAccent = resolveWorkbookRowSelectionAccent(T, 'mine');
   const showWhitespaceSensitiveHint = changed && strictOnly;
-  const showClearedHint = changed && kind === 'delete';
-  const showAddedHint = changed && kind === 'add';
-  const showModifiedHint = changed && kind === 'modify';
+  const showClearedHint = semanticKind === 'delete';
+  const showAddedHint = semanticKind === 'add';
+  const showModifiedHint = semanticKind === 'modify';
 
   const badges = [
     showClearedHint ? { label: t('tooltipBadgeCleared'), ...getWorkbookCompareBadgeVisual(T, 'delete') } : null,
     showAddedHint ? { label: t('tooltipBadgeAdded'), ...getWorkbookCompareBadgeVisual(T, 'add') } : null,
     showModifiedHint ? { label: t('tooltipBadgeModified'), ...getWorkbookCompareBadgeVisual(T, 'modify') } : null,
     showWhitespaceSensitiveHint
-      ? { label: t('tooltipBadgeWhitespaceSensitive'), textColor: T.acc2, background: `${T.acc2}14`, border: `${T.acc2}33` }
+      ? { label: t('tooltipBadgeWhitespaceSensitive'), ...getWorkbookCompareHintVisual(T, 'strict-only') }
       : null,
   ].filter((badge): badge is { label: string; textColor: string; background: string; border: string } => badge != null);
+  const clearedHintVisual = getWorkbookCompareHintVisual(T, 'delete');
+  const addedHintVisual = getWorkbookCompareHintVisual(T, 'add');
+  const whitespaceHintVisual = getWorkbookCompareHintVisual(T, 'strict-only');
+  const baseChip = resolveWorkbookAccentSurfaceVisual(baseAccent);
+  const mineChip = resolveWorkbookAccentSurfaceVisual(mineAccent);
 
   const renderPane = (
     label: string,
@@ -87,8 +103,8 @@ const WorkbookCompareTooltip = memo(({
               alignItems: 'center',
               padding: '1px 6px',
               borderRadius: 999,
-              background: `${accent}18`,
-              color: accent,
+              background: accent === baseAccent ? baseChip.background : mineChip.background,
+              color: accent === baseAccent ? baseChip.textColor : mineChip.textColor,
               fontSize: FONT_SIZE.xs,
               fontFamily: FONT_UI,
               fontWeight: 700,
@@ -178,9 +194,9 @@ const WorkbookCompareTooltip = memo(({
           style={{
             padding: '6px 8px',
             borderRadius: 10,
-            background: `${T.acc2}14`,
-            border: `1px solid ${T.acc2}33`,
-            color: T.acc2,
+            background: whitespaceHintVisual.background,
+            border: `1px solid ${whitespaceHintVisual.border}`,
+            color: whitespaceHintVisual.textColor,
             fontSize: FONT_SIZE.xs,
             fontFamily: FONT_UI,
             fontWeight: 700,
@@ -193,13 +209,13 @@ const WorkbookCompareTooltip = memo(({
           style={{
             padding: '6px 8px',
             borderRadius: 10,
-            background: `${T.delBrd}12`,
-            border: `1px solid ${T.delBrd}33`,
-            color: T.delTx,
+            background: clearedHintVisual.background,
+            border: `1px solid ${clearedHintVisual.border}`,
+            color: clearedHintVisual.textColor,
             fontSize: FONT_SIZE.xs,
             fontFamily: FONT_UI,
-          fontWeight: 700,
-        }}>
+            fontWeight: 700,
+          }}>
           {t('tooltipClearedHint', { mineLabel: resolvedMineTitle, baseLabel: resolvedBaseTitle })}
         </div>
       )}
@@ -208,13 +224,13 @@ const WorkbookCompareTooltip = memo(({
           style={{
             padding: '6px 8px',
             borderRadius: 10,
-            background: `${T.addBrd}12`,
-            border: `1px solid ${T.addBrd}33`,
-            color: T.addTx,
+            background: addedHintVisual.background,
+            border: `1px solid ${addedHintVisual.border}`,
+            color: addedHintVisual.textColor,
             fontSize: FONT_SIZE.xs,
             fontFamily: FONT_UI,
-          fontWeight: 700,
-        }}>
+            fontWeight: 700,
+          }}>
           {t('tooltipAddedHint', { mineLabel: resolvedMineTitle, baseLabel: resolvedBaseTitle })}
         </div>
       )}
@@ -225,8 +241,8 @@ const WorkbookCompareTooltip = memo(({
           gap: 12,
           minWidth: 320,
         }}>
-        {renderPane(resolvedBaseTitle, T.acc2, baseCell)}
-        {renderPane(resolvedMineTitle, T.acc, mineCell)}
+        {renderPane(resolvedBaseTitle, baseAccent, baseCell)}
+        {renderPane(resolvedMineTitle, mineAccent, mineCell)}
       </div>
     </div>
   );

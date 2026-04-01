@@ -869,8 +869,8 @@ const RevisionPicker = memo(({
   const hasActiveTimeFilter = Boolean(queryDateTime || draftDate);
   const hasActiveFilter = Boolean(searchQuery.trim() || hasActiveTimeFilter);
   const activeDateFilter = draftDate || (queryDateTime ? queryDateTime.slice(0, 10) : '');
-  const selectedMeta = useMemo(() => (value ? buildRevisionOptionMeta(value) : ''), [value]);
-  const triggerTitleText = selectedMeta || title;
+  const selectedDescription = useMemo(() => (value ? buildRevisionOptionDescription(value) : ''), [value]);
+  const triggerTitleText = selectedDescription || title;
 
   useEffect(() => {
     const next = parseDateTimeDraft(queryDateTime);
@@ -1069,23 +1069,6 @@ const RevisionPicker = memo(({
           <span style={{ flexShrink: 0, color: accent, fontSize: FONT_SIZE.sm, fontWeight: 700, fontFamily: FONT_CODE, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {value ? formatDisplayRevision(value.revision) : t('splitHeaderVersionUnknown')}
           </span>
-          {selectedMeta && (
-            <span
-              style={{
-                minWidth: 0,
-                flex: '1 1 auto',
-                marginLeft: 'auto',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                color: T.t2,
-                fontSize: UI.metaSize,
-                fontFamily: FONT_UI,
-                textAlign: 'right',
-              }}>
-              {selectedMeta}
-            </span>
-          )}
         </div>
         <span aria-hidden="true" style={{ flexShrink: 0, color: open ? accent : T.t2, fontSize: UI.metaSize, fontFamily: FONT_UI }}>
           {open ? '▲' : '▼'}

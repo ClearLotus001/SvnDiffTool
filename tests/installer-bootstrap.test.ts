@@ -9,7 +9,10 @@ import {
   normalizeInstallerBootstrapConfig,
   toInstallerBootstrapContent,
 } from '../electron/installerBootstrap';
-import { getMaintenanceModeFromArgv } from '../electron/maintenance';
+import {
+  getMaintenanceModeFromArgv,
+  shouldDeleteAppDataFromArgv,
+} from '../electron/maintenance';
 
 test('normalizeInstallerBootstrapConfig falls back to safe defaults', () => {
   const normalized = normalizeInstallerBootstrapConfig({
@@ -58,5 +61,16 @@ test('getMaintenanceModeFromArgv supports equals and split argument forms', () =
   assert.equal(
     getMaintenanceModeFromArgv(['SvnDiffTool.exe', '--maintenance=unknown']),
     null,
+  );
+});
+
+test('shouldDeleteAppDataFromArgv only enables explicit personal-data cleanup', () => {
+  assert.equal(
+    shouldDeleteAppDataFromArgv(['Uninstall SvnDiffTool.exe', '--delete-app-data']),
+    true,
+  );
+  assert.equal(
+    shouldDeleteAppDataFromArgv(['Uninstall SvnDiffTool.exe', '/S']),
+    false,
   );
 });

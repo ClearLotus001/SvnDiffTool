@@ -1,11 +1,7 @@
 import type { WorkbookCompareMode } from '@/types';
 import type { WorkbookCellDisplay } from '@/utils/workbook/workbookDisplay';
 
-export function hasWorkbookCellRawContent(cell: WorkbookCellDisplay): boolean {
-  return cell.value !== '' || cell.formula !== '';
-}
-
-export function normalizeWorkbookCellValueForMode(
+function normalizeWorkbookCellValueForMode(
   value: string,
   compareMode: WorkbookCompareMode = 'strict',
 ): string {

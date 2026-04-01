@@ -23,7 +23,7 @@
 - [ ] Renderer React UI
 - [ ] Electron main or preload
 - [ ] Rust workbook parser
-- [ ] Installer or bootstrapper
+- [ ] Installer or Windows packaging
 - [ ] Build or release workflow
 - [ ] Settings, i18n, or persisted user data
 

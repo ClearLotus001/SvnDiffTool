@@ -2,7 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { THEMES } from '../src/theme';
-import { getWorkbookSelectionOverlay, getWorkbookSelectionVisualState } from '../src/utils/workbook/workbookSelectionVisual';
+import {
+  getWorkbookSelectionOverlay,
+  getWorkbookSelectionPaint,
+  getWorkbookSelectionVisualState,
+} from '../src/utils/workbook/workbookSelectionVisual';
 import { buildWorkbookSelectionLookup, createWorkbookSelectionState } from '../src/utils/workbook/workbookSelectionState';
 
 test('mirrored workbook cell selection uses the mirrored side accent', () => {
@@ -77,4 +81,28 @@ test('secondary cell selections render with a lighter direct-selection overlay',
 
   assert.equal(visual.isSecondarySelected, true);
   assert.equal(getWorkbookSelectionOverlay(visual), `${theme.acc2}18`);
+});
+
+test('selection paint derives shared frame and overlay tokens from visual state', () => {
+  const theme = THEMES.light;
+  const primary = {
+    kind: 'cell' as const,
+    sheetName: 'Thing',
+    side: 'base' as const,
+    versionLabel: 'BASE',
+    rowNumber: 12,
+    colIndex: 4,
+    colLabel: 'E',
+    address: 'E12',
+    value: 'x',
+    formula: '',
+  };
+
+  const selectionLookup = buildWorkbookSelectionLookup(createWorkbookSelectionState(primary));
+  const visual = getWorkbookSelectionVisualState(theme, selectionLookup, 'Thing', 'base', 12, 4);
+  const paint = getWorkbookSelectionPaint(visual);
+
+  assert.equal(paint.overlay, `${theme.acc2}2c`);
+  assert.equal(paint.primaryOuterStroke, `${theme.acc2}48`);
+  assert.equal(paint.primaryInnerStroke, theme.acc2);
 });

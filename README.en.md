@@ -14,7 +14,7 @@ If your goal is "make SVN diffs easier to read", this project is built for that.
 |----------|-----|-------|
 | Everyday TortoiseSVN file comparison | Excellent | Can be plugged in directly as the external diff tool |
 | Reviewing text-based files | Excellent | Line diff, character highlighting, search, navigation, and collapsing are all covered |
-| Exploring workbook differences | Good | Supports sheet-, row-, column-, and cell-level visual comparison |
+| Exploring workbook differences | Good | Supports worksheet-, row-, column-, and cell-level visual comparison |
 | Reading very large text files | Good | Includes virtualization, collapse controls, and performance guards |
 | Full Office-semantic compare or merge | Limited | Not intended to handle comments, styles, charts, or macro merging as a primary use case |
 
@@ -38,7 +38,7 @@ If your goal is "make SVN diffs easier to read", this project is built for that.
 ### Workbook Comparison
 
 - Uses a dedicated workbook comparison panel instead of flattening everything into plain text
-- Supports sheet switching, diff-region targeting, and cell-level change highlighting
+- Supports worksheet switching, diff-region targeting, and cell-level change highlighting
 - Supports both `strict` and `content` comparison modes
 - Includes a formula bar, freeze panes, row/column hide and reveal, and mirrored selection behavior
 - Uses a Rust workbook parsing pipeline to improve resilience on larger and more complex files
@@ -57,12 +57,17 @@ If your goal is "make SVN diffs easier to read", this project is built for that.
 - Workbook parsing and diff computation: Rust + `calamine` + `quick-xml`
 - Testing: Node.js test runner + `tsx`
 
+## Maintenance Notes
+
+- If you are touching workbook comparison colors, highlights, selection states, overlays, or helper bars, read [`docs/workbook-visual-semantics.md`](./docs/workbook-visual-semantics.md) first
+
 ## Requirements
 
 ### To run the packaged app
 
 - Windows
 - TortoiseSVN, only if you want to wire it in as your external diff tool
+- The first installation now requires internet access to fetch the main app package
 
 ### To develop or build from source
 
@@ -95,12 +100,21 @@ If you launch the app directly instead of letting TortoiseSVN pass file argument
 | `npm run test:workbook` | Runs the repository test suite, including workbook-focused regressions |
 | `npm run verify:single-instance-cache` | Verifies single-instance and cache-related behavior |
 | `npm run build` | Builds renderer, Electron, and Rust artifacts |
-| `npm run build:win` | Produces the Windows NSIS installer |
+| `npm run build:win` | Produces the native Windows installer plus auto-update assets |
+| `npm run report:package-sizes` | Prints the current Windows package size report |
 
 The default local installer output path is:
 
 ```text
 release/SvnDiffTool-<version>.exe
+```
+
+The `release/` directory also keeps the auto-update assets, for example:
+
+```text
+release/SvnDiffTool-<version>.exe
+release/latest.yml
+release/<package-name>-<version>-x64.nsis.7z
 ```
 
 ## TortoiseSVN Integration
@@ -133,6 +147,14 @@ Recommended setup notes:
 - Keep the executable path quoted if it contains spaces
 - Do not reorder the arguments; the main process parses them in a fixed order
 - You can configure file-extension-specific mappings in `Advanced...`, for example `.ts`, `.tsx`, `.js`, `.json`, and `.xml`
+
+The installed app also includes a built-in setup panel:
+
+- Open it from the home screen via `Connect to TortoiseSVN`
+- Switch between `All-file mode` and `Excel-only mode`
+- Use `Restore default diff` to hand control back to TortoiseSVN's default diff behavior
+
+During uninstall, the app automatically restores TortoiseSVN's default diff settings before removing SvnDiffTool, so SVN diff commands are not left pointing at a missing executable.
 
 ## Supported File Types and Boundaries
 
@@ -187,6 +209,7 @@ What it is not currently trying to be:
 ## Auto Update
 
 - Auto update is currently available only for the Windows installer build
+- The downloadable `SvnDiffTool-<version>.exe` is the native Windows installer and downloads the main app package on first install
 - The app checks GitHub Releases for new stable versions
 - When an update is found, it prompts before download
 - Once the download finishes, installation can be triggered from inside the app
@@ -197,8 +220,8 @@ The repository already includes a GitHub Release workflow:
 
 - Trigger: push a tag matching `v*`
 - CI environment: `windows-latest`
-- Build contents: Node.js dependencies, Rust parser, and Electron installer
-- Publish command: `electron-builder --publish always`
+- Build contents: Node.js dependencies, the Rust parser, the native Windows installer, and auto-update assets
+- Publish flow: `electron-builder` publishes the Windows installer and update metadata directly
 
 A typical release flow looks like this:
 

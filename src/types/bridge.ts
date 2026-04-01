@@ -33,6 +33,7 @@ export interface SvnDiffBridge {
   loadLocalDiff(basePath: string, minePath: string, compareMode?: WorkbookCompareMode): Promise<DiffData>;
   getSvnDiffViewerStatus(): Promise<SvnDiffViewerStatus>;
   configureSvnDiffViewer(scope: SvnDiffViewerScope): Promise<SvnDiffViewerStatus>;
+  restoreSvnDefaultDiffViewerConfiguration(): Promise<SvnDiffViewerStatus>;
   getTheme(): Promise<'dark' | 'light'>;
   usesNativeWindowControls(): Promise<boolean>;
   getWindowFrameState(): Promise<WindowFrameState>;
@@ -42,7 +43,7 @@ export interface SvnDiffBridge {
   checkForAppUpdate(options?: { manual?: boolean }): Promise<void>;
   downloadAppUpdate(): Promise<void>;
   installDownloadedUpdate(): Promise<void>;
-  launchUninstaller(): Promise<void>;
+  launchUninstaller(options?: { silent?: boolean }): Promise<void>;
   onAppUpdateState?(listener: (state: AppUpdateState) => void): () => void;
   writeClipboardText(text: string): void;
   debugLog?(message: string, payload?: unknown): void;

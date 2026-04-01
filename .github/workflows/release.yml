@@ -40,10 +40,13 @@ jobs:
       - name: Rust clippy
         run: cargo clippy --manifest-path rust/Cargo.toml -- -D warnings
 
-      - name: Build release assets
+      - name: Build app bundle
         run: npm run build
 
-      - name: Publish Windows release
-        run: npx electron-builder --win nsis --publish always
+      - name: Build and publish Windows installer/update assets
+        run: npx tsx scripts/build-win-installer.ts --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Package size report
+        run: npm run report:package-sizes -- --ci
