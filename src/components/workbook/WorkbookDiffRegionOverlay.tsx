@@ -59,7 +59,7 @@ function parseRgbColor(color: string): { red: number; green: number; blue: numbe
   };
 }
 
-export function applyOverlayAlpha(color: string, alpha: number): string {
+function applyOverlayAlpha(color: string, alpha: number): string {
   const normalizedAlpha = clampAlpha(alpha);
   const rgb = parseHexColor(color) ?? parseRgbColor(color);
   if (!rgb) return color;

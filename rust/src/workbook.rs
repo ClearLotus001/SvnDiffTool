@@ -11,32 +11,29 @@ use quick_xml::Reader as XmlReader;
 use zip::ZipArchive;
 
 use crate::model::{
-    encode_cell, encode_cell_owned, format_cell, get_formula_for_position, has_workbook_cell_content,
-    is_truthy_flag, normalize_field, parse_merge_range, WorkbookCellSnapshotJson, WorkbookMetadataMap,
-    WorkbookRowEntry, WorkbookSheetDiffEntry, WorkbookSheetMetadata, WorkbookTextRowEntry,
-    WorkbookTextSheetEntry, FORMULA_SEPARATOR, ROW_PREFIX, SHEET_PREFIX,
+    encode_cell, encode_cell_owned, format_cell, get_formula_for_position,
+    has_workbook_cell_content, is_truthy_flag, normalize_field, parse_merge_range,
+    WorkbookCellSnapshotJson, WorkbookMetadataMap, WorkbookRowEntry, WorkbookSheetDiffEntry,
+    WorkbookSheetMetadata, WorkbookTextRowEntry, WorkbookTextSheetEntry, FORMULA_SEPARATOR,
+    ROW_PREFIX, SHEET_PREFIX,
 };
 use crate::profile;
 
+#[path = "workbook/context.rs"]
+mod context;
+#[path = "workbook/metadata.rs"]
+mod metadata;
 #[path = "workbook/rows.rs"]
 mod rows;
 #[path = "workbook/scan.rs"]
 mod scan;
-#[path = "workbook/metadata.rs"]
-mod metadata;
 #[path = "workbook/shared_strings.rs"]
 mod shared_strings;
-#[path = "workbook/context.rs"]
-mod context;
 
 pub(crate) use self::context::ZipWorkbookContext;
-use self::context::{
-    collect_visible_sheet_infos, SheetSemanticFingerprint,
-};
+use self::context::{collect_visible_sheet_infos, SheetSemanticFingerprint};
 use self::metadata::collect_workbook_metadata_impl;
-use self::rows::{
-    collect_workbook_row_entries, collect_workbook_text_row_entries, write_sheet,
-};
+use self::rows::{collect_workbook_row_entries, collect_workbook_text_row_entries, write_sheet};
 use self::scan::{
     scan_encoded_sheet_rows, scan_full_sheet_rows, scan_text_sheet_rows_fast, FullRowsSink,
     SemanticFingerprintSink, SemanticFingerprintWithTextRowsSink,
@@ -103,10 +100,13 @@ pub fn parse_workbook_document(
     let total_start = profile::start();
     let open_start = profile::start();
     let mut workbook = open_workbook_auto(file_path)
-        .map_err(|error| io::Error::new(io::ErrorKind::Other, format!("Failed to open workbook: {error}")))?;
+        .map_err(|error| io::Error::other(format!("Failed to open workbook: {error}")))?;
     profile::log_elapsed(
         open_start,
-        format!("open_workbook_auto file={} mode={} kind=full", file_path, compare_mode),
+        format!(
+            "open_workbook_auto file={} mode={} kind=full",
+            file_path, compare_mode
+        ),
     );
     let sheet_names = collect_visible_sheet_infos(file_path)
         .map(|infos| infos.into_iter().map(|info| info.name).collect::<Vec<_>>())
@@ -120,12 +120,14 @@ pub fn parse_workbook_document(
             }
         }
         let sheet_start = profile::start();
-        let range = workbook
-            .worksheet_range(&sheet_name)
-            .map_err(|error| io::Error::new(io::ErrorKind::Other, format!("Failed to read worksheet '{sheet_name}': {error}")))?;
-        let formulas = workbook
-            .worksheet_formula(&sheet_name)
-            .map_err(|error| io::Error::new(io::ErrorKind::Other, format!("Failed to read worksheet formula '{sheet_name}': {error}")))?;
+        let range = workbook.worksheet_range(&sheet_name).map_err(|error| {
+            io::Error::other(format!("Failed to read worksheet '{sheet_name}': {error}"))
+        })?;
+        let formulas = workbook.worksheet_formula(&sheet_name).map_err(|error| {
+            io::Error::other(format!(
+                "Failed to read worksheet formula '{sheet_name}': {error}"
+            ))
+        })?;
         let row_count = range.height();
         let col_count = range.width();
         result.push(WorkbookSheetDiffEntry {
@@ -137,18 +139,19 @@ pub fn parse_workbook_document(
             sheet_start,
             format!(
                 "parse_sheet file={} mode={} kind=full sheet={} rows={} cols={}",
-                file_path,
-                compare_mode,
-                sheet_name,
-                row_count,
-                col_count,
+                file_path, compare_mode, sheet_name, row_count, col_count,
             ),
         );
     }
 
     profile::log_elapsed(
         total_start,
-        format!("parse_workbook_document file={} mode={} kind=full sheets={}", file_path, compare_mode, result.len()),
+        format!(
+            "parse_workbook_document file={} mode={} kind=full sheets={}",
+            file_path,
+            compare_mode,
+            result.len()
+        ),
     );
     Ok(result)
 }
@@ -167,7 +170,11 @@ fn parse_workbook_text_document_from_zip(
 
     profile::log_elapsed(
         total_start,
-        format!("parse_workbook_document file={} kind=text-only-xml sheets={}", file_path, result.len()),
+        format!(
+            "parse_workbook_document file={} kind=text-only-xml sheets={}",
+            file_path,
+            result.len()
+        ),
     );
     Ok(result)
 }
@@ -185,7 +192,7 @@ pub fn parse_workbook_text_document(
     let total_start = profile::start();
     let open_start = profile::start();
     let mut workbook = open_workbook_auto(file_path)
-        .map_err(|error| io::Error::new(io::ErrorKind::Other, format!("Failed to open workbook: {error}")))?;
+        .map_err(|error| io::Error::other(format!("Failed to open workbook: {error}")))?;
     profile::log_elapsed(
         open_start,
         format!("open_workbook_auto file={} kind=text-only", file_path),
@@ -202,12 +209,14 @@ pub fn parse_workbook_text_document(
             }
         }
         let sheet_start = profile::start();
-        let range = workbook
-            .worksheet_range(&sheet_name)
-            .map_err(|error| io::Error::new(io::ErrorKind::Other, format!("Failed to read worksheet '{sheet_name}': {error}")))?;
-        let formulas = workbook
-            .worksheet_formula(&sheet_name)
-            .map_err(|error| io::Error::new(io::ErrorKind::Other, format!("Failed to read worksheet formula '{sheet_name}': {error}")))?;
+        let range = workbook.worksheet_range(&sheet_name).map_err(|error| {
+            io::Error::other(format!("Failed to read worksheet '{sheet_name}': {error}"))
+        })?;
+        let formulas = workbook.worksheet_formula(&sheet_name).map_err(|error| {
+            io::Error::other(format!(
+                "Failed to read worksheet formula '{sheet_name}': {error}"
+            ))
+        })?;
         let row_count = range.height();
         let col_count = range.width();
         result.push(WorkbookTextSheetEntry {
@@ -219,21 +228,21 @@ pub fn parse_workbook_text_document(
             sheet_start,
             format!(
                 "parse_sheet file={} kind=text-only sheet={} rows={} cols={}",
-                file_path,
-                sheet_name,
-                row_count,
-                col_count,
+                file_path, sheet_name, row_count, col_count,
             ),
         );
     }
 
     profile::log_elapsed(
         total_start,
-        format!("parse_workbook_document file={} kind=text-only sheets={}", file_path, result.len()),
+        format!(
+            "parse_workbook_document file={} kind=text-only sheets={}",
+            file_path,
+            result.len()
+        ),
     );
     Ok(result)
 }
-
 
 pub fn collect_workbook_metadata(file_path: &str) -> Option<WorkbookMetadataMap> {
     collect_workbook_metadata_impl(file_path)
@@ -260,7 +269,10 @@ pub fn write_workbook_text(file_path: &str) -> io::Result<()> {
                 let formulas = match workbook.worksheet_formula(sheet_name) {
                     Ok(formula_range) => formula_range,
                     Err(error) => {
-                        eprintln!("Failed to read worksheet formula '{}': {}", sheet_name, error);
+                        eprintln!(
+                            "Failed to read worksheet formula '{}': {}",
+                            sheet_name, error
+                        );
                         std::process::exit(6);
                     }
                 };
@@ -287,6 +299,6 @@ pub fn write_workbook_metadata_json(file_path: &str) -> io::Result<()> {
     let stdout = io::stdout();
     let mut handle = stdout.lock();
     serde_json::to_writer(&mut handle, &metadata)
-        .map_err(|error| io::Error::new(io::ErrorKind::Other, error.to_string()))?;
+        .map_err(|error| io::Error::other(error.to_string()))?;
     Ok(())
 }

@@ -55,30 +55,31 @@ fn normalize_arg(value: Option<&OsString>) -> String {
 }
 
 fn build_request_payload(args: &[OsString]) -> ExternalDiffRequestPayload {
-    let base_path = normalize_arg(args.get(0));
+    let base_path = normalize_arg(args.first());
     let mine_path = normalize_arg(args.get(1));
     let base_name = normalize_arg(args.get(2));
     let mine_name = normalize_arg(args.get(3));
 
-    let (base_url, mine_url, base_revision, mine_revision, peg_revision, file_name) = if args.len() >= 10 {
-        (
-            normalize_arg(args.get(4)),
-            normalize_arg(args.get(5)),
-            normalize_arg(args.get(6)),
-            normalize_arg(args.get(7)),
-            normalize_arg(args.get(8)),
-            normalize_arg(args.get(9)),
-        )
-    } else {
-        (
-            String::new(),
-            String::new(),
-            String::new(),
-            String::new(),
-            String::new(),
-            normalize_arg(args.get(4)),
-        )
-    };
+    let (base_url, mine_url, base_revision, mine_revision, peg_revision, file_name) =
+        if args.len() >= 10 {
+            (
+                normalize_arg(args.get(4)),
+                normalize_arg(args.get(5)),
+                normalize_arg(args.get(6)),
+                normalize_arg(args.get(7)),
+                normalize_arg(args.get(8)),
+                normalize_arg(args.get(9)),
+            )
+        } else {
+            (
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                normalize_arg(args.get(4)),
+            )
+        };
 
     ExternalDiffRequestPayload {
         version: EXTERNAL_DIFF_REQUEST_VERSION,
@@ -123,7 +124,10 @@ fn cleanup_stale_request_files(root_path: &Path) {
     }
 }
 
-fn write_request_file(current_exe: &Path, payload: &ExternalDiffRequestPayload) -> Result<PathBuf, String> {
+fn write_request_file(
+    current_exe: &Path,
+    payload: &ExternalDiffRequestPayload,
+) -> Result<PathBuf, String> {
     let root_path = request_root_path();
     fs::create_dir_all(&root_path).map_err(|error| format!("create_dir_all {}", error))?;
     cleanup_stale_request_files(&root_path);
@@ -137,9 +141,13 @@ fn write_request_file(current_exe: &Path, payload: &ExternalDiffRequestPayload) 
         std::process::id(),
         stamp,
     ));
-    let serialized = serde_json::to_vec_pretty(payload).map_err(|error| format!("serialize {}", error))?;
+    let serialized =
+        serde_json::to_vec_pretty(payload).map_err(|error| format!("serialize {}", error))?;
     fs::write(&request_path, serialized).map_err(|error| format!("write {}", error))?;
-    append_log(current_exe, &format!("request_path={}", request_path.display()));
+    append_log(
+        current_exe,
+        &format!("request_path={}", request_path.display()),
+    );
     Ok(request_path)
 }
 
@@ -166,7 +174,13 @@ fn main() {
     );
 
     let request_payload = build_request_payload(cli_args);
-    append_log(&current_exe, &format!("request_payload base={} mine={} file={}", request_payload.base_path, request_payload.mine_path, request_payload.file_name));
+    append_log(
+        &current_exe,
+        &format!(
+            "request_payload base={} mine={} file={}",
+            request_payload.base_path, request_payload.mine_path, request_payload.file_name
+        ),
+    );
 
     let request_path = match write_request_file(&current_exe, &request_payload) {
         Ok(path) => path,
@@ -179,7 +193,10 @@ fn main() {
     let app_path = match resolve_app_path(&current_exe) {
         Some(path) if path.exists() => path,
         Some(path) => {
-            append_log(&current_exe, &format!("resolve_app_path:missing {}", path.display()));
+            append_log(
+                &current_exe,
+                &format!("resolve_app_path:missing {}", path.display()),
+            );
             std::process::exit(1)
         }
         None => {
@@ -187,10 +204,16 @@ fn main() {
             std::process::exit(1)
         }
     };
-    append_log(&current_exe, &format!("resolve_app_path:ok {}", app_path.display()));
+    append_log(
+        &current_exe,
+        &format!("resolve_app_path:ok {}", app_path.display()),
+    );
 
     let mut command = Command::new(&app_path);
-    command.arg(format!("--external-diff-request={}", request_path.display()));
+    command.arg(format!(
+        "--external-diff-request={}",
+        request_path.display()
+    ));
     command.current_dir(app_path.parent().unwrap_or_else(|| Path::new(".")));
     command.env_remove("ELECTRON_RUN_AS_NODE");
 
@@ -202,7 +225,11 @@ fn main() {
                 Ok(Some(status)) => {
                     append_log(
                         &current_exe,
-                        &format!("child:exited code={:?} success={}", status.code(), status.success()),
+                        &format!(
+                            "child:exited code={:?} success={}",
+                            status.code(),
+                            status.success()
+                        ),
                     );
                 }
                 Ok(None) => {

@@ -7,12 +7,22 @@ pub(super) fn build_row_line_and_signature(
 ) -> WorkbookRowEntry {
     let encoded_cells: Vec<String> = cells
         .iter()
-        .map(|cell| encode_cell(&cell.value, (!cell.formula.is_empty()).then_some(cell.formula.as_str())))
+        .map(|cell| {
+            encode_cell(
+                &cell.value,
+                (!cell.formula.is_empty()).then_some(cell.formula.as_str()),
+            )
+        })
         .collect();
     let raw_line = if cells.is_empty() {
         format!("{}\t{}", ROW_PREFIX, row_number)
     } else {
-        format!("{}\t{}\t{}", ROW_PREFIX, row_number, encoded_cells.join("\t"))
+        format!(
+            "{}\t{}\t{}",
+            ROW_PREFIX,
+            row_number,
+            encoded_cells.join("\t")
+        )
     };
     let mut trimmed_cells = cells.to_vec();
     while let Some(last_cell) = trimmed_cells.last() {
@@ -23,7 +33,12 @@ pub(super) fn build_row_line_and_signature(
     }
     let signature = trimmed_cells
         .iter()
-        .map(|cell| encode_cell(&cell.value, (!cell.formula.is_empty()).then_some(cell.formula.as_str())))
+        .map(|cell| {
+            encode_cell(
+                &cell.value,
+                (!cell.formula.is_empty()).then_some(cell.formula.as_str()),
+            )
+        })
         .collect::<Vec<_>>()
         .join("\t");
 
@@ -64,7 +79,9 @@ pub(super) fn collect_workbook_row_entries(
                     .map(format_cell)
                     .unwrap_or_default();
                 let formula = formulas
-                    .and_then(|formula_range| get_formula_for_position(formula_range, abs_row, abs_col))
+                    .and_then(|formula_range| {
+                        get_formula_for_position(formula_range, abs_row, abs_col)
+                    })
                     .map(|formula| format!("={}", formula));
                 row_cells.push(WorkbookCellSnapshotJson {
                     value,
@@ -73,7 +90,11 @@ pub(super) fn collect_workbook_row_entries(
             }
         }
 
-        result.push(build_row_line_and_signature((abs_row + 1) as usize, &row_cells, compare_mode));
+        result.push(build_row_line_and_signature(
+            (abs_row + 1) as usize,
+            &row_cells,
+            compare_mode,
+        ));
     }
 
     result
@@ -107,11 +128,18 @@ pub(super) fn collect_workbook_text_row_entries(
                     .map(format_cell)
                     .unwrap_or_default();
                 let formula = formulas
-                    .and_then(|formula_range| get_formula_for_position(formula_range, abs_row, abs_col))
+                    .and_then(|formula_range| {
+                        get_formula_for_position(formula_range, abs_row, abs_col)
+                    })
                     .map(|formula| format!("={}", formula));
                 encoded_cells.push(encode_cell(&value, formula.as_deref()));
             }
-            format!("{}\t{}\t{}", ROW_PREFIX, abs_row + 1, encoded_cells.join("\t"))
+            format!(
+                "{}\t{}\t{}",
+                ROW_PREFIX,
+                abs_row + 1,
+                encoded_cells.join("\t")
+            )
         } else {
             format!("{}\t{}", ROW_PREFIX, abs_row + 1)
         };
@@ -131,7 +159,12 @@ pub(super) fn write_sheet<W: Write>(
     range: &Range<Data>,
     formulas: Option<&Range<String>>,
 ) -> io::Result<()> {
-    writeln!(writer, "{}\t{}", SHEET_PREFIX, normalize_field(sheet_name).trim())?;
+    writeln!(
+        writer,
+        "{}\t{}",
+        SHEET_PREFIX,
+        normalize_field(sheet_name).trim()
+    )?;
 
     let (start_row, start_col) = range.start().unwrap_or((0, 0));
 
@@ -159,7 +192,9 @@ pub(super) fn write_sheet<W: Write>(
                     String::new()
                 };
                 let formula = formulas
-                    .and_then(|formula_range| get_formula_for_position(formula_range, abs_row, abs_col))
+                    .and_then(|formula_range| {
+                        get_formula_for_position(formula_range, abs_row, abs_col)
+                    })
                     .map(|formula| format!("={}", formula));
                 let display = encode_cell(&value, formula.as_deref());
                 write!(writer, "\t{}", display)?;

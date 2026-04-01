@@ -175,7 +175,11 @@ pub fn encode_cell(value: &str, formula: Option<&str>) -> String {
 }
 
 pub fn encode_cell_owned(mut value: String, formula: Option<String>) -> String {
-    if value.contains('\r') || value.contains('\n') || value.contains('\t') || value.contains(FORMULA_SEPARATOR) {
+    if value.contains('\r')
+        || value.contains('\n')
+        || value.contains('\t')
+        || value.contains(FORMULA_SEPARATOR)
+    {
         value = normalize_field(&value);
     }
     let normalized_formula = formula
@@ -229,18 +233,21 @@ pub fn workbook_cells_differ(
     left_value != right_value || left_cell.formula != right_cell.formula
 }
 
-pub fn get_formula_for_position<'a>(
-    formulas: &'a Range<String>,
+pub fn get_formula_for_position(
+    formulas: &Range<String>,
     abs_row: u32,
     abs_col: u32,
-) -> Option<&'a str> {
+) -> Option<&str> {
     let (start_row, start_col) = formulas.start()?;
     if abs_row < start_row || abs_col < start_col {
         return None;
     }
 
     formulas
-        .get(((abs_row - start_row) as usize, (abs_col - start_col) as usize))
+        .get((
+            (abs_row - start_row) as usize,
+            (abs_col - start_col) as usize,
+        ))
         .map(|formula| formula.trim())
         .filter(|formula| !formula.is_empty())
 }

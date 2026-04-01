@@ -1,5 +1,5 @@
-use super::*;
 use super::rows::build_row_line_and_signature;
+use super::*;
 
 #[derive(Clone, Copy)]
 pub(super) enum TextCellType {
@@ -156,7 +156,11 @@ impl FullSheetRowSink for FullRowsSink {
     type Output = Vec<WorkbookRowEntry>;
 
     fn push_empty_row(&mut self, row_number: usize) {
-        self.rows.push(build_row_line_and_signature(row_number, &[], &self.compare_mode));
+        self.rows.push(build_row_line_and_signature(
+            row_number,
+            &[],
+            &self.compare_mode,
+        ));
     }
 
     fn start_row(&mut self, _row_number: usize) {
@@ -236,7 +240,9 @@ pub(super) fn parse_row_number_from_attr_bytes(bytes: &[u8], fallback_row_number
     for byte in bytes {
         if byte.is_ascii_digit() {
             found_digit = true;
-            value = value.saturating_mul(10).saturating_add((byte - b'0') as usize);
+            value = value
+                .saturating_mul(10)
+                .saturating_add((byte - b'0') as usize);
         }
     }
     if found_digit {
@@ -314,7 +320,10 @@ pub(super) fn build_scanned_cell_snapshot(
         TextCellType::Other => current_cell_value.to_string(),
     };
 
-    if matches!(current_cell_type, TextCellType::SharedString | TextCellType::InlineString) {
+    if matches!(
+        current_cell_type,
+        TextCellType::SharedString | TextCellType::InlineString
+    ) {
         value = normalize_field(&value);
     }
 
@@ -363,7 +372,10 @@ pub(super) fn build_encoded_scanned_cell(
         TextCellType::Other => current_cell_value.to_string(),
     };
 
-    if matches!(current_cell_type, TextCellType::SharedString | TextCellType::InlineString) {
+    if matches!(
+        current_cell_type,
+        TextCellType::SharedString | TextCellType::InlineString
+    ) {
         value = normalize_field(&value);
     }
 
@@ -475,7 +487,11 @@ pub(super) fn scan_text_sheet_rows_fast(
                 );
             }
             TextCellType::Bool => {
-                let value = if current_cell_value == "1" { "TRUE" } else { "FALSE" };
+                let value = if current_cell_value == "1" {
+                    "TRUE"
+                } else {
+                    "FALSE"
+                };
                 if value.is_empty() && current_cell_formula.is_empty() {
                     return;
                 }

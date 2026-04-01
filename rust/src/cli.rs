@@ -25,9 +25,9 @@ pub fn parse_args() -> Result<ParsedArgs, String> {
     let mut args = env::args().skip(1);
     match args.next().as_deref() {
         Some("--metadata-json") => {
-            let file_path = args
-                .next()
-                .ok_or_else(|| "Usage: svn_excel_parser --metadata-json <workbook-path>".to_string())?;
+            let file_path = args.next().ok_or_else(|| {
+                "Usage: svn_excel_parser --metadata-json <workbook-path>".to_string()
+            })?;
             Ok(ParsedArgs {
                 output_mode: OutputMode::MetadataJson,
                 file_path,
@@ -35,12 +35,14 @@ pub fn parse_args() -> Result<ParsedArgs, String> {
             })
         }
         Some("--diff-json") => {
-            let base_path = args
-                .next()
-                .ok_or_else(|| "Usage: svn_excel_parser --diff-json <base-workbook-path> <mine-workbook-path>".to_string())?;
-            let mine_path = args
-                .next()
-                .ok_or_else(|| "Usage: svn_excel_parser --diff-json <base-workbook-path> <mine-workbook-path>".to_string())?;
+            let base_path = args.next().ok_or_else(|| {
+                "Usage: svn_excel_parser --diff-json <base-workbook-path> <mine-workbook-path>"
+                    .to_string()
+            })?;
+            let mine_path = args.next().ok_or_else(|| {
+                "Usage: svn_excel_parser --diff-json <base-workbook-path> <mine-workbook-path>"
+                    .to_string()
+            })?;
             let compare_mode = match args.next() {
                 Some(flag) if flag == "--compare-mode" => {
                     let value = args

@@ -81,11 +81,15 @@ impl SharedStringsStore {
 }
 
 fn is_name_boundary(byte: Option<u8>) -> bool {
-    matches!(byte, None | Some(b' ' | b'\t' | b'\r' | b'\n' | b'>' | b'/'))
+    matches!(
+        byte,
+        None | Some(b' ' | b'\t' | b'\r' | b'\n' | b'>' | b'/')
+    )
 }
 
 fn find_subslice(bytes: &[u8], start: usize, needle: &[u8]) -> Option<usize> {
-    if needle.is_empty() || start >= bytes.len() || needle.len() > bytes.len().saturating_sub(start) {
+    if needle.is_empty() || start >= bytes.len() || needle.len() > bytes.len().saturating_sub(start)
+    {
         return None;
     }
     let mut position = start;
@@ -141,18 +145,16 @@ fn decode_shared_string_item(shared_string_item_xml: &str) -> String {
 
     loop {
         match reader.read_event() {
-            Ok(Event::Start(event)) => match event.name().as_ref() {
-                b"t" => {
+            Ok(Event::Start(event)) => {
+                if event.name().as_ref() == b"t" {
                     capture_text = true;
                 }
-                _ => {}
-            },
-            Ok(Event::End(event)) => match event.name().as_ref() {
-                b"t" => {
+            }
+            Ok(Event::End(event)) => {
+                if event.name().as_ref() == b"t" {
                     capture_text = false;
                 }
-                _ => {}
-            },
+            }
             Ok(Event::Text(text)) if capture_text => {
                 if let Ok(value) = text.decode() {
                     current.push_str(value.as_ref());
@@ -171,7 +173,8 @@ fn decode_shared_string_item(shared_string_item_xml: &str) -> String {
 }
 
 pub(super) fn parse_shared_strings(archive: &mut ZipArchive<File>) -> SharedStringsStore {
-    let Some(shared_strings_xml) = super::read_zip_entry_to_string(archive, "xl/sharedStrings.xml") else {
+    let Some(shared_strings_xml) = super::read_zip_entry_to_string(archive, "xl/sharedStrings.xml")
+    else {
         return SharedStringsStore::empty();
     };
 

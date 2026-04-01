@@ -9,7 +9,7 @@ interface PendingPointerState {
   clientY: number;
 }
 
-export function useWorkbookCanvasHoverController(
+function useWorkbookCanvasHoverController(
   resolveHover: (canvas: HTMLCanvasElement, clientX: number, clientY: number) => WorkbookCanvasHoverCell | null,
   onHoverChange?: (hover: WorkbookCanvasHoverCell | null) => void,
 ) {

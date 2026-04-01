@@ -57,7 +57,7 @@ fn main() {
                     let stdout = io::stdout();
                     let mut handle = stdout.lock();
                     serde_json::to_writer(&mut handle, &diff_output)
-                        .map_err(|error| io::Error::new(io::ErrorKind::Other, error.to_string()))
+                        .map_err(|error| io::Error::other(error.to_string()))
                 }
                 Err(error) => Err(error),
             }

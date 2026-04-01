@@ -47,15 +47,20 @@ impl ZipWorkbookContext {
         }
 
         let file = File::open(file_path)
-            .map_err(|error| io::Error::new(io::ErrorKind::Other, format!("Failed to open workbook zip: {error}")))?;
+            .map_err(|error| io::Error::other(format!("Failed to open workbook zip: {error}")))?;
         let mut archive = ZipArchive::new(file)
-            .map_err(|error| io::Error::new(io::ErrorKind::Other, format!("Failed to read workbook zip: {error}")))?;
-        let sheet_infos = collect_visible_sheet_infos_from_archive(&mut archive).unwrap_or_default();
+            .map_err(|error| io::Error::other(format!("Failed to read workbook zip: {error}")))?;
+        let sheet_infos =
+            collect_visible_sheet_infos_from_archive(&mut archive).unwrap_or_default();
         let shared_strings_start = profile::start();
         let shared_strings = parse_shared_strings(&mut archive);
         profile::log_elapsed(
             shared_strings_start,
-            format!("parse_shared_strings file={} count={}", file_path, shared_strings.len()),
+            format!(
+                "parse_shared_strings file={} count={}",
+                file_path,
+                shared_strings.len()
+            ),
         );
 
         Ok(Self {
@@ -68,14 +73,20 @@ impl ZipWorkbookContext {
     }
 
     pub(crate) fn sheet_names(&self) -> Vec<String> {
-        self.sheet_infos.iter().map(|sheet_info| sheet_info.name.clone()).collect()
+        self.sheet_infos
+            .iter()
+            .map(|sheet_info| sheet_info.name.clone())
+            .collect()
     }
 
     pub(crate) fn shared_strings(&self) -> &SharedStringsStore {
         &self.shared_strings
     }
 
-    fn requested_sheet_infos(&self, requested_sheet_names: Option<&HashSet<String>>) -> Vec<SheetInfo> {
+    fn requested_sheet_infos(
+        &self,
+        requested_sheet_names: Option<&HashSet<String>>,
+    ) -> Vec<SheetInfo> {
         self.sheet_infos
             .iter()
             .filter(|sheet_info| match requested_sheet_names {
@@ -95,16 +106,16 @@ impl ZipWorkbookContext {
 
     fn read_sheet_xml(&mut self, sheet_info: &SheetInfo) -> io::Result<String> {
         super::read_zip_entry_to_string(&mut self.archive, &sheet_info.path).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("Failed to read sheet xml '{}'", sheet_info.path),
-            )
+            io::Error::other(format!("Failed to read sheet xml '{}'", sheet_info.path))
         })
     }
 
     pub(crate) fn read_sheet_xml_by_name(&mut self, sheet_name: &str) -> io::Result<String> {
         let sheet_info = self.find_sheet_info(sheet_name).ok_or_else(|| {
-            io::Error::new(io::ErrorKind::NotFound, format!("Sheet not found: {sheet_name}"))
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("Sheet not found: {sheet_name}"),
+            )
         })?;
         self.read_sheet_xml(&sheet_info)
     }
@@ -142,9 +153,7 @@ impl ZipWorkbookContext {
                 sheet_start,
                 format!(
                     "parse_sheet file={} kind=semantic-fingerprint sheet={} rows={}",
-                    self.file_path,
-                    sheet_info.name,
-                    row_count,
+                    self.file_path, sheet_info.name, row_count,
                 ),
             );
         }
@@ -198,9 +207,7 @@ impl ZipWorkbookContext {
                 sheet_start,
                 format!(
                     "parse_sheet file={} kind=semantic+text-cached sheet={} rows={}",
-                    self.file_path,
-                    sheet_info.name,
-                    row_count,
+                    self.file_path, sheet_info.name, row_count,
                 ),
             );
         }
@@ -238,7 +245,11 @@ impl ZipWorkbookContext {
             {
                 result.push(WorkbookTextSheetEntry {
                     name: sheet_info.name.clone(),
-                    raw_sheet_line: format!("{}\t{}", SHEET_PREFIX, normalize_field(&sheet_info.name).trim()),
+                    raw_sheet_line: format!(
+                        "{}\t{}",
+                        SHEET_PREFIX,
+                        normalize_field(&sheet_info.name).trim()
+                    ),
                     rows,
                 });
                 continue;
@@ -254,16 +265,18 @@ impl ZipWorkbookContext {
                 .text_rows = Some(rows.clone());
             result.push(WorkbookTextSheetEntry {
                 name: sheet_info.name.clone(),
-                raw_sheet_line: format!("{}\t{}", SHEET_PREFIX, normalize_field(&sheet_info.name).trim()),
+                raw_sheet_line: format!(
+                    "{}\t{}",
+                    SHEET_PREFIX,
+                    normalize_field(&sheet_info.name).trim()
+                ),
                 rows,
             });
             profile::log_elapsed(
                 sheet_start,
                 format!(
                     "parse_sheet file={} kind=text-only-xml sheet={} rows={}",
-                    self.file_path,
-                    sheet_info.name,
-                    row_count,
+                    self.file_path, sheet_info.name, row_count,
                 ),
             );
         }
@@ -290,18 +303,18 @@ impl ZipWorkbookContext {
             let col_count = rows.iter().map(|row| row.cells.len()).max().unwrap_or(0);
             result.push(WorkbookSheetDiffEntry {
                 name: sheet_info.name.clone(),
-                raw_sheet_line: format!("{}\t{}", SHEET_PREFIX, normalize_field(&sheet_info.name).trim()),
+                raw_sheet_line: format!(
+                    "{}\t{}",
+                    SHEET_PREFIX,
+                    normalize_field(&sheet_info.name).trim()
+                ),
                 rows,
             });
             profile::log_elapsed(
                 sheet_start,
                 format!(
                     "parse_sheet file={} mode={} kind=full-xml sheet={} rows={} cols={}",
-                    self.file_path,
-                    compare_mode,
-                    sheet_info.name,
-                    row_count,
-                    col_count,
+                    self.file_path, compare_mode, sheet_info.name, row_count, col_count,
                 ),
             );
         }
@@ -311,7 +324,11 @@ impl ZipWorkbookContext {
 }
 
 fn normalize_worksheet_path(target: &str) -> String {
-    let trimmed = target.replace('\\', "/").trim().trim_start_matches("./").to_string();
+    let trimmed = target
+        .replace('\\', "/")
+        .trim()
+        .trim_start_matches("./")
+        .to_string();
     if trimmed.is_empty() {
         return String::new();
     }
@@ -336,7 +353,8 @@ fn parse_workbook_relationships(archive: &mut ZipArchive<File>) -> Option<HashMa
                     continue;
                 }
                 let id = super::decode_attr_value(&reader, &event, b"Id").unwrap_or_default();
-                let target = super::decode_attr_value(&reader, &event, b"Target").unwrap_or_default();
+                let target =
+                    super::decode_attr_value(&reader, &event, b"Target").unwrap_or_default();
                 if !id.is_empty() && !target.is_empty() {
                     rel_map.insert(id, normalize_worksheet_path(&target));
                 }

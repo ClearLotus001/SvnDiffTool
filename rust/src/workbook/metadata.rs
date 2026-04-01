@@ -79,7 +79,11 @@ pub(super) fn collect_workbook_metadata_impl(file_path: &str) -> Option<Workbook
 
     profile::log_elapsed(
         total_start,
-        format!("collect_workbook_metadata file={} sheets={}", file_path, sheets.len()),
+        format!(
+            "collect_workbook_metadata file={} sheets={}",
+            file_path,
+            sheets.len()
+        ),
     );
     Some(WorkbookMetadataMap { sheets })
 }
