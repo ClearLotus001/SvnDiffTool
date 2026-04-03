@@ -6,7 +6,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import SplitHeader from '../src/components/navigation/SplitHeader';
 import { I18nProvider } from '../src/context/i18n';
 import { ThemeContext } from '../src/context/theme';
-import { THEMES } from '../src/theme';
 import type { SvnRevisionInfo } from '../src/types';
 
 function createRevisionInfo(overrides: Partial<SvnRevisionInfo>): SvnRevisionInfo {
@@ -37,7 +36,7 @@ test('SplitHeader keeps revision picker compact and shows the revision log as a 
   const html = renderToStaticMarkup(
     React.createElement(
       ThemeContext.Provider,
-      { value: THEMES.light },
+      { value: 'light' },
       React.createElement(
         I18nProvider,
         null,

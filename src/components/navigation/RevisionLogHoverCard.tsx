@@ -1,16 +1,9 @@
 import {
-  memo,
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
+  memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { FONT_CODE, FONT_SIZE, FONT_UI } from '@/constants/typography';
 import { useI18n } from '@/context/i18n';
-import { useTheme } from '@/context/theme';
+import { cssAlphaRaw } from '@/theme/cssUtils';
 
 interface RevisionLogHoverCardProps {
   accent: string;
@@ -40,7 +33,6 @@ function computeHoverCardLayout(
     Math.max(rect.left, VIEWPORT_PADDING),
     Math.max(VIEWPORT_PADDING, viewportWidth - bubbleWidth - VIEWPORT_PADDING),
   );
-
   return {
     left,
     top: canPlaceBottom || !canPlaceTop
@@ -50,15 +42,9 @@ function computeHoverCardLayout(
 }
 
 const RevisionLogHoverCard = memo(({
-  accent,
-  displayText,
-  detailText = '',
-  author = '',
-  date = '',
-  revision = '',
-  muted = false,
+  accent, displayText, detailText = '',
+  author = '', date = '', revision = '', muted = false,
 }: RevisionLogHoverCardProps) => {
-  const T = useTheme();
   const { t } = useI18n();
   const id = useId();
   const anchorRef = useRef<HTMLSpanElement>(null);
@@ -96,118 +82,56 @@ const RevisionLogHoverCard = memo(({
     const nextWidth = Math.ceil(bubble.offsetWidth);
     const nextHeight = Math.ceil(bubble.offsetHeight);
     setBubbleSize((prev) => (
-      prev.width === nextWidth && prev.height === nextHeight
-        ? prev
-        : { width: nextWidth, height: nextHeight }
+      prev.width === nextWidth && prev.height === nextHeight ? prev : { width: nextWidth, height: nextHeight }
     ));
   }, [hasHoverCard, metaText, normalizedDetailText, open, rect, revision]);
 
   const layout = useMemo(() => {
     if (!open || !rect || typeof window === 'undefined' || !hasHoverCard) return null;
-    return computeHoverCardLayout(
-      rect,
-      window.innerWidth,
-      window.innerHeight,
-      bubbleSize.width,
-      bubbleSize.height,
-    );
+    return computeHoverCardLayout(rect, window.innerWidth, window.innerHeight, bubbleSize.width, bubbleSize.height);
   }, [bubbleSize.height, bubbleSize.width, hasHoverCard, open, rect]);
 
-  const hoverCard = open
-    && hasHoverCard
-    && layout
-    && typeof document !== 'undefined'
+  const hoverCard = open && hasHoverCard && layout && typeof document !== 'undefined'
     ? createPortal(
         <div
           id={id}
           role="dialog"
           aria-label={t('revisionPickerColumnMessage')}
-          style={{
-            position: 'fixed',
-            left: layout.left,
-            top: layout.top,
-            zIndex: 9999,
-            pointerEvents: 'none',
-          }}>
+          className="fixed z-[9999] pointer-events-none"
+          style={{ left: layout.left, top: layout.top }}>
           <div
             ref={bubbleRef}
+            className="motion-hover-card relative p-[14px_16px_15px] rounded-[18px] border border-border-default bg-bg-base text-text-title text-left"
             style={{
-              position: 'relative',
               width: `min(${MAX_CARD_WIDTH}px, calc(100vw - 24px))`,
               maxWidth: MAX_CARD_WIDTH,
-              padding: '14px 16px 15px',
-              borderRadius: 18,
-              border: `1px solid ${T.border}`,
-              background: T.bg0,
-              boxShadow: `0 28px 60px -34px rgba(0, 0, 0, 0.28), 0 12px 28px -20px ${accent}55`,
-              color: T.t0,
-              textAlign: 'left',
+              boxShadow: `0 28px 60px -34px rgba(0, 0, 0, 0.28), 0 12px 28px -20px ${cssAlphaRaw(accent, '55')}`,
               backdropFilter: 'blur(14px)',
             }}>
-            <div style={{ display: 'grid', gap: 10, minWidth: 0 }}>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 12,
-                  flexWrap: 'wrap',
-                  minWidth: 0,
-                }}>
+            <div className="grid gap-2.5 min-w-0">
+              <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 min-w-0">
                 <span
-                  style={{
-                    color: accent,
-                    fontFamily: FONT_UI,
-                    fontSize: FONT_SIZE.xs,
-                    fontWeight: 800,
-                    letterSpacing: '0.04em',
-                    textTransform: 'uppercase',
-                  }}>
+                  className="font-ui text-[11px] font-extrabold tracking-wider uppercase leading-none whitespace-nowrap"
+                  style={{ color: `var(${accent})` }}>
                   {t('revisionPickerColumnMessage')}
                 </span>
-                {revision && (
-                  <span
-                    style={{
-                      color: T.t2,
-                      fontFamily: FONT_CODE,
-                      fontSize: FONT_SIZE.xs,
-                      fontWeight: 700,
-                      whiteSpace: 'nowrap',
-                    }}>
-                    {revision}
-                  </span>
+                {(metaText || revision) && (
+                  <div className="flex items-baseline justify-end gap-3 min-w-0">
+                    {metaText && (
+                      <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-right text-text-secondary font-ui text-[11px] leading-none tabular-nums">
+                        {metaText}
+                      </span>
+                    )}
+                    {revision && (
+                      <span className="shrink-0 text-text-secondary font-code text-[11px] leading-none font-bold whitespace-nowrap tabular-nums">
+                        {revision}
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
-              <div
-                aria-hidden="true"
-                style={{
-                  height: 1,
-                  width: '100%',
-                  background: `linear-gradient(90deg, ${accent}55 0%, ${T.border} 42%, ${T.border} 100%)`,
-                }}
-              />
-              {metaText && (
-                <div
-                  style={{
-                    color: T.t2,
-                    fontFamily: FONT_UI,
-                    fontSize: FONT_SIZE.xs,
-                    lineHeight: 1.4,
-                    wordBreak: 'break-word',
-                  }}>
-                  {metaText}
-                </div>
-              )}
-              <div
-                style={{
-                  color: T.t0,
-                  fontFamily: FONT_UI,
-                  fontSize: FONT_SIZE.sm,
-                  fontWeight: 600,
-                  lineHeight: 1.6,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                }}>
+              <div className="h-px w-full" style={{ background: `linear-gradient(90deg, ${cssAlphaRaw(accent, '55')} 0%, var(--border-color) 42%, var(--border-color) 100%)` }} />
+              <div className="text-text-title font-ui text-[13px] font-semibold leading-relaxed whitespace-pre-wrap break-words">
                 {normalizedDetailText}
               </div>
             </div>
@@ -227,23 +151,15 @@ const RevisionLogHoverCard = memo(({
         onMouseLeave={hasHoverCard ? () => setOpen(false) : undefined}
         onFocus={hasHoverCard ? () => setOpen(true) : undefined}
         onBlur={hasHoverCard ? () => setOpen(false) : undefined}
+        className={`
+          block w-full min-w-0 py-0.5 rounded-[10px]
+          font-ui overflow-hidden text-ellipsis whitespace-nowrap
+          outline-none transition-[background,color] duration-150
+          ${muted ? 'text-text-secondary text-[11px] font-medium' : 'text-text-title text-[13px] font-semibold'}
+        `}
         style={{
-          display: 'block',
-          width: '100%',
-          minWidth: 0,
-          padding: '3px 0',
-          borderRadius: 10,
-          background: open && hasHoverCard ? `${accent}0f` : 'transparent',
-          color: muted ? T.t2 : T.t0,
-          fontFamily: FONT_UI,
-          fontSize: muted ? FONT_SIZE.xs : FONT_SIZE.sm,
-          fontWeight: muted ? 500 : 600,
+          background: open && hasHoverCard ? cssAlphaRaw(accent, '0f') : 'transparent',
           lineHeight: 1.45,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          outline: 'none',
-          transition: 'background 120ms ease, color 120ms ease',
         }}>
         {normalizedDisplayText}
       </span>

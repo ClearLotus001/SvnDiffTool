@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('svnDiff', {
+  notifyRendererReady: () => ipcRenderer.send('renderer-ready'),
+  saveStartupAppearance: (appearance: { themeKey?: 'dark' | 'light' | 'hc'; locale?: 'zh-CN' | 'en-US' }) => ipcRenderer.send('save-startup-appearance', appearance),
+  getLaunchState: (compareMode?: 'strict' | 'content') => ipcRenderer.invoke('get-launch-state', { compareMode }),
   getDiffData: (compareMode?: 'strict' | 'content') => ipcRenderer.invoke('get-diff-data', { compareMode }),
   loadRevisionDiff: (baseRevisionId: string, mineRevisionId: string, compareMode?: 'strict' | 'content') => ipcRenderer.invoke('load-revision-diff', { baseRevisionId, mineRevisionId, compareMode }),
   getRevisionOptions: () => ipcRenderer.invoke('get-revision-options'),
@@ -53,6 +56,7 @@ contextBridge.exposeInMainWorld('svnDiff', {
   windowMaximize: () => ipcRenderer.send('window-maximize'),
   windowClose: () => ipcRenderer.send('window-close'),
   writeClipboardText: (text: string) => ipcRenderer.send('clipboard-write-text', text),
+  saveDiagnosticReport: (content: string, defaultFileName?: string) => ipcRenderer.invoke('save-diagnostic-report', { content, defaultFileName }),
   debugLog: (message: string, payload?: unknown) => ipcRenderer.send('debug-log', { message, payload }),
   openExternal: (url: string) => ipcRenderer.send('open-external', url),
 });

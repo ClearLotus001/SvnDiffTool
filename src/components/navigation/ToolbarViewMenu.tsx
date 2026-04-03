@@ -1,8 +1,8 @@
 import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { FONT_CODE, FONT_SIZE, FONT_UI } from '@/constants/typography';
+import { ChevronDown } from 'lucide-react';
 import { useI18n } from '@/context/i18n';
-import { useTheme } from '@/context/theme';
+import { cssAlpha, cssVar } from '@/theme/cssUtils';
 import type { WorkbookCompareMode } from '@/types';
 import Tooltip from '@/components/shared/Tooltip';
 
@@ -35,22 +35,14 @@ interface ToolbarViewMenuProps {
 }
 
 const ToolbarViewMenu = memo(({
-  collapseCtx,
-  setCollapseCtx,
-  showWhitespace,
-  setShowWhitespace,
-  showHiddenColumns,
-  setShowHiddenColumns,
-  workbookCompareMode,
-  setWorkbookCompareMode,
-  fontSize,
-  setFontSize,
-  isWorkbookMode,
-  showLabel,
-  noDragStyle,
-  anchorStyle,
+  collapseCtx, setCollapseCtx,
+  showWhitespace, setShowWhitespace,
+  showHiddenColumns, setShowHiddenColumns,
+  workbookCompareMode, setWorkbookCompareMode,
+  fontSize, setFontSize,
+  isWorkbookMode, showLabel,
+  noDragStyle, anchorStyle,
 }: ToolbarViewMenuProps) => {
-  const T = useTheme();
   const { t } = useI18n();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -65,25 +57,19 @@ const ToolbarViewMenu = memo(({
 
   useEffect(() => {
     if (!open) return;
-
     updateAnchorRect();
-
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as Node | null;
       if (rootRef.current?.contains(target ?? null)) return;
       if (menuRef.current?.contains(target ?? null)) return;
       setOpen(false);
     };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
-    };
+    const handleKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
     const handleLayout = () => updateAnchorRect();
-
     window.addEventListener('mousedown', handlePointerDown);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('resize', handleLayout);
     window.addEventListener('scroll', handleLayout, true);
-
     return () => {
       window.removeEventListener('mousedown', handlePointerDown);
       window.removeEventListener('keydown', handleKeyDown);
@@ -102,25 +88,10 @@ const ToolbarViewMenu = memo(({
     return count;
   }, [collapseCtx, fontSize, isWorkbookMode, showHiddenColumns, showWhitespace, workbookCompareMode]);
 
-  const sectionTitleStyle: CSSProperties = {
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_UI,
-    fontWeight: 700,
-    color: T.t2,
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-  };
-
   const ToggleRow = ({
-    checked,
-    label,
-    onClick,
-    tooltip,
+    checked, label, onClick, tooltip,
   }: {
-    checked: boolean;
-    label: string;
-    onClick: () => void;
-    tooltip: string;
+    checked: boolean; label: string; onClick: () => void; tooltip: string;
   }) => (
     <Tooltip content={tooltip} anchorStyle={anchorStyle}>
       <button
@@ -128,62 +99,31 @@ const ToolbarViewMenu = memo(({
         role="menuitemcheckbox"
         aria-checked={checked}
         onClick={onClick}
-        style={{
-          minHeight: 38,
-          padding: '0 12px',
-          borderRadius: 12,
-          border: `1px solid ${checked ? `${T.acc}44` : T.border}`,
-          background: checked ? `${T.acc}12` : T.bg0,
-          color: checked ? T.acc : T.t0,
-          fontFamily: FONT_UI,
-          fontSize: FONT_SIZE.sm,
-          fontWeight: 600,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12,
-          cursor: 'pointer',
-          textAlign: 'left',
-          ...interactiveStyle,
-        }}>
+        className={`
+          min-h-[38px] px-3 rounded-xl border font-ui text-[13px] font-semibold
+          flex items-center justify-between gap-3 cursor-pointer text-left
+          transition-all duration-150
+          ${checked
+            ? 'border-accent/25 bg-[var(--accent)]/[0.07] text-accent'
+            : 'border-border-default bg-bg-base text-text-title'
+          }
+          hover:border-accent/40
+        `}
+        style={interactiveStyle}>
         <span>{label}</span>
         <span
           aria-hidden="true"
-          style={{
-            width: 30,
-            height: 18,
-            padding: 2,
-            borderRadius: 999,
-            background: checked ? T.acc : T.bg3,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: checked ? 'flex-end' : 'flex-start',
-            boxSizing: 'border-box',
-            flexShrink: 0,
-          }}>
-          <span
-            style={{
-              width: 12,
-              height: 12,
-              borderRadius: 999,
-              background: checked ? '#fff' : T.t2,
-            }}
-          />
+          className={`w-[30px] h-[18px] p-0.5 rounded-full inline-flex items-center shrink-0 transition-all duration-150 ${checked ? 'justify-end bg-accent' : 'justify-start bg-bg-elevated'}`}>
+          <span className={`size-3 rounded-full ${checked ? 'bg-btn-active-text' : 'bg-text-secondary'}`} />
         </span>
       </button>
     </Tooltip>
   );
 
   const CompareModeButton = ({
-    active,
-    label,
-    onClick,
-    tooltip,
+    active, label, onClick, tooltip,
   }: {
-    active: boolean;
-    label: string;
-    onClick: () => void;
-    tooltip: string;
+    active: boolean; label: string; onClick: () => void; tooltip: string;
   }) => (
     <Tooltip content={tooltip} anchorStyle={anchorStyle}>
       <button
@@ -191,19 +131,15 @@ const ToolbarViewMenu = memo(({
         role="menuitemradio"
         aria-checked={active}
         onClick={onClick}
-        style={{
-          minHeight: 42,
-          padding: '0 12px',
-          borderRadius: 12,
-          border: `1px solid ${active ? `${T.acc}44` : T.border}`,
-          background: active ? `${T.acc}12` : T.bg0,
-          color: active ? T.acc : T.t0,
-          fontFamily: FONT_UI,
-          fontSize: FONT_SIZE.sm,
-          fontWeight: 700,
-          cursor: 'pointer',
-          ...interactiveStyle,
-        }}>
+        className={`
+          min-h-[42px] px-3 rounded-xl border font-ui text-[13px] font-bold
+          cursor-pointer transition-all duration-150
+          ${active
+            ? 'border-accent/25 bg-[var(--accent)]/[0.07] text-accent'
+            : 'border-border-default bg-bg-base text-text-title hover:border-accent/40'
+          }
+        `}
+        style={interactiveStyle}>
         {label}
       </button>
     </Tooltip>
@@ -215,11 +151,7 @@ const ToolbarViewMenu = memo(({
       Math.max(anchorRect.right - MENU_WIDTH, VIEWPORT_PADDING),
       Math.max(VIEWPORT_PADDING, window.innerWidth - MENU_WIDTH - VIEWPORT_PADDING),
     );
-
-    return {
-      left,
-      top: anchorRect.bottom + MENU_GAP,
-    };
+    return { left, top: anchorRect.bottom + MENU_GAP };
   }, [anchorRect]);
 
   const menu = open && menuLayout && typeof document !== 'undefined'
@@ -227,128 +159,59 @@ const ToolbarViewMenu = memo(({
       <div
         ref={menuRef}
         role="menu"
+        className="motion-floating-panel fixed p-2 rounded-2xl border border-border-default bg-bg-surface-solid grid gap-2.5 z-[120]"
         style={{
-          position: 'fixed',
           top: menuLayout.top,
           left: menuLayout.left,
           width: MENU_WIDTH,
-          padding: 8,
-          borderRadius: 16,
-          border: `1px solid ${T.border}`,
-          background: T.bg1,
-          boxShadow: `0 18px 44px -26px ${T.border2}`,
-          display: 'grid',
-          gap: 10,
-          zIndex: 120,
+          boxShadow: `0 18px 44px -26px var(--border-strong)`,
           ...interactiveStyle,
         }}>
-        <div style={{ display: 'grid', gap: 6 }}>
-          <div style={sectionTitleStyle}>{t('toolbarSectionDisplay')}</div>
-          <ToggleRow
-            checked={collapseCtx}
-            onClick={() => setCollapseCtx((value) => !value)}
-            label={collapseCtx ? t('toolbarExpandAllLabel') : t('toolbarCollapseLabel')}
-            tooltip={t('toolbarCollapseTitle')}
-          />
-          <ToggleRow
-            checked={showWhitespace}
-            onClick={() => setShowWhitespace((value) => !value)}
-            label={t('toolbarWhitespaceLabel')}
-            tooltip={t('toolbarWhitespaceTitle')}
-          />
+        <div className="grid gap-1.5">
+          <div className="text-[11px] font-ui font-bold text-text-secondary tracking-wider uppercase">{t('toolbarSectionDisplay')}</div>
+          <ToggleRow checked={collapseCtx} onClick={() => setCollapseCtx((v) => !v)} label={collapseCtx ? t('toolbarExpandAllLabel') : t('toolbarCollapseLabel')} tooltip={t('toolbarCollapseTitle')} />
+          <ToggleRow checked={showWhitespace} onClick={() => setShowWhitespace((v) => !v)} label={t('toolbarWhitespaceLabel')} tooltip={t('toolbarWhitespaceTitle')} />
           {isWorkbookMode && (
-            <ToggleRow
-              checked={showHiddenColumns}
-              onClick={() => setShowHiddenColumns((value) => !value)}
-              label={t('toolbarHiddenColumnsLabel')}
-              tooltip={t('toolbarHiddenColumnsTitle')}
-            />
+            <ToggleRow checked={showHiddenColumns} onClick={() => setShowHiddenColumns((v) => !v)} label={t('toolbarHiddenColumnsLabel')} tooltip={t('toolbarHiddenColumnsTitle')} />
           )}
         </div>
 
         {isWorkbookMode && (
           <>
-            <div style={{ height: 1, background: T.border }} />
-
-            <div style={{ display: 'grid', gap: 6 }}>
-              <div style={sectionTitleStyle}>{t('toolbarSectionCompare')}</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6 }}>
-                <CompareModeButton
-                  active={workbookCompareMode === 'content'}
-                  label={t('toolbarCompareModeContent')}
-                  onClick={() => setWorkbookCompareMode('content')}
-                  tooltip={t('toolbarCompareModeContentTitle')}
-                />
-                <CompareModeButton
-                  active={workbookCompareMode === 'strict'}
-                  label={t('toolbarCompareModeStrict')}
-                  onClick={() => setWorkbookCompareMode('strict')}
-                  tooltip={t('toolbarCompareModeStrictTitle')}
-                />
+            <div className="h-px bg-border-default" />
+            <div className="grid gap-1.5">
+              <div className="text-[11px] font-ui font-bold text-text-secondary tracking-wider uppercase">{t('toolbarSectionCompare')}</div>
+              <div className="grid grid-cols-2 gap-1.5">
+                <CompareModeButton active={workbookCompareMode === 'content'} label={t('toolbarCompareModeContent')} onClick={() => setWorkbookCompareMode('content')} tooltip={t('toolbarCompareModeContentTitle')} />
+                <CompareModeButton active={workbookCompareMode === 'strict'} label={t('toolbarCompareModeStrict')} onClick={() => setWorkbookCompareMode('strict')} tooltip={t('toolbarCompareModeStrictTitle')} />
               </div>
             </div>
           </>
         )}
 
-        <div style={{ height: 1, background: T.border }} />
+        <div className="h-px bg-border-default" />
 
-        <div style={{ display: 'grid', gap: 8 }}>
-          <div style={sectionTitleStyle}>{t('toolbarSectionFont')}</div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                padding: 2,
-                borderRadius: 12,
-                border: `1px solid ${T.border}`,
-                background: T.bg2,
-                ...interactiveStyle,
-              }}>
+        <div className="grid gap-2">
+          <div className="text-[11px] font-ui font-bold text-text-secondary tracking-wider uppercase">{t('toolbarSectionFont')}</div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="inline-flex items-center gap-1 p-0.5 rounded-xl border border-border-default bg-bg-surface-hover" style={interactiveStyle}>
               <button
                 type="button"
-                onClick={() => setFontSize((size) => Math.max(10, size - 1))}
-                style={{
-                  minWidth: 28,
-                  height: 28,
-                  borderRadius: 8,
-                  border: 'none',
-                  background: 'transparent',
-                  color: T.t0,
-                  fontFamily: FONT_UI,
-                  fontSize: FONT_SIZE.sm,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  ...interactiveStyle,
-                }}>
+                onClick={() => setFontSize((s) => Math.max(10, s - 1))}
+                className="min-w-7 h-7 rounded-lg border-none bg-transparent text-text-title font-ui text-[13px] font-bold cursor-pointer hover:bg-bg-elevated active:scale-95 transition-all duration-150"
+                style={interactiveStyle}>
                 A-
               </button>
-              <span style={{ minWidth: 28, textAlign: 'center', color: T.t1, fontFamily: FONT_CODE, fontSize: FONT_SIZE.sm }}>
-                {fontSize}
-              </span>
+              <span className="min-w-7 text-center text-text-primary font-code text-[13px]">{fontSize}</span>
               <button
                 type="button"
-                onClick={() => setFontSize((size) => Math.min(20, size + 1))}
-                style={{
-                  minWidth: 28,
-                  height: 28,
-                  borderRadius: 8,
-                  border: 'none',
-                  background: 'transparent',
-                  color: T.t0,
-                  fontFamily: FONT_UI,
-                  fontSize: FONT_SIZE.sm,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  ...interactiveStyle,
-                }}>
+                onClick={() => setFontSize((s) => Math.min(20, s + 1))}
+                className="min-w-7 h-7 rounded-lg border-none bg-transparent text-text-title font-ui text-[13px] font-bold cursor-pointer hover:bg-bg-elevated active:scale-95 transition-all duration-150"
+                style={interactiveStyle}>
                 A+
               </button>
             </div>
-            <span style={{ fontSize: FONT_SIZE.xs, color: T.t2, fontFamily: FONT_UI, whiteSpace: 'nowrap' }}>
-              10px - 20px
-            </span>
+            <span className="text-[11px] text-text-secondary font-ui whitespace-nowrap">10px - 20px</span>
           </div>
         </div>
       </div>,
@@ -357,52 +220,34 @@ const ToolbarViewMenu = memo(({
     : null;
 
   return (
-    <div ref={rootRef} style={{ position: 'relative', flexShrink: 0, ...noDragStyle }}>
+    <div ref={rootRef} className="relative shrink-0" style={noDragStyle}>
       <Tooltip content={t('toolbarViewTitle')} anchorStyle={anchorStyle}>
         <button
           type="button"
           aria-haspopup="menu"
           aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
+          onClick={() => setOpen((v) => !v)}
+          className={`
+            h-8 rounded-[10px] border border-border-default
+            bg-bg-surface-hover font-ui text-[13px] font-bold
+            inline-flex items-center gap-2 cursor-pointer whitespace-nowrap
+            transition-all duration-150
+            hover:-translate-y-px hover:border-border-strong hover:shadow-sm
+            ${open ? 'text-accent' : 'text-text-title'}
+          `}
           style={{
-            height: 32,
             padding: showLabel ? '0 10px 0 12px' : '0 10px',
-            borderRadius: 10,
-            border: `1px solid ${T.border}`,
-            background: T.bg2,
-            color: open ? T.acc : T.t0,
-            fontFamily: FONT_UI,
-            fontSize: FONT_SIZE.sm,
-            fontWeight: 700,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 8,
-            cursor: 'pointer',
-            whiteSpace: 'nowrap',
-            boxSizing: 'border-box',
             ...interactiveStyle,
           }}>
           {showLabel && <span>{t('toolbarViewLabel')}</span>}
           {viewStateCount > 0 && (
             <span
-              style={{
-                minWidth: 18,
-                height: 18,
-                padding: '0 6px',
-                borderRadius: 999,
-                background: `${T.acc}16`,
-                color: T.acc,
-                fontSize: 10,
-                fontWeight: 800,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxSizing: 'border-box',
-              }}>
+              className="min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] font-extrabold inline-flex items-center justify-center"
+              style={{ background: cssAlpha('acc', '16'), color: cssVar('acc') }}>
               {viewStateCount}
             </span>
           )}
-            <span aria-hidden="true" style={{ fontSize: 10, lineHeight: 1 }}>▼</span>
+          <ChevronDown size={10} />
         </button>
       </Tooltip>
       {menu}

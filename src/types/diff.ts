@@ -49,20 +49,56 @@ export type TokenType = 'keyword' | 'string' | 'comment' | 'number' | 'punctuati
 export interface Token {
   type: TokenType;
   text: string;
+  color?: string | null;
+  fontStyle?: number | null;
+}
+
+export type SyntaxHighlightSource = 'shiki' | 'fallback' | 'none';
+
+export interface SyntaxPresentation {
+  languageId: string | null;
+  source: SyntaxHighlightSource;
+  baseLineTokens: Token[][];
+  mineLineTokens: Token[][];
 }
 
 export interface SearchMatch {
   lineIdx: number;
   start: number;
   end: number;
+  workbookTarget: WorkbookSearchTarget | null;
+}
+
+export interface WorkbookSearchTarget {
+  sheetName: string | null;
+  side: 'base' | 'mine' | null;
+  rowNumber: number | null;
+  colIndex: number | null;
 }
 
 export interface SearchState {
   query: string;
   isRegex: boolean;
   isCaseSensitive: boolean;
+  workbookScope: 'all' | 'sheet';
   matches: SearchMatch[];
   activeIdx: number;
+}
+
+export interface SearchResultItem {
+  index: number;
+  lineIdx: number;
+  workbookTarget: WorkbookSearchTarget | null;
+  scopeKey: string;
+  sheetName: string | null;
+  side: 'base' | 'mine' | null;
+  sideLabel: string;
+  rowNumber: number | null;
+  colIndex: number | null;
+  address: string;
+  locationLabel: string;
+  preview: string;
+  detail: string;
 }
 
 export interface DiffPerformanceMetrics {

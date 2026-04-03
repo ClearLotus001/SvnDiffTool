@@ -1,7 +1,8 @@
 import { memo, useMemo } from 'react';
 import { FONT_CODE, FONT_UI, getWorkbookFontScale } from '@/constants/typography';
 import { useI18n } from '@/context/i18n';
-import { useTheme } from '@/context/theme';
+import { useThemeTokens } from '@/context/theme';
+import { cssVar } from '@/theme/cssUtils';
 import type { WorkbookFreezeState, WorkbookMergeRange, WorkbookSelectionState } from '@/types';
 import { findWorkbookMergeRange } from '@/utils/workbook/workbookMergeLayout';
 import { getWorkbookColumnLabel } from '@/utils/workbook/workbookSections';
@@ -33,6 +34,73 @@ function formatMergeRange(range: WorkbookMergeRange): string {
   return start === end ? start : `${start}:${end}`;
 }
 
+function buildSortedUniqueNumbers(values: number[]): number[] {
+  return Array.from(new Set(values)).sort((left, right) => left - right);
+}
+
+function isContiguousSequence(values: number[]): boolean {
+  if (values.length <= 1) return true;
+  for (let index = 1; index < values.length; index += 1) {
+    if (values[index] !== values[index - 1]! + 1) return false;
+  }
+  return true;
+}
+
+function formatWorkbookCellRange(
+  startRow: number,
+  startCol: number,
+  endRow: number,
+  endCol: number,
+): string {
+  const start = `${getWorkbookColumnLabel(startCol)}${startRow}`;
+  const end = `${getWorkbookColumnLabel(endCol)}${endRow}`;
+  return start === end ? start : `${start}:${end}`;
+}
+
+function resolveWorkbookSelectionAddress(
+  selection: WorkbookSelectionState,
+  primarySelection: WorkbookSelectionState['primary'],
+  mergeRangeLabel: string,
+): string {
+  if (!primarySelection) return '—';
+
+  if (primarySelection.kind === 'row') {
+    const rows = buildSortedUniqueNumbers(selection.items.map(item => item.rowNumber).filter(rowNumber => rowNumber > 0));
+    if (rows.length > 1 && isContiguousSequence(rows)) {
+      return `R${rows[0]!}:R${rows[rows.length - 1]!}`;
+    }
+    return `R${primarySelection.rowNumber}`;
+  }
+
+  if (primarySelection.kind === 'column') {
+    const columns = buildSortedUniqueNumbers(selection.items.map(item => item.colIndex).filter(column => column >= 0));
+    if (columns.length > 1 && isContiguousSequence(columns)) {
+      return `${getWorkbookColumnLabel(columns[0]!)}:${getWorkbookColumnLabel(columns[columns.length - 1]!)}`;
+    }
+    return primarySelection.colLabel;
+  }
+
+  const selectedCells = selection.items.filter((item) => (
+    item.kind === 'cell'
+    && item.sheetName === primarySelection.sheetName
+    && item.side === primarySelection.side
+  ));
+  const rows = buildSortedUniqueNumbers(selectedCells.map(item => item.rowNumber).filter(rowNumber => rowNumber > 0));
+  const columns = buildSortedUniqueNumbers(selectedCells.map(item => item.colIndex).filter(column => column >= 0));
+  if (rows.length > 0 && columns.length > 0 && isContiguousSequence(rows) && isContiguousSequence(columns)) {
+    const cellKeySet = new Set(selectedCells.map(item => `${item.rowNumber}:${item.colIndex}`));
+    const expectedCellCount = rows.length * columns.length;
+    if (
+      cellKeySet.size === expectedCellCount
+      && rows.every(rowNumber => columns.every(column => cellKeySet.has(`${rowNumber}:${column}`)))
+    ) {
+      return formatWorkbookCellRange(rows[0]!, columns[0]!, rows[rows.length - 1]!, columns[columns.length - 1]!);
+    }
+  }
+
+  return mergeRangeLabel || primarySelection.address || '—';
+}
+
 const WorkbookFormulaBar = memo(({
   selection,
   fontSize,
@@ -47,7 +115,7 @@ const WorkbookFormulaBar = memo(({
   onUnfreezeColumn,
   onResetFreeze,
 }: WorkbookFormulaBarProps) => {
-  const T = useTheme();
+  const T = useThemeTokens();
   const { t } = useI18n();
   const sizes = useMemo(() => getWorkbookFontScale(fontSize), [fontSize]);
   const primarySelection = selection.primary;
@@ -81,11 +149,7 @@ const WorkbookFormulaBar = memo(({
     ? findWorkbookMergeRange(mergeRanges, primarySelection.rowNumber, primarySelection.colIndex)
     : null;
   const mergeRangeLabel = mergeRange ? formatMergeRange(mergeRange) : '';
-  const selectionAddress = primarySelection?.kind === 'row'
-    ? `R${primarySelection.rowNumber}`
-    : primarySelection?.kind === 'column'
-    ? primarySelection.colLabel
-    : (mergeRangeLabel || primarySelection?.address || '—');
+  const selectionAddress = resolveWorkbookSelectionAddress(selection, primarySelection, mergeRangeLabel);
   const canFreezeRow = Boolean(primarySelection && primarySelection.kind !== 'column');
   const canFreezeColumn = Boolean(primarySelection && primarySelection.kind !== 'row');
   const canFreezePane = Boolean(primarySelection && primarySelection.kind === 'cell');
@@ -112,19 +176,15 @@ const WorkbookFormulaBar = memo(({
       type="button"
       disabled={disabled}
       onClick={onClick}
+      className="h-7 px-2.5 rounded-lg whitespace-nowrap font-bold"
       style={{
-        height: 28,
-        padding: '0 10px',
-        borderRadius: 8,
-        border: `1px solid ${active ? sideAccentButton.border : T.border}`,
-        background: active ? sideAccentButton.background : T.bg2,
-        color: active ? sideAccentButton.textColor : T.t0,
+        border: `1px solid ${active ? sideAccentButton.border : cssVar('border')}`,
+        background: active ? sideAccentButton.background : cssVar('bg2'),
+        color: active ? sideAccentButton.textColor : cssVar('t0'),
         fontFamily: FONT_UI,
         fontSize: sizes.meta,
-        fontWeight: 700,
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.45 : 1,
-        whiteSpace: 'nowrap',
       }}>
       {label}
     </button>
@@ -132,190 +192,135 @@ const WorkbookFormulaBar = memo(({
 
   return (
     <div
+      className="grid gap-2 items-stretch px-3 py-2 shrink-0"
       style={{
-        display: 'grid',
         gridTemplateColumns: 'auto auto minmax(180px, auto) minmax(0, 1fr) auto',
-        gap: 8,
-        alignItems: 'stretch',
-        padding: '8px 12px',
-        borderBottom: `1px solid ${T.border}`,
-        background: `linear-gradient(180deg, ${T.bg1} 0%, ${T.bg0} 100%)`,
-        flexShrink: 0,
+        borderBottom: `1px solid ${cssVar('border')}`,
+        background: `linear-gradient(180deg, ${cssVar('bg1')} 0%, ${cssVar('bg0')} 100%)`,
       }}>
+      {/* Address cell */}
       <div
+        className="inline-flex items-center justify-center min-w-[96px] h-[30px] px-3 rounded-[10px] font-bold whitespace-nowrap"
         style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minWidth: 86,
-          height: 30,
-          padding: '0 12px',
-          borderRadius: 10,
-          border: `1px solid ${T.border}`,
-          background: T.bg2,
-          color: T.t0,
+          border: `1px solid ${cssVar('border')}`,
+          background: cssVar('bg2'),
+          color: cssVar('t0'),
           fontFamily: FONT_CODE,
           fontSize: sizes.cell,
-          fontWeight: 700,
         }}>
         {selectionAddress}
       </div>
 
+      {/* Side meta chip */}
       <div
+        className="inline-flex items-center gap-2 min-w-0 h-[30px] px-3 rounded-[10px] font-semibold"
         style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 8,
-          minWidth: 0,
-          height: 30,
-          padding: '0 12px',
-          borderRadius: 10,
-          border: `1px solid ${T.border}`,
-          background: T.bg2,
-          color: T.t0,
+          border: `1px solid ${cssVar('border')}`,
+          background: cssVar('bg2'),
+          color: cssVar('t0'),
           fontFamily: FONT_UI,
           fontSize: sizes.ui,
-          fontWeight: 600,
         }}>
         <span
           aria-hidden="true"
+          className="shrink-0"
           style={{
             width: 8,
             height: 8,
             borderRadius: primarySelection?.side === 'base' ? 2 : '50%',
             transform: primarySelection?.side === 'base' ? 'rotate(45deg)' : undefined,
             background: sideAccent,
-            flexShrink: 0,
           }}
         />
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sideMeta}</span>
+        <span className="overflow-hidden text-ellipsis whitespace-nowrap">{sideMeta}</span>
         {selectionSummary && (
           <span
+            className="ml-auto px-2 rounded-full whitespace-nowrap"
             style={{
-              marginLeft: 'auto',
               padding: '1px 8px',
-              borderRadius: 999,
               background: sideAccentBadge.background,
               color: sideAccentBadge.textColor,
               fontSize: sizes.meta,
               fontWeight: 800,
-              whiteSpace: 'nowrap',
             }}>
             {selectionSummary}
           </span>
         )}
       </div>
 
+      {/* Merge range */}
       {mergeRangeLabel && (
         <div
+          className="inline-flex items-center min-w-[160px] h-[30px] px-3 rounded-[10px] gap-2"
           style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            minWidth: 160,
-            height: 30,
-            padding: '0 12px',
-            borderRadius: 10,
-            border: `1px solid ${T.border}`,
-            background: T.bg2,
-            color: T.t1,
+            border: `1px solid ${cssVar('border')}`,
+            background: cssVar('bg2'),
+            color: cssVar('t1'),
             fontFamily: FONT_UI,
             fontSize: sizes.ui,
-            gap: 8,
           }}>
-          <span style={{ color: T.t2 }}>{t('formulaMergeLabel')}:</span>
+          <span style={{ color: cssVar('t2') }}>{t('formulaMergeLabel')}:</span>
           <span
-            style={{
-              color: T.t0,
-              fontFamily: FONT_CODE,
-              fontWeight: 700,
-              whiteSpace: 'nowrap',
-            }}>
+            className="whitespace-nowrap font-bold"
+            style={{ color: cssVar('t0'), fontFamily: FONT_CODE }}>
             {mergeRangeLabel}
           </span>
         </div>
       )}
 
+      {/* Cell value */}
       <div
+        className="inline-flex items-center min-w-[180px] h-[30px] px-3 rounded-[10px]"
         style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          minWidth: 180,
-          height: 30,
-          padding: '0 12px',
-          borderRadius: 10,
-          border: `1px solid ${T.border}`,
-          background: T.bg2,
-          color: T.t1,
+          border: `1px solid ${cssVar('border')}`,
+          background: cssVar('bg2'),
+          color: cssVar('t1'),
           fontFamily: FONT_UI,
           fontSize: sizes.ui,
         }}>
-        <span style={{ color: T.t2 }}>{t('workbookCellValue')}:</span>
+        <span style={{ color: cssVar('t2') }}>{t('workbookCellValue')}:</span>
         <span
-          style={{
-            marginLeft: 8,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            color: T.t0,
-            fontWeight: 600,
-          }}>
+          className="ml-2 overflow-hidden text-ellipsis whitespace-nowrap font-semibold"
+          style={{ color: cssVar('t0') }}>
           {primarySelection?.value || t('formulaBarEmptyValue')}
         </span>
       </div>
 
+      {/* Formula bar */}
       <div
+        className="flex items-center min-w-0 h-[30px] px-3 rounded-[10px] overflow-hidden"
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          minWidth: 0,
-          height: 30,
-          padding: '0 12px',
-          borderRadius: 10,
-          border: `1px solid ${T.border}`,
-          background: T.bg2,
-          overflow: 'hidden',
+          border: `1px solid ${cssVar('border')}`,
+          background: cssVar('bg2'),
         }}>
         <span
+          className="shrink-0 font-bold uppercase tracking-wider"
           style={{
-            color: T.acc2,
+            color: cssVar('acc2'),
             fontFamily: FONT_UI,
-          fontSize: sizes.meta,
-          fontWeight: 700,
-          textTransform: 'uppercase',
-          letterSpacing: '0.06em',
-          flexShrink: 0,
-        }}>
+            fontSize: sizes.meta,
+          }}>
           fx
         </span>
         <span
+          className="ml-2.5 overflow-hidden text-ellipsis whitespace-nowrap"
           style={{
-            marginLeft: 10,
             fontFamily: FONT_CODE,
             fontSize: sizes.ui,
-            color: primarySelection?.formula ? T.t0 : T.t2,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
+            color: primarySelection?.formula ? cssVar('t0') : cssVar('t2'),
           }}>
           {primarySelection?.formula || t('formulaBarEmpty')}
         </span>
       </div>
 
-      <div
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 8,
-          minWidth: 0,
-          flexWrap: 'wrap',
-          justifyContent: 'flex-end',
-        }}>
+      {/* Freeze actions */}
+      <div className="inline-flex items-center gap-2 min-w-0 flex-wrap justify-end">
         <span
+          className="whitespace-nowrap"
           style={{
             color: freezePalette.subduedText,
             fontFamily: FONT_UI,
             fontSize: sizes.meta,
-            whiteSpace: 'nowrap',
           }}>
           {t('formulaFreezeLabel')}: {freezeSummary}
         </span>

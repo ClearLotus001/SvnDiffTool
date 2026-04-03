@@ -11,6 +11,12 @@ export interface WorkbookSelectionLookup {
   columnKeys: Set<string>;
   cellKeys: Set<string>;
   mirroredCellKeys: Set<string>;
+  cellColumnKeys: Set<string>;
+}
+
+interface WorkbookSelectionStateInternal extends WorkbookSelectionState {
+  __keySetCache?: Set<string>;
+  __lookupCache?: WorkbookSelectionLookup;
 }
 
 function buildAxisKey(sheetName: string, value: number): string {
@@ -39,7 +45,7 @@ function getWorkbookColumnLabel(index: number): string {
   return label;
 }
 
-function buildWorkbookSelectionKey(selection: WorkbookSelectedCell): string {
+export function buildWorkbookSelectionKey(selection: WorkbookSelectedCell): string {
   if (selection.kind === 'row') {
     return `row:${buildAxisKey(selection.sheetName, selection.rowNumber)}`;
   }
@@ -49,13 +55,36 @@ function buildWorkbookSelectionKey(selection: WorkbookSelectedCell): string {
   return `cell:${buildCellKey(selection.sheetName, selection.side, selection.rowNumber, selection.colIndex)}`;
 }
 
+function getSelectionStateInternal(
+  selection: WorkbookSelectionState | null | undefined,
+): WorkbookSelectionStateInternal | null {
+  return selection as WorkbookSelectionStateInternal | null;
+}
+
+function getWorkbookSelectionKeySet(
+  selection: WorkbookSelectionState | null | undefined,
+): Set<string> {
+  const internal = getSelectionStateInternal(selection);
+  if (!internal) return new Set<string>();
+  if (internal.__keySetCache) return internal.__keySetCache;
+  const keySet = new Set(internal.items.map(item => buildWorkbookSelectionKey(item)));
+  internal.__keySetCache = keySet;
+  return keySet;
+}
+
 export function createWorkbookSelectionState(
   primary: WorkbookSelectedCell | null,
   items: WorkbookSelectedCell[] = primary ? [primary] : [],
   anchor: WorkbookSelectedCell | null = primary,
 ): WorkbookSelectionState {
   if (!primary) {
-    return { anchor: null, primary: null, items: [] };
+    const emptyState: WorkbookSelectionStateInternal = {
+      anchor: null,
+      primary: null,
+      items: [],
+      __keySetCache: new Set<string>(),
+    };
+    return emptyState;
   }
 
   const nextItems = new Map<string, WorkbookSelectedCell>();
@@ -64,11 +93,13 @@ export function createWorkbookSelectionState(
   });
   nextItems.set(buildWorkbookSelectionKey(primary), primary);
 
-  return {
+  const nextState: WorkbookSelectionStateInternal = {
     anchor,
     primary,
     items: Array.from(nextItems.values()).sort(compareWorkbookSelections),
+    __keySetCache: new Set(nextItems.keys()),
   };
+  return nextState;
 }
 
 function compareWorkbookSelections(left: WorkbookSelectedCell, right: WorkbookSelectedCell): number {
@@ -185,8 +216,31 @@ function selectionContainsCell(
   target: WorkbookSelectedCell | null,
 ): boolean {
   if (!target) return false;
-  const key = buildWorkbookSelectionKey(target);
-  return selection.items.some(item => buildWorkbookSelectionKey(item) === key);
+  return getWorkbookSelectionKeySet(selection).has(buildWorkbookSelectionKey(target));
+}
+
+export function areWorkbookSelectionsEqual(
+  left: WorkbookSelectionState | null | undefined,
+  right: WorkbookSelectionState | null | undefined,
+): boolean {
+  if (left === right) return true;
+
+  const leftPrimaryKey = left?.primary ? buildWorkbookSelectionKey(left.primary) : null;
+  const rightPrimaryKey = right?.primary ? buildWorkbookSelectionKey(right.primary) : null;
+  if (leftPrimaryKey !== rightPrimaryKey) return false;
+
+  const leftAnchorKey = left?.anchor ? buildWorkbookSelectionKey(left.anchor) : null;
+  const rightAnchorKey = right?.anchor ? buildWorkbookSelectionKey(right.anchor) : null;
+  if (leftAnchorKey !== rightAnchorKey) return false;
+
+  const leftKeySet = getWorkbookSelectionKeySet(left);
+  const rightKeySet = getWorkbookSelectionKeySet(right);
+  if (leftKeySet.size !== rightKeySet.size) return false;
+
+  for (const key of leftKeySet) {
+    if (!rightKeySet.has(key)) return false;
+  }
+  return true;
 }
 
 export function applyWorkbookSelection(
@@ -197,23 +251,27 @@ export function applyWorkbookSelection(
     preserveExistingIfTargetSelected?: boolean | undefined;
   } = {},
 ): WorkbookSelectionState {
-  if (!target) return createWorkbookSelectionState(null);
+  if (!target) {
+    return current.primary ? createWorkbookSelectionState(null) : current;
+  }
 
   if (
     options.preserveExistingIfTargetSelected
     && selectionContainsCell(current, target)
   ) {
-    return createWorkbookSelectionState(
+    const nextSelection = createWorkbookSelectionState(
       target,
       current.items,
       current.anchor ?? current.primary ?? target,
     );
+    return areWorkbookSelectionsEqual(current, nextSelection) ? current : nextSelection;
   }
 
   const mode = options.mode ?? 'replace';
   const rangeAnchor = current.anchor ?? current.primary;
   if (mode === 'replace' || !rangeAnchor || !canMergeSelections(rangeAnchor, target)) {
-    return createWorkbookSelectionState(target);
+    const nextSelection = createWorkbookSelectionState(target);
+    return areWorkbookSelectionsEqual(current, nextSelection) ? current : nextSelection;
   }
 
   if (mode === 'toggle') {
@@ -221,7 +279,9 @@ export function applyWorkbookSelection(
     const remainingItems = current.items.filter(item => buildWorkbookSelectionKey(item) !== targetKey);
 
     if (remainingItems.length !== current.items.length) {
-      if (remainingItems.length === 0) return createWorkbookSelectionState(null);
+      if (remainingItems.length === 0) {
+        return current.primary ? createWorkbookSelectionState(null) : current;
+      }
       const nextPrimary = (
         current.primary && buildWorkbookSelectionKey(current.primary) !== targetKey
           ? current.primary
@@ -232,31 +292,38 @@ export function applyWorkbookSelection(
           ? current.anchor
           : remainingItems[0]!
       );
-      return createWorkbookSelectionState(nextPrimary, remainingItems, nextAnchor);
+      const nextSelection = createWorkbookSelectionState(nextPrimary, remainingItems, nextAnchor);
+      return areWorkbookSelectionsEqual(current, nextSelection) ? current : nextSelection;
     }
 
-    return createWorkbookSelectionState(
+    const nextSelection = createWorkbookSelectionState(
       target,
       [...current.items, target],
       rangeAnchor,
     );
+    return areWorkbookSelectionsEqual(current, nextSelection) ? current : nextSelection;
   }
 
-  return createWorkbookSelectionState(
+  const nextSelection = createWorkbookSelectionState(
     target,
     buildWorkbookRangeSelection(rangeAnchor, target),
     rangeAnchor,
   );
+  return areWorkbookSelectionsEqual(current, nextSelection) ? current : nextSelection;
 }
 
 export function buildWorkbookSelectionLookup(
   selection: WorkbookSelectionState | null | undefined,
 ): WorkbookSelectionLookup {
+  const internal = getSelectionStateInternal(selection);
+  if (internal?.__lookupCache) return internal.__lookupCache;
+
   const state = selection ?? createWorkbookSelectionState(null);
   const rowKeys = new Set<string>();
   const columnKeys = new Set<string>();
   const cellKeys = new Set<string>();
   const mirroredCellKeys = new Set<string>();
+  const cellColumnKeys = new Set<string>();
 
   state.items.forEach((item) => {
     if (item.kind === 'row') {
@@ -269,6 +336,7 @@ export function buildWorkbookSelectionLookup(
     }
     const key = buildCellKey(item.sheetName, item.side, item.rowNumber, item.colIndex);
     cellKeys.add(key);
+    cellColumnKeys.add(buildAxisKey(item.sheetName, item.colIndex));
     mirroredCellKeys.add(
       buildCellKey(
         item.sheetName,
@@ -279,14 +347,17 @@ export function buildWorkbookSelectionLookup(
     );
   });
 
-  return {
+  const lookup = {
     anchor: state.anchor,
     primary: state.primary,
     rowKeys,
     columnKeys,
     cellKeys,
     mirroredCellKeys,
+    cellColumnKeys,
   };
+  if (internal) internal.__lookupCache = lookup;
+  return lookup;
 }
 
 export function getWorkbookSelectionCount(

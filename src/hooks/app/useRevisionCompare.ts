@@ -1,22 +1,21 @@
-import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { useCallback, type MutableRefObject } from 'react';
 
 import type {
   DiffData,
   RevisionOptionsPayload,
   RevisionOptionsQuery,
-  RevisionSelectionPair,
   SvnRevisionInfo,
   WorkbookCompareMode,
 } from '@/types';
 import { debugLog, mergeRevisionOptions } from '@/hooks/app/helpers';
 import type { RevisionQueryController } from '@/hooks/app/contracts';
+import { useAppStore } from '@/store/appStore';
 
 interface UseRevisionCompareArgs {
   revisionOptionsRef: MutableRefObject<SvnRevisionInfo[]>;
   revisionQuerySeqRef: MutableRefObject<number>;
   loadSeqRef: MutableRefObject<number>;
   workbookCompareModeRef: MutableRefObject<WorkbookCompareMode>;
-  resetPair: RevisionSelectionPair | null;
   revisionQuery: RevisionQueryController;
   applyDiffData: (
     data: DiffData,
@@ -24,9 +23,6 @@ interface UseRevisionCompareArgs {
   ) => Promise<void>;
   beginDiffLoad: () => Promise<number>;
   failDiffLoad: (seq: number, error: unknown) => void;
-  setRevisionOptions: Dispatch<SetStateAction<SvnRevisionInfo[]>>;
-  setBaseRevisionInfo: Dispatch<SetStateAction<SvnRevisionInfo | null>>;
-  setMineRevisionInfo: Dispatch<SetStateAction<SvnRevisionInfo | null>>;
 }
 
 export default function useRevisionCompare({
@@ -34,15 +30,17 @@ export default function useRevisionCompare({
   revisionQuerySeqRef,
   loadSeqRef,
   workbookCompareModeRef,
-  resetPair,
   revisionQuery,
   applyDiffData,
   beginDiffLoad,
   failDiffLoad,
-  setRevisionOptions,
-  setBaseRevisionInfo,
-  setMineRevisionInfo,
 }: UseRevisionCompareArgs) {
+  // ── Read state/setters directly from Zustand store ────────────────────
+  const resetPair = useAppStore((s) => s.resetPair);
+  const setRevisionOptions = useAppStore((s) => s.setRevisionOptions);
+  const setBaseRevisionInfo = useAppStore((s) => s.setBaseRevisionInfo);
+  const setMineRevisionInfo = useAppStore((s) => s.setMineRevisionInfo);
+
   const { state: revisionState, actions: revisionActions } = revisionQuery;
 
   const applyRevisionOptionsPayload = useCallback((
@@ -153,6 +151,28 @@ export default function useRevisionCompare({
     revisionState.revisionNextBeforeId,
   ]);
 
+  const handleEnsureRevisionOptionsLoaded = useCallback(() => {
+    if (!window.svnDiff?.queryRevisionOptions) return;
+    if (revisionOptionsRef.current.length > 0) return;
+    if (revisionState.revisionOptionsStatus === 'loading') return;
+
+    debugLog('revision-options:request');
+
+    void queryRevisionOptionsPage(
+      {
+        limit: 50,
+        includeSpecials: false,
+      },
+      {
+        showInitialLoading: true,
+      },
+    );
+  }, [
+    queryRevisionOptionsPage,
+    revisionOptionsRef,
+    revisionState.revisionOptionsStatus,
+  ]);
+
   const handleRevisionDateTimeQuery = useCallback((nextDateTime: string) => {
     if (!window.svnDiff?.queryRevisionOptions) return;
     const trimmed = nextDateTime.trim();
@@ -238,6 +258,7 @@ export default function useRevisionCompare({
   ]);
 
   return {
+    handleEnsureRevisionOptionsLoaded,
     queryRevisionOptionsPage,
     handleLoadMoreRevisionOptions,
     handleRevisionDateTimeQuery,

@@ -2,7 +2,6 @@ import type { ComponentProps, Dispatch, SetStateAction } from 'react';
 
 import type {
   LayoutMode,
-  Theme,
   WorkbookCompareLayoutSnapshot,
   WorkbookCompareMode,
   WorkbookDiffRegion,
@@ -15,6 +14,7 @@ import type {
   WorkbookSelectionState,
 } from '@/types';
 import type { LoadPhase, WorkbookContextMenuState } from '@/hooks/app';
+import { cssAlpha, cssVar } from '@/theme/cssUtils';
 import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
 import type { WorkbookColumnWidthBySheet } from '@/utils/workbook/workbookColumnWidths';
 import type { WorkbookLayoutSnapshotsByMode } from '@/utils/workbook/workbookLayoutState';
@@ -36,7 +36,6 @@ type AppPanelProps = ComponentProps<typeof UnifiedPanel>
   & Pick<ComponentProps<typeof WorkbookComparePanel>, 'guidedHunkRange' | 'guidedPulseNonce'>;
 
 interface AppContentProps {
-  theme: Theme;
   loadingLabel: string;
   loadPhase: LoadPhase;
   hasLoadedDiff: boolean;
@@ -86,86 +85,38 @@ interface AppContentProps {
   setWorkbookHiddenStateBySheet: Dispatch<SetStateAction<WorkbookHiddenStateBySheet>>;
 }
 
-function renderLoadingState(theme: Theme, loadingLabel: string) {
+function renderLoadingState(loadingLabel: string) {
   return (
-    <div
-      style={{
-        flex: 1,
-        width: '100%',
-        minWidth: 0,
-        minHeight: 0,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 24,
-      }}>
-      <div
-        style={{
-          display: 'grid',
-          gap: 10,
-          justifyItems: 'center',
-          color: theme.t1,
-        }}>
+    <div className="flex-1 w-full min-w-0 min-h-0 flex items-center justify-center p-6">
+      <div className="grid gap-2.5 justify-items-center text-text-primary">
         <div
           aria-hidden="true"
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: '50%',
-            border: `2px solid ${theme.border}`,
-            borderTopColor: theme.acc2,
-            animation: 'spin 0.9s linear infinite',
-          }}
+          className="size-7 rounded-full border-2 border-border-default animate-spin"
+          style={{ borderTopColor: 'var(--acc2)' }}
         />
-        <span style={{ fontSize: 13, fontWeight: 600 }}>{loadingLabel}</span>
+        <span className="text-[13px] font-semibold">{loadingLabel}</span>
       </div>
     </div>
   );
 }
 
 export default function AppContent({
-  theme,
-  loadingLabel,
-  loadPhase,
-  hasLoadedDiff,
-  loadError,
-  isElectron,
-  isLoadingDiff,
-  isWorkbookMode,
-  layout,
-  panelProps,
-  baseRoleTitle,
-  mineRoleTitle,
-  baseVersionLabel,
-  mineVersionLabel,
-  activeWorkbookDiffRegion,
-  activeWorkbookTargetCell,
-  workbookSelection,
-  onWorkbookSelectionRequest,
-  onWorkbookNavigationReady,
-  baseWorkbookMetadata,
-  mineWorkbookMetadata,
-  workbookHiddenStateBySheet,
-  workbookFreezeBySheet,
-  workbookColumnWidthBySheet,
-  onWorkbookColumnWidthChange,
-  workbookSections,
-  workbookSectionRowIndex,
-  activeWorkbookSheetName,
-  onActiveWorkbookSheetChange,
+  loadingLabel, loadPhase, hasLoadedDiff, loadError,
+  isElectron, isLoadingDiff, isWorkbookMode, layout, panelProps,
+  baseRoleTitle, mineRoleTitle, baseVersionLabel, mineVersionLabel,
+  activeWorkbookDiffRegion, activeWorkbookTargetCell,
+  workbookSelection, onWorkbookSelectionRequest, onWorkbookNavigationReady,
+  baseWorkbookMetadata, mineWorkbookMetadata,
+  workbookHiddenStateBySheet, workbookFreezeBySheet,
+  workbookColumnWidthBySheet, onWorkbookColumnWidthChange,
+  workbookSections, workbookSectionRowIndex,
+  activeWorkbookSheetName, onActiveWorkbookSheetChange,
   workbookCompareMode,
-  activeWorkbookSharedExpandedBlocks,
-  onWorkbookExpandedBlocksChange,
-  isDevMode,
-  showHiddenColumns,
-  workbookLayoutSnapshots,
-  onWorkbookLayoutSnapshotChange,
-  workbookContextMenu,
-  workbookContextMenuSections,
-  onCloseWorkbookContextMenu,
-  onPickWorkingCopyFile,
-  onOpenSvnConfig,
-  setWorkbookHiddenStateBySheet,
+  activeWorkbookSharedExpandedBlocks, onWorkbookExpandedBlocksChange,
+  isDevMode, showHiddenColumns,
+  workbookLayoutSnapshots, onWorkbookLayoutSnapshotChange,
+  workbookContextMenu, workbookContextMenuSections, onCloseWorkbookContextMenu,
+  onPickWorkingCopyFile, onOpenSvnConfig, setWorkbookHiddenStateBySheet,
 }: AppContentProps) {
   const handleRevealHiddenRows = (sheetName: string, rowNumbers: number[]) => {
     setWorkbookHiddenStateBySheet((prev) => revealWorkbookRows(prev, sheetName, rowNumbers));
@@ -178,7 +129,7 @@ export default function AppContent({
   };
 
   if (!hasLoadedDiff && loadPhase === 'loading') {
-    return renderLoadingState(theme, loadingLabel);
+    return renderLoadingState(loadingLabel);
   }
 
   if (!hasLoadedDiff) {
@@ -193,15 +144,15 @@ export default function AppContent({
   }
 
   return (
-    <div style={{ position: 'relative', flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0, minWidth: 0 }}>
+    <div className="relative flex-1 flex overflow-hidden min-h-0 min-w-0">
       {!isWorkbookMode && layout === 'unified' && <UnifiedPanel {...panelProps} />}
       {!isWorkbookMode && layout === 'split-h' && <SplitPanel {...panelProps} vertical={false} />}
       {!isWorkbookMode && layout === 'split-v' && <SplitPanel {...panelProps} vertical />}
 
       {isWorkbookMode && (
-        <div style={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0 }}>
+        <div className="relative flex-1 min-w-0 min-h-0">
           {layout === 'unified' && (
-            <div style={{ position: 'relative', display: 'flex', width: '100%', height: '100%', minWidth: 0, minHeight: 0 }}>
+            <div className="relative flex w-full h-full min-w-0 min-h-0">
               <WorkbookComparePanel
                 {...panelProps}
                 active
@@ -239,7 +190,7 @@ export default function AppContent({
             </div>
           )}
           {layout === 'split-v' && (
-            <div style={{ position: 'relative', display: 'flex', width: '100%', height: '100%', minWidth: 0, minHeight: 0 }}>
+            <div className="relative flex w-full h-full min-w-0 min-h-0">
               <WorkbookComparePanel
                 {...panelProps}
                 active
@@ -277,7 +228,7 @@ export default function AppContent({
             </div>
           )}
           {layout === 'split-h' && (
-            <div style={{ position: 'relative', display: 'flex', width: '100%', height: '100%', minWidth: 0, minHeight: 0 }}>
+            <div className="relative flex w-full h-full min-w-0 min-h-0">
               <WorkbookHorizontalPanel
                 {...panelProps}
                 active
@@ -325,43 +276,20 @@ export default function AppContent({
       )}
 
       {isLoadingDiff && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 60,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'rgba(250, 249, 245, 0.74)',
-            backdropFilter: 'blur(2px)',
-            pointerEvents: 'auto',
-            cursor: 'progress',
-          }}>
+        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-bg-base/75 backdrop-blur-sm pointer-events-auto cursor-progress">
           <div
+            className="grid gap-2.5 justify-items-center p-[18px_24px] rounded-2xl border border-border-default"
             style={{
-              display: 'grid',
-              gap: 10,
-              justifyItems: 'center',
-              color: theme.t1,
-              padding: '18px 24px',
-              borderRadius: 16,
-              background: `${theme.bg1}ee`,
-              border: `1px solid ${theme.border}`,
-              boxShadow: `0 24px 48px -28px ${theme.border2}`,
+              color: cssVar('t1'),
+              background: cssAlpha('bg1', 'ee'),
+              boxShadow: `0 24px 48px -28px ${cssVar('border2')}`,
             }}>
             <div
               aria-hidden="true"
-              style={{
-                width: 24,
-                height: 24,
-                borderRadius: '50%',
-                border: `2px solid ${theme.border}`,
-                borderTopColor: theme.acc2,
-                animation: 'spin 0.9s linear infinite',
-              }}
+              className="size-6 rounded-full border-2 border-border-default animate-spin"
+              style={{ borderTopColor: cssVar('acc2') }}
             />
-            <span style={{ fontSize: 13, fontWeight: 600 }}>{loadingLabel}</span>
+            <span className="text-[13px] font-semibold">{loadingLabel}</span>
           </div>
         </div>
       )}

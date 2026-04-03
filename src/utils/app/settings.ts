@@ -13,7 +13,7 @@ export interface AppSettings {
 const SETTINGS_STORAGE_KEY = 'svn-excel-diff-tool.settings';
 
 const DEFAULT_SETTINGS: AppSettings = {
-  themeKey: 'light',
+  themeKey: 'dark',
   layout: 'split-h',
   collapseCtx: true,
   showWhitespace: false,

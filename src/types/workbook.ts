@@ -8,7 +8,7 @@ import type { DiffLine, DiffPerformanceMetrics } from '@/types/diff';
 export type WorkbookMoveDirection = 'up' | 'down' | 'left' | 'right';
 export type WorkbookSelectionKind = 'cell' | 'row' | 'column';
 export type WorkbookCompareMode = 'strict' | 'content';
-export type WorkbookSelectionRequestReason = 'click' | 'contextmenu' | 'keyboard' | 'programmatic';
+export type WorkbookSelectionRequestReason = 'click' | 'drag' | 'contextmenu' | 'keyboard' | 'programmatic' | 'search';
 export type WorkbookSelectionMode = 'replace' | 'range' | 'toggle';
 export type WorkbookSectionChangeType = 'equal' | 'add' | 'delete' | 'rename';
 
@@ -71,7 +71,7 @@ export interface WorkbookDiffRegionPatch {
   mineRowEnd: number | null;
   hasBaseSide: boolean;
   hasMineSide: boolean;
-  lineIdxs: number[];
+  lineIdxs?: number[];
 }
 
 export interface WorkbookDiffRegion {
@@ -109,6 +109,7 @@ export interface WorkbookHorizontalLayoutSnapshot {
   leftScrollLeft: number;
   rightScrollTop: number;
   rightScrollLeft: number;
+  splitRatio?: number;
   expandedBlocks: CollapseExpansionState;
 }
 
@@ -160,11 +161,11 @@ export interface WorkbookCellDelta {
   mineCell: WorkbookCellSnapshot;
   changed: boolean;
   masked: boolean;
-  strictOnly: boolean;
-  kind: WorkbookCellDeltaKind;
-  hasBaseContent: boolean;
-  hasMineContent: boolean;
-  hasContent: boolean;
+  strictOnly?: boolean;
+  kind?: WorkbookCellDeltaKind;
+  hasBaseContent?: boolean;
+  hasMineContent?: boolean;
+  hasContent?: boolean;
 }
 
 export interface WorkbookRowDelta {

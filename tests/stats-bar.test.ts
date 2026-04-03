@@ -8,7 +8,6 @@ import type { DiffLine } from '../src/types';
 import { I18nProvider } from '../src/context/i18n';
 import { ThemeContext } from '../src/context/theme';
 import { buildTextDiffPresentation } from '../src/engine/text/textChangeAlignment';
-import { THEMES } from '../src/theme';
 import type { WorkbookSection } from '../src/utils/workbook/workbookSections';
 
 function makeWorkbookSection(
@@ -41,7 +40,7 @@ function renderStatsBar(
   return renderToStaticMarkup(
     React.createElement(
       ThemeContext.Provider,
-      { value: THEMES.light },
+      { value: 'light' },
       React.createElement(
         I18nProvider,
         null,

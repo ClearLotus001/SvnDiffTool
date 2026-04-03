@@ -1,19 +1,11 @@
-import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { useCallback, type MutableRefObject } from 'react';
 
 import type {
-  CompareContext,
   DiffData,
   DiffLine,
-  DiffSourceNoticeCode,
-  RevisionSelectionPair,
   SvnDiffViewerScope,
-  SvnDiffViewerStatus,
-  SvnRevisionInfo,
-  WorkbookArtifactDiff,
   WorkbookCompareMode,
-  WorkbookMetadataMap,
   WorkbookMetadataSource,
-  WorkbookPrecomputedDeltaPayload,
 } from '@/types';
 import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
 import { buildDiffCacheKey } from '@/utils/diff/diffCacheKey';
@@ -39,8 +31,7 @@ import type {
   CachedDiffResult,
 } from '@/hooks/app/types';
 import type { DialogController, DiffLoadController, RevisionQueryController, WorkbookUiController } from '@/hooks/app/contracts';
-
-type SetState<T> = Dispatch<SetStateAction<T>>;
+import { useAppStore } from '@/store/appStore';
 
 interface UseDiffLoaderArgs {
   loadSeqRef: MutableRefObject<number>;
@@ -55,30 +46,6 @@ interface UseDiffLoaderArgs {
   diffLoad: DiffLoadController;
   revisionQuery: RevisionQueryController;
   workbookUi: WorkbookUiController;
-  setBaseName: SetState<string>;
-  setMineName: SetState<string>;
-  setLaunchBaseName: SetState<string>;
-  setLaunchMineName: SetState<string>;
-  setFileName: SetState<string>;
-  setPrecomputedWorkbookDelta: SetState<WorkbookPrecomputedDeltaPayload | null>;
-  setWorkbookArtifactDiff: SetState<WorkbookArtifactDiff | null>;
-  setBaseWorkbookMetadata: SetState<WorkbookMetadataMap | null>;
-  setMineWorkbookMetadata: SetState<WorkbookMetadataMap | null>;
-  setRevisionOptions: SetState<SvnRevisionInfo[]>;
-  setBaseRevisionInfo: SetState<SvnRevisionInfo | null>;
-  setMineRevisionInfo: SetState<SvnRevisionInfo | null>;
-  setCompareContext: SetState<CompareContext>;
-  setResetPair: SetState<RevisionSelectionPair | null>;
-  setCanSwitchRevisions: SetState<boolean>;
-  setDiffLines: SetState<DiffLine[]>;
-  setDiffSourceNoticeCode: SetState<DiffSourceNoticeCode | null>;
-  setHunkIdx: SetState<number>;
-  setWorkbookCompareMode: SetState<WorkbookCompareMode>;
-  setIsLoadingSvnDiffViewerStatus: SetState<boolean>;
-  setSvnDiffViewerError: SetState<string>;
-  setSvnDiffViewerStatus: SetState<SvnDiffViewerStatus | null>;
-  setApplyingSvnDiffViewerScope: SetState<SvnDiffViewerScope | null>;
-  setIsRestoringSvnDiffViewerDefault: SetState<boolean>;
 }
 
 export interface UseDiffLoaderResult {
@@ -110,31 +77,33 @@ export default function useDiffLoader({
   diffLoad,
   revisionQuery,
   workbookUi,
-  setBaseName,
-  setMineName,
-  setLaunchBaseName,
-  setLaunchMineName,
-  setFileName,
-  setPrecomputedWorkbookDelta,
-  setWorkbookArtifactDiff,
-  setBaseWorkbookMetadata,
-  setMineWorkbookMetadata,
-  setRevisionOptions,
-  setBaseRevisionInfo,
-  setMineRevisionInfo,
-  setCompareContext,
-  setResetPair,
-  setCanSwitchRevisions,
-  setDiffLines,
-  setDiffSourceNoticeCode,
-  setHunkIdx,
-  setWorkbookCompareMode,
-  setIsLoadingSvnDiffViewerStatus,
-  setSvnDiffViewerError,
-  setSvnDiffViewerStatus,
-  setApplyingSvnDiffViewerScope,
-  setIsRestoringSvnDiffViewerDefault,
 }: UseDiffLoaderArgs): UseDiffLoaderResult {
+  // ── Read setters directly from Zustand store ──────────────────────────
+  const setBaseName = useAppStore((s) => s.setBaseName);
+  const setMineName = useAppStore((s) => s.setMineName);
+  const setLaunchBaseName = useAppStore((s) => s.setLaunchBaseName);
+  const setLaunchMineName = useAppStore((s) => s.setLaunchMineName);
+  const setFileName = useAppStore((s) => s.setFileName);
+  const setPrecomputedWorkbookDelta = useAppStore((s) => s.setPrecomputedWorkbookDelta);
+  const setWorkbookArtifactDiff = useAppStore((s) => s.setWorkbookArtifactDiff);
+  const setBaseWorkbookMetadata = useAppStore((s) => s.setBaseWorkbookMetadata);
+  const setMineWorkbookMetadata = useAppStore((s) => s.setMineWorkbookMetadata);
+  const setRevisionOptions = useAppStore((s) => s.setRevisionOptions);
+  const setBaseRevisionInfo = useAppStore((s) => s.setBaseRevisionInfo);
+  const setMineRevisionInfo = useAppStore((s) => s.setMineRevisionInfo);
+  const setCompareContext = useAppStore((s) => s.setCompareContext);
+  const setResetPair = useAppStore((s) => s.setResetPair);
+  const setCanSwitchRevisions = useAppStore((s) => s.setCanSwitchRevisions);
+  const setDiffLines = useAppStore((s) => s.setDiffLines);
+  const setDiffSourceNoticeCode = useAppStore((s) => s.setDiffSourceNoticeCode);
+  const setHunkIdx = useAppStore((s) => s.setHunkIdx);
+  const setWorkbookCompareMode = useAppStore((s) => s.setWorkbookCompareMode);
+  const setIsLoadingSvnDiffViewerStatus = useAppStore((s) => s.setIsLoadingSvnDiffViewerStatus);
+  const setSvnDiffViewerError = useAppStore((s) => s.setSvnDiffViewerError);
+  const setSvnDiffViewerStatus = useAppStore((s) => s.setSvnDiffViewerStatus);
+  const setApplyingSvnDiffViewerScope = useAppStore((s) => s.setApplyingSvnDiffViewerScope);
+  const setIsRestoringSvnDiffViewerDefault = useAppStore((s) => s.setIsRestoringSvnDiffViewerDefault);
+
   const { actions: dialogActions } = dialogs;
   const { actions: diffLoadActions } = diffLoad;
   const { actions: revisionActions } = revisionQuery;
@@ -278,35 +247,9 @@ export default function useDiffLoader({
         diffLoadActions.setPhase('ready');
       };
 
-      if (cachedResult) {
-        diffResultCacheRef.current.delete(cacheKey);
-        diffResultCacheRef.current.set(cacheKey, cachedResult);
-        applyCommonState(data);
-        setPrecomputedWorkbookDelta(cachedResult.workbookDelta);
-        setBaseWorkbookMetadata(cachedResult.baseWorkbookMetadata ?? data.baseWorkbookMetadata ?? null);
-        setMineWorkbookMetadata(cachedResult.mineWorkbookMetadata ?? data.mineWorkbookMetadata ?? null);
-        setDiffLines(cachedResult.diffLines);
-        diffLoadActions.setMetrics({
-          source: data.perf?.source ?? 'local-dev',
-          ...data.perf,
-          textResolveMs,
-          metadataMs: 0,
-          diffMs: 0,
-          totalAppMs: getNow() - applyStart,
-          diffLineCount: cachedResult.diffLines.length,
-        });
-        debugLog('apply-diff-data:done', {
-          seq,
-          compareMode,
-          cached: true,
-          diffLineCount: cachedResult.diffLines.length,
-          totalAppMs: Number((getNow() - applyStart).toFixed(1)),
-          perf: data.perf ?? null,
-        });
-        return;
-      }
-
-      const metadataTask = !hasMetadataFromPayload && shouldLoadMetadata
+      const cachedMetadataAvailable = cachedResult?.baseWorkbookMetadata != null
+        || cachedResult?.mineWorkbookMetadata != null;
+      const metadataTask = !hasMetadataFromPayload && shouldLoadMetadata && !cachedMetadataAvailable
         ? (async () => {
             const metadataStart = getNow();
             debugLog('metadata:request', {
@@ -337,6 +280,77 @@ export default function useDiffLoader({
             }
           })()
         : null;
+      const scheduleMetadataTask = () => {
+        if (!metadataTask) return;
+        void metadataTask.then((metadataResult) => {
+          if (seq !== loadSeqRef.current) return;
+
+          if (!metadataResult.ok) {
+            const message = metadataResult.error instanceof Error
+              ? metadataResult.error.message
+              : String(metadataResult.error);
+            debugLog('metadata:failed', {
+              compareMode,
+              message,
+              durationMs: Number(metadataResult.duration.toFixed(1)),
+            });
+            diffLoadActions.setMetrics((prev) => (prev ? {
+              ...prev,
+              metadataMs: metadataResult.duration,
+            } : prev));
+            return;
+          }
+
+          setBaseWorkbookMetadata(metadataResult.result.base);
+          setMineWorkbookMetadata(metadataResult.result.mine);
+          const cachedEntry = diffResultCacheRef.current.get(cacheKey);
+          if (cachedEntry) {
+            diffResultCacheRef.current.set(cacheKey, {
+              ...cachedEntry,
+              baseWorkbookMetadata: metadataResult.result.base,
+              mineWorkbookMetadata: metadataResult.result.mine,
+            });
+          }
+          diffLoadActions.setMetrics((prev) => (prev ? {
+            ...prev,
+            metadataMs: metadataResult.duration,
+            totalAppMs: Math.max(prev.totalAppMs ?? 0, getNow() - applyStart),
+          } : prev));
+          debugLog('metadata:loaded', {
+            compareMode,
+            durationMs: Number(metadataResult.duration.toFixed(1)),
+          });
+        });
+      };
+
+      if (cachedResult) {
+        diffResultCacheRef.current.delete(cacheKey);
+        diffResultCacheRef.current.set(cacheKey, cachedResult);
+        applyCommonState(data);
+        setPrecomputedWorkbookDelta(cachedResult.workbookDelta);
+        setBaseWorkbookMetadata(cachedResult.baseWorkbookMetadata ?? data.baseWorkbookMetadata ?? null);
+        setMineWorkbookMetadata(cachedResult.mineWorkbookMetadata ?? data.mineWorkbookMetadata ?? null);
+        setDiffLines(cachedResult.diffLines);
+        diffLoadActions.setMetrics({
+          source: data.perf?.source ?? 'local-dev',
+          ...data.perf,
+          textResolveMs,
+          metadataMs: 0,
+          diffMs: 0,
+          totalAppMs: getNow() - applyStart,
+          diffLineCount: cachedResult.diffLines.length,
+        });
+        debugLog('apply-diff-data:done', {
+          seq,
+          compareMode,
+          cached: true,
+          diffLineCount: cachedResult.diffLines.length,
+          totalAppMs: Number((getNow() - applyStart).toFixed(1)),
+          perf: data.perf ?? null,
+        });
+        scheduleMetadataTask();
+        return;
+      }
 
       let nextDiffLines: DiffLine[];
       let diffDuration: number;
@@ -389,48 +403,7 @@ export default function useDiffLoader({
         const oldestKey = diffResultCacheRef.current.keys().next().value;
         if (oldestKey) diffResultCacheRef.current.delete(oldestKey);
       }
-
-      if (metadataTask) {
-        void metadataTask.then((metadataResult) => {
-          if (seq !== loadSeqRef.current) return;
-
-          if (!metadataResult.ok) {
-            const message = metadataResult.error instanceof Error
-              ? metadataResult.error.message
-              : String(metadataResult.error);
-            debugLog('metadata:failed', {
-              compareMode,
-              message,
-              durationMs: Number(metadataResult.duration.toFixed(1)),
-            });
-            diffLoadActions.setMetrics((prev) => (prev ? {
-              ...prev,
-              metadataMs: metadataResult.duration,
-            } : prev));
-            return;
-          }
-
-          setBaseWorkbookMetadata(metadataResult.result.base);
-          setMineWorkbookMetadata(metadataResult.result.mine);
-          const cachedEntry = diffResultCacheRef.current.get(cacheKey);
-          if (cachedEntry) {
-            diffResultCacheRef.current.set(cacheKey, {
-              ...cachedEntry,
-              baseWorkbookMetadata: metadataResult.result.base,
-              mineWorkbookMetadata: metadataResult.result.mine,
-            });
-          }
-          diffLoadActions.setMetrics((prev) => (prev ? {
-            ...prev,
-            metadataMs: metadataResult.duration,
-            totalAppMs: Math.max(prev.totalAppMs ?? 0, getNow() - applyStart),
-          } : prev));
-          debugLog('metadata:loaded', {
-            compareMode,
-            durationMs: Number(metadataResult.duration.toFixed(1)),
-          });
-        });
-      }
+      scheduleMetadataTask();
     } catch (error) {
       if (seq !== loadSeqRef.current) return;
       if (!hasLoadedDiffRef.current) {

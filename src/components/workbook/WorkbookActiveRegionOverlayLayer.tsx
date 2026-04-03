@@ -335,38 +335,19 @@ const WorkbookActiveRegionOverlayLayer = memo(({
   if (!activeDiffRegion || activeDiffRegion.sheetName !== activeSheetName || viewportHeight <= 0) return null;
 
   return (
-    <div
-      style={{
-        position: 'absolute',
-        inset: 0,
-        pointerEvents: 'none',
-        zIndex: 6,
-      }}>
+    <div className="absolute inset-0 pointer-events-none z-[6]">
       {/* Vertical positioning layer: places the canvas at the correct
           content-space Y offset. Uses left:0/right:0 so it spans the full
           scrollable content width, giving the inner sticky div room to slide. */}
       <div
-        style={{
-          position: 'absolute',
-          top: canvasAnchorTop,
-          left: 0,
-          right: 0,
-          minWidth: '100%',
-          height: canvasHeight,
-          pointerEvents: 'none',
-        }}>
+        className="absolute left-0 right-0 min-w-full pointer-events-none"
+        style={{ top: canvasAnchorTop, height: canvasHeight }}>
         {/* Horizontal sticky layer: sticks to the viewport left edge during
             horizontal scroll, exactly like the WorkbookPaneCanvasStrip wrappers.
             This eliminates the 1-frame desync that JS-driven left updates cause. */}
         <div
-          style={{
-            position: 'sticky',
-            left: 0,
-            width: viewportWidth,
-            height: canvasHeight,
-            overflow: 'hidden',
-            pointerEvents: 'none',
-          }}>
+          className="sticky left-0 overflow-hidden pointer-events-none"
+          style={{ width: viewportWidth, height: canvasHeight }}>
           <WorkbookDiffRegionOverlay
             scrollRef={scrollRef}
             resolveBoxes={resolveBoxes}

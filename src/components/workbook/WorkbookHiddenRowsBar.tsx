@@ -1,7 +1,6 @@
 import { memo } from 'react';
-import { FONT_CODE, FONT_SIZE, FONT_UI } from '@/constants/typography';
 import { useI18n } from '@/context/i18n';
-import { useTheme } from '@/context/theme';
+import { useThemeTokens } from '@/context/theme';
 import { ROW_H } from '@/hooks/virtualization/useVirtual';
 import { resolveWorkbookAuxBarPalette } from '@/utils/workbook/workbookRowVisuals';
 
@@ -10,58 +9,32 @@ interface WorkbookHiddenRowsBarProps {
   onReveal: () => void;
 }
 
-const WorkbookHiddenRowsBar = memo(({
-  count,
-  onReveal,
-}: WorkbookHiddenRowsBarProps) => {
-  const T = useTheme();
+const WorkbookHiddenRowsBar = memo(({ count, onReveal }: WorkbookHiddenRowsBarProps) => {
+  const T = useThemeTokens();
   const { t } = useI18n();
   const palette = resolveWorkbookAuxBarPalette(T, 'mixed');
 
   return (
     <div
+      className="flex items-center flex-wrap justify-start select-none gap-3 px-2.5"
       style={{
         height: ROW_H,
-        display: 'flex',
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        justifyContent: 'flex-start',
-        userSelect: 'none',
-        gap: 12,
-        padding: '0 10px',
         background: palette.background,
         borderTop: `1px dashed ${palette.border}`,
         borderBottom: `1px dashed ${palette.border}`,
       }}>
-      <span style={{ fontFamily: FONT_CODE, color: T.t2 }}>···</span>
-      <span
-        style={{
-          color: T.t2,
-          fontFamily: FONT_UI,
-          fontSize: FONT_SIZE.sm,
-          fontWeight: 600,
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 6,
-        }}>
-        <span style={{ color: palette.accent, fontFamily: FONT_CODE }}>ROWS</span>
+      <span className="font-code text-text-secondary">···</span>
+      <span className="text-text-secondary font-ui text-[13px] font-semibold inline-flex items-center gap-1.5">
+        <span className="font-code" style={{ color: palette.accent }}>ROWS</span>
         <span>{t('workbookHiddenRowsLabel', { count })}</span>
       </span>
       <button
         type="button"
         onClick={onReveal}
+        className="h-5 px-2 rounded-full bg-bg-surface-solid font-ui text-[10px] font-bold cursor-pointer whitespace-nowrap hover:border-accent hover:text-accent active:scale-95 transition-all duration-150"
         style={{
-          height: 20,
-          padding: '0 8px',
-          borderRadius: 999,
           border: `1px solid ${palette.buttonBorder}`,
-          background: T.bg1,
           color: palette.buttonText,
-          fontFamily: FONT_UI,
-          fontSize: 10,
-          fontWeight: 700,
-          cursor: 'pointer',
-          whiteSpace: 'nowrap',
         }}>
         {t('workbookHiddenRowsRevealAction')}
       </button>

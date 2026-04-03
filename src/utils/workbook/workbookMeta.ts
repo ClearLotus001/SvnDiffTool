@@ -36,6 +36,10 @@ export type {
 };
 
 const sheetPresentationCache = new WeakMap<SplitRow[], Map<string, WorkbookSheetPresentation>>();
+const usedColumnsBySideCache = new WeakMap<
+  SplitRow[],
+  Map<WorkbookCompareMode, { base: Set<number>; mine: Set<number> }>
+>();
 const cacheObjectIds = new WeakMap<object, number>();
 let nextCacheObjectId = 1;
 
@@ -232,28 +236,44 @@ export function resolveWorkbookMetadata(data: WorkbookMetadataSource): {
   };
 }
 
-function collectUsedColumns(
+function collectUsedColumnsBySide(
   rows: SplitRow[],
-  side: 'base' | 'mine',
   compareMode: WorkbookCompareMode = 'strict',
-): Set<number> {
-  const used = new Set<number>();
+): { base: Set<number>; mine: Set<number> } {
+  let cacheByMode = usedColumnsBySideCache.get(rows);
+  if (!cacheByMode) {
+    cacheByMode = new Map();
+    usedColumnsBySideCache.set(rows, cacheByMode);
+  }
+  const cached = cacheByMode.get(compareMode);
+  if (cached) return cached;
+
+  const base = new Set<number>();
+  const mine = new Set<number>();
 
   rows.forEach(row => {
-    const content = side === 'base'
-      ? row.left?.base ?? ''
-      : row.right?.mine ?? '';
-    const parsed = parseWorkbookDisplayLine(content);
-    if (!parsed || parsed.kind !== 'row') return;
+    const baseParsed = parseWorkbookDisplayLine(row.left?.base ?? row.left?.mine ?? '');
+    if (baseParsed?.kind === 'row') {
+      baseParsed.cells.forEach((cell, index) => {
+        if (hasWorkbookCellContent(cell, compareMode)) {
+          base.add(index);
+        }
+      });
+    }
 
-    parsed.cells.forEach((cell, index) => {
-      if (hasWorkbookCellContent(cell, compareMode)) {
-        used.add(index);
-      }
-    });
+    const mineParsed = parseWorkbookDisplayLine(row.right?.mine ?? row.right?.base ?? '');
+    if (mineParsed?.kind === 'row') {
+      mineParsed.cells.forEach((cell, index) => {
+        if (hasWorkbookCellContent(cell, compareMode)) {
+          mine.add(index);
+        }
+      });
+    }
   });
 
-  return used;
+  const nextValue = { base, mine };
+  cacheByMode.set(compareMode, nextValue);
+  return nextValue;
 }
 
 function collectMergedColumns(ranges: WorkbookMergeRange[]): Set<number> {
@@ -301,11 +321,12 @@ export function buildWorkbookSheetPresentation(
   const baseHidden = new Set(baseSheet?.hiddenColumns ?? []);
   const mineHidden = new Set(mineSheet?.hiddenColumns ?? []);
   const manualHidden = new Set(manualHiddenColumns);
+  const usedColumnsBySide = collectUsedColumnsBySide(rows, compareMode);
 
   const candidateColumns = new Set<number>();
   [
-    collectUsedColumns(rows, 'base', compareMode),
-    collectUsedColumns(rows, 'mine', compareMode),
+    usedColumnsBySide.base,
+    usedColumnsBySide.mine,
     collectMergedColumns(baseSheet?.mergeRanges ?? []),
     collectMergedColumns(mineSheet?.mergeRanges ?? []),
   ].forEach(columnSet => {

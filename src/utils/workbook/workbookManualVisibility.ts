@@ -226,16 +226,16 @@ export function buildWorkbookHiddenColumnSegments(
   return segments;
 }
 
-export function overlayHiddenWorkbookRowsOnItems<TItem, RowT extends { lineIdx: number }>(
+export function overlayHiddenWorkbookRowsOnItems<TItem, THiddenItem, RowT extends { lineIdx: number }>(
   items: TItem[],
   hiddenRowNumbers: Set<number>,
   getRowFromItem: (item: TItem) => RowT | null,
   getRowNumber: (row: RowT) => number | null,
-  buildHiddenItem: (rows: RowT[], rowNumbers: number[]) => TItem,
-): TItem[] {
+  buildHiddenItem: (rows: RowT[], rowNumbers: number[]) => THiddenItem,
+): Array<TItem | THiddenItem> {
   if (hiddenRowNumbers.size === 0 || items.length === 0) return items;
 
-  const value: TItem[] = [];
+  const value: Array<TItem | THiddenItem> = [];
   let hiddenRowsBuffer: RowT[] = [];
   let hiddenRowNumbersBuffer: number[] = [];
 

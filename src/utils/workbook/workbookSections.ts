@@ -27,6 +27,9 @@ export interface WorkbookLineSheetContext {
   mineSheetName: string | null;
 }
 
+const workbookLineSheetContextsCache = new WeakMap<DiffLine[], WorkbookLineSheetContext[]>();
+const workbookSectionsCache = new WeakMap<DiffLine[], Map<WorkbookCompareMode, WorkbookSection[]>>();
+
 export function resolveWorkbookSheetNameForLineContext(params: {
   line: DiffLine | null | undefined;
   context: WorkbookLineSheetContext | null | undefined;
@@ -287,6 +290,9 @@ function annotateWorkbookSectionChanges(
 export function buildWorkbookLineSheetContexts(
   diffLines: DiffLine[],
 ): WorkbookLineSheetContext[] {
+  const cached = workbookLineSheetContextsCache.get(diffLines);
+  if (cached) return cached;
+
   const contexts: WorkbookLineSheetContext[] = [];
   let currentBaseSheetName: string | null = null;
   let currentMineSheetName: string | null = null;
@@ -304,6 +310,7 @@ export function buildWorkbookLineSheetContexts(
     });
   });
 
+  workbookLineSheetContextsCache.set(diffLines, contexts);
   return contexts;
 }
 
@@ -311,6 +318,14 @@ export function getWorkbookSections(
   diffLines: DiffLine[],
   compareMode: WorkbookCompareMode = 'strict',
 ): WorkbookSection[] {
+  let compareModeCache = workbookSectionsCache.get(diffLines);
+  if (!compareModeCache) {
+    compareModeCache = new Map<WorkbookCompareMode, WorkbookSection[]>();
+    workbookSectionsCache.set(diffLines, compareModeCache);
+  }
+  const cached = compareModeCache.get(compareMode);
+  if (cached) return cached;
+
   const sections: WorkbookSection[] = [];
   const sectionIndexByName = new Map<string, number>();
   const runtimeStatsByName = new Map<string, WorkbookSectionRuntimeStats>();
@@ -369,6 +384,7 @@ export function getWorkbookSections(
   });
 
   annotateWorkbookSectionChanges(sections, runtimeStatsByName);
+  compareModeCache.set(compareMode, sections);
   return sections;
 }
 

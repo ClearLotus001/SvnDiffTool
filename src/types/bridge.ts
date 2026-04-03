@@ -18,8 +18,20 @@ import type {
   WorkbookMetadataPayload,
 } from '@/types/workbook';
 import type { AppUpdateState } from '@/types/update';
+import type { ThemeKey } from '@/types/theme';
+
+export interface LaunchStatePayload {
+  diffData: DiffData;
+  isDevMode: boolean;
+  usesNativeWindowControls: boolean;
+  windowFrameState: WindowFrameState;
+  updateState: AppUpdateState;
+}
 
 export interface SvnDiffBridge {
+  notifyRendererReady?(): void;
+  saveStartupAppearance?(appearance: { themeKey?: ThemeKey; locale?: 'zh-CN' | 'en-US' }): void;
+  getLaunchState(compareMode?: WorkbookCompareMode): Promise<LaunchStatePayload>;
   getDiffData(compareMode?: WorkbookCompareMode): Promise<DiffData>;
   loadRevisionDiff(baseRevisionId: string, mineRevisionId: string, compareMode?: WorkbookCompareMode): Promise<DiffData>;
   getRevisionOptions(): Promise<SvnRevisionInfo[]>;
@@ -46,6 +58,7 @@ export interface SvnDiffBridge {
   launchUninstaller(options?: { silent?: boolean }): Promise<void>;
   onAppUpdateState?(listener: (state: AppUpdateState) => void): () => void;
   writeClipboardText(text: string): void;
+  saveDiagnosticReport?(content: string, defaultFileName?: string): Promise<string | null>;
   debugLog?(message: string, payload?: unknown): void;
   windowMinimize(): void;
   windowMaximize(): void;

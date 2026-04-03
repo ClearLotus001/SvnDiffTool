@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   applyWorkbookSelection,
+  buildWorkbookSelectionLookup,
   createWorkbookSelectionState,
 } from '../src/utils/workbook/workbookSelectionState';
 
@@ -98,6 +99,13 @@ test('ctrl-style toggle selection appends a disjoint compatible cell', () => {
   assert.deepEqual(next.items.map(item => item.address), ['B2', 'B5']);
 });
 
+test('reselecting the same workbook cell reuses the existing selection state', () => {
+  const initial = applyWorkbookSelection(createWorkbookSelectionState(null), buildCell(7));
+  const next = applyWorkbookSelection(initial, buildCell(7));
+
+  assert.equal(next, initial);
+});
+
 test('ctrl-style toggle selection removes an already selected item', () => {
   const first = buildCell(2);
   const second = buildCell(5);
@@ -124,4 +132,21 @@ test('incompatible range selection resets to a single compatible item', () => {
   assert.equal(next.items.length, 1);
   assert.equal(next.primary?.kind, 'cell');
   assert.equal(next.primary?.rowNumber, 6);
+});
+
+test('selection lookup exposes columns that contain individually selected cells', () => {
+  const first = buildCell(2);
+  const second = {
+    ...buildCell(5),
+    colIndex: 4,
+    colLabel: 'E',
+    address: 'E5',
+  };
+
+  const selection = createWorkbookSelectionState(second, [first, second], first);
+  const lookup = buildWorkbookSelectionLookup(selection);
+
+  assert.equal(lookup.cellColumnKeys.has('Items:1'), true);
+  assert.equal(lookup.cellColumnKeys.has('Items:4'), true);
+  assert.equal(lookup.cellColumnKeys.has('Items:2'), false);
 });

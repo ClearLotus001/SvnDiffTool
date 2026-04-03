@@ -1,87 +1,101 @@
-import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { useEffect, type MutableRefObject } from 'react';
 
 import type {
-  AppUpdateState,
-  CompareContext,
   DiffData,
-  DiffSourceNoticeCode,
-  RevisionOptionsQuery,
-  RevisionSelectionPair,
-  SvnRevisionInfo,
+  LaunchStatePayload,
   WorkbookCompareMode,
 } from '@/types';
 import { clearTokenCache } from '@/engine/text/tokenizer';
-import { debugLog, hasBytePayload } from '@/hooks/app/helpers';
+import { hasBytePayload } from '@/hooks/app/helpers';
 import type { DiffLoadController, RevisionQueryController } from '@/hooks/app/contracts';
+import { useAppStore } from '@/store/appStore';
 
 interface UseElectronLifecycleEffectsArgs {
   applyDiffData: (
     data: DiffData,
     options?: { seq?: number; loadingAlreadyStarted?: boolean; compareMode?: WorkbookCompareMode },
   ) => Promise<void>;
-  beginDiffLoad: () => Promise<number>;
   reloadCliDiffData: () => Promise<void>;
-  queryRevisionOptionsPage: (
-    query: RevisionOptionsQuery,
-    options?: {
-      append?: boolean;
-      showInitialLoading?: boolean;
-      showSearchLoading?: boolean;
-    },
-  ) => Promise<void>;
+  startupBootstrapStartedRef: MutableRefObject<boolean>;
   workbookCompareModeRef: MutableRefObject<WorkbookCompareMode>;
   loadSeqRef: MutableRefObject<number>;
   revisionQuerySeqRef: MutableRefObject<number>;
   updateAutoCheckRequestedRef: MutableRefObject<boolean>;
   diffLoad: DiffLoadController;
   revisionQuery: RevisionQueryController;
-  canSwitchRevisions: boolean;
-  setIsElectron: Dispatch<SetStateAction<boolean>>;
-  setRevisionOptions: Dispatch<SetStateAction<SvnRevisionInfo[]>>;
-  setDiffSourceNoticeCode: Dispatch<SetStateAction<DiffSourceNoticeCode | null>>;
-  setCompareContext: Dispatch<SetStateAction<CompareContext>>;
-  setResetPair: Dispatch<SetStateAction<RevisionSelectionPair | null>>;
-  setLaunchBaseName: Dispatch<SetStateAction<string>>;
-  setLaunchMineName: Dispatch<SetStateAction<string>>;
-  setIsDevMode: Dispatch<SetStateAction<boolean>>;
-  setUsesNativeWindowControls: Dispatch<SetStateAction<boolean>>;
-  setIsWindowMaximized: Dispatch<SetStateAction<boolean>>;
-  setAppUpdateState: Dispatch<SetStateAction<AppUpdateState | null>>;
 }
 
 export default function useElectronLifecycleEffects({
   applyDiffData,
-  beginDiffLoad,
   reloadCliDiffData,
-  queryRevisionOptionsPage,
+  startupBootstrapStartedRef,
   workbookCompareModeRef,
   loadSeqRef,
   revisionQuerySeqRef,
   updateAutoCheckRequestedRef,
   diffLoad,
   revisionQuery,
-  canSwitchRevisions,
-  setIsElectron,
-  setRevisionOptions,
-  setDiffSourceNoticeCode,
-  setCompareContext,
-  setResetPair,
-  setLaunchBaseName,
-  setLaunchMineName,
-  setIsDevMode,
-  setUsesNativeWindowControls,
-  setIsWindowMaximized,
-  setAppUpdateState,
 }: UseElectronLifecycleEffectsArgs) {
+  // ── Read setters directly from Zustand store ──────────────────────────
+  const setIsElectron = useAppStore((s) => s.setIsElectron);
+  const setRevisionOptions = useAppStore((s) => s.setRevisionOptions);
+  const setDiffSourceNoticeCode = useAppStore((s) => s.setDiffSourceNoticeCode);
+  const setCompareContext = useAppStore((s) => s.setCompareContext);
+  const setResetPair = useAppStore((s) => s.setResetPair);
+  const setLaunchBaseName = useAppStore((s) => s.setLaunchBaseName);
+  const setLaunchMineName = useAppStore((s) => s.setLaunchMineName);
+  const setIsDevMode = useAppStore((s) => s.setIsDevMode);
+  const setUsesNativeWindowControls = useAppStore((s) => s.setUsesNativeWindowControls);
+  const setIsWindowMaximized = useAppStore((s) => s.setIsWindowMaximized);
+  const setAppUpdateState = useAppStore((s) => s.setAppUpdateState);
+
   const { actions: diffLoadActions } = diffLoad;
-  const { state: revisionQueryState, actions: revisionQueryActions } = revisionQuery;
+  const { actions: revisionQueryActions } = revisionQuery;
 
   useEffect(() => {
     clearTokenCache();
     let cancelled = false;
 
+    if (startupBootstrapStartedRef.current) {
+      return undefined;
+    }
+    startupBootstrapStartedRef.current = true;
+
+    const applyEmptyLaunchState = (seq: number) => {
+      if (seq !== loadSeqRef.current) return;
+      diffLoadActions.setLoading(false);
+      diffLoadActions.setLoaded(false);
+      diffLoadActions.setPhase('idle');
+      diffLoadActions.setError('');
+      diffLoadActions.setMetrics(null);
+      revisionQuerySeqRef.current += 1;
+      setRevisionOptions([]);
+      revisionQueryActions.setStatus('idle');
+      revisionQueryActions.setHasMore(false);
+      revisionQueryActions.setNextBeforeId(null);
+      revisionQueryActions.setQueryDateTime('');
+      revisionQueryActions.setQueryError('');
+      revisionQueryActions.setLoadingMore(false);
+      revisionQueryActions.setSearchingDateTime(false);
+      setDiffSourceNoticeCode(null);
+      setCompareContext('literal_two_file_compare');
+      setResetPair(null);
+      setLaunchBaseName('');
+      setLaunchMineName('');
+    };
+
+    const applyLaunchContext = (launchState: LaunchStatePayload) => {
+      setIsDevMode(Boolean(launchState.isDevMode));
+      setUsesNativeWindowControls(Boolean(launchState.usesNativeWindowControls));
+      setIsWindowMaximized(Boolean(launchState.windowFrameState?.isMaximized));
+      setAppUpdateState(launchState.updateState);
+      if (!launchState.updateState.supportsAutoUpdate || updateAutoCheckRequestedRef.current) return;
+      updateAutoCheckRequestedRef.current = true;
+      void window.svnDiff?.checkForAppUpdate?.({ manual: false });
+    };
+
     const loadData = async () => {
-      if (!window.svnDiff) {
+      if (!window.svnDiff?.getLaunchState) {
         if (!cancelled) {
           setIsElectron(false);
           diffLoadActions.setLoaded(false);
@@ -94,29 +108,15 @@ export default function useElectronLifecycleEffects({
 
       setIsElectron(true);
 
-      // Fire all independent IPC calls in parallel to reduce startup latency.
-      // isDevMode and usesNativeWindowControls are independent of getDiffData.
-      const devModePromise = window.svnDiff.isDevMode?.().catch(() => false);
-      const nativeWindowControlsPromise = window.svnDiff.usesNativeWindowControls?.().catch(() => false);
-
       let seq = 0;
       try {
-        // Start loading state and fire getDiffData in parallel with the above.
-        const [devMode, nativeWindowControls, seqAndData] = await Promise.all([
-          devModePromise,
-          nativeWindowControlsPromise,
-          (async () => {
-            const loadSeq = await beginDiffLoad();
-            const data = await window.svnDiff!.getDiffData(workbookCompareModeRef.current);
-            return { seq: loadSeq, data };
-          })(),
-        ]);
-        if (!cancelled) {
-          setIsDevMode(Boolean(devMode));
-          setUsesNativeWindowControls(Boolean(nativeWindowControls));
-        }
-        seq = seqAndData.seq;
-        const data = seqAndData.data;
+        seq = ++loadSeqRef.current;
+        const launchState = await window.svnDiff.getLaunchState(workbookCompareModeRef.current);
+        if (cancelled || seq !== loadSeqRef.current) return undefined;
+
+        applyLaunchContext(launchState);
+
+        const data = launchState.diffData;
         const hasDiffPayload = Boolean(
           data
           && (
@@ -130,32 +130,12 @@ export default function useElectronLifecycleEffects({
           )
         );
         if (hasDiffPayload) {
-          if (!cancelled && seq === loadSeqRef.current) {
-            await applyDiffData(data, {
-              seq,
-              loadingAlreadyStarted: true,
-            });
-          }
-        } else if (!cancelled && seq === loadSeqRef.current) {
-          diffLoadActions.setLoading(false);
-          diffLoadActions.setLoaded(false);
-          diffLoadActions.setPhase('idle');
-          diffLoadActions.setError('');
-          diffLoadActions.setMetrics(null);
-          revisionQuerySeqRef.current += 1;
-          setRevisionOptions([]);
-          revisionQueryActions.setStatus('idle');
-          revisionQueryActions.setHasMore(false);
-          revisionQueryActions.setNextBeforeId(null);
-          revisionQueryActions.setQueryDateTime('');
-          revisionQueryActions.setQueryError('');
-          revisionQueryActions.setLoadingMore(false);
-          revisionQueryActions.setSearchingDateTime(false);
-          setDiffSourceNoticeCode(null);
-          setCompareContext('literal_two_file_compare');
-          setResetPair(null);
-          setLaunchBaseName('');
-          setLaunchMineName('');
+          await applyDiffData(data, {
+            seq,
+            loadingAlreadyStarted: true,
+          });
+        } else {
+          applyEmptyLaunchState(seq);
         }
       } catch (error) {
         if (!cancelled && seq === loadSeqRef.current) {
@@ -191,20 +171,23 @@ export default function useElectronLifecycleEffects({
     };
   }, [
     applyDiffData,
-    beginDiffLoad,
     diffLoadActions,
     loadSeqRef,
     revisionQuerySeqRef,
     revisionQueryActions,
+    setAppUpdateState,
     setCompareContext,
     setDiffSourceNoticeCode,
     setIsDevMode,
     setIsElectron,
+    setIsWindowMaximized,
     setLaunchBaseName,
     setLaunchMineName,
     setResetPair,
     setRevisionOptions,
     setUsesNativeWindowControls,
+    startupBootstrapStartedRef,
+    updateAutoCheckRequestedRef,
     workbookCompareModeRef,
   ]);
 
@@ -216,24 +199,13 @@ export default function useElectronLifecycleEffects({
   }, [reloadCliDiffData]);
 
   useEffect(() => {
-    if (!window.svnDiff?.getWindowFrameState || !window.svnDiff?.onWindowFrameStateChanged) return;
+    if (!window.svnDiff?.onWindowFrameStateChanged) return;
 
     let cancelled = false;
     const unsubscribe = window.svnDiff.onWindowFrameStateChanged((nextState) => {
       if (cancelled) return;
       setIsWindowMaximized(Boolean(nextState?.isMaximized));
     });
-
-    void window.svnDiff.getWindowFrameState()
-      .then((state) => {
-        if (cancelled) return;
-        setIsWindowMaximized(Boolean(state?.isMaximized));
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setIsWindowMaximized(false);
-        }
-      });
 
     return () => {
       cancelled = true;
@@ -242,7 +214,7 @@ export default function useElectronLifecycleEffects({
   }, [setIsWindowMaximized]);
 
   useEffect(() => {
-    if (!window.svnDiff?.getUpdateState || !window.svnDiff?.onAppUpdateState) return;
+    if (!window.svnDiff?.onAppUpdateState) return;
 
     let cancelled = false;
     const unsubscribe = window.svnDiff.onAppUpdateState((nextState) => {
@@ -250,40 +222,10 @@ export default function useElectronLifecycleEffects({
       setAppUpdateState(nextState);
     });
 
-    void window.svnDiff.getUpdateState()
-      .then((state) => {
-        if (cancelled) return;
-        setAppUpdateState(state);
-        if (!state.supportsAutoUpdate || updateAutoCheckRequestedRef.current) return;
-        updateAutoCheckRequestedRef.current = true;
-        void window.svnDiff?.checkForAppUpdate?.({ manual: false });
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setAppUpdateState(null);
-        }
-      });
-
     return () => {
       cancelled = true;
       unsubscribe?.();
     };
-  }, [setAppUpdateState, updateAutoCheckRequestedRef]);
+  }, [setAppUpdateState]);
 
-  useEffect(() => {
-    if (!window.svnDiff?.queryRevisionOptions) return;
-    if (!canSwitchRevisions || revisionQueryState.revisionOptionsStatus !== 'idle') return;
-
-    debugLog('revision-options:request');
-
-    void queryRevisionOptionsPage(
-      {
-        limit: 50,
-        includeSpecials: false,
-      },
-      {
-        showInitialLoading: true,
-      },
-    );
-  }, [canSwitchRevisions, queryRevisionOptionsPage, revisionQueryState.revisionOptionsStatus]);
 }

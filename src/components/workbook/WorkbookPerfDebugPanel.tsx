@@ -1,7 +1,6 @@
 import { memo } from 'react';
-import { FONT_CODE, FONT_SIZE, FONT_UI } from '@/constants/typography';
 import { useI18n } from '@/context/i18n';
-import { useTheme } from '@/context/theme';
+import { cssVar } from '@/theme/cssUtils';
 
 export interface WorkbookPerfDebugStats {
   panel: 'stacked' | 'columns' | 'horizontal';
@@ -36,77 +35,39 @@ interface WorkbookPerfDebugPanelProps {
 }
 
 const WorkbookPerfDebugPanel = memo(({ stats }: WorkbookPerfDebugPanelProps) => {
-  const T = useTheme();
   const { t } = useI18n();
 
-  const chip = (label: string, value: string, accent = T.acc2) => (
-    <div
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        padding: '3px 8px',
-        borderRadius: 999,
-        border: `1px solid ${T.border}`,
-        background: T.bg2,
-        minWidth: 0,
-      }}>
-      <span
-        aria-hidden="true"
-        style={{
-          width: 6,
-          height: 6,
-          borderRadius: 999,
-          background: accent,
-          flexShrink: 0,
-        }}
-      />
-      <span style={{ fontFamily: FONT_UI, fontSize: FONT_SIZE.xs, color: T.t2, fontWeight: 700 }}>
-        {label}
-      </span>
-      <span style={{ fontFamily: FONT_CODE, fontSize: FONT_SIZE.xs, color: T.t0, fontWeight: 700 }}>
-        {value}
-      </span>
+  const chip = (label: string, value: string, accent = cssVar('acc2')) => (
+    <div className="inline-flex items-center gap-1.5 py-0.5 px-2 rounded-full border border-border-default bg-bg-surface-hover min-w-0">
+      <span className="size-1.5 rounded-full shrink-0" aria-hidden="true" style={{ background: accent }} />
+      <span className="font-ui text-[11px] text-text-secondary font-bold">{label}</span>
+      <span className="font-code text-[11px] text-text-title font-bold">{value}</span>
     </div>
   );
 
   const formatMs = (value: number) => `${value.toFixed(value >= 100 ? 0 : 1)}ms`;
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '6px 12px',
-        background: `linear-gradient(180deg, ${T.bg1} 0%, ${T.bg0} 100%)`,
-        borderBottom: `1px solid ${T.border}`,
-        overflowX: 'auto',
-        flexShrink: 0,
-      }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 140 }}>
-        <span style={{ fontFamily: FONT_UI, fontSize: FONT_SIZE.sm, color: T.t0, fontWeight: 700 }}>
-          {t('perfUiTitle')}
-        </span>
-        <span style={{ fontFamily: FONT_CODE, fontSize: FONT_SIZE.xs, color: T.t2 }}>
-          {stats.panel} · {stats.sheetName || '—'}
-        </span>
+    <div className="flex items-center gap-2 py-1.5 px-3 border-b border-border-default shrink-0 overflow-x-auto bg-bg-surface-solid">
+      <div className="flex flex-col gap-0.5 min-w-[140px]">
+        <span className="font-ui text-[13px] text-text-title font-bold">{t('perfUiTitle')}</span>
+        <span className="font-code text-[11px] text-text-secondary">{stats.panel} · {stats.sheetName || '—'}</span>
       </div>
 
-      {chip(t('perfUiRows'), `${stats.renderedRows}/${stats.totalRows}`, T.acc)}
-      {chip(t('perfUiCols'), `${stats.renderedColumns}/${stats.totalColumns}`, T.acc2)}
-      {chip(t('perfUiFreeze'), `${stats.frozenRows}R · ${stats.frozenColumns}C`, T.acc)}
-      {chip(t('perfUiCollapse'), String(stats.collapseBlocks), T.acc2)}
-      {chip(t('perfUiBuildItems'), formatMs(stats.buildItemsMs), T.acc)}
-      {chip(t('perfUiCollapseBuild'), formatMs(stats.collapseBuildMs), T.acc2)}
-      {chip(t('perfUiHiddenOverlay'), `${formatMs(stats.hiddenOverlayMs)} · ${stats.hiddenRows}`, T.acc)}
-      {chip(t('perfUiMiniMap'), formatMs(stats.miniMapMs), T.acc2)}
-      {chip(t('perfUiMiniMapClick'), `${formatMs(stats.miniMapClickMs)} · ${stats.miniMapClickCount}`, T.acc)}
-      {chip(t('perfUiRowWindow'), `${formatMs(stats.rowWindowMs)} · ${stats.rowWindowUpdates}`, T.acc)}
-      {chip(t('perfUiRowViewport'), `${stats.rowViewport}px · ${stats.rowOverscan}`, T.acc2)}
-      {chip(t('perfUiColWindow'), `${formatMs(stats.columnWindowMs)} · ${stats.columnWindowUpdates}`, T.acc)}
-      {chip(t('perfUiColViewport'), `${stats.columnViewport}px · ${stats.columnOverscan}`, T.acc2)}
-      {chip(t('perfUiScrollSync'), String(stats.scrollSyncCount), T.acc)}
+      {chip(t('perfUiRows'), `${stats.renderedRows}/${stats.totalRows}`, cssVar('acc'))}
+      {chip(t('perfUiCols'), `${stats.renderedColumns}/${stats.totalColumns}`, cssVar('acc2'))}
+      {chip(t('perfUiFreeze'), `${stats.frozenRows}R · ${stats.frozenColumns}C`, cssVar('acc'))}
+      {chip(t('perfUiCollapse'), String(stats.collapseBlocks), cssVar('acc2'))}
+      {chip(t('perfUiBuildItems'), formatMs(stats.buildItemsMs), cssVar('acc'))}
+      {chip(t('perfUiCollapseBuild'), formatMs(stats.collapseBuildMs), cssVar('acc2'))}
+      {chip(t('perfUiHiddenOverlay'), `${formatMs(stats.hiddenOverlayMs)} · ${stats.hiddenRows}`, cssVar('acc'))}
+      {chip(t('perfUiMiniMap'), formatMs(stats.miniMapMs), cssVar('acc2'))}
+      {chip(t('perfUiMiniMapClick'), `${formatMs(stats.miniMapClickMs)} · ${stats.miniMapClickCount}`, cssVar('acc'))}
+      {chip(t('perfUiRowWindow'), `${formatMs(stats.rowWindowMs)} · ${stats.rowWindowUpdates}`, cssVar('acc'))}
+      {chip(t('perfUiRowViewport'), `${stats.rowViewport}px · ${stats.rowOverscan}`, cssVar('acc2'))}
+      {chip(t('perfUiColWindow'), `${formatMs(stats.columnWindowMs)} · ${stats.columnWindowUpdates}`, cssVar('acc'))}
+      {chip(t('perfUiColViewport'), `${stats.columnViewport}px · ${stats.columnOverscan}`, cssVar('acc2'))}
+      {chip(t('perfUiScrollSync'), String(stats.scrollSyncCount), cssVar('acc'))}
     </div>
   );
 });

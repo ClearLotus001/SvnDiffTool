@@ -52,6 +52,7 @@ test('buildWorkbookHorizontalLayoutSnapshot preserves per-pane scroll positions'
     48,
     200,
     96,
+    0.58,
     { blockA: [{ start: 0, end: 2 }] },
   );
 
@@ -60,5 +61,6 @@ test('buildWorkbookHorizontalLayoutSnapshot preserves per-pane scroll positions'
   assert.equal(snapshot.leftScrollLeft, 48);
   assert.equal(snapshot.rightScrollTop, 200);
   assert.equal(snapshot.rightScrollLeft, 96);
+  assert.equal(snapshot.splitRatio, 0.58);
   assert.notEqual(snapshot.expandedBlocks, undefined);
 });

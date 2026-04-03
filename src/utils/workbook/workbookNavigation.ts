@@ -1,7 +1,14 @@
-import type { SplitRow, WorkbookMoveDirection, WorkbookSelectedCell } from '@/types';
+import type {
+  DiffLine,
+  SearchMatch,
+  SplitRow,
+  WorkbookMoveDirection,
+  WorkbookSearchTarget,
+  WorkbookSelectedCell,
+} from '@/types';
 import type { WorkbookCellDisplay, WorkbookRowDisplayLine } from '@/utils/workbook/workbookDisplay';
 import { parseWorkbookDisplayLine } from '@/utils/workbook/workbookDisplay';
-import type { WorkbookSection } from '@/utils/workbook/workbookSections';
+import type { WorkbookLineSheetContext, WorkbookSection } from '@/utils/workbook/workbookSections';
 import type { WorkbookMergeRange } from '@/utils/workbook/workbookMeta';
 import { findWorkbookMergeRange } from '@/utils/workbook/workbookMergeLayout';
 
@@ -133,6 +140,149 @@ export function buildWorkbookSelectedCell(
     address: `${colLabel}${entry.rowNumber}`,
     value: cell.value,
     formula: cell.formula,
+  };
+}
+
+export function resolveWorkbookSearchSide(
+  line: DiffLine | null,
+): 'base' | 'mine' | null {
+  if (!line) return null;
+  return line.type === 'delete' || line.mine == null ? 'base' : 'mine';
+}
+
+function resolveWorkbookSearchContent(line: DiffLine | null): string {
+  if (!line) return '';
+  return line.type === 'delete'
+    ? (line.base ?? line.mine ?? '')
+    : (line.mine ?? line.base ?? '');
+}
+
+export function resolveWorkbookSearchMatchColumnIndex(
+  line: DiffLine | null,
+  match: Pick<SearchMatch, 'start' | 'end'>,
+): number | null {
+  const content = resolveWorkbookSearchContent(line);
+  if (!content) return null;
+
+  const parsed = parseWorkbookDisplayLine(content);
+  if (parsed?.kind !== 'row') return null;
+
+  const prefixEnd = content.indexOf('\t', content.indexOf('\t') + 1);
+  if (prefixEnd < 0) return null;
+
+  const clampedStart = Math.max(0, Math.min(match.start, content.length - 1));
+  if (clampedStart <= prefixEnd) return null;
+
+  let fieldStart = prefixEnd + 1;
+  let column = 0;
+  while (fieldStart <= content.length) {
+    const fieldEnd = content.indexOf('\t', fieldStart);
+    const normalizedFieldEnd = fieldEnd >= 0 ? fieldEnd : content.length;
+    if (clampedStart < normalizedFieldEnd) return column;
+    if (fieldEnd < 0) break;
+    fieldStart = normalizedFieldEnd + 1;
+    column += 1;
+  }
+
+  return parsed.cells.length > 0 ? Math.max(0, parsed.cells.length - 1) : null;
+}
+
+export function resolveWorkbookSearchMatchTarget(
+  line: DiffLine | null,
+  match: Pick<SearchMatch, 'start' | 'end'>,
+  context: WorkbookLineSheetContext | null | undefined = null,
+): WorkbookSearchTarget | null {
+  const side = resolveWorkbookSearchSide(line);
+  if (!side) return null;
+
+  const content = resolveWorkbookSearchContent(line);
+  if (!content) return null;
+
+  const parsed = parseWorkbookDisplayLine(content);
+  const contextSheetName = side === 'base'
+    ? (context?.baseSheetName ?? context?.mineSheetName ?? null)
+    : (context?.mineSheetName ?? context?.baseSheetName ?? null);
+
+  if (parsed?.kind === 'sheet') {
+    return {
+      sheetName: parsed.sheetName || contextSheetName,
+      side,
+      rowNumber: null,
+      colIndex: null,
+    };
+  }
+
+  if (parsed?.kind !== 'row') return null;
+
+  return {
+    sheetName: contextSheetName,
+    side,
+    rowNumber: parsed.rowNumber,
+    colIndex: resolveWorkbookSearchMatchColumnIndex(line, match),
+  };
+}
+
+export function buildWorkbookSearchMatchSelection(
+  row: SplitRow,
+  line: DiffLine | null,
+  match: Pick<SearchMatch, 'start' | 'end'>,
+  sheetName: string,
+  versionLabels: Record<'base' | 'mine', string>,
+  visibleColumns: number[] = [],
+  mergeRangesBySide: Partial<Record<'base' | 'mine', WorkbookMergeRange[]>> = {},
+): WorkbookSelectedCell | null {
+  const side = resolveWorkbookSearchSide(line);
+  if (!side) return null;
+
+  const requestedColIndex = resolveWorkbookSearchMatchColumnIndex(line, match);
+  if (requestedColIndex == null) return null;
+
+  const entry = buildWorkbookRowEntry(
+    row,
+    side,
+    sheetName,
+    versionLabels[side],
+    visibleColumns.length > 0 ? [] : visibleColumns,
+  );
+  if (!entry) return null;
+
+  return buildWorkbookSelectedCell(
+    entry,
+    requestedColIndex,
+    mergeRangesBySide[side] ?? [],
+  );
+}
+
+export function buildWorkbookSearchSelectionFromTarget(
+  target: WorkbookSearchTarget | null | undefined,
+  rowEntryByRowNumber: {
+    base: Map<number, WorkbookRowEntry>;
+    mine: Map<number, WorkbookRowEntry>;
+  },
+  mergeRangesBySide: Partial<Record<'base' | 'mine', WorkbookMergeRange[]>> = {},
+): WorkbookSelectedCell | null {
+  if (!target?.side || target.rowNumber == null) return null;
+
+  const entry = rowEntryByRowNumber[target.side].get(target.rowNumber);
+  if (!entry) return null;
+
+  const unclampedEntry = entry.visibleColumns.length > 0
+    ? { ...entry, visibleColumns: [] }
+    : entry;
+  const selection = buildWorkbookSelectedCell(
+    unclampedEntry,
+    target.colIndex ?? 0,
+    mergeRangesBySide[target.side] ?? [],
+  );
+
+  if (target.colIndex != null) return selection;
+
+  return {
+    ...selection,
+    kind: 'row',
+    address: String(entry.rowNumber),
+    value: '',
+    formula: '',
   };
 }
 

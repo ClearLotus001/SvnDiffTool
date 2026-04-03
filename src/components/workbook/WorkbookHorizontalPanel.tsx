@@ -1,4 +1,15 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject, startTransition } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+  startTransition,
+} from 'react';
 import type {
     DiffLine,
     Hunk,
@@ -15,7 +26,8 @@ import type {
     WorkbookSelectionRequest,
     WorkbookSelectionState,
   } from '@/types';
-import { useTheme } from '@/context/theme';
+import { useThemeTokens } from '@/context/theme';
+import { cssAlpha, cssVar } from '@/theme/cssUtils';
 import { useVirtual, ROW_H } from '@/hooks/virtualization/useVirtual';
 import { useHorizontalVirtualColumns } from '@/hooks/virtualization/useHorizontalVirtualColumns';
 import { useWorkbookExpandedBlocksState } from '@/hooks/workbook/useWorkbookExpandedBlocksState';
@@ -30,19 +42,18 @@ import {
   workbookDiffRegionContainsSelection,
 } from '@/utils/workbook/workbookDiffRegion';
 import {
+  buildWorkbookSearchSelectionFromTarget,
   buildWorkbookRowEntry,
   findWorkbookSectionIndexByName,
   getWorkbookSideRowNumber,
   getWorkbookSplitRowNumber,
   moveWorkbookSelection,
-  type WorkbookRowEntry,
 } from '@/utils/workbook/workbookNavigation';
 import type { IndexedWorkbookSectionRows } from '@/utils/workbook/workbookSheetIndex';
 import {
   getWorkbookSelectionSpanForSelection,
 } from '@/utils/workbook/workbookMergeLayout';
 import {
-  buildWorkbookSplitRowCompareState,
   parseWorkbookRowLine,
 } from '@/utils/workbook/workbookCompare';
 import { resolveWorkbookRegionHorizontalBounds } from '@/utils/workbook/workbookRegionOverlay';
@@ -93,7 +104,6 @@ import CollapseJumpButton from '@/components/diff/CollapseJumpButton';
 import WorkbookMiniMap, {
   type WorkbookMiniMapDebugStats,
   type WorkbookMiniMapSegment,
-  type WorkbookMiniMapTone,
 } from '@/components/workbook/WorkbookMiniMap';
 import WorkbookCanvasHoverTooltip, { type WorkbookCanvasHoverCell } from '@/components/workbook/WorkbookCanvasHoverTooltip';
 import WorkbookCanvasHeaderStrip from '@/components/workbook/WorkbookCanvasHeaderStrip';
@@ -102,6 +112,7 @@ import WorkbookPerfDebugPanel, { type WorkbookPerfDebugStats } from '@/component
 import WorkbookSheetTabs from '@/components/workbook/WorkbookSheetTabs';
 import WorkbookActiveRegionOverlayLayer from '@/components/workbook/WorkbookActiveRegionOverlayLayer';
 import WorkbookHiddenRowsBar from '@/components/workbook/WorkbookHiddenRowsBar';
+import { useAppStore } from '@/store/appStore';
 import {
   WORKBOOK_CONTEXT_LINES as CONTEXT_LINES,
   workbookRowHasLineIdx as splitRowHasLineIdx,
@@ -111,7 +122,8 @@ import {
   getWorkbookRowKey as getWorkbookHorizontalRowKey,
   buildSelectionAutoScrollKey,
   getWorkbookMiniMapTone,
-  type SelectionAutoScrollLock,
+  buildWorkbookRowEntryMaps,
+  buildWorkbookCompareCellsMaps,
 } from '@/utils/workbook/workbookPanelHelpers';
 
 type WorkbookHorizontalRenderItem =
@@ -168,6 +180,16 @@ function getNow() {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
 
+const DEFAULT_SPLIT_RATIO = 0.5;
+const MIN_SPLIT_RATIO = 0.2;
+const MAX_SPLIT_RATIO = 0.8;
+const SPLIT_DIVIDER_WIDTH = 12;
+
+function clampSplitRatio(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_SPLIT_RATIO;
+  return Math.min(MAX_SPLIT_RATIO, Math.max(MIN_SPLIT_RATIO, value));
+}
+
 const WorkbookHorizontalPanel = memo(({
   diffLines,
   collapseCtx,
@@ -210,14 +232,20 @@ const WorkbookHorizontalPanel = memo(({
   layoutSnapshot = null,
   onLayoutSnapshotChange,
 }: WorkbookHorizontalPanelProps) => {
-  const T = useTheme();
+  const T = useThemeTokens();
+  const searchJumpNonce = useAppStore((s) => s.searchJumpNonce);
   const selectedCell = selection.primary;
   const resolvedActiveWorkbookSectionIdx = activeWorkbookSheetName
     ? findWorkbookSectionIndexByName(workbookSections, activeWorkbookSheetName)
     : 0;
   const activeWorkbookSection = workbookSections[resolvedActiveWorkbookSectionIdx] ?? workbookSections[0];
+  const paneContainerRef = useRef<HTMLDivElement>(null);
   const leftScrollRef = useRef<HTMLDivElement>(null);
   const rightScrollRef = useRef<HTMLDivElement>(null);
+  const splitterCleanupRef = useRef<(() => void) | null>(null);
+  const splitRatioRef = useRef(clampSplitRatio(layoutSnapshot?.splitRatio ?? DEFAULT_SPLIT_RATIO));
+  const splitRatioFrameRef = useRef(0);
+  const pendingSplitRatioRef = useRef(splitRatioRef.current);
   const pendingScrollAdjustRef = useRef(0);
   const lastCollapseJumpIndexRef = useRef<number | null>(null);
   const syncOwnerRef = useRef<'left' | 'right' | null>(null);
@@ -227,6 +255,8 @@ const WorkbookHorizontalPanel = memo(({
   const restoreRafRef = useRef(0);
   const lastRestoredSnapshotKeyRef = useRef('');
   const lastViewportSheetNameRef = useRef<string | null>(activeWorkbookSection?.name ?? null);
+  const [splitRatio, setSplitRatio] = useState(() => clampSplitRatio(layoutSnapshot?.splitRatio ?? DEFAULT_SPLIT_RATIO));
+  const [isResizingSplitter, setIsResizingSplitter] = useState(false);
   const [hoveredCanvasCell, setHoveredCanvasCell] = useState<WorkbookCanvasHoverCell | null>(null);
   const [pendingScrollTarget, setPendingScrollTarget] = useState<{ lineIdx: number; align: 'start' | 'center' } | null>(null);
   const visibleRowsCacheRef = useRef(new Map<string, SplitRow[]>());
@@ -236,6 +266,8 @@ const WorkbookHorizontalPanel = memo(({
   const lastAutoRowKeyRef = useRef('');
   const lastAutoCellKeyRef = useRef('');
   const lastGuidedNavigationKeyRef = useRef('');
+  const lastAppliedSearchKeyRef = useRef('');
+  const suppressGuidedNavigationUntilRef = useRef(0);
   const suppressAutoScrollUntilRef = useRef(0);
   const lastFreezeSignatureRef = useRef<string | null>(null);
   const {
@@ -252,6 +284,9 @@ const WorkbookHorizontalPanel = memo(({
   const mineVersion = useMemo(() => mineVersionLabel.trim(), [mineVersionLabel]);
 
   const searchMatchSet = useMemo(() => new Set(searchMatches.map(match => match.lineIdx)), [searchMatches]);
+  const activeSearchMatch = activeSearchIdx >= 0
+    ? (searchMatches[activeSearchIdx] ?? null)
+    : null;
   const activeSearchLineIdx = activeSearchIdx >= 0
     ? (searchMatches[activeSearchIdx]?.lineIdx ?? -1)
     : -1;
@@ -401,7 +436,11 @@ const WorkbookHorizontalPanel = memo(({
     }
 
     const start = getNow();
-    const value = overlayHiddenWorkbookRowsOnItems<WorkbookHorizontalRenderItem, SplitRow>(
+    const value = overlayHiddenWorkbookRowsOnItems<
+      WorkbookHorizontalRenderItem,
+      Extract<WorkbookHorizontalRenderItem, { kind: 'hidden-rows' }>,
+      SplitRow
+    >(
       collapsedItemsMeasured.value,
       hiddenRowNumberSet,
       (item) => item.kind === 'split-line' ? item.row : null,
@@ -459,53 +498,57 @@ const WorkbookHorizontalPanel = memo(({
     (column: number) => getWorkbookColumnWidth(columnWidthBySheet, activeSheetName, column),
     [activeSheetName, columnWidthBySheet],
   );
-  const virtualColumns = useHorizontalVirtualColumns({
+  const mergedRangesForVirtualColumns = useMemo(
+    () => [...sheetPresentation.baseMergeRanges, ...sheetPresentation.mineMergeRanges],
+    [sheetPresentation.baseMergeRanges, sheetPresentation.mineMergeRanges],
+  );
+  const leftVirtualColumns = useHorizontalVirtualColumns({
     scrollRef: leftScrollRef as RefObject<HTMLDivElement>,
     columns: sheetPresentation.visibleColumns,
     cellWidth: WORKBOOK_CELL_WIDTH,
     frozenCount: freezeColumnCount,
     getColumnWidth: resolveColumnWidth,
-    mergedRanges: [...sheetPresentation.baseMergeRanges, ...sheetPresentation.mineMergeRanges],
+    mergedRanges: mergedRangesForVirtualColumns,
     overscanMin: 6,
     overscanFactor: 1.5,
     syncKey: activeWorkbookSection?.name ?? '',
   });
-  const rowEntryByRowNumber = useMemo(() => {
-    const next = {
-      base: new Map<number, WorkbookRowEntry>(),
-      mine: new Map<number, WorkbookRowEntry>(),
-    };
-
-    sectionRows.forEach((row) => {
-      const baseEntry = buildWorkbookRowEntry(row, 'base', activeSheetName, baseVersion, sheetPresentation.visibleColumns);
-      const mineEntry = buildWorkbookRowEntry(row, 'mine', activeSheetName, mineVersion, sheetPresentation.visibleColumns);
-      if (baseEntry) next.base.set(baseEntry.rowNumber, baseEntry);
-      if (mineEntry) next.mine.set(mineEntry.rowNumber, mineEntry);
-    });
-
-    return next;
-  }, [activeSheetName, baseVersion, mineVersion, sectionRows, sheetPresentation.visibleColumns]);
-  const compareCellsByRowNumber = useMemo(() => {
-    const next = {
-      base: new Map<number, ReturnType<typeof buildWorkbookSplitRowCompareState>['cellDeltas']>(),
-      mine: new Map<number, ReturnType<typeof buildWorkbookSplitRowCompareState>['cellDeltas']>(),
-    };
-
-    sectionRows.forEach((row) => {
-      const rowDelta = buildWorkbookSplitRowCompareState(
-        row,
-        sheetPresentation.visibleColumns,
-        compareMode,
-      );
-      const baseRowNumber = getWorkbookSideRowNumber(row, 'base');
-      if (baseRowNumber != null) next.base.set(baseRowNumber, rowDelta.cellDeltas);
-
-      const mineRowNumber = getWorkbookSideRowNumber(row, 'mine');
-      if (mineRowNumber != null) next.mine.set(mineRowNumber, rowDelta.cellDeltas);
-    });
-
-    return next;
-  }, [compareMode, sectionRows, sheetPresentation.visibleColumns]);
+  const rightVirtualColumns = useHorizontalVirtualColumns({
+    scrollRef: rightScrollRef as RefObject<HTMLDivElement>,
+    columns: sheetPresentation.visibleColumns,
+    cellWidth: WORKBOOK_CELL_WIDTH,
+    frozenCount: freezeColumnCount,
+    getColumnWidth: resolveColumnWidth,
+    mergedRanges: mergedRangesForVirtualColumns,
+    overscanMin: 6,
+    overscanFactor: 1.5,
+    syncKey: activeWorkbookSection?.name ?? '',
+  });
+  const paneVirtualColumnsBySide = useMemo(
+    () => ({
+      left: leftVirtualColumns,
+      right: rightVirtualColumns,
+    }),
+    [leftVirtualColumns, rightVirtualColumns],
+  );
+  const rowEntryByRowNumber = useMemo(
+    () => buildWorkbookRowEntryMaps(
+      sectionRows,
+      activeSheetName,
+      baseVersion,
+      mineVersion,
+      sheetPresentation.visibleColumns,
+    ),
+    [activeSheetName, baseVersion, mineVersion, sectionRows, sheetPresentation.visibleColumns],
+  );
+  const compareCellsByRowNumber = useMemo(
+    () => buildWorkbookCompareCellsMaps(
+      sectionRows,
+      sheetPresentation.visibleColumns,
+      compareMode,
+    ),
+    [compareMode, sectionRows, sheetPresentation.visibleColumns],
+  );
   const rowItemIndexBySide = useMemo(() => {
     const next = {
       base: new Map<number, number>(),
@@ -528,7 +571,7 @@ const WorkbookHorizontalPanel = memo(({
 
     return next;
   }, [items]);
-  const singleGridWidth = (LN_W + 3) + virtualColumns.totalWidth;
+  const singleGridWidth = (LN_W + 3) + leftVirtualColumns.totalWidth;
   const stickyHeaderHeight = ROW_H + (frozenRows.length * ROW_H);
   const contentHeight = totalH + stickyHeaderHeight;
   const headerRowNumber = activeWorkbookSection?.firstDataRowNumber ?? 0;
@@ -693,6 +736,61 @@ const WorkbookHorizontalPanel = memo(({
   const markProgrammaticScroll = useCallback((side: 'left' | 'right', duration = 320) => {
     programmaticScrollUntilRef.current[side] = Math.max(programmaticScrollUntilRef.current[side], getNow() + duration);
   }, []);
+  const applySplitRatioStyle = useCallback((ratio: number) => {
+    const container = paneContainerRef.current;
+    if (!container) return;
+    container.style.setProperty('--split-left', `${(ratio * 100).toFixed(3)}%`);
+    container.style.setProperty('--split-right', `${((1 - ratio) * 100).toFixed(3)}%`);
+  }, []);
+  const flushPendingSplitRatio = useCallback(() => {
+    if (splitRatioFrameRef.current) {
+      cancelAnimationFrame(splitRatioFrameRef.current);
+      splitRatioFrameRef.current = 0;
+    }
+    const nextRatio = clampSplitRatio(pendingSplitRatioRef.current);
+    pendingSplitRatioRef.current = nextRatio;
+    splitRatioRef.current = nextRatio;
+    applySplitRatioStyle(nextRatio);
+    return nextRatio;
+  }, [applySplitRatioStyle]);
+  const queueSplitRatioUpdate = useCallback((ratio: number) => {
+    const nextRatio = clampSplitRatio(ratio);
+    pendingSplitRatioRef.current = nextRatio;
+    if (splitRatioFrameRef.current) return;
+    splitRatioFrameRef.current = requestAnimationFrame(() => {
+      splitRatioFrameRef.current = 0;
+      const frameRatio = clampSplitRatio(pendingSplitRatioRef.current);
+      splitRatioRef.current = frameRatio;
+      applySplitRatioStyle(frameRatio);
+    });
+  }, [applySplitRatioStyle]);
+  const commitSplitRatio = useCallback((ratio: number) => {
+    const nextRatio = clampSplitRatio(ratio);
+    pendingSplitRatioRef.current = nextRatio;
+    splitRatioRef.current = nextRatio;
+    applySplitRatioStyle(nextRatio);
+    setSplitRatio((prev) => (Math.abs(prev - nextRatio) < 0.001 ? prev : nextRatio));
+    return nextRatio;
+  }, [applySplitRatioStyle]);
+  const updateSplitRatioFromClientX = useCallback((clientX: number) => {
+    const container = paneContainerRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    if (rect.width <= SPLIT_DIVIDER_WIDTH) return;
+    const nextRatio = clampSplitRatio((clientX - rect.left) / rect.width);
+    queueSplitRatioUpdate(nextRatio);
+  }, [queueSplitRatioUpdate]);
+  const stopSplitterResize = useCallback(() => {
+    splitterCleanupRef.current?.();
+    splitterCleanupRef.current = null;
+    setIsResizingSplitter(false);
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  }, []);
+  const nudgeSplitRatio = useCallback((delta: number) => {
+    const nextRatio = clampSplitRatio(splitRatioRef.current + delta);
+    commitSplitRatio(nextRatio);
+  }, [commitSplitRatio]);
   const isUserScrollPaused = useCallback(
     () => getNow() < userScrollPauseUntilRef.current,
     [],
@@ -710,25 +808,97 @@ const WorkbookHorizontalPanel = memo(({
       leftScrollRef.current?.scrollLeft ?? 0,
       rightScrollRef.current?.scrollTop ?? 0,
       rightScrollRef.current?.scrollLeft ?? 0,
+      splitRatio,
       expandedBlocks,
     ));
-  }, [active, activeDiffRegion?.id, activeWorkbookSection?.name, expandedBlocks, onLayoutSnapshotChange]);
+  }, [active, activeDiffRegion?.id, activeWorkbookSection?.name, expandedBlocks, onLayoutSnapshotChange, splitRatio]);
+  const emitLayoutSnapshotRef = useRef(emitLayoutSnapshot);
+  emitLayoutSnapshotRef.current = emitLayoutSnapshot;
   const scheduleLayoutSnapshot = useCallback(() => {
-    if (!active || !onLayoutSnapshotChange) return;
     if (snapshotEmitRafRef.current) return;
     snapshotEmitRafRef.current = requestAnimationFrame(() => {
       snapshotEmitRafRef.current = 0;
-      emitLayoutSnapshot();
+      emitLayoutSnapshotRef.current();
     });
-  }, [active, emitLayoutSnapshot, onLayoutSnapshotChange]);
+  }, []);
+  const syncScrollPositionRef = useRef(syncScrollPosition);
+  syncScrollPositionRef.current = syncScrollPosition;
   const handlePaneScroll = useCallback((source: 'left' | 'right') => {
     scheduleLayoutSnapshot();
     const now = getNow();
     if (now >= programmaticScrollUntilRef.current[source]) {
       userScrollPauseUntilRef.current = now + 260;
     }
-    syncScrollPosition(source);
-  }, [scheduleLayoutSnapshot, syncScrollPosition]);
+    syncScrollPositionRef.current(source);
+  }, [scheduleLayoutSnapshot]);
+  const handleSplitterPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    stopSplitterResize();
+    updateSplitRatioFromClientX(event.clientX);
+    setIsResizingSplitter(true);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      updateSplitRatioFromClientX(moveEvent.clientX);
+    };
+    const handlePointerUp = () => {
+      const finalRatio = flushPendingSplitRatio();
+      setSplitRatio((prev) => (Math.abs(prev - finalRatio) < 0.001 ? prev : finalRatio));
+      stopSplitterResize();
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+
+    splitterCleanupRef.current = () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+    };
+  }, [flushPendingSplitRatio, stopSplitterResize, updateSplitRatioFromClientX]);
+  const handleSplitterKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      nudgeSplitRatio(-0.02);
+      return;
+    }
+    if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      nudgeSplitRatio(0.02);
+    }
+  }, [nudgeSplitRatio]);
+  const paneGridTemplateColumns = useMemo(() => {
+    return `minmax(0, calc(var(--split-left, 50%) - ${SPLIT_DIVIDER_WIDTH / 2}px)) ${SPLIT_DIVIDER_WIDTH}px minmax(0, calc(var(--split-right, 50%) - ${SPLIT_DIVIDER_WIDTH / 2}px))`;
+  }, []);
+
+  useEffect(() => () => {
+    if (splitRatioFrameRef.current) cancelAnimationFrame(splitRatioFrameRef.current);
+    stopSplitterResize();
+  }, [stopSplitterResize]);
+
+  useEffect(() => {
+    scheduleLayoutSnapshot();
+  }, [scheduleLayoutSnapshot, splitRatio]);
+
+  useEffect(() => {
+    splitRatioRef.current = splitRatio;
+    pendingSplitRatioRef.current = splitRatio;
+    applySplitRatioStyle(splitRatio);
+  }, [applySplitRatioStyle, splitRatio]);
+
+  const visibleRowItemIndexByLineIdx = useMemo(() => {
+    const next = new Map<number, number>();
+    items.forEach((item, index) => {
+      if (item.kind !== 'split-line') return;
+      item.row.lineIdxs.forEach((lineIdx) => {
+        if (!next.has(lineIdx)) next.set(lineIdx, index);
+      });
+    });
+    return next;
+  }, [items]);
 
   useEffect(() => {
     const nextSheetName = activeWorkbookSection?.name ?? null;
@@ -752,6 +922,46 @@ const WorkbookHorizontalPanel = memo(({
     leftScrollRef.current?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
     rightScrollRef.current?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
   }, [activeWorkbookSection?.name, markProgrammaticScroll]);
+
+  // 首次从其他布局切换到 split-h 时，需要确保水平滚动位置归零。
+  // 由于 snapshot restore、guided navigation、cell auto-scroll 等操作
+  // 会在挂载后通过 rAF 异步设置 scrollLeft，我们通过在首次挂载后的
+  // 短暂时间窗口内安装 scroll 事件监听守卫，拦截所有 scrollLeft 变化
+  // 并强制重置为 0，确保冻结列不会遮挡内容。
+  useEffect(() => {
+    const left = leftScrollRef.current;
+    const right = rightScrollRef.current;
+    if (!left || !right) return;
+
+    let guardActive = true;
+
+    const guardScrollLeft = (el: HTMLDivElement) => {
+      if (!guardActive) return;
+      if (el.scrollLeft !== 0) {
+        el.scrollLeft = 0;
+      }
+    };
+
+    const onLeftScroll = () => guardScrollLeft(left);
+    const onRightScroll = () => guardScrollLeft(right);
+
+    left.addEventListener('scroll', onLeftScroll);
+    right.addEventListener('scroll', onRightScroll);
+
+    // 挂载后 500ms 内拦截所有水平滚动，之后解除守卫恢复正常交互
+    const timerId = window.setTimeout(() => {
+      guardActive = false;
+      left.removeEventListener('scroll', onLeftScroll);
+      right.removeEventListener('scroll', onRightScroll);
+    }, 500);
+
+    return () => {
+      guardActive = false;
+      clearTimeout(timerId);
+      left.removeEventListener('scroll', onLeftScroll);
+      right.removeEventListener('scroll', onRightScroll);
+    };
+  }, []);
 
   const revealLineIfCollapsed = useCallback((lineIdx: number) => {
     const hiddenRowItem = items.find((item): item is Extract<WorkbookHorizontalRenderItem, { kind: 'hidden-rows' }> => (
@@ -786,7 +996,7 @@ const WorkbookHorizontalPanel = memo(({
     align: 'start' | 'center' = 'center',
     behavior: 'auto' | 'smooth' | 'smart' = 'smart',
   ) => {
-    const exactIndex = items.findIndex((item) => item.kind === 'split-line' && splitRowHasLineIdx(item.row, lineIdx));
+    const exactIndex = visibleRowItemIndexByLineIdx.get(lineIdx) ?? -1;
     if (exactIndex >= 0) {
       markProgrammaticScroll('left', 420);
       scrollToIndex(exactIndex, align, behavior);
@@ -808,7 +1018,7 @@ const WorkbookHorizontalPanel = memo(({
       return true;
     }
     return false;
-  }, [items, markProgrammaticScroll, revealLineIfCollapsed, scrollToIndex, syncScrollPosition]);
+  }, [items, markProgrammaticScroll, revealLineIfCollapsed, scrollToIndex, syncScrollPosition, visibleRowItemIndexByLineIdx]);
 
   useEffect(() => {
     if (!active) return;
@@ -824,20 +1034,21 @@ const WorkbookHorizontalPanel = memo(({
     cell: WorkbookSelectedCell,
     strategy: 'focus' | 'ensure-visible' = 'ensure-visible',
   ) => {
-    if (cell.kind === 'row') return;
-    const source = cell.side === 'base' ? leftScrollRef.current : rightScrollRef.current;
-    const target = cell.side === 'base' ? rightScrollRef.current : leftScrollRef.current;
+    if (cell.kind === 'row') return true;
     const sourceSide = cell.side === 'base' ? 'left' : 'right';
-    if (!source) return;
+    const source = sourceSide === 'left' ? leftScrollRef.current : rightScrollRef.current;
+    const target = sourceSide === 'left' ? rightScrollRef.current : leftScrollRef.current;
+    const paneVirtualColumns = paneVirtualColumnsBySide[sourceSide];
+    if (!source) return false;
 
-    const frozenWidth = LN_W + 3 + virtualColumns.frozenWidth;
+    const frozenWidth = LN_W + 3 + paneVirtualColumns.frozenWidth;
     const mergedRanges = cell.side === 'base'
       ? sheetPresentation.baseMergeRanges
       : sheetPresentation.mineMergeRanges;
     const span = getWorkbookSelectionSpanForSelection(cell, mergedRanges);
-    const targetColumn = virtualColumns.columnLayoutByColumn.get(span.startCol);
-    const endColumn = virtualColumns.columnLayoutByColumn.get(span.endCol);
-    if (!targetColumn || !endColumn) return;
+    const targetColumn = paneVirtualColumns.columnLayoutByColumn.get(span.startCol);
+    const endColumn = paneVirtualColumns.columnLayoutByColumn.get(span.endCol);
+    if (!targetColumn || !endColumn) return false;
 
     const targetLeft = LN_W + 3 + targetColumn.offset;
     const targetRight = LN_W + 3 + endColumn.offset + endColumn.width;
@@ -849,7 +1060,7 @@ const WorkbookHorizontalPanel = memo(({
       markProgrammaticScroll(sourceSide, 260);
       source.scrollLeft = desiredScrollLeft;
       if (target) target.scrollLeft = source.scrollLeft;
-      return;
+      return true;
     }
 
     const leftBoundary = source.scrollLeft + frozenWidth + desiredPadding;
@@ -863,30 +1074,32 @@ const WorkbookHorizontalPanel = memo(({
       }
       if (target) target.scrollLeft = source.scrollLeft;
     }
+
+    return true;
   }, [
     markProgrammaticScroll,
+    paneVirtualColumnsBySide,
     sheetPresentation.baseMergeRanges,
     sheetPresentation.mineMergeRanges,
-    virtualColumns.columnLayoutByColumn,
-    virtualColumns.frozenWidth,
   ]);
   const focusWorkbookDiffRegion = useCallback((region: WorkbookDiffRegion) => {
     const resolvedSide: 'base' | 'mine' = region.hasBaseSide ? 'base' : 'mine';
-    const source = resolvedSide === 'base' ? leftScrollRef.current : rightScrollRef.current;
-    const target = resolvedSide === 'base' ? rightScrollRef.current : leftScrollRef.current;
     const sourceSide = resolvedSide === 'base' ? 'left' : 'right';
+    const source = sourceSide === 'left' ? leftScrollRef.current : rightScrollRef.current;
+    const target = sourceSide === 'left' ? rightScrollRef.current : leftScrollRef.current;
+    const paneVirtualColumns = paneVirtualColumnsBySide[sourceSide];
     if (!source) return;
 
     const bounds = resolveWorkbookRegionHorizontalBounds({
       region,
-      columnLayoutByColumn: virtualColumns.columnLayoutByColumn,
+      columnLayoutByColumn: paneVirtualColumns.columnLayoutByColumn,
       freezeColumnCount,
       resolvePatchBoundsModes: () => ['single'],
       fallbackBoundsModes: ['single'],
     });
     if (!bounds) return;
 
-    const frozenWidth = LN_W + 3 + virtualColumns.frozenWidth;
+    const frozenWidth = LN_W + 3 + paneVirtualColumns.frozenWidth;
     const desiredPadding = 24;
     const targetLeft = LN_W + 3 + bounds.leftOffset;
     const targetRight = LN_W + 3 + bounds.rightOffset;
@@ -907,8 +1120,113 @@ const WorkbookHorizontalPanel = memo(({
   }, [
     freezeColumnCount,
     markProgrammaticScroll,
-    virtualColumns.columnLayoutByColumn,
-    virtualColumns.frozenWidth,
+    paneVirtualColumnsBySide,
+  ]);
+  const activeSearchTargetCell = useMemo(() => {
+    return buildWorkbookSearchSelectionFromTarget(
+      activeSearchMatch?.workbookTarget,
+      rowEntryByRowNumber,
+      {
+        base: sheetPresentation.baseMergeRanges,
+        mine: sheetPresentation.mineMergeRanges,
+      },
+    );
+  }, [
+    activeSearchMatch,
+    rowEntryByRowNumber,
+    sheetPresentation.baseMergeRanges,
+    sheetPresentation.mineMergeRanges,
+  ]);
+  const scrollToSearchTarget = useCallback((
+    target: WorkbookSelectedCell | null,
+    fallbackLineIdx: number,
+  ) => {
+    if (!target || target.kind === 'column') {
+      return {
+        didScroll: scrollToResolvedLine(fallbackLineIdx, 'center', 'auto'),
+        isExact: true,
+      };
+    }
+
+    const rowExists = rowEntryByRowNumber[target.side].has(target.rowNumber);
+    const rowIndex = rowItemIndexBySide[target.side].get(target.rowNumber) ?? -1;
+    if (rowIndex >= 0) {
+      markProgrammaticScroll('left', 420);
+      scrollToIndex(rowIndex, 'center', 'auto');
+      requestAnimationFrame(() => syncScrollPosition('left'));
+      return { didScroll: true, isExact: true };
+    }
+
+    return {
+      didScroll: scrollToResolvedLine(fallbackLineIdx, 'center', 'auto'),
+      isExact: !rowExists,
+    };
+  }, [
+    markProgrammaticScroll,
+    rowEntryByRowNumber,
+    rowItemIndexBySide,
+    scrollToIndex,
+    scrollToResolvedLine,
+    syncScrollPosition,
+  ]);
+
+  useEffect(() => {
+    if (!activeSearchMatch) {
+      lastAppliedSearchKeyRef.current = '';
+      return;
+    }
+    if (!active) return;
+    if (!activeWorkbookSection) return;
+    if (
+      activeSearchMatch.lineIdx < activeWorkbookSection.startLineIdx
+      || activeSearchMatch.lineIdx > activeWorkbookSection.endLineIdx
+    ) {
+      return;
+    }
+
+    const searchKey = [
+      activeWorkbookSection?.name ?? '',
+      activeSearchMatch.lineIdx,
+      activeSearchMatch.start,
+      activeSearchMatch.end,
+      activeSearchMatch.workbookTarget?.sheetName ?? '',
+      activeSearchMatch.workbookTarget?.side ?? '',
+      activeSearchMatch.workbookTarget?.rowNumber ?? '',
+      activeSearchMatch.workbookTarget?.colIndex ?? '',
+      searchJumpNonce,
+    ].join(':');
+    if (lastAppliedSearchKeyRef.current === searchKey) return;
+
+    if (activeSearchTargetCell) {
+      suppressGuidedNavigationUntilRef.current = getNow() + 900;
+      onSelectionRequest({
+        target: activeSearchTargetCell,
+        reason: 'search',
+      });
+    }
+
+    const scrollResult = scrollToSearchTarget(activeSearchTargetCell, activeSearchMatch.lineIdx);
+    if (!scrollResult.didScroll) return;
+
+    const didFocus = activeSearchTargetCell
+      ? focusWorkbookCell(activeSearchTargetCell, 'focus')
+      : true;
+    if (!scrollResult.isExact || !didFocus) return;
+
+    lastAppliedSearchKeyRef.current = searchKey;
+  }, [
+    active,
+    activeSearchMatch,
+    activeSearchTargetCell,
+    activeWorkbookSection,
+    activeWorkbookSection?.name,
+    activeWorkbookSection?.endLineIdx,
+    activeWorkbookSection?.startLineIdx,
+    focusWorkbookCell,
+    items.length,
+    onSelectionRequest,
+    searchJumpNonce,
+    scrollToSearchTarget,
   ]);
 
   useEffect(() => {
@@ -955,10 +1273,13 @@ const WorkbookHorizontalPanel = memo(({
       snapshot.leftScrollLeft,
       snapshot.rightScrollTop,
       snapshot.rightScrollLeft,
+      snapshot.splitRatio ?? '',
     ].join(':');
     if (lastRestoredSnapshotKeyRef.current === restoreKey) return;
     lastRestoredSnapshotKeyRef.current = restoreKey;
     suppressAutoScrollUntilRef.current = getNow() + 520;
+    const nextSplitRatio = clampSplitRatio(snapshot.splitRatio ?? DEFAULT_SPLIT_RATIO);
+    setSplitRatio((prev) => (Math.abs(prev - nextSplitRatio) < 0.001 ? prev : nextSplitRatio));
     if (selectedCell && selectedCell.sheetName === activeWorkbookSection?.name) {
       const selectionKey = buildSelectionAutoScrollKey(activeWorkbookSection.name, selectedCell);
       if (selectedCell.kind !== 'column') lastAutoRowKeyRef.current = selectionKey;
@@ -969,8 +1290,8 @@ const WorkbookHorizontalPanel = memo(({
         markProgrammaticScroll('left', 420);
         markProgrammaticScroll('right', 420);
         left.scrollTop = snapshot.leftScrollTop;
-        left.scrollLeft = snapshot.leftScrollLeft;
         right.scrollTop = snapshot.rightScrollTop;
+        left.scrollLeft = snapshot.leftScrollLeft;
         right.scrollLeft = snapshot.rightScrollLeft;
       });
       restoreRafRef.current = raf2;
@@ -1031,13 +1352,6 @@ const WorkbookHorizontalPanel = memo(({
   }, [activeWorkbookSection?.name, diffLines]);
 
   useEffect(() => {
-    if (!active) return;
-    if (activeSearchLineIdx < 0) return;
-    if (isAutoScrollSuppressed()) return;
-    scrollToResolvedLine(activeSearchLineIdx, 'center');
-  }, [active, activeSearchLineIdx, isAutoScrollSuppressed, scrollToResolvedLine]);
-
-  useEffect(() => {
     if (!pendingScrollTarget) return;
     if (scrollToResolvedLine(pendingScrollTarget.lineIdx, pendingScrollTarget.align)) {
       setPendingScrollTarget(null);
@@ -1085,6 +1399,7 @@ const WorkbookHorizontalPanel = memo(({
     if (!active) return;
     if (!activeDiffRegion || !activeWorkbookSection) return;
     if (activeDiffRegion.sheetName !== activeWorkbookSection.name) return;
+    if (getNow() < suppressGuidedNavigationUntilRef.current) return;
     const navigationKey = activeDiffRegion.id;
     if (lastGuidedNavigationKeyRef.current === navigationKey) return;
 
@@ -1216,7 +1531,7 @@ const WorkbookHorizontalPanel = memo(({
     renderedRows: Math.max(0, endIdx - startIdx),
     collapseBlocks: items.filter(item => item.kind === 'split-collapse').length,
     totalColumns: sheetPresentation.visibleColumns.length,
-    renderedColumns: virtualColumns.columnEntries.length,
+    renderedColumns: Math.max(leftVirtualColumns.columnEntries.length, rightVirtualColumns.columnEntries.length),
     frozenRows: frozenRows.length,
     frozenColumns: freezeColumnCount,
     buildItemsMs: collapsedItemsMeasured.duration
@@ -1230,10 +1545,10 @@ const WorkbookHorizontalPanel = memo(({
     rowWindowUpdates: rowVirtualDebug.rangeUpdates,
     rowOverscan: rowVirtualDebug.overscan,
     rowViewport: rowVirtualDebug.viewportHeight,
-    columnWindowMs: virtualColumns.debug.lastCalcMs,
-    columnWindowUpdates: virtualColumns.debug.rangeUpdates,
-    columnOverscan: virtualColumns.debug.overscan,
-    columnViewport: virtualColumns.debug.viewportWidth,
+    columnWindowMs: Math.max(leftVirtualColumns.debug.lastCalcMs, rightVirtualColumns.debug.lastCalcMs),
+    columnWindowUpdates: leftVirtualColumns.debug.rangeUpdates + rightVirtualColumns.debug.rangeUpdates,
+    columnOverscan: Math.max(leftVirtualColumns.debug.overscan, rightVirtualColumns.debug.overscan),
+    columnViewport: Math.max(leftVirtualColumns.debug.viewportWidth, rightVirtualColumns.debug.viewportWidth),
     miniMapClickMs: miniMapDebugRef.current?.lastClickMs ?? 0,
     miniMapClickCount: miniMapDebugRef.current?.clickCount ?? 0,
     scrollSyncCount: scrollSyncCountRef.current,
@@ -1255,11 +1570,16 @@ const WorkbookHorizontalPanel = memo(({
     rowVirtualDebug.viewportHeight,
     sheetPresentation.visibleColumns.length,
     startIdx,
-    virtualColumns.columnEntries.length,
-    virtualColumns.debug.lastCalcMs,
-    virtualColumns.debug.overscan,
-    virtualColumns.debug.rangeUpdates,
-    virtualColumns.debug.viewportWidth,
+    leftVirtualColumns.columnEntries.length,
+    leftVirtualColumns.debug.lastCalcMs,
+    leftVirtualColumns.debug.overscan,
+    leftVirtualColumns.debug.rangeUpdates,
+    leftVirtualColumns.debug.viewportWidth,
+    rightVirtualColumns.columnEntries.length,
+    rightVirtualColumns.debug.lastCalcMs,
+    rightVirtualColumns.debug.overscan,
+    rightVirtualColumns.debug.rangeUpdates,
+    rightVirtualColumns.debug.viewportWidth,
   ]);
   const sheetRenderKey = `${activeWorkbookSection?.name ?? 'none'}`;
   useEffect(() => {
@@ -1275,6 +1595,8 @@ const WorkbookHorizontalPanel = memo(({
       endIdx,
       contentHeight,
       singleGridWidth,
+      leftViewportWidth: leftVirtualColumns.debug.viewportWidth,
+      rightViewportWidth: rightVirtualColumns.debug.viewportWidth,
       activeDiffRegion: activeDiffRegion
         ? {
           id: activeDiffRegion.id,
@@ -1312,10 +1634,9 @@ const WorkbookHorizontalPanel = memo(({
     showPerfDebug,
     singleGridWidth,
     startIdx,
+    leftVirtualColumns.debug.viewportWidth,
+    rightVirtualColumns.debug.viewportWidth,
   ]);
-  const pinnedCollapseWidth = virtualColumns.debug.viewportWidth > 0
-    ? virtualColumns.debug.viewportWidth
-    : '100%';
   const handleExpandCollapseBlock = useCallback((
     blockId: string,
     hiddenStart: number,
@@ -1373,13 +1694,13 @@ const WorkbookHorizontalPanel = memo(({
     });
     return () => onCollapseNavigationReady?.(null);
   }, [active, handleJumpToNextCollapse, handleJumpToPreviousCollapse, onCollapseNavigationReady]);
-  const renderPinnedCollapseBar = useCallback((count: number, expandCount: number, onExpand: () => void, onExpandAll: () => void) => (
+  const renderPinnedCollapseBar = useCallback((width: number | string, count: number, expandCount: number, onExpand: () => void, onExpandAll: () => void) => (
     <div
       style={{
         position: 'sticky',
         left: 0,
-        width: pinnedCollapseWidth,
-        minWidth: pinnedCollapseWidth,
+        width,
+        minWidth: width,
         overflow: 'hidden',
         zIndex: 5,
       }}>
@@ -1391,7 +1712,7 @@ const WorkbookHorizontalPanel = memo(({
         palette={resolveWorkbookAuxBarPalette(T, 'mixed')}
       />
     </div>
-  ), [T, pinnedCollapseWidth]);
+  ), [T]);
 
   const handleSelectSheet = useCallback((index: number) => {
     onSelectionRequest({
@@ -1445,19 +1766,18 @@ const WorkbookHorizontalPanel = memo(({
     ref: RefObject<HTMLDivElement>,
     side: 'left' | 'right',
     onSync: () => void,
-  ) => (
-    <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+  ) => {
+    const paneVirtualColumns = paneVirtualColumnsBySide[side];
+    const paneViewportWidth = paneVirtualColumns.debug.viewportWidth;
+    const pinnedCollapseWidth = paneViewportWidth > 0 ? paneViewportWidth : '100%';
+
+    return (
+    <div className="flex-1 min-w-0 min-h-0 flex flex-col">
       <div
         ref={ref}
         onScroll={onSync}
-        style={{
-          flex: 1,
-          overflow: 'auto',
-          overflowAnchor: 'none',
-          position: 'relative',
-          minWidth: 0,
-          minHeight: 0,
-        }}>
+        className="flex-1 overflow-auto relative min-w-0 min-h-0"
+        style={{ overflowAnchor: 'none' }}>
         <div key={`${sheetRenderKey}:${side}`} style={{ position: 'relative', minWidth: singleGridWidth, height: totalH + stickyHeaderHeight }}>
           <div
             style={{
@@ -1465,22 +1785,22 @@ const WorkbookHorizontalPanel = memo(({
               top: 0,
               zIndex: 30,
               isolation: 'isolate',
-              background: T.bg1,
-              boxShadow: `0 1px 0 ${T.border}`,
+              background: cssVar('bg1'),
+              boxShadow: `0 1px 0 ${cssVar('border')}`,
               minWidth: singleGridWidth,
             }}>
-            <div style={{ position: 'sticky', left: 0, width: virtualColumns.debug.viewportWidth, overflow: 'hidden' }}>
+            <div style={{ position: 'sticky', left: 0, width: paneViewportWidth, overflow: 'hidden' }}>
               <WorkbookCanvasHeaderStrip
                 mode="single"
-                viewportWidth={virtualColumns.debug.viewportWidth}
+                viewportWidth={paneViewportWidth}
                 scrollRef={ref}
                 freezeColumnCount={freezeColumnCount}
                 contentWidth={singleGridWidth}
                 sheetName={activeWorkbookSection?.name ?? ''}
                 selection={selection}
                 fontSize={fontSize}
-                renderColumns={virtualColumns.columnEntries}
-                columnLayoutByColumn={virtualColumns.columnLayoutByColumn}
+                renderColumns={paneVirtualColumns.columnEntries}
+                columnLayoutByColumn={paneVirtualColumns.columnLayoutByColumn}
                 fixedSide={side === 'left' ? 'base' : 'mine'}
                 onSelectColumn={handleSelectColumn}
                 hiddenColumnSegments={sheetPresentation.hiddenColumnSegments}
@@ -1493,11 +1813,11 @@ const WorkbookHorizontalPanel = memo(({
               />
             </div>
             {frozenCanvasRows.length > 0 && (
-              <div style={{ position: 'sticky', left: 0, width: virtualColumns.debug.viewportWidth, overflow: 'hidden' }}>
+              <div style={{ position: 'sticky', left: 0, width: paneViewportWidth, overflow: 'hidden' }}>
                 <WorkbookPaneCanvasStrip
                   rows={frozenCanvasRows}
                   side={side === 'left' ? 'base' : 'mine'}
-                  viewportWidth={virtualColumns.debug.viewportWidth}
+                  viewportWidth={paneViewportWidth}
                   scrollRef={ref}
                   freezeColumnCount={freezeColumnCount}
                   contentWidth={singleGridWidth}
@@ -1509,8 +1829,8 @@ const WorkbookHorizontalPanel = memo(({
                   onHoverChange={setHoveredCanvasCell}
                   fontSize={fontSize}
                   visibleColumns={sheetPresentation.visibleColumns}
-                  renderColumns={virtualColumns.columnEntries}
-                  columnLayoutByColumn={virtualColumns.columnLayoutByColumn}
+                  renderColumns={paneVirtualColumns.columnEntries}
+                  columnLayoutByColumn={paneVirtualColumns.columnLayoutByColumn}
                   mergedRanges={side === 'left' ? sheetPresentation.baseMergeRanges : sheetPresentation.mineMergeRanges}
                   rowEntryByRowNumber={side === 'left' ? rowEntryByRowNumber.base : rowEntryByRowNumber.mine}
                   compareCellsByRowNumber={side === 'left' ? compareCellsByRowNumber.base : compareCellsByRowNumber.mine}
@@ -1525,6 +1845,7 @@ const WorkbookHorizontalPanel = memo(({
                   return (
                     <div key={`${side}-collapse-${segment.item.blockId}-${segment.item.hiddenStart}-${segment.item.hiddenEnd}`} style={{ position: 'absolute', top: segment.top, left: 0, minWidth: '100%' }}>
                       {renderPinnedCollapseBar(
+                        pinnedCollapseWidth,
                         segment.item.count,
                         Math.min(segment.item.count, segment.item.expandStep),
                         () => handleExpandCollapseBlock(
@@ -1579,11 +1900,11 @@ const WorkbookHorizontalPanel = memo(({
                       minWidth: '100%',
                       height: segment.height,
                     }}>
-                    <div style={{ position: 'sticky', left: 0, width: virtualColumns.debug.viewportWidth, overflow: 'hidden' }}>
+                    <div style={{ position: 'sticky', left: 0, width: paneViewportWidth, overflow: 'hidden' }}>
                       <WorkbookPaneCanvasStrip
                         rows={segment.rows}
                         side={side === 'left' ? 'base' : 'mine'}
-                        viewportWidth={virtualColumns.debug.viewportWidth}
+                        viewportWidth={paneViewportWidth}
                         scrollRef={ref}
                         freezeColumnCount={freezeColumnCount}
                         contentWidth={singleGridWidth}
@@ -1595,8 +1916,8 @@ const WorkbookHorizontalPanel = memo(({
                         onHoverChange={setHoveredCanvasCell}
                         fontSize={fontSize}
                         visibleColumns={sheetPresentation.visibleColumns}
-                        renderColumns={virtualColumns.columnEntries}
-                        columnLayoutByColumn={virtualColumns.columnLayoutByColumn}
+                        renderColumns={paneVirtualColumns.columnEntries}
+                        columnLayoutByColumn={paneVirtualColumns.columnLayoutByColumn}
                         mergedRanges={side === 'left' ? sheetPresentation.baseMergeRanges : sheetPresentation.mineMergeRanges}
                         rowEntryByRowNumber={side === 'left' ? rowEntryByRowNumber.base : rowEntryByRowNumber.mine}
                         compareCellsByRowNumber={side === 'left' ? compareCellsByRowNumber.base : compareCellsByRowNumber.mine}
@@ -1609,14 +1930,14 @@ const WorkbookHorizontalPanel = memo(({
           </div>
           <WorkbookActiveRegionOverlayLayer
             scrollRef={ref}
-            viewportWidth={virtualColumns.debug.viewportWidth}
+            viewportWidth={paneViewportWidth}
             stickyHeaderHeight={stickyHeaderHeight}
             activeDiffRegion={activeDiffRegion}
             activeSheetName={activeWorkbookSection?.name ?? null}
             visibleRowFrames={activeRegionOverlayVisibleRowFrames}
-            columnLayoutByColumn={virtualColumns.columnLayoutByColumn}
+            columnLayoutByColumn={paneVirtualColumns.columnLayoutByColumn}
             contentLeft={LN_W + 3}
-            frozenWidth={virtualColumns.frozenWidth}
+            frozenWidth={paneVirtualColumns.frozenWidth}
             freezeColumnCount={freezeColumnCount}
             resolvePatchBoundsModes={() => ['single']}
             fallbackBoundsModes={['single']}
@@ -1629,15 +1950,65 @@ const WorkbookHorizontalPanel = memo(({
       </div>
     </div>
   );
+  };
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
+    <div className="flex-1 flex flex-col overflow-hidden min-w-0 min-h-0">
       {showPerfDebug && <WorkbookPerfDebugPanel stats={perfStats} />}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
-        <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
-          <div style={{ flex: 1, display: 'flex', minWidth: 0, minHeight: 0 }}>
+      <div className="flex-1 flex overflow-hidden min-w-0 min-h-0">
+        <div className="relative flex-1 flex flex-col min-w-0 min-h-0">
+          <div
+            ref={paneContainerRef}
+            className="flex-1 min-w-0 min-h-0"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: paneGridTemplateColumns,
+              alignItems: 'stretch',
+            }}>
             {renderPane(leftScrollRef, 'left', () => handlePaneScroll('left'))}
-            <div style={{ width: 1, background: T.border, boxShadow: `0 0 0 1px ${T.border}` }} />
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="调整左右表格宽度"
+              aria-valuemin={Math.round(MIN_SPLIT_RATIO * 100)}
+              aria-valuemax={Math.round(MAX_SPLIT_RATIO * 100)}
+              aria-valuenow={Math.round(splitRatio * 100)}
+              tabIndex={0}
+              onPointerDown={handleSplitterPointerDown}
+              onKeyDown={handleSplitterKeyDown}
+              onDoubleClick={() => commitSplitRatio(DEFAULT_SPLIT_RATIO)}
+              style={{
+                position: 'relative',
+                cursor: 'col-resize',
+                touchAction: 'none',
+                background: isResizingSplitter ? cssAlpha('acc', '12') : 'transparent',
+                outline: 'none',
+              }}>
+              <div
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: 0,
+                  bottom: 0,
+                  width: 1,
+                  transform: 'translateX(-50%)',
+                  background: isResizingSplitter ? cssVar('acc') : cssVar('border'),
+                  boxShadow: `0 0 0 1px ${isResizingSplitter ? cssVar('acc') : cssVar('border')}`,
+                }}
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  width: 4,
+                  height: 56,
+                  transform: 'translate(-50%, -50%)',
+                  borderRadius: 999,
+                  background: isResizingSplitter ? cssAlpha('acc', '44') : cssAlpha('border', '66'),
+                }}
+              />
+            </div>
             {renderPane(rightScrollRef, 'right', () => handlePaneScroll('right'))}
           </div>
           <CollapseJumpButton

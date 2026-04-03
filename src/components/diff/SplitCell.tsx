@@ -2,22 +2,25 @@
 import { memo, useMemo } from 'react';
 import { FONT_CODE, FONT_SIZE } from '@/constants/typography';
 import { LN_W } from '@/constants/layout';
-import type { DiffLine, WorkbookSelectedCell } from '@/types';
-import { useTheme } from '@/context/theme';
+import type { DiffLine, Token, WorkbookSelectedCell } from '@/types';
 import { tokenize } from '@/engine/text/tokenizer';
 import { ROW_H } from '@/hooks/virtualization/useVirtual';
+import { cssAlpha, cssVar } from '@/theme/cssUtils';
 import type { HorizontalVirtualColumnEntry } from '@/hooks/virtualization/useHorizontalVirtualColumns';
 import type { WorkbookMergeRange } from '@/utils/workbook/workbookMeta';
 import Ln from '@/components/diff/Ln';
 import TokenText from '@/components/shared/TokenText';
+import type { TokenSearchRange } from '@/components/shared/TokenText';
 
 interface SplitCellProps {
   line: DiffLine | null;
   side: 'left' | 'right';
+  syntaxTokens?: Token[] | undefined;
   widthMode?: 'fill' | 'content';
   lineNumberLayout?: 'single' | 'paired';
   isSearchMatch: boolean;
   isActiveSearch: boolean;
+  searchRanges?: TokenSearchRange[] | undefined;
   showWhitespace: boolean;
   fontSize: number;
   sheetName?: string;
@@ -42,7 +45,7 @@ interface SplitCellProps {
   rowHighlightBg?: string | undefined;
 }
 
-function renderWithWhitespaceMark(text: string, T: ReturnType<typeof useTheme>) {
+function renderWithWhitespaceMark(text: string) {
   const trailingMatch = text.match(/(\s+)$/);
   if (!trailingMatch) return text;
   const body     = text.slice(0, text.length - trailingMatch[1]!.length);
@@ -50,7 +53,7 @@ function renderWithWhitespaceMark(text: string, T: ReturnType<typeof useTheme>) 
   return (
     <>
       {body}
-      <span style={{ color: T.t2, opacity: 0.5 }}>{trailing}</span>
+      <span className="text-text-secondary/50">{trailing}</span>
     </>
   );
 }
@@ -58,24 +61,25 @@ function renderWithWhitespaceMark(text: string, T: ReturnType<typeof useTheme>) 
 const SplitCell = memo(({
   line,
   side,
+  syntaxTokens,
   widthMode = 'fill',
   lineNumberLayout = 'single',
-  isSearchMatch,
+  isSearchMatch: _isSearchMatch,
   isActiveSearch,
+  searchRanges = [],
   showWhitespace,
   fontSize,
   isReplacementPair = false,
   rowHeightOverride,
   rowHighlightBg,
 }: SplitCellProps) => {
-  const T = useTheme();
   const resolvedRowHeight = rowHeightOverride ?? ROW_H;
   const lineNumberTone = side === 'left' ? 'base' : 'mine';
   const isContentWidth = widthMode === 'content';
   const usesPairedLineNumbers = lineNumberLayout === 'paired';
   const gutterWidth = usesPairedLineNumbers ? LN_W * 2 : LN_W;
   const content = line?.base ?? line?.mine ?? '';
-  const tokens = useMemo(() => tokenize(content), [content]);
+  const tokens = useMemo(() => syntaxTokens ?? tokenize(content), [content, syntaxTokens]);
 
   const renderLineNumberGutter = (currentLine: DiffLine | null) => (
     <div style={{
@@ -86,18 +90,17 @@ const SplitCell = memo(({
       position: 'sticky',
       left: 0,
       zIndex: 4,
-      background: T.lnBg,
-      boxShadow: `10px 0 14px -14px ${T.border2}`,
+      background: cssVar('lnBg'),
+      boxShadow: `10px 0 14px -14px ${cssVar('border2')}`,
     }}>
       {usesPairedLineNumbers ? (
         <>
-          <Ln n={currentLine?.baseLineNo ?? null} T={T} active={isActiveSearch} tone="base" />
-          <Ln n={currentLine?.mineLineNo ?? null} T={T} active={isActiveSearch} tone="mine" />
+          <Ln n={currentLine?.baseLineNo ?? null} active={isActiveSearch} tone="base" />
+          <Ln n={currentLine?.mineLineNo ?? null} active={isActiveSearch} tone="mine" />
         </>
       ) : (
         <Ln
           n={side === 'left' ? (currentLine?.baseLineNo ?? null) : (currentLine?.mineLineNo ?? null)}
-          T={T}
           active={isActiveSearch}
           tone={lineNumberTone}
         />
@@ -112,13 +115,13 @@ const SplitCell = memo(({
         flex: isContentWidth ? '0 0 auto' : 1,
         display: 'flex',
         height: resolvedRowHeight,
-        borderLeft: `3px solid ${T.bg4}`,
+        borderLeft: `3px solid ${cssVar('bg4')}`,
         width: isContentWidth ? 'max-content' : undefined,
         minWidth: 0,
         isolation: 'isolate',
       }}>
         {renderLineNumberGutter(null)}
-        <div style={{ flex: 1, background: T.bg2, minWidth: 0 }} />
+        <div style={{ flex: 1, background: cssVar('bg2'), minWidth: 0 }} />
       </div>
     );
   }
@@ -127,23 +130,20 @@ const SplitCell = memo(({
   const isDel    = line.type === 'delete';
   const isModify = isReplacementPair;
   const useModifyTone = isModify;
-  const bg       = useModifyTone ? T.chgBg : isAdd ? T.addBg  : isDel ? T.delBg  : 'transparent';
-  const brd      = useModifyTone ? T.chgTx : isAdd ? T.addBrd : isDel ? T.delBrd : 'transparent';
+  const bg       = useModifyTone ? cssVar('chgBg') : isAdd ? cssVar('addBg')  : isDel ? cssVar('delBg')  : 'transparent';
+  const brd      = useModifyTone ? cssVar('chgTx') : isAdd ? cssVar('addBrd') : isDel ? cssVar('delBrd') : 'transparent';
   const pfx      = isAdd ? '+' : isDel ? '-' : ' ';
-  const pfxC     = useModifyTone ? T.chgTx : isAdd ? T.addTx  : isDel ? T.delTx  : T.t2;
-  const hlBg     = useModifyTone ? `${T.chgTx}40` : isDel ? T.delHl  : T.addHl;
+  const pfxC     = useModifyTone ? cssVar('chgTx') : isAdd ? cssVar('addTx')  : isDel ? cssVar('delTx')  : cssVar('t2');
+  const hlBg     = useModifyTone ? cssAlpha('chgTx', '40') : isDel ? cssVar('delHl')  : cssVar('addHl');
   const charSpans = side === 'left' ? line.baseCharSpans : line.mineCharSpans;
   const hasInlineModifyHighlight = isModify && Boolean(charSpans && charSpans.length > 0);
-  const searchBg = rowHighlightBg ?? (isActiveSearch
-    ? T.searchActiveBg
-    : isSearchMatch
-    ? `${T.searchHl}28`
-    : undefined);
+  const hasSearchRanges = searchRanges.length > 0;
+  const searchBg = rowHighlightBg;
   const contentBg = searchBg;
-  const inlineBg = searchBg
+  const inlineBg = searchBg || hasSearchRanges
     ? undefined
     : useModifyTone
-      ? (hasInlineModifyHighlight ? undefined : T.chgBg)
+      ? (hasInlineModifyHighlight ? undefined : cssVar('chgBg'))
       : bg;
 
   return (
@@ -155,6 +155,10 @@ const SplitCell = memo(({
       width: isContentWidth ? 'max-content' : undefined,
       minWidth: 0,
       isolation: 'isolate',
+      borderRadius: isActiveSearch ? 6 : undefined,
+      boxShadow: isActiveSearch
+        ? `inset 0 0 0 1px ${cssAlpha('searchHl', 'cc')}, 0 0 0 1px ${cssAlpha('searchHl', '30')}`
+        : undefined,
     }}>
       {renderLineNumberGutter(line)}
       <div style={{
@@ -162,6 +166,9 @@ const SplitCell = memo(({
         display: 'flex',
         minWidth: 0,
         background: contentBg,
+        backgroundImage: isActiveSearch
+          ? `linear-gradient(90deg, ${cssAlpha('searchHl', '22')} 0%, transparent 26%)`
+          : undefined,
         position: 'relative',
         zIndex: 1,
       }}>
@@ -181,7 +188,7 @@ const SplitCell = memo(({
           paddingRight: 6,
           whiteSpace: 'pre', fontSize,
           lineHeight: `${resolvedRowHeight}px`,
-          color: T.t0,
+          color: cssVar('t0'),
           fontFamily: FONT_CODE,
           minWidth: isContentWidth ? 'max-content' : 0,
           position: 'relative',
@@ -194,9 +201,18 @@ const SplitCell = memo(({
             padding: inlineBg ? '0 2px' : 0,
             borderRadius: inlineBg ? 2 : 0,
           }}>
-            {showWhitespace && !charSpans
-              ? renderWithWhitespaceMark(content, T)
-              : <TokenText tokens={tokens} charSpans={charSpans} hlBg={hlBg} />}
+            {showWhitespace && !charSpans && searchRanges.length === 0
+              ? renderWithWhitespaceMark(content)
+              : (
+                <TokenText
+                  tokens={tokens}
+                  charSpans={charSpans}
+                  hlBg={hlBg}
+                  searchRanges={searchRanges}
+                  searchHlBg={cssAlpha('searchHl', '3a')}
+                  activeSearchHlBg={cssAlpha('searchHl', '66')}
+                />
+              )}
           </span>
         </span>
       </div>

@@ -1,7 +1,6 @@
 import { memo } from 'react';
-import { FONT_SIZE, FONT_UI } from '@/constants/typography';
+import { X } from 'lucide-react';
 import { useI18n } from '@/context/i18n';
-import { useTheme } from '@/context/theme';
 import type { DiffSourceNoticeCode } from '@/types';
 import Tooltip from '@/components/shared/Tooltip';
 
@@ -11,7 +10,6 @@ interface DiffSourceNoticeBarProps {
 }
 
 const DiffSourceNoticeBar = memo(({ code, onClose }: DiffSourceNoticeBarProps) => {
-  const T = useTheme();
   const { t } = useI18n();
 
   const title = code === 'unversioned-working-copy'
@@ -25,51 +23,17 @@ const DiffSourceNoticeBar = memo(({ code, onClose }: DiffSourceNoticeBarProps) =
     <div
       role="status"
       aria-live="polite"
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1fr) 28px',
-        gap: 12,
-        alignItems: 'center',
-        padding: '10px 14px',
-        margin: '0 10px',
-        borderRadius: 14,
-        border: `1px solid ${T.acc}35`,
-        background: `linear-gradient(180deg, ${T.bg0} 0%, ${T.bg1} 100%)`,
-        boxShadow: `0 12px 24px -24px ${T.acc}55, inset 0 1px 0 ${T.bg0}`,
-        position: 'relative',
-        overflow: 'hidden',
-        flexShrink: 0,
-      }}>
-      <div
-        style={{
-          minWidth: 0,
-          width: '100%',
-          textAlign: 'center',
-          justifySelf: 'center',
-          position: 'relative',
-          zIndex: 1,
-        }}>
-        <div
-          style={{
-            color: T.acc,
-            fontFamily: FONT_UI,
-            fontSize: FONT_SIZE.sm,
-            fontWeight: 800,
-            lineHeight: 1.35,
-            textAlign: 'center',
-            textShadow: `0 1px 0 ${T.bg0}`,
-          }}>
+      className="
+        grid grid-cols-[minmax(0,1fr)_28px] gap-3 items-center
+        py-2.5 px-3.5 mx-2.5 rounded-[14px]
+        border border-accent/20 bg-bg-base
+        shadow-sm relative overflow-hidden shrink-0
+      ">
+      <div className="min-w-0 w-full text-center justify-self-center relative z-[1]">
+        <div className="text-accent font-ui text-[13px] font-extrabold leading-tight text-center">
           {title}
         </div>
-        <div
-          style={{
-            marginTop: 4,
-            color: T.t1,
-            fontFamily: FONT_UI,
-            fontSize: FONT_SIZE.sm,
-            lineHeight: 1.45,
-            textAlign: 'center',
-          }}>
+        <div className="mt-1 text-text-primary font-ui text-[13px] leading-snug text-center">
           {body}
         </div>
       </div>
@@ -79,25 +43,15 @@ const DiffSourceNoticeBar = memo(({ code, onClose }: DiffSourceNoticeBarProps) =
           type="button"
           onClick={onClose}
           aria-label={t('sourceNoticeDismiss')}
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: 10,
-            border: `1px solid ${T.border}`,
-            background: `${T.bg0}cc`,
-            color: T.t2,
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 16,
-            lineHeight: 1,
-            fontFamily: FONT_UI,
-            flexShrink: 0,
-            position: 'relative',
-            zIndex: 1,
-          }}>
-          ×
+          className="
+            size-7 rounded-[10px] border border-border-default
+            bg-bg-base/80 text-text-secondary
+            cursor-pointer inline-flex items-center justify-center
+            shrink-0 relative z-[1]
+            hover:bg-bg-surface-hover hover:text-accent
+            active:scale-95 transition-all duration-150
+          ">
+          <X size={14} />
         </button>
       </Tooltip>
     </div>

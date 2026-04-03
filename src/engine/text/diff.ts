@@ -14,6 +14,7 @@ const CHAR_DIFF_LINE_LIMIT = 1000;
 const MAX_CHAR_DIFF_PAIRS_PER_BLOCK = 240;
 const MAX_TOTAL_CHAR_DIFF_PAIRS = 1_500;
 const MAX_TOTAL_CHAR_DIFF_CHARS = 250_000;
+const splitRowsCache = new WeakMap<DiffLine[], SplitRow[]>();
 
 // ── Patience LCS ──────────────────────────────────────────────────────────────
 
@@ -28,6 +29,27 @@ interface LCSEntry { biIdx: number; miIdx: number; }
 interface CharDiffBudget {
   remainingPairs: number;
   remainingChars: number;
+}
+
+function appendSharedEqualLines(
+  result: DiffLine[],
+  baseLines: readonly string[],
+  mineLines: readonly string[],
+  baseStartIdx: number,
+  mineStartIdx: number,
+  count: number,
+): void {
+  for (let index = 0; index < count; index += 1) {
+    const baseLineIdx = baseStartIdx + index;
+    const mineLineIdx = mineStartIdx + index;
+    result.push(makeLine(
+      'equal',
+      baseLines[baseLineIdx]!,
+      mineLines[mineLineIdx]!,
+      baseLineIdx + 1,
+      mineLineIdx + 1,
+    ));
+  }
 }
 
 function patienceLCS(a: string[], b: string[]): LCSEntry[] {
@@ -219,10 +241,15 @@ function findUniqueCommonAnchors(baseLines: string[], mineLines: string[]): LCSE
   return longestIncreasingAnchors(candidates);
 }
 
-function buildFallbackDiff(baseLines: string[], mineLines: string[]): DiffLine[] {
+function buildFallbackDiff(
+  baseLines: string[],
+  mineLines: string[],
+  baseOffset = 0,
+  mineOffset = 0,
+): DiffLine[] {
   const anchors = findUniqueCommonAnchors(baseLines, mineLines);
   if (anchors.length === 0) {
-    return buildAnchoredReplacementDiff(baseLines, mineLines);
+    return buildAnchoredReplacementDiff(baseLines, mineLines, baseOffset, mineOffset);
   }
 
   const result: DiffLine[] = [];
@@ -233,15 +260,15 @@ function buildFallbackDiff(baseLines: string[], mineLines: string[]): DiffLine[]
     result.push(...buildAnchoredReplacementDiff(
       baseLines.slice(baseStart, anchor.biIdx),
       mineLines.slice(mineStart, anchor.miIdx),
-      baseStart,
-      mineStart,
+      baseOffset + baseStart,
+      mineOffset + mineStart,
     ));
     result.push(makeLine(
       'equal',
       baseLines[anchor.biIdx]!,
       mineLines[anchor.miIdx]!,
-      anchor.biIdx + 1,
-      anchor.miIdx + 1,
+      baseOffset + anchor.biIdx + 1,
+      mineOffset + anchor.miIdx + 1,
     ));
     baseStart = anchor.biIdx + 1;
     mineStart = anchor.miIdx + 1;
@@ -250,9 +277,64 @@ function buildFallbackDiff(baseLines: string[], mineLines: string[]): DiffLine[]
   result.push(...buildAnchoredReplacementDiff(
     baseLines.slice(baseStart),
     mineLines.slice(mineStart),
-    baseStart,
-    mineStart,
+    baseOffset + baseStart,
+    mineOffset + mineStart,
   ));
+
+  return result;
+}
+
+function buildDiffFromLineArrays(
+  baseLines: string[],
+  mineLines: string[],
+  baseLineOffset: number,
+  mineLineOffset: number,
+  charDiffBudget: CharDiffBudget,
+): DiffLine[] {
+  if (
+    baseLines.length > MAX_LINES_FOR_DIFF
+    || mineLines.length > MAX_LINES_FOR_DIFF
+    || exceedsLcsCandidatePairBudget(baseLines, mineLines)
+  ) {
+    return buildFallbackDiff(baseLines, mineLines, baseLineOffset, mineLineOffset);
+  }
+
+  const result: DiffLine[] = [];
+  const lcs = patienceLCS(baseLines, mineLines);
+  let bi = 0, mi = 0, li = 0;
+
+  while (bi < baseLines.length || mi < mineLines.length) {
+    const anchor = li < lcs.length ? lcs[li] : null;
+
+    if (anchor && bi === anchor.biIdx && mi === anchor.miIdx) {
+      result.push(makeLine(
+        'equal',
+        baseLines[bi]!,
+        mineLines[mi]!,
+        baseLineOffset + bi + 1,
+        mineLineOffset + mi + 1,
+      ));
+      bi += 1;
+      mi += 1;
+      li += 1;
+    } else {
+      const delEnd = anchor ? anchor.biIdx : baseLines.length;
+      const addEnd = anchor ? anchor.miIdx : mineLines.length;
+      const safeDelEnd = Math.max(bi, delEnd);
+      const safeAddEnd = Math.max(mi, addEnd);
+
+      emitChangeBlock(
+        result,
+        baseLines.slice(bi, safeDelEnd),
+        mineLines.slice(mi, safeAddEnd),
+        baseLineOffset + bi,
+        mineLineOffset + mi,
+        charDiffBudget,
+      );
+      bi = safeDelEnd;
+      mi = safeAddEnd;
+    }
+  }
 
   return result;
 }
@@ -270,44 +352,44 @@ export function computeDiff(baseText: string, mineText: string): DiffLine[] {
     remainingPairs: MAX_TOTAL_CHAR_DIFF_PAIRS,
     remainingChars: MAX_TOTAL_CHAR_DIFF_CHARS,
   };
-
-  if (
-    baseLines.length > MAX_LINES_FOR_DIFF
-    || mineLines.length > MAX_LINES_FOR_DIFF
-    || exceedsLcsCandidatePairBudget(baseLines, mineLines)
+  const sharedLineLimit = Math.min(baseLines.length, mineLines.length);
+  let sharedPrefixCount = 0;
+  while (
+    sharedPrefixCount < sharedLineLimit
+    && baseLines[sharedPrefixCount] === mineLines[sharedPrefixCount]
   ) {
-    return buildFallbackDiff(baseLines, mineLines);
+    sharedPrefixCount += 1;
   }
 
+  let sharedSuffixCount = 0;
+  const sharedSuffixLimit = sharedLineLimit - sharedPrefixCount;
+  while (
+    sharedSuffixCount < sharedSuffixLimit
+    && baseLines[baseLines.length - 1 - sharedSuffixCount]
+    === mineLines[mineLines.length - 1 - sharedSuffixCount]
+  ) {
+    sharedSuffixCount += 1;
+  }
+
+  const middleBaseEnd = baseLines.length - sharedSuffixCount;
+  const middleMineEnd = mineLines.length - sharedSuffixCount;
   const result: DiffLine[] = [];
-  const lcs = patienceLCS(baseLines, mineLines);
-  let bi = 0, mi = 0, li = 0;
-
-  while (bi < baseLines.length || mi < mineLines.length) {
-    const anchor = li < lcs.length ? lcs[li] : null;
-
-    if (anchor && bi === anchor.biIdx && mi === anchor.miIdx) {
-      // In-bounds: bi < baseLines.length and mi < mineLines.length guaranteed by anchor
-      result.push(makeLine('equal', baseLines[bi]!, mineLines[mi]!, bi + 1, mi + 1));
-      bi++; mi++; li++;
-    } else {
-      const delEnd    = anchor ? anchor.biIdx : baseLines.length;
-      const addEnd    = anchor ? anchor.miIdx : mineLines.length;
-      const safeDelEnd = Math.max(bi, delEnd);
-      const safeAddEnd = Math.max(mi, addEnd);
-
-      emitChangeBlock(
-        result,
-        baseLines.slice(bi, safeDelEnd),
-        mineLines.slice(mi, safeAddEnd),
-        bi,
-        mi,
-        charDiffBudget,
-      );
-      bi = safeDelEnd;
-      mi = safeAddEnd;
-    }
-  }
+  appendSharedEqualLines(result, baseLines, mineLines, 0, 0, sharedPrefixCount);
+  result.push(...buildDiffFromLineArrays(
+    baseLines.slice(sharedPrefixCount, middleBaseEnd),
+    mineLines.slice(sharedPrefixCount, middleMineEnd),
+    sharedPrefixCount,
+    sharedPrefixCount,
+    charDiffBudget,
+  ));
+  appendSharedEqualLines(
+    result,
+    baseLines,
+    mineLines,
+    middleBaseEnd,
+    middleMineEnd,
+    sharedSuffixCount,
+  );
 
   return result;
 }
@@ -438,6 +520,9 @@ export function computeHunks(diffLines: DiffLine[]): Hunk[] {
 // ── Split-view alignment ──────────────────────────────────────────────────────
 
 export function buildSplitRows(diffLines: DiffLine[]): SplitRow[] {
+  const cached = splitRowsCache.get(diffLines);
+  if (cached) return cached;
+
   const rows: SplitRow[] = [];
   let i = 0;
 
@@ -482,5 +567,6 @@ export function buildSplitRows(diffLines: DiffLine[]): SplitRow[] {
     if (i === blockStart) i++; // infinite-loop guard
   }
 
+  splitRowsCache.set(diffLines, rows);
   return rows;
 }

@@ -1,7 +1,6 @@
 import { memo } from 'react';
-import { FONT_CODE, FONT_SIZE, FONT_UI } from '@/constants/typography';
 import { useI18n } from '@/context/i18n';
-import { useTheme } from '@/context/theme';
+import { cssAlpha, cssVar } from '@/theme/cssUtils';
 import type { DiffPerformanceMetrics } from '@/types';
 import { copyText } from '@/utils/app/clipboard';
 import {
@@ -14,39 +13,15 @@ interface PerfBarProps {
 }
 
 const PerfBar = memo(({ metrics }: PerfBarProps) => {
-  const T = useTheme();
   const { t } = useI18n();
 
   if (!metrics) return null;
 
-  const chip = (label: string, value: string, accent = T.acc2) => (
-    <div
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        padding: '4px 8px',
-        borderRadius: 999,
-        background: T.bg2,
-        border: `1px solid ${T.border}`,
-        color: T.t1,
-        minWidth: 0,
-      }}>
-      <span
-        style={{
-          width: 6,
-          height: 6,
-          borderRadius: 999,
-          background: accent,
-          flexShrink: 0,
-        }}
-      />
-      <span style={{ fontFamily: FONT_UI, fontSize: FONT_SIZE.xs, color: T.t2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-        {label}
-      </span>
-      <span style={{ fontFamily: FONT_CODE, fontSize: FONT_SIZE.sm, color: T.t0, fontWeight: 700 }}>
-        {value}
-      </span>
+  const chip = (label: string, value: string, accent = cssVar('acc2')) => (
+    <div className="inline-flex items-center gap-1.5 py-1 px-2 rounded-full bg-bg-surface-hover border border-border-default text-text-primary min-w-0">
+      <span className="size-1.5 rounded-full shrink-0" style={{ background: accent }} />
+      <span className="font-ui text-[11px] text-text-secondary font-bold uppercase tracking-wider">{label}</span>
+      <span className="font-code text-[13px] text-text-title font-bold">{value}</span>
     </div>
   );
 
@@ -62,80 +37,41 @@ const PerfBar = memo(({ metrics }: PerfBarProps) => {
     'revision-switch': t('perfSource_revision-switch'),
     'local-dev': t('perfSource_local-dev'),
   }[metrics.source];
-  const handleCopyWorkbookDebug = () => {
-    copyText(getWorkbookDebugLogSnapshot());
-  };
-  const handleClearWorkbookDebug = () => {
-    clearWorkbookDebugLogs();
-  };
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '8px 12px',
-        width: '100%',
-        minWidth: 0,
-        background: `linear-gradient(180deg, ${T.bg1} 0%, ${T.bg0} 100%)`,
-        borderBottom: `1px solid ${T.border}`,
-        flexShrink: 0,
-        overflowX: 'auto',
-      }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 120 }}>
-        <span style={{ fontFamily: FONT_UI, fontSize: FONT_SIZE.sm, color: T.t0, fontWeight: 700 }}>
-          {t('perfTitle')}
-        </span>
-        <span style={{ fontFamily: FONT_UI, fontSize: FONT_SIZE.xs, color: T.t2 }}>
-          {sourceLabel}
-        </span>
+    <div className="flex items-center gap-2 py-2 px-3 w-full min-w-0 border-b border-border-default shrink-0 overflow-x-auto bg-bg-surface-solid">
+      <div className="flex flex-col gap-0.5 min-w-[120px]">
+        <span className="font-ui text-[13px] text-text-title font-bold">{t('perfTitle')}</span>
+        <span className="font-ui text-[11px] text-text-secondary">{sourceLabel}</span>
       </div>
 
-      {chip(t('perfMainLoad'), formatMs(metrics.mainLoadMs), T.acc)}
-      {chip(t('perfBaseRead'), formatMs(metrics.baseReadMs), T.acc2)}
-      {chip(t('perfMineRead'), formatMs(metrics.mineReadMs), T.acc)}
-      {chip(t('perfBaseParse'), formatMs(metrics.baseParserMs), T.acc2)}
-      {chip(t('perfMineParse'), formatMs(metrics.mineParserMs), T.acc)}
-      {chip(t('perfTextResolve'), formatMs(metrics.textResolveMs), T.acc2)}
-      {chip(t('perfMetadata'), formatMs(metrics.metadataMs), T.acc)}
-      {chip(t('perfDiff'), formatMs(metrics.diffMs), T.acc2)}
-      {chip(t('perfTotal'), formatMs(metrics.totalAppMs), T.acc)}
-      {chip(t('perfBaseBytes'), formatBytes(metrics.baseBytes), T.acc2)}
-      {chip(t('perfMineBytes'), formatBytes(metrics.mineBytes), T.acc)}
-      {chip(t('perfDiffLines'), typeof metrics.diffLineCount === 'number' ? String(metrics.diffLineCount) : '—', T.acc2)}
+      {chip(t('perfMainLoad'), formatMs(metrics.mainLoadMs), cssVar('acc'))}
+      {chip(t('perfBaseRead'), formatMs(metrics.baseReadMs), cssVar('acc2'))}
+      {chip(t('perfMineRead'), formatMs(metrics.mineReadMs), cssVar('acc'))}
+      {chip(t('perfBaseParse'), formatMs(metrics.baseParserMs), cssVar('acc2'))}
+      {chip(t('perfMineParse'), formatMs(metrics.mineParserMs), cssVar('acc'))}
+      {chip(t('perfTextResolve'), formatMs(metrics.textResolveMs), cssVar('acc2'))}
+      {chip(t('perfMetadata'), formatMs(metrics.metadataMs), cssVar('acc'))}
+      {chip(t('perfDiff'), formatMs(metrics.diffMs), cssVar('acc2'))}
+      {chip(t('perfTotal'), formatMs(metrics.totalAppMs), cssVar('acc'))}
+      {chip(t('perfBaseBytes'), formatBytes(metrics.baseBytes), cssVar('acc2'))}
+      {chip(t('perfMineBytes'), formatBytes(metrics.mineBytes), cssVar('acc'))}
+      {chip(t('perfDiffLines'), typeof metrics.diffLineCount === 'number' ? String(metrics.diffLineCount) : '—', cssVar('acc2'))}
       <button
         type="button"
-        onClick={handleCopyWorkbookDebug}
+        onClick={() => { void copyText(getWorkbookDebugLogSnapshot()); }}
+        className="rounded-full py-1 px-2.5 font-ui text-[11px] font-bold cursor-pointer shrink-0 transition-all duration-150 hover:-translate-y-px"
         style={{
-          border: `1px solid ${T.acc2}66`,
-          background: `${T.acc2}10`,
-          color: T.acc2,
-          borderRadius: 999,
-          padding: '4px 10px',
-          fontFamily: FONT_UI,
-          fontSize: FONT_SIZE.xs,
-          fontWeight: 700,
-          cursor: 'pointer',
-          flexShrink: 0,
+          border: `1px solid ${cssAlpha('acc2', '66')}`,
+          background: cssAlpha('acc2', '10'),
+          color: cssVar('acc2'),
         }}>
         复制Workbook日志
       </button>
       <button
         type="button"
-        onClick={handleClearWorkbookDebug}
-        style={{
-          border: `1px solid ${T.border}`,
-          background: T.bg2,
-          color: T.t1,
-          borderRadius: 999,
-          padding: '4px 10px',
-          fontFamily: FONT_UI,
-          fontSize: FONT_SIZE.xs,
-          fontWeight: 700,
-          cursor: 'pointer',
-          flexShrink: 0,
-        }}>
+        onClick={() => clearWorkbookDebugLogs()}
+        className="rounded-full py-1 px-2.5 bg-bg-surface-hover border border-border-default text-text-primary font-ui text-[11px] font-bold cursor-pointer shrink-0 transition-all duration-150 hover:-translate-y-px">
         清空Workbook日志
       </button>
     </div>

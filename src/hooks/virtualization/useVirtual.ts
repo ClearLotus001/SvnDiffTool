@@ -110,10 +110,15 @@ export function useVirtual(
   const rangeUpdateCountRef = useRef(1);
   const syncKeyRef = useRef(syncKey);
 
+  // Use ref for count to avoid recreating applyWindowRange (and thus
+  // re-attaching scroll/ResizeObserver listeners) every time count changes.
+  const countRef = useRef(count);
+  countRef.current = count;
+
   const applyWindowRange = useCallback((scrollTop: number, nextViewH: number) => {
     const calcStart = getNow();
     const nextRange = computeVirtualWindow(
-      count,
+      countRef.current,
       rowHeight,
       nextViewH,
       scrollTop,
@@ -136,7 +141,7 @@ export function useVirtual(
     rangeRef.current = nextRange;
     rangeUpdateCountRef.current += 1;
     setWindowRange(nextRange);
-  }, [count, overscanFactor, overscanMin, rowHeight]);
+  }, [overscanFactor, overscanMin, rowHeight]);
 
   // ResizeObserver — stable ref, runs once
   useEffect(() => {
@@ -180,13 +185,19 @@ export function useVirtual(
     applyWindowRange(latestScrollTopRef.current, viewHRef.current);
   }, [applyWindowRange]);
 
+  // When count changes, recompute window range without recreating scroll listeners
+  useEffect(() => {
+    applyWindowRange(latestScrollTopRef.current, viewHRef.current);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [count]);
+
   useLayoutEffect(() => {
     if (syncKeyRef.current === syncKey) return;
     syncKeyRef.current = syncKey;
     latestScrollTopRef.current = 0;
     const el = scrollRef.current;
-    if (el && el.scrollTop !== 0) {
-      el.scrollTo({ top: 0, behavior: 'auto' });
+    if (el && (el.scrollTop !== 0 || el.scrollLeft !== 0)) {
+      el.scrollTo({ top: 0, left: 0, behavior: 'auto' });
     }
     const nextRange = computeVirtualWindow(
       count,

@@ -1,8 +1,6 @@
 import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { FONT_SIZE, FONT_UI } from '@/constants/typography';
-import { useTheme } from '@/context/theme';
-import { computeTooltipLayout, getTooltipSurfaceBackground, TooltipArrow } from '@/components/shared/Tooltip';
+import { computeTooltipLayout, TooltipArrow } from '@/components/shared/Tooltip';
 
 export interface WorkbookAnchorTooltipState {
   key: string;
@@ -22,7 +20,6 @@ interface WorkbookAnchorTooltipProps {
 }
 
 const WorkbookAnchorTooltip = memo(({ hover }: WorkbookAnchorTooltipProps) => {
-  const T = useTheme();
   const bubbleRef = useRef<HTMLDivElement>(null);
   const [bubbleSize, setBubbleSize] = useState({ width: 180, height: 36 });
 
@@ -50,34 +47,18 @@ const WorkbookAnchorTooltip = memo(({ hover }: WorkbookAnchorTooltipProps) => {
       'top',
     );
   }, [bubbleSize.height, bubbleSize.width, hover]);
-  const surfaceBackground = getTooltipSurfaceBackground(T);
 
   if (!hover || !layout || typeof document === 'undefined') return null;
 
   return createPortal(
     <div
-      style={{
-        position: 'fixed',
-        left: layout.left,
-        top: layout.top,
-        zIndex: 9999,
-        pointerEvents: 'none',
-      }}>
+      className="fixed z-[9999] pointer-events-none"
+      style={{ left: layout.left, top: layout.top }}>
       <div
         ref={bubbleRef}
+        className="relative max-w-[280px] px-2.5 py-1.5 rounded-[10px] font-ui text-app-xs leading-[1.35] whitespace-nowrap shadow-[0_14px_30px_rgba(0,0,0,0.12)] border border-border-default text-text-title"
         style={{
-          position: 'relative',
-          maxWidth: 280,
-          padding: '6px 10px',
-          borderRadius: 10,
-          border: `1px solid ${T.border}`,
-          background: surfaceBackground,
-          color: T.t0,
-          fontSize: FONT_SIZE.sm,
-          lineHeight: 1.35,
-          fontFamily: FONT_UI,
-          boxShadow: '0 14px 30px rgba(0, 0, 0, 0.12)',
-          whiteSpace: 'nowrap',
+          background: `linear-gradient(180deg, var(--bg-surface-hover) 0%, var(--bg-surface-solid) 100%)`,
         }}>
         {hover.text}
         <TooltipArrow
@@ -85,8 +66,8 @@ const WorkbookAnchorTooltip = memo(({ hover }: WorkbookAnchorTooltipProps) => {
           left={layout.arrowOffset}
           width={14}
           height={8}
-          borderColor={T.border}
-          fillColor={layout.actualPlacement === 'top' ? T.bg1 : T.bg2}
+          borderColor="var(--border-color)"
+          fillColor={layout.actualPlacement === 'top' ? 'var(--bg-surface-solid)' : 'var(--bg-surface-hover)'}
         />
       </div>
     </div>,

@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useMemo, useRef, type RefObject } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import type { HorizontalVirtualColumnEntry } from '@/hooks/virtualization/useHorizontalVirtualColumns';
 import { LN_W } from '@/constants/layout';
 import { FONT_CODE, FONT_UI, getWorkbookFontScale } from '@/constants/typography';
@@ -53,7 +53,7 @@ import {
   resolveWorkbookRowRuleColor,
   resolveWorkbookRowSurfaceBackground,
 } from '@/utils/workbook/workbookRowVisuals';
-import { useTheme } from '@/context/theme';
+import { useThemeTokens } from '@/context/theme';
 import type {
   SplitRow,
   WorkbookCompareMode,
@@ -66,6 +66,7 @@ import { ROW_H } from '@/hooks/virtualization/useVirtual';
 import type { WorkbookMergeRange } from '@/utils/workbook/workbookMeta';
 import type { WorkbookCanvasHoverCell } from '@/components/workbook/WorkbookCanvasHoverTooltip';
 import useWorkbookCanvasHoverController from '@/components/workbook/useWorkbookCanvasHoverController';
+import useWorkbookCanvasSelectionInteractions from '@/components/workbook/useWorkbookCanvasSelectionInteractions';
 import {
   getWorkbookStackedBandDisplayRowNumber,
   getWorkbookStackedVisibleBands,
@@ -211,9 +212,10 @@ const WorkbookStackedCanvasStrip = memo(({
   mineCompareCellsByRowNumber,
   compareMode,
 }: WorkbookStackedCanvasStripProps) => {
-  const T = useTheme();
+  const T = useThemeTokens();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef(0);
+  const [dragPreviewActive, setDragPreviewActive] = useState(false);
   const sizes = useMemo(() => getWorkbookFontScale(fontSize), [fontSize]);
   const renderedColumnNumbers = useMemo(() => renderColumns.map(entry => entry.column), [renderColumns]);
   const groupFrames = useMemo<CanvasGroupFrame[]>(
@@ -441,6 +443,16 @@ const WorkbookStackedCanvasStrip = memo(({
     return bands;
   }, [groupRuntimes]);
 
+  const columnPartition = useMemo(() => {
+    const frozenEntries = renderColumns.filter(column => column.position < freezeColumnCount);
+    const floatingEntries = renderColumns.filter(column => column.position >= freezeColumnCount);
+    const frozenWidth = frozenEntries.reduce((sum, entry) => sum + entry.displayWidth, 0);
+    const contentLeft = LN_W + 3;
+    return { frozenEntries, floatingEntries, frozenWidth, contentLeft };
+  }, [renderColumns, freezeColumnCount]);
+
+  const drawRef = useRef<() => void>(() => {});
+
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -467,18 +479,13 @@ const WorkbookStackedCanvasStrip = memo(({
       const scrollBorderRegistry = createWorkbookCanvasBorderRegistry();
       const frozenBorderRegistry = createWorkbookCanvasBorderRegistry();
 
-      const frozenWidth = renderColumns
-        .filter(entry => entry.position < freezeColumnCount)
-        .reduce((sum, entry) => sum + entry.displayWidth, 0);
-      const contentLeft = LN_W + 3;
+      const { frozenWidth, contentLeft, frozenEntries, floatingEntries } = columnPartition;
       const layerViewports = getWorkbookCanvasLayerViewports({
         contentLeft,
         contentRight,
         frozenWidth,
       });
       const scrollViewport = layerViewports.scroll ?? layerViewports.content;
-      const frozenEntries = renderColumns.filter(column => column.position < freezeColumnCount);
-      const floatingEntries = renderColumns.filter(column => column.position >= freezeColumnCount);
       const drawBandChrome = (band: CanvasBand) => {
         const entry = band.entry;
         const y = band.y;
@@ -642,7 +649,22 @@ const WorkbookStackedCanvasStrip = memo(({
           const hasContent = hasWorkbookCellContent(cell, compareMode);
           const selectionRowNumber = anchorRowNumber;
           const selectionColumn = anchorColumn;
-          const selectionVisual = getWorkbookSelectionVisualState(T, selectionLookup, sheetName, band.side, selectionRowNumber, selectionColumn);
+          const selectionVisual = getWorkbookSelectionVisualState(
+            T,
+            selectionLookup,
+            sheetName,
+            band.side,
+            selectionRowNumber,
+            selectionColumn,
+            band.isActiveSearch,
+            dragPreviewActive,
+            {
+              startRow: mergeInfo.region?.range.startRow ?? selectionRowNumber,
+              endRow: mergeInfo.region?.range.endRow ?? selectionRowNumber,
+              startColumn: mergeInfo.region?.range.startCol ?? selectionColumn,
+              endColumn: mergeInfo.region?.range.endCol ?? selectionColumn,
+            },
+          );
           const cellVisual = resolveWorkbookCompareCellVisual({
             theme: T,
             compareCell,
@@ -905,24 +927,44 @@ const WorkbookStackedCanvasStrip = memo(({
       ctx.restore();
     };
 
-    const scheduleDraw = () => {
-      if (rafRef.current) return;
-      rafRef.current = requestAnimationFrame(() => {
-        rafRef.current = 0;
-        draw();
-      });
-    };
-
-    const scroller = scrollRef.current;
-    scroller?.addEventListener('scroll', scheduleDraw, { passive: true });
+    drawRef.current = draw;
+    // Cancel any pending scroll-driven rAF — this layout-triggered draw
+    // already reflects the latest state. Without this, the scroll handler's
+    // rAF could fire in the same frame and cause a redundant full canvas
+    // repaint, which is the primary cause of horizontal scroll jank.
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+    }
     draw();
 
     return () => {
-      scroller?.removeEventListener('scroll', scheduleDraw);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = 0;
     };
-  }, [baseCompareCellsByRowNumber, baseMergedRanges, baseRowEntryByRowNumber, columnLayoutByColumn, compareMode, contentWidth, freezeColumnCount, groupRuntimeByKey, mineCompareCellsByRowNumber, mineMergedRanges, mineRowEntryByRowNumber, renderBands, renderedColumnNumbers, renderColumns, scrollRef, selectionLookup, sheetName, sizes.line, sizes.ui, T, totalHeight, viewportWidth]);
+  }, [baseCompareCellsByRowNumber, baseMergedRanges, baseRowEntryByRowNumber, columnLayoutByColumn, columnPartition, compareMode, contentWidth, dragPreviewActive, freezeColumnCount, groupRuntimeByKey, mineCompareCellsByRowNumber, mineMergedRanges, mineRowEntryByRowNumber, renderBands, renderedColumnNumbers, renderColumns, scrollRef, selectionLookup, sheetName, sizes.line, sizes.ui, T, totalHeight, viewportWidth]);
+
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+
+    let lastScrollLeft = scroller.scrollLeft ?? 0;
+    const onScroll = () => {
+      const nextScrollLeft = scroller.scrollLeft ?? 0;
+      if (nextScrollLeft === lastScrollLeft) return;
+      lastScrollLeft = nextScrollLeft;
+      if (rafRef.current) return;
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = 0;
+        drawRef.current();
+      });
+    };
+
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      scroller.removeEventListener('scroll', onScroll);
+    };
+  }, [scrollRef]);
 
   const resolveHit = (
     x: number,
@@ -932,11 +974,8 @@ const WorkbookStackedCanvasStrip = memo(({
     const contentHitRight = Math.min(viewportWidth, contentWidth);
     if (x >= contentHitRight) return null;
 
-    const contentLeft = LN_W + 3;
+    const { contentLeft, frozenWidth } = columnPartition;
     const currentScrollLeft = scrollRef.current?.scrollLeft ?? 0;
-    const frozenWidth = renderColumns
-      .filter(entry => entry.position < freezeColumnCount)
-      .reduce((sum, entry) => sum + entry.displayWidth, 0);
     for (const groupRuntime of groupRuntimes) {
       const groupFrame = groupRuntime.frame;
       if (y < groupFrame.top || y > (groupFrame.top + groupFrame.height)) continue;
@@ -1141,22 +1180,24 @@ const WorkbookStackedCanvasStrip = memo(({
   };
 
   const { handleMouseMove, clearHover } = useWorkbookCanvasHoverController(resolveHoverAtPointer, onHoverChange);
+  const selectionInteractions = useWorkbookCanvasSelectionInteractions({
+    canvasRef,
+    resolveHit,
+    onSelectionRequest,
+    clearHover,
+    scrollRef,
+    onDragSelectingChange: setDragPreviewActive,
+  });
 
-  const handleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvasRect = event.currentTarget.getBoundingClientRect();
-    const hit = resolveHit(
-      event.clientX - canvasRect.left,
-      event.clientY - canvasRect.top,
-      canvasRect,
-    );
-    if (!hit) return;
+  const handleCanvasMouseMove = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
+    if (selectionInteractions.isPointerSelectingRef.current) return;
+    handleMouseMove(event);
+  }, [handleMouseMove, selectionInteractions]);
+
+  const handleCanvasMouseLeave = useCallback(() => {
+    if (selectionInteractions.isPointerSelectingRef.current) return;
     clearHover();
-    onSelectionRequest({
-      target: hit.selection,
-      mode: getSelectionModeFromMouseEvent(event),
-      reason: 'click',
-    });
-  };
+  }, [clearHover, selectionInteractions]);
 
   const handleContextMenu = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const canvasRect = event.currentTarget.getBoundingClientRect();
@@ -1183,14 +1224,19 @@ const WorkbookStackedCanvasStrip = memo(({
   return (
     <canvas
       ref={canvasRef}
-      onClick={handleClick}
+      onPointerDown={selectionInteractions.handlePointerDown}
+      onPointerMove={selectionInteractions.handlePointerMove}
+      onPointerUp={selectionInteractions.handlePointerUp}
+      onPointerCancel={selectionInteractions.handlePointerCancel}
+      onLostPointerCapture={selectionInteractions.handleLostPointerCapture}
       onContextMenu={handleContextMenu}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={clearHover}
+      onMouseMove={handleCanvasMouseMove}
+      onMouseLeave={handleCanvasMouseLeave}
       style={{
         display: 'block',
         cursor: 'pointer',
         backfaceVisibility: 'hidden',
+        touchAction: 'none',
       }}
     />
   );

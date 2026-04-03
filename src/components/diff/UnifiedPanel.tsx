@@ -1,8 +1,16 @@
 // src/components/UnifiedPanel.tsx  [v4 — typecheck clean]
-import { memo, useCallback, useEffect, useRef, useState, useMemo, RefObject, startTransition } from 'react';
-import type { DiffLine, SearchMatch, RenderItem, CollapseItem, LineItem, TextDiffPresentation } from '@/types';
+import { memo, useCallback, useEffect, useRef, useState, useMemo, startTransition, type RefObject } from 'react';
+import type {
+  CollapseItem,
+  DiffLine,
+  LineItem,
+  RenderItem,
+  SearchMatch,
+  SyntaxPresentation,
+  TextDiffPresentation,
+} from '@/types';
 import { LN_W } from '@/constants/layout';
-import { useTheme } from '@/context/theme';
+import { cssAlpha, cssVar } from '@/theme/cssUtils';
 import { useVirtual, ROW_H } from '@/hooks/virtualization/useVirtual';
 import { WORKBOOK_CELL_WIDTH } from '@/utils/workbook/workbookDisplay';
 import {
@@ -28,10 +36,12 @@ import {
   getCollapseIndexes,
   resolveActiveCollapsePosition,
 } from '@/utils/collapse/collapseNavigation';
+import { getUnifiedLineSyntaxTokens } from '@/utils/diff/syntaxHighlighting';
 import DiffRow from '@/components/diff/DiffRow';
 import CollapseBar from '@/components/diff/CollapseBar';
 import CollapseJumpButton from '@/components/diff/CollapseJumpButton';
 import MiniMap from '@/components/diff/MiniMap';
+import type { TokenSearchRange } from '@/components/shared/TokenText';
 
 const CONTEXT_LINES = 3;
 type CollapseNavigationHandler = (direction: 'prev' | 'next') => void;
@@ -39,10 +49,12 @@ type CollapseNavigationHandler = (direction: 'prev' | 'next') => void;
 interface UnifiedPanelProps {
   diffLines: DiffLine[];
   textDiffPresentation: TextDiffPresentation;
+  syntaxPresentation?: SyntaxPresentation | null;
   collapseCtx: boolean;
   activeHunkIdx: number;
   searchMatches: SearchMatch[];
   activeSearchIdx: number;
+  searchJumpNonce: number;
   hunkPositions: number[];
   showWhitespace: boolean;
   fontSize: number;
@@ -51,13 +63,14 @@ interface UnifiedPanelProps {
 }
 
 const UnifiedPanel = memo(({
-  diffLines, textDiffPresentation, collapseCtx, activeHunkIdx, searchMatches, activeSearchIdx,
+  diffLines, textDiffPresentation, syntaxPresentation = null, collapseCtx, activeHunkIdx, searchMatches, activeSearchIdx,
+  searchJumpNonce,
   hunkPositions, showWhitespace, fontSize, onScrollerReady, onCollapseNavigationReady,
 }: UnifiedPanelProps) => {
-  const T = useTheme();
   const scrollRef = useRef<HTMLDivElement>(null);
   const pendingScrollAdjustRef = useRef(0);
   const lastCollapseJumpIndexRef = useRef<number | null>(null);
+  const completedSearchJumpNonceRef = useRef<number>(-1);
   const [expandedBlocks, setExpandedBlocks] = useState<CollapseExpansionState>({});
   const [activeWorkbookSectionIdx, setActiveWorkbookSectionIdx] = useState(0);
   const [pendingScrollTarget, setPendingScrollTarget] = useState<{ lineIdx: number; align: 'start' | 'center' } | null>(null);
@@ -157,6 +170,19 @@ const UnifiedPanel = memo(({
   const activeSearchLineIdx = activeSearchIdx >= 0
     ? (searchMatches[activeSearchIdx]?.lineIdx ?? -1)
     : -1;
+  const searchRangesByLineIdx = useMemo(() => {
+    const next = new Map<number, TokenSearchRange[]>();
+    searchMatches.forEach((match, index) => {
+      const ranges = next.get(match.lineIdx) ?? [];
+      ranges.push({
+        start: match.start,
+        end: match.end,
+        active: index === activeSearchIdx,
+      });
+      next.set(match.lineIdx, ranges);
+    });
+    return next;
+  }, [activeSearchIdx, searchMatches]);
 
   useEffect(() => {
     if (!isWorkbookMode || workbookSections.length === 0) return;
@@ -178,9 +204,15 @@ const UnifiedPanel = memo(({
   }, [activeHunkIdx, hunkPositions, isWorkbookMode, workbookSections]);
 
   useEffect(() => {
-    if (activeSearchLineIdx < 0) return;
-    scrollToResolvedLine(activeSearchLineIdx, 'center');
-  }, [activeSearchLineIdx, scrollToResolvedLine]);
+    if (searchJumpNonce === completedSearchJumpNonceRef.current) return;
+    if (activeSearchLineIdx < 0) {
+      completedSearchJumpNonceRef.current = searchJumpNonce;
+      return;
+    }
+    if (scrollToResolvedLine(activeSearchLineIdx, 'center')) {
+      completedSearchJumpNonceRef.current = searchJumpNonce;
+    }
+  }, [activeSearchLineIdx, scrollToResolvedLine, searchJumpNonce]);
 
   useEffect(() => {
     if (!pendingScrollTarget) return;
@@ -251,16 +283,16 @@ const UnifiedPanel = memo(({
   }, [handleJumpToNextCollapse, handleJumpToPreviousCollapse, onCollapseNavigationReady]);
 
   return (
-    <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
-      <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
+    <div className="flex-1 flex overflow-hidden min-w-0 min-h-0">
+      <div className="relative flex-1 flex flex-col min-w-0 min-h-0">
         {isWorkbookMode && activeWorkbookSection && (
           <div style={{
             display: 'flex',
             alignItems: 'center',
             gap: 6,
             padding: '8px 12px 6px',
-            background: `linear-gradient(180deg, ${T.bg1} 0%, ${T.bg0} 100%)`,
-            borderBottom: `1px solid ${T.border}`,
+            background: `linear-gradient(180deg, ${cssVar('bg1')} 0%, ${cssVar('bg0')} 100%)`,
+            borderBottom: `1px solid ${cssVar('border')}`,
             flexWrap: 'wrap',
             flexShrink: 0,
           }}>
@@ -272,9 +304,9 @@ const UnifiedPanel = memo(({
                   height: 28,
                   padding: '0 12px',
                   borderRadius: 999,
-                  border: `1px solid ${index === activeWorkbookSectionIdx ? `${T.acc2}66` : T.border}`,
-                  background: index === activeWorkbookSectionIdx ? `${T.acc2}20` : T.bg2,
-                  color: index === activeWorkbookSectionIdx ? T.acc2 : T.t1,
+                  border: `1px solid ${index === activeWorkbookSectionIdx ? cssAlpha('acc2', '66') : cssVar('border')}`,
+                  background: index === activeWorkbookSectionIdx ? cssAlpha('acc2', '20') : cssVar('bg2'),
+                  color: index === activeWorkbookSectionIdx ? cssVar('acc2') : cssVar('t1'),
                   cursor: 'pointer',
                   fontSize: 12,
                   fontWeight: 700,
@@ -285,15 +317,7 @@ const UnifiedPanel = memo(({
           </div>
         )}
 
-        <div ref={scrollRef} style={{
-          flex: 1,
-          overflowY: 'auto',
-          overflowX: 'auto',
-          overflowAnchor: 'none',
-          position: 'relative',
-          minWidth: 0,
-          minHeight: 0,
-        }}>
+        <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-auto relative min-w-0 min-h-0" style={{ overflowAnchor: 'none' }}>
           <div style={{ height: totalH + workbookHeaderHeight, pointerEvents: 'none' }} />
           {isWorkbookMode && (
             <div style={{
@@ -302,14 +326,14 @@ const UnifiedPanel = memo(({
               zIndex: 30,
               isolation: 'isolate',
               display: 'flex',
-              background: T.bg1,
+              background: cssVar('bg1'),
               minWidth: LN_W + LN_W + 3 + (columnLabels.length * WORKBOOK_CELL_WIDTH),
             }}>
               <div style={{
                 width: (LN_W * 2) + 3,
                 minWidth: (LN_W * 2) + 3,
-                background: T.bg2,
-                borderBottom: `1px solid ${T.border}`,
+                background: cssVar('bg2'),
+                borderBottom: `1px solid ${cssVar('border')}`,
               }} />
               {columnLabels.map(label => (
                 <div
@@ -318,13 +342,13 @@ const UnifiedPanel = memo(({
                     width: WORKBOOK_CELL_WIDTH,
                     minWidth: WORKBOOK_CELL_WIDTH,
                     maxWidth: WORKBOOK_CELL_WIDTH,
-                    borderLeft: `1px solid ${T.border}`,
-                    borderBottom: `1px solid ${T.border}`,
+                    borderLeft: `1px solid ${cssVar('border')}`,
+                    borderBottom: `1px solid ${cssVar('border')}`,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    color: T.acc2,
-                    background: T.bg1,
+                    color: cssVar('acc2'),
+                    background: cssVar('bg1'),
                     fontSize: 11,
                     fontWeight: 700,
                   }}>
@@ -342,34 +366,38 @@ const UnifiedPanel = memo(({
             if (item.kind === 'collapse') {
               const ci = item as CollapseItem;
               return (
-                <CollapseBar key={key} count={ci.count} expandCount={Math.min(ci.count, ci.expandStep)}
-                  onExpand={() => startTransition(() => {
-                    const revealCount = Math.min(ci.count, ci.expandStep);
-                    pendingScrollAdjustRef.current += getCollapseLeadingRevealCount(ci.count, revealCount) * ROW_H;
-                    setExpandedBlocks(prev => expandCollapseBlock(
-                      prev,
-                      ci.blockId,
-                      ci.hiddenStart,
-                      ci.hiddenEnd,
-                      revealCount,
-                    ));
-                  })}
-                  onExpandAll={() => startTransition(() => {
-                    setExpandedBlocks(prev => expandCollapseBlockFully(
-                      prev,
-                      ci.blockId,
-                      ci.hiddenStart,
-                      ci.hiddenEnd,
-                    ));
-                  })} />
+                <div key={key} style={{ position: 'relative', zIndex: 12, pointerEvents: 'auto' }}>
+                  <CollapseBar count={ci.count} expandCount={Math.min(ci.count, ci.expandStep)}
+                    onExpand={() => {
+                      const revealCount = Math.min(ci.count, ci.expandStep);
+                      pendingScrollAdjustRef.current += getCollapseLeadingRevealCount(ci.count, revealCount) * ROW_H;
+                      setExpandedBlocks(prev => expandCollapseBlock(
+                        prev,
+                        ci.blockId,
+                        ci.hiddenStart,
+                        ci.hiddenEnd,
+                        revealCount,
+                      ));
+                    }}
+                    onExpandAll={() => {
+                      setExpandedBlocks(prev => expandCollapseBlockFully(
+                        prev,
+                        ci.blockId,
+                        ci.hiddenStart,
+                        ci.hiddenEnd,
+                      ));
+                    }} />
+                </div>
               );
             }
             const li = item as LineItem;
             return (
               <DiffRow key={key} line={li.line}
+                syntaxTokens={getUnifiedLineSyntaxTokens(syntaxPresentation, li.line)}
                 isReplacementPair={textDiffPresentation.replacementPairIndex.has(li.lineIdx)}
                 isSearchMatch={searchMatchSet.has(li.lineIdx)}
                 isActiveSearch={activeSearchLineIdx === li.lineIdx}
+                searchRanges={searchRangesByLineIdx.get(li.lineIdx) ?? []}
                 showWhitespace={showWhitespace}
                 fontSize={fontSize} />
             );

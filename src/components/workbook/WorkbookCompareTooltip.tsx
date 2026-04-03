@@ -1,7 +1,7 @@
 import { memo } from 'react';
-import { FONT_CODE, FONT_SIZE, FONT_UI } from '@/constants/typography';
 import { useI18n } from '@/context/i18n';
-import { useTheme } from '@/context/theme';
+import { useThemeTokens } from '@/context/theme';
+import { cssVar } from '@/theme/cssUtils';
 import type { WorkbookCompareCellState } from '@/utils/workbook/workbookCompare';
 import { splitWorkbookCanvasTextLines } from '@/utils/workbook/workbookCanvasText';
 import {
@@ -32,7 +32,7 @@ const WorkbookCompareTooltip = memo(({
   baseTitle,
   mineTitle,
 }: WorkbookCompareTooltipProps) => {
-  const T = useTheme();
+  const T = useThemeTokens();
   const { t } = useI18n();
   const { baseCell, mineCell, changed, strictOnly } = compareCell;
   const resolvedBaseTitle = baseTitle || t('tooltipBaseLabel');
@@ -59,93 +59,73 @@ const WorkbookCompareTooltip = memo(({
   const baseChip = resolveWorkbookAccentSurfaceVisual(baseAccent);
   const mineChip = resolveWorkbookAccentSurfaceVisual(mineAccent);
 
+  const renderHintBox = (
+    visual: { background: string; border: string; textColor: string },
+    text: string,
+    key: string,
+  ) => (
+    <div
+      key={key}
+      className="px-2 py-1.5 rounded-[10px] font-bold font-ui text-app-2xs"
+      style={{
+        background: visual.background,
+        border: `1px solid ${visual.border}`,
+        color: visual.textColor,
+      }}>
+      {text}
+    </div>
+  );
+
   const renderPane = (
     label: string,
     accent: string,
     cell: WorkbookCellDisplay,
     single = false,
   ) => (
-    <div
-      style={{
-        display: 'grid',
-        gap: 8,
-        minWidth: 0,
-        padding: single ? 0 : '0 0 0 2px',
-      }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+    <div className={`grid gap-2 min-w-0 ${single ? '' : 'pl-0.5'}`}>
+      <div className="flex items-center gap-2 min-w-0">
         <span
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            color: T.t0,
-            fontFamily: FONT_UI,
-            fontSize: FONT_SIZE.sm,
-            fontWeight: 700,
-            minWidth: 0,
-          }}>
+          className="inline-flex items-center gap-1.5 min-w-0 font-bold font-ui text-app-xs"
+          style={{ color: cssVar('t0') }}>
           <span
             aria-hidden="true"
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              background: accent,
-              flexShrink: 0,
-            }}
+            className="size-2 rounded-full shrink-0"
+            style={{ background: accent }}
           />
           {label}
         </span>
         {changed && (
           <span
+            className="inline-flex items-center px-1.5 rounded-full shrink-0 font-bold font-ui text-app-2xs"
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
               padding: '1px 6px',
-              borderRadius: 999,
               background: accent === baseAccent ? baseChip.background : mineChip.background,
               color: accent === baseAccent ? baseChip.textColor : mineChip.textColor,
-              fontSize: FONT_SIZE.xs,
-              fontFamily: FONT_UI,
-              fontWeight: 700,
-              flexShrink: 0,
             }}>
             {t('tooltipChangedLabel')}
           </span>
         )}
       </div>
 
-      <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
-        <div style={{ display: 'grid', gap: 2, minWidth: 0 }}>
-          <span style={{ color: T.t2, fontSize: FONT_SIZE.xs, fontWeight: 700, fontFamily: FONT_UI }}>
+      <div className="grid gap-1.5 min-w-0">
+        <div className="grid gap-0.5 min-w-0">
+          <span className="font-bold font-ui text-app-2xs" style={{ color: cssVar('t2') }}>
             {t('workbookCellValue')}
           </span>
           <span
-            style={{
-              color: T.t0,
-              fontSize: FONT_SIZE.sm,
-              fontFamily: FONT_UI,
-              minWidth: 0,
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-            }}>
+            className="min-w-0 whitespace-pre-wrap break-words font-ui text-app-xs"
+            style={{ color: cssVar('t0') }}>
             {cell.value ? formatWorkbookTooltipValue(cell.value) : t('formulaBarEmptyValue')}
           </span>
         </div>
 
-        <div style={{ display: 'grid', gap: 2, minWidth: 0 }}>
-          <span style={{ color: T.t2, fontSize: FONT_SIZE.xs, fontWeight: 700, fontFamily: FONT_UI }}>
+        <div className="grid gap-0.5 min-w-0">
+          <span className="font-bold font-ui text-app-2xs" style={{ color: cssVar('t2') }}>
             {t('workbookCellFormula')}
           </span>
           <span
-            style={{
-              color: cell.formula ? T.t0 : T.t2,
-              fontSize: FONT_SIZE.sm,
-              fontFamily: FONT_CODE,
-              minWidth: 0,
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-            }}>
+            className="min-w-0 whitespace-pre-wrap break-words font-code text-app-xs"
+            style={{ color: cell.formula ? cssVar('t0') : cssVar('t2') }}>
             {cell.formula || t('formulaBarEmpty')}
           </span>
         </div>
@@ -154,93 +134,40 @@ const WorkbookCompareTooltip = memo(({
   );
 
   return (
-    <div
-      style={{
-        display: 'grid',
-        gap: 10,
-        minWidth: 320,
-        textAlign: 'left',
-      }}>
+    <div className="grid gap-2.5 min-w-[320px] text-left">
       {badges.length > 0 && (
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: 6,
-          }}>
+        <div className="flex flex-wrap gap-1.5">
           {badges.map((badge) => (
             <span
               key={badge.label}
+              className="inline-flex items-center px-2 rounded-full whitespace-nowrap font-ui text-app-2xs font-extrabold"
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
                 padding: '2px 8px',
-                borderRadius: 999,
                 background: badge.background,
                 border: `1px solid ${badge.border}`,
                 color: badge.textColor,
-                fontSize: FONT_SIZE.xs,
-                fontFamily: FONT_UI,
-                fontWeight: 800,
-                whiteSpace: 'nowrap',
               }}>
               {badge.label}
             </span>
           ))}
         </div>
       )}
-      {showWhitespaceSensitiveHint && (
-        <div
-          style={{
-            padding: '6px 8px',
-            borderRadius: 10,
-            background: whitespaceHintVisual.background,
-            border: `1px solid ${whitespaceHintVisual.border}`,
-            color: whitespaceHintVisual.textColor,
-            fontSize: FONT_SIZE.xs,
-            fontFamily: FONT_UI,
-            fontWeight: 700,
-          }}>
-          {t('tooltipWhitespaceSensitiveHint')}
-        </div>
+      {showWhitespaceSensitiveHint && renderHintBox(
+        whitespaceHintVisual,
+        t('tooltipWhitespaceSensitiveHint'),
+        'ws-hint',
       )}
-      {showClearedHint && (
-        <div
-          style={{
-            padding: '6px 8px',
-            borderRadius: 10,
-            background: clearedHintVisual.background,
-            border: `1px solid ${clearedHintVisual.border}`,
-            color: clearedHintVisual.textColor,
-            fontSize: FONT_SIZE.xs,
-            fontFamily: FONT_UI,
-            fontWeight: 700,
-          }}>
-          {t('tooltipClearedHint', { mineLabel: resolvedMineTitle, baseLabel: resolvedBaseTitle })}
-        </div>
+      {showClearedHint && renderHintBox(
+        clearedHintVisual,
+        t('tooltipClearedHint', { mineLabel: resolvedMineTitle, baseLabel: resolvedBaseTitle }),
+        'cleared-hint',
       )}
-      {showAddedHint && (
-        <div
-          style={{
-            padding: '6px 8px',
-            borderRadius: 10,
-            background: addedHintVisual.background,
-            border: `1px solid ${addedHintVisual.border}`,
-            color: addedHintVisual.textColor,
-            fontSize: FONT_SIZE.xs,
-            fontFamily: FONT_UI,
-            fontWeight: 700,
-          }}>
-          {t('tooltipAddedHint', { mineLabel: resolvedMineTitle, baseLabel: resolvedBaseTitle })}
-        </div>
+      {showAddedHint && renderHintBox(
+        addedHintVisual,
+        t('tooltipAddedHint', { mineLabel: resolvedMineTitle, baseLabel: resolvedBaseTitle }),
+        'added-hint',
       )}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
-          gap: 12,
-          minWidth: 320,
-        }}>
+      <div className="grid grid-cols-2 gap-3 min-w-[320px]">
         {renderPane(resolvedBaseTitle, baseAccent, baseCell)}
         {renderPane(resolvedMineTitle, mineAccent, mineCell)}
       </div>

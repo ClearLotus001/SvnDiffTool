@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import type { DiffLine } from '../src/types';
 import {
+  buildWorkbookLineSheetContexts,
   getWorkbookSections,
   summarizeWorkbookSectionChanges,
 } from '../src/utils/workbook/workbookSections';
@@ -138,9 +139,9 @@ test('summarizeWorkbookSectionChanges counts rename pairs once', () => {
     line('add', null, '@@sheet\tAdded'),
     line('add', null, '@@row\t1\tAdded\tOnly', null, 1),
     line('delete', '@@sheet\tDeleted', null),
-    line('delete', '@@row\t1\tDeleted\tOnly', 1, null),
+    line('delete', '@@row\t1\tDeleted\tOnly', null, 1, null),
     line('delete', '@@sheet\tOldName', null),
-    line('delete', '@@row\t1\tID\tAlice', 1, null),
+    line('delete', '@@row\t1\tID\tAlice', null, 1, null),
     line('add', null, '@@sheet\tNewName'),
     line('add', null, '@@row\t1\tID\tAlice', null, 1),
   ]);
@@ -150,4 +151,28 @@ test('summarizeWorkbookSectionChanges counts rename pairs once', () => {
     deleted: 1,
     renamed: 1,
   });
+});
+
+test('getWorkbookSections reuses cached result for identical diffLines reference and compare mode', () => {
+  const diffLines = [
+    line('equal', '@@sheet\tData', '@@sheet\tData'),
+    line('equal', '@@row\t1\tID\tName', '@@row\t1\tID\tName', 1, 1),
+  ];
+
+  const first = getWorkbookSections(diffLines, 'strict');
+  const second = getWorkbookSections(diffLines, 'strict');
+
+  assert.equal(first, second);
+});
+
+test('buildWorkbookLineSheetContexts reuses cached contexts for identical diffLines reference', () => {
+  const diffLines = [
+    line('equal', '@@sheet\tData', '@@sheet\tData'),
+    line('equal', '@@row\t1\tID\tName', '@@row\t1\tID\tName', 1, 1),
+  ];
+
+  const first = buildWorkbookLineSheetContexts(diffLines);
+  const second = buildWorkbookLineSheetContexts(diffLines);
+
+  assert.equal(first, second);
 });

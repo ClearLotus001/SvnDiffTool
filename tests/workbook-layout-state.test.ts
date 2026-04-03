@@ -84,6 +84,7 @@ test('workbook expanded blocks survive realistic layout switches while keeping p
     16,
     600,
     16,
+    0.5,
     {},
   );
 
@@ -142,6 +143,7 @@ test('workbook expanded blocks survive realistic layout switches while keeping p
     24,
     2400,
     24,
+    0.62,
     resolvedForHorizontal,
   );
   const afterHorizontalSnapshot = applyWorkbookLayoutSnapshot(
@@ -156,6 +158,7 @@ test('workbook expanded blocks survive realistic layout switches while keeping p
   assert.equal(snapshots['split-v']?.scrollLeft, 96);
   assert.equal(snapshots['split-h']?.leftScrollTop, 2400);
   assert.equal(snapshots['split-h']?.leftScrollLeft, 24);
+  assert.equal(snapshots['split-h']?.splitRatio, 0.62);
   assert.deepEqual(
     resolveWorkbookExpandedBlocksForContext(
       snapshots['split-v'],

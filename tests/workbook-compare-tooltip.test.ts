@@ -6,7 +6,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import WorkbookCompareTooltip from '../src/components/workbook/WorkbookCompareTooltip';
 import { I18nProvider } from '../src/context/i18n';
 import { ThemeContext } from '../src/context/theme';
-import { THEMES } from '../src/theme';
 import type { WorkbookCellDelta } from '../src/types';
 
 function renderTooltip(
@@ -16,7 +15,7 @@ function renderTooltip(
   return renderToStaticMarkup(
     React.createElement(
       ThemeContext.Provider,
-      { value: THEMES.light },
+      { value: 'light' },
       React.createElement(
         I18nProvider,
         null,

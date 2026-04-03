@@ -1,5 +1,5 @@
-export const FONT_UI = "'Microsoft YaHei UI', 'Segoe UI', 'PingFang SC', sans-serif";
-export const FONT_CODE = "'Cascadia Mono', 'JetBrains Mono', 'Consolas', monospace";
+export const FONT_UI = "'Inter', 'Microsoft YaHei UI', 'Segoe UI', 'PingFang SC', system-ui, sans-serif";
+export const FONT_CODE = "'JetBrains Mono', 'Cascadia Mono', 'Consolas', 'Monaco', monospace";
 
 export const FONT_SIZE = {
   xs: 11,

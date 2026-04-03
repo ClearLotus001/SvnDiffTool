@@ -1,7 +1,8 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import { ChevronUp, ChevronDown } from 'lucide-react';
 import { FONT_SIZE, FONT_UI } from '@/constants/typography';
 import { useI18n } from '@/context/i18n';
-import { useTheme } from '@/context/theme';
+import { cssAlpha, cssVar } from '@/theme/cssUtils';
 import Tooltip from '@/components/shared/Tooltip';
 
 interface CollapseJumpButtonProps {
@@ -47,7 +48,6 @@ const CollapseJumpButton = memo(({
   totalCount,
   storageKey,
 }: CollapseJumpButtonProps) => {
-  const T = useTheme();
   const { t } = useI18n();
   const anchorRef = useRef<HTMLDivElement | null>(null);
   const dragStateRef = useRef<DragState | null>(null);
@@ -281,12 +281,12 @@ const CollapseJumpButton = memo(({
     width: BADGE_SIZE,
     height: BADGE_SIZE,
     borderRadius: 999,
-    background: isDockCollapsed ? T.acc2 : `${T.acc2}16`,
-    color: isDockCollapsed ? T.bg0 : T.acc2,
-    border: `1px solid ${activeDockSide ? `${T.acc2}66` : T.border}`,
+    background: isDockCollapsed ? cssVar('acc2') : cssAlpha('acc2', '16'),
+    color: isDockCollapsed ? cssVar('bg0') : cssVar('acc2'),
+    border: `1px solid ${activeDockSide ? cssAlpha('acc2', '66') : cssVar('border')}`,
     boxShadow: activeDockSide
-      ? `0 0 0 1px ${T.acc2}22, 0 12px 24px -18px ${T.acc2}66`
-      : `0 12px 24px -18px ${T.border2}`,
+      ? `0 0 0 1px ${cssAlpha('acc2', '22')}, 0 12px 24px -18px ${cssAlpha('acc2', '66')}`
+      : `0 12px 24px -18px ${cssVar('border2')}`,
     fontSize: isDockCollapsed ? 10 : 9,
     fontWeight: 800,
     fontFamily: FONT_UI,
@@ -334,11 +334,11 @@ const CollapseJumpButton = memo(({
     gap: 6,
     padding: '6px 5px',
     borderRadius: 16,
-    border: `1px solid ${activeDockSide ? `${T.acc2}66` : T.border}`,
-    background: `${T.bg1}e8`,
+    border: `1px solid ${activeDockSide ? cssAlpha('acc2', '66') : cssVar('border')}`,
+    background: cssAlpha('bg1', 'e8'),
     boxShadow: activeDockSide
-      ? `0 0 0 1px ${T.acc2}22, 0 18px 36px -24px ${T.acc2}66`
-      : `0 18px 32px -24px ${T.border2}`,
+      ? `0 0 0 1px ${cssAlpha('acc2', '22')}, 0 18px 36px -24px ${cssAlpha('acc2', '66')}`
+      : `0 18px 32px -24px ${cssVar('border2')}`,
     backdropFilter: 'blur(6px)',
   } as const;
 
@@ -349,13 +349,13 @@ const CollapseJumpButton = memo(({
     width: 30,
     height: 30,
     borderRadius: 999,
-    border: `1px solid ${T.border}`,
-    background: `linear-gradient(180deg, ${T.bg2} 0%, ${T.bg1} 100%)`,
-    color: T.t0,
+    border: `1px solid ${cssVar('border')}`,
+    background: `linear-gradient(180deg, ${cssVar('bg2')} 0%, ${cssVar('bg1')} 100%)`,
+    color: cssVar('t0'),
     fontFamily: FONT_UI,
     fontSize: FONT_SIZE.xs,
     fontWeight: 800,
-    boxShadow: `0 10px 20px -18px ${T.border2}`,
+    boxShadow: `0 10px 20px -18px ${cssVar('border2')}`,
     cursor: 'pointer',
     lineHeight: 1,
   } as const;
@@ -405,8 +405,8 @@ const CollapseJumpButton = memo(({
             bottom: -6,
             width: 3,
             borderRadius: 999,
-            background: `linear-gradient(180deg, ${T.acc2}00 0%, ${T.acc2}cc 18%, ${T.acc2}cc 82%, ${T.acc2}00 100%)`,
-            boxShadow: `0 0 0 1px ${T.acc2}22, 0 0 16px ${T.acc2}55`,
+            background: `linear-gradient(180deg, ${cssAlpha('acc2', '00')} 0%, ${cssAlpha('acc2', 'cc')} 18%, ${cssAlpha('acc2', 'cc')} 82%, ${cssAlpha('acc2', '00')} 100%)`,
+            boxShadow: `0 0 0 1px ${cssAlpha('acc2', '22')}, 0 0 16px ${cssAlpha('acc2', '55')}`,
             left: activeDockSide === 'left' ? -8 : undefined,
             right: activeDockSide === 'right' ? -8 : undefined,
             animation: snapPulseNonce > 0 ? 'collapseDockPulse 420ms ease-out 1' : undefined,
@@ -430,23 +430,23 @@ const CollapseJumpButton = memo(({
       <div style={panelStyle}>
         <div style={panelShellStyle}>
           <Tooltip content={
-            <div style={{ display: 'grid', gap: 2 }}>
+            <div className="grid gap-0.5">
               <span>{t('collapseJumpPrevTitle')}</span>
-              <span style={{ color: T.t2, fontSize: 11 }}>{statusText}</span>
+              <span className="text-text-secondary text-[11px]">{statusText}</span>
             </div>
           } placement="top">
             <button type="button" onClick={onPrev} aria-label={t('collapseJumpPrevTitle')} style={buttonStyle}>
-              ↑
+              <ChevronUp size={14} />
             </button>
           </Tooltip>
           <Tooltip content={
-            <div style={{ display: 'grid', gap: 2 }}>
+            <div className="grid gap-0.5">
               <span>{t('collapseJumpNextTitle')}</span>
-              <span style={{ color: T.t2, fontSize: 11 }}>{statusText}</span>
+              <span className="text-text-secondary text-[11px]">{statusText}</span>
             </div>
           } placement="top">
             <button type="button" onClick={onNext} aria-label={t('collapseJumpNextTitle')} style={buttonStyle}>
-              ↓
+              <ChevronDown size={14} />
             </button>
           </Tooltip>
         </div>

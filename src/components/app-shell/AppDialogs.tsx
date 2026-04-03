@@ -3,6 +3,7 @@ import type {
   SvnDiffViewerScope,
   SvnDiffViewerStatus,
 } from '@/types';
+import useAnimatedVisibility from '@/hooks/ui/useAnimatedVisibility';
 import GotoLine from '@/components/diff/GotoLine';
 import AboutDialog from '@/components/app/AboutDialog';
 import ShortcutsPanel from '@/components/app/ShortcutsPanel';
@@ -63,27 +64,40 @@ export default function AppDialogs({
   onRestoreSvnDiffViewerDefault,
   onRefreshSvnDiffViewerStatus,
 }: AppDialogsProps) {
+  const anyDialogOpen = showGoto || showHelp || showAbout || showSvnConfig;
+  const overlayMotion = useAnimatedVisibility(anyDialogOpen, { exitDurationMs: 150 });
+  const gotoMotion = useAnimatedVisibility(showGoto);
+  const helpMotion = useAnimatedVisibility(showHelp);
+  const aboutMotion = useAnimatedVisibility(showAbout);
+  const svnConfigMotion = useAnimatedVisibility(showSvnConfig, { exitDurationMs: 190 });
+
   return (
     <>
-      {(showGoto || showHelp || showAbout || showSvnConfig) && (
+      {overlayMotion.shouldRender && (
         <div
+          data-state={overlayMotion.state}
           onClick={onCloseAll}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 99 }}
+          className="motion-dialog-overlay fixed inset-0 bg-modal-overlay z-[99]"
         />
       )}
 
-      {showGoto && (
+      {gotoMotion.shouldRender && (
         <GotoLine
+          animationState={gotoMotion.state}
           totalLines={totalLines}
           onGoto={onGoto}
           onClose={onCloseGoto}
         />
       )}
-      {showHelp && (
-        <ShortcutsPanel onClose={onCloseHelp} />
+      {helpMotion.shouldRender && (
+        <ShortcutsPanel
+          animationState={helpMotion.state}
+          onClose={onCloseHelp}
+        />
       )}
-      {showAbout && (
+      {aboutMotion.shouldRender && (
         <AboutDialog
+          animationState={aboutMotion.state}
           updateState={appUpdateState}
           canUninstall={canLaunchUninstaller}
           onClose={onCloseAbout}
@@ -93,8 +107,9 @@ export default function AppDialogs({
           onUninstall={onLaunchUninstaller}
         />
       )}
-      {showSvnConfig && (
+      {svnConfigMotion.shouldRender && (
         <SvnConfigDialog
+          animationState={svnConfigMotion.state}
           status={svnDiffViewerStatus}
           loading={isLoadingSvnDiffViewerStatus}
           applyingScope={applyingSvnDiffViewerScope}

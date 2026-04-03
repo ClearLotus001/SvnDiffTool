@@ -19,6 +19,15 @@ export interface IndexedWorkbookSectionRows {
   rows: SplitRow[];
 }
 
+const workbookSectionRowIndexCache = new WeakMap<
+  DiffLine[],
+  WeakMap<WorkbookSection[], Map<WorkbookCompareMode, Map<string, IndexedWorkbookSectionRows>>>
+>();
+const workbookSectionRowIndexFromPrecomputedDeltaCache = new WeakMap<
+  DiffLine[],
+  WeakMap<WorkbookPrecomputedDeltaPayload, Map<string, IndexedWorkbookSectionRows>>
+>();
+
 function buildSplitRow(
   left: DiffLine | null,
   right: DiffLine | null,
@@ -173,7 +182,24 @@ export function buildWorkbookSectionRowIndex(
   sections: WorkbookSection[],
   compareMode: WorkbookCompareMode = 'strict',
 ): Map<string, IndexedWorkbookSectionRows> {
+  let sectionCache = workbookSectionRowIndexCache.get(diffLines);
+  if (!sectionCache) {
+    sectionCache = new WeakMap();
+    workbookSectionRowIndexCache.set(diffLines, sectionCache);
+  }
+  let compareModeCache = sectionCache.get(sections);
+  if (!compareModeCache) {
+    compareModeCache = new Map();
+    sectionCache.set(sections, compareModeCache);
+  }
+  const cached = compareModeCache.get(compareMode);
+  if (cached) return cached;
+
   const sectionMap = new Map<string, IndexedWorkbookSectionRows>();
+  if (sections.length === 0) {
+    compareModeCache.set(compareMode, sectionMap);
+    return sectionMap;
+  }
   const lineSheetContexts = buildWorkbookLineSheetContexts(diffLines);
 
   sections.forEach((section) => {
@@ -228,6 +254,7 @@ export function buildWorkbookSectionRowIndex(
     sectionMap.set(section.name, { rows: splitRows });
   });
 
+  compareModeCache.set(compareMode, sectionMap);
   return sectionMap;
 }
 
@@ -236,7 +263,16 @@ export function buildWorkbookSectionRowIndexFromPrecomputedDelta(
   payload: WorkbookPrecomputedDeltaPayload | null | undefined,
 ): Map<string, IndexedWorkbookSectionRows> {
   const sectionMap = new Map<string, IndexedWorkbookSectionRows>();
-  if (!payload) return sectionMap;
+  if (!payload || payload.sections.length === 0) return sectionMap;
+
+  let payloadCache = workbookSectionRowIndexFromPrecomputedDeltaCache.get(diffLines);
+  if (!payloadCache) {
+    payloadCache = new WeakMap();
+    workbookSectionRowIndexFromPrecomputedDeltaCache.set(diffLines, payloadCache);
+  }
+  const cached = payloadCache.get(payload);
+  if (cached) return cached;
+
   const lineSheetContexts = buildWorkbookLineSheetContexts(diffLines);
 
   payload.sections.forEach((section) => {
@@ -293,5 +329,6 @@ export function buildWorkbookSectionRowIndexFromPrecomputedDelta(
     sectionMap.set(section.name, { rows });
   });
 
+  payloadCache.set(payload, sectionMap);
   return sectionMap;
 }

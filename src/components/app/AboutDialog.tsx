@@ -1,10 +1,13 @@
 import { memo } from 'react';
-import { FONT_CODE, FONT_SIZE, FONT_UI } from '@/constants/typography';
+import { X } from 'lucide-react';
 import { useI18n } from '@/context/i18n';
-import { useTheme } from '@/context/theme';
+import { cssAlpha } from '@/theme/cssUtils';
+import DialogFrame from '@/components/shared/DialogFrame';
+import type { AnimatedVisibilityState } from '@/hooks/ui/useAnimatedVisibility';
 import type { AppUpdateState } from '@/types';
 
 interface AboutDialogProps {
+  animationState: AnimatedVisibilityState;
   updateState: AppUpdateState | null;
   canUninstall: boolean;
   onClose: () => void;
@@ -26,15 +29,10 @@ function openExternal(url: string) {
 }
 
 const AboutDialog = memo(({
-  updateState,
-  canUninstall,
-  onClose,
-  onCheckForUpdates,
-  onDownloadUpdate,
-  onInstallUpdate,
-  onUninstall,
+  animationState,
+  updateState, canUninstall, onClose,
+  onCheckForUpdates, onDownloadUpdate, onInstallUpdate, onUninstall,
 }: AboutDialogProps) => {
-  const T = useTheme();
   const { t } = useI18n();
 
   const currentVersion = updateState?.currentVersion ?? '—';
@@ -45,277 +43,137 @@ const AboutDialog = memo(({
 
   const statusLabel = (() => {
     switch (updateState?.status) {
-      case 'checking':
-        return t('aboutUpdateStatusChecking');
-      case 'available':
-        return t('aboutUpdateStatusAvailable');
-      case 'downloading':
-        return `${t('aboutUpdateStatusDownloading')} ${Math.round(updateState.downloadPercent)}%`;
-      case 'downloaded':
-        return t('aboutUpdateStatusDownloaded');
-      case 'upToDate':
-        return t('aboutUpdateStatusUpToDate');
-      case 'error':
-        return t('aboutUpdateStatusError');
-      case 'disabled':
-        return t('aboutUpdateStatusDisabled');
-      case 'unsupported':
-        return t('aboutUpdateStatusUnsupported');
-      case 'idle':
-      default:
-        return t('aboutUpdateStatusIdle');
+      case 'checking': return t('aboutUpdateStatusChecking');
+      case 'available': return t('aboutUpdateStatusAvailable');
+      case 'downloading': return `${t('aboutUpdateStatusDownloading')} ${Math.round(updateState.downloadPercent)}%`;
+      case 'downloaded': return t('aboutUpdateStatusDownloaded');
+      case 'upToDate': return t('aboutUpdateStatusUpToDate');
+      case 'error': return t('aboutUpdateStatusError');
+      case 'disabled': return t('aboutUpdateStatusDisabled');
+      case 'unsupported': return t('aboutUpdateStatusUnsupported');
+      case 'idle': default: return t('aboutUpdateStatusIdle');
     }
   })();
 
   const hintText = (() => {
     switch (updateState?.status) {
-      case 'disabled':
-        return t('aboutUpdateDisabledHint');
-      case 'unsupported':
-        return t('aboutUpdateUnsupportedHint');
-      case 'error':
-        return updateState.errorMessage || t('aboutUpdateErrorFallback');
-      case 'available':
-        return updateState.releaseName
-          ? t('aboutUpdateAvailableHint', { version: updateState.releaseName })
-          : t('aboutUpdateAvailableHint', { version: availableVersion });
-      default:
-        return '';
+      case 'disabled': return t('aboutUpdateDisabledHint');
+      case 'unsupported': return t('aboutUpdateUnsupportedHint');
+      case 'error': return updateState.errorMessage || t('aboutUpdateErrorFallback');
+      case 'available': return updateState.releaseName
+        ? t('aboutUpdateAvailableHint', { version: updateState.releaseName })
+        : t('aboutUpdateAvailableHint', { version: availableVersion });
+      default: return '';
     }
   })();
 
   const notesTitle = (() => {
     switch (updateState?.status) {
-      case 'available':
-      case 'downloading':
-      case 'downloaded':
-        return t('aboutReleaseNotesLatest');
-      default:
-        return t('aboutReleaseNotesTitle');
+      case 'available': case 'downloading': case 'downloaded': return t('aboutReleaseNotesLatest');
+      default: return t('aboutReleaseNotesTitle');
     }
   })();
 
   const releaseNotesText = releaseNotes || (() => {
     switch (updateState?.status) {
-      case 'disabled':
-        return t('aboutReleaseNotesDisabledHint');
-      case 'unsupported':
-        return t('aboutReleaseNotesUnsupportedHint');
-      case 'checking':
-        return t('aboutReleaseNotesCheckingHint');
-      case 'upToDate':
-        return t('aboutReleaseNotesNoChangesHint');
-      default:
-        return t('aboutReleaseNotesEmpty');
+      case 'disabled': return t('aboutReleaseNotesDisabledHint');
+      case 'unsupported': return t('aboutReleaseNotesUnsupportedHint');
+      case 'checking': return t('aboutReleaseNotesCheckingHint');
+      case 'upToDate': return t('aboutReleaseNotesNoChangesHint');
+      default: return t('aboutReleaseNotesEmpty');
     }
   })();
 
   const actionButton = (() => {
     switch (updateState?.status) {
-      case 'available':
-        return {
-          label: t('toolbarUpdateDownload'),
-          onClick: onDownloadUpdate,
-          disabled: false,
-        };
-      case 'downloaded':
-        return {
-          label: t('toolbarUpdateInstall'),
-          onClick: onInstallUpdate,
-          disabled: false,
-        };
-      case 'checking':
-      case 'downloading':
-        return {
-          label: t('toolbarUpdateChecking'),
-          onClick: onCheckForUpdates,
-          disabled: true,
-        };
-      case 'disabled':
-      case 'unsupported':
-        return {
-          label: t('toolbarUpdateCheck'),
-          onClick: onCheckForUpdates,
-          disabled: true,
-        };
-      case 'idle':
-      case 'upToDate':
-      case 'error':
-      default:
-        return {
-          label: t('toolbarUpdateCheck'),
-          onClick: onCheckForUpdates,
-          disabled: false,
-        };
+      case 'available': return { label: t('toolbarUpdateDownload'), onClick: onDownloadUpdate, disabled: false };
+      case 'downloaded': return { label: t('toolbarUpdateInstall'), onClick: onInstallUpdate, disabled: false };
+      case 'checking': case 'downloading': return { label: t('toolbarUpdateChecking'), onClick: onCheckForUpdates, disabled: true };
+      case 'disabled': case 'unsupported': return { label: t('toolbarUpdateCheck'), onClick: onCheckForUpdates, disabled: true };
+      case 'idle': case 'upToDate': case 'error': default:
+        return { label: t('toolbarUpdateCheck'), onClick: onCheckForUpdates, disabled: false };
     }
   })();
 
+  const InfoRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex justify-between gap-3 py-2.5 border-t border-border-default first:border-t-0 first:pb-2.5 first:pt-0">
+      <span className="text-text-secondary text-[13px]">{label}</span>
+      {children}
+    </div>
+  );
+
   return (
-    <div style={{
-      position: 'fixed',
-      top: '50%',
-      left: '50%',
-      transform: 'translate(-50%,-50%)',
-      zIndex: 100,
-      width: 500,
-      maxWidth: 'calc(100vw - 32px)',
-      background: T.bg1,
-      border: `1px solid ${T.border2}`,
-      borderRadius: 18,
-      padding: '20px 22px',
-      boxShadow: '0 24px 70px rgba(0,0,0,0.45)',
-      fontFamily: FONT_UI,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+    <DialogFrame
+      animationState={animationState}
+      className="w-[500px] max-w-[calc(100vw-32px)] bg-bg-surface-solid border border-border-strong rounded-[18px] p-[20px_22px] shadow-2xl font-ui">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <div style={{ fontSize: FONT_SIZE.lg, fontWeight: 700, color: T.t0 }}>
-            {t('aboutTitle')}
-          </div>
-          <div style={{ marginTop: 6, color: T.t2, fontSize: FONT_SIZE.sm, lineHeight: 1.5 }}>
-            {t('aboutSubtitle')}
-          </div>
+          <div className="text-[15px] font-bold text-text-title">{t('aboutTitle')}</div>
+          <div className="mt-1.5 text-text-secondary text-[13px] leading-normal">{t('aboutSubtitle')}</div>
         </div>
         <button
           type="button"
           onClick={onClose}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: T.t1,
-            cursor: 'pointer',
-            fontSize: 18,
-            fontFamily: FONT_UI,
-            lineHeight: 1,
-          }}>
-          ×
+          className="size-7 rounded-lg bg-transparent border-none text-text-primary cursor-pointer flex items-center justify-center hover:bg-bg-surface-hover hover:text-accent active:scale-95 transition-all duration-150">
+          <X size={16} />
         </button>
       </div>
 
-      <div style={{
-        marginTop: 16,
-        padding: '14px 16px',
-        borderRadius: 14,
-        background: T.bg2,
-        border: `1px solid ${T.border}`,
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, paddingBottom: 10 }}>
-          <span style={{ color: T.t2, fontSize: FONT_SIZE.sm }}>{t('aboutVersionLabel')}</span>
-          <code style={{ color: T.acc2, fontSize: FONT_SIZE.sm, fontFamily: FONT_CODE }}>v{currentVersion}</code>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '10px 0', borderTop: `1px solid ${T.border}` }}>
-          <span style={{ color: T.t2, fontSize: FONT_SIZE.sm }}>{t('aboutUpdateStatusLabel')}</span>
-          <span style={{ color: T.t0, fontSize: FONT_SIZE.sm, fontWeight: 600 }}>{statusLabel}</span>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '10px 0', borderTop: `1px solid ${T.border}` }}>
-          <span style={{ color: T.t2, fontSize: FONT_SIZE.sm }}>{t('aboutAvailableVersionLabel')}</span>
-          <code style={{ color: T.t0, fontSize: FONT_SIZE.sm, fontFamily: FONT_CODE }}>{availableVersion === '—' ? availableVersion : `v${availableVersion}`}</code>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '10px 0', borderTop: `1px solid ${T.border}` }}>
-          <span style={{ color: T.t2, fontSize: FONT_SIZE.sm }}>{t('aboutLastCheckedLabel')}</span>
-          <span style={{ color: T.t1, fontSize: FONT_SIZE.sm }}>{lastCheckedAt}</span>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, paddingTop: 10, borderTop: `1px solid ${T.border}` }}>
-          <span style={{ color: T.t2, fontSize: FONT_SIZE.sm }}>{t('aboutPublishedAtLabel')}</span>
-          <span style={{ color: T.t1, fontSize: FONT_SIZE.sm }}>{publishedAt}</span>
-        </div>
+      <div className="mt-4 p-[14px_16px] rounded-[14px] bg-bg-surface-hover border border-border-default">
+        <InfoRow label={t('aboutVersionLabel')}>
+          <code className="text-[var(--acc2)] text-[13px] font-code">v{currentVersion}</code>
+        </InfoRow>
+        <InfoRow label={t('aboutUpdateStatusLabel')}>
+          <span className="text-text-title text-[13px] font-semibold">{statusLabel}</span>
+        </InfoRow>
+        <InfoRow label={t('aboutAvailableVersionLabel')}>
+          <code className="text-text-title text-[13px] font-code">{availableVersion === '—' ? availableVersion : `v${availableVersion}`}</code>
+        </InfoRow>
+        <InfoRow label={t('aboutLastCheckedLabel')}>
+          <span className="text-text-primary text-[13px]">{lastCheckedAt}</span>
+        </InfoRow>
+        <InfoRow label={t('aboutPublishedAtLabel')}>
+          <span className="text-text-primary text-[13px]">{publishedAt}</span>
+        </InfoRow>
       </div>
 
       {hintText && (
-        <div style={{
-          marginTop: 12,
-          color: updateState?.status === 'error' ? T.delTx : T.t1,
-          fontSize: FONT_SIZE.sm,
-          lineHeight: 1.5,
-        }}>
+        <div className={`mt-3 text-[13px] leading-normal ${updateState?.status === 'error' ? 'text-diff-remove-text' : 'text-text-primary'}`}>
           {hintText}
         </div>
       )}
 
-      <div style={{
-        marginTop: 16,
-        padding: '14px 16px',
-        borderRadius: 14,
-        background: `linear-gradient(180deg, ${T.bg2} 0%, ${T.bg1} 100%)`,
-        border: `1px solid ${T.border}`,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
-          <div style={{ color: T.t0, fontSize: FONT_SIZE.md, fontWeight: 700 }}>
-            {notesTitle}
-          </div>
-          <div style={{ color: T.t2, fontSize: FONT_SIZE.xs, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-            {t('aboutChannelStable')}
-          </div>
+      <div className="mt-4 p-[14px_16px] rounded-[14px] bg-bg-surface-hover border border-border-default">
+        <div className="flex items-center justify-between gap-3 mb-2.5">
+          <div className="text-text-title text-[14px] font-bold">{notesTitle}</div>
+          <div className="text-text-secondary text-[11px] tracking-wider uppercase">{t('aboutChannelStable')}</div>
         </div>
-        <div style={{
-          maxHeight: 176,
-          overflowY: 'auto',
-          padding: '12px 12px 12px 14px',
-          borderRadius: 12,
-          background: T.bg0,
-          border: `1px solid ${T.border}`,
-          color: releaseNotes ? T.t1 : T.t2,
-          fontSize: FONT_SIZE.sm,
-          lineHeight: 1.65,
-          whiteSpace: 'pre-wrap',
-        }}>
+        <div className={`max-h-44 overflow-y-auto p-3 pl-3.5 rounded-xl bg-bg-base border border-border-default text-[13px] leading-relaxed whitespace-pre-wrap ${releaseNotes ? 'text-text-primary' : 'text-text-secondary'}`}>
           {releaseNotesText}
         </div>
-        <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+        <div className="flex gap-2.5 mt-3">
           <button
             type="button"
             onClick={() => openExternal('https://github.com/ClearLotus001/SvnDiffTool')}
-            style={{
-              height: 32,
-              padding: '0 12px',
-              borderRadius: 9,
-              border: `1px solid ${T.border2}`,
-              background: 'transparent',
-              color: T.t1,
-              fontFamily: FONT_UI,
-              fontSize: FONT_SIZE.sm,
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}>
+            className="h-8 px-3 rounded-[9px] border border-border-strong bg-transparent text-text-primary font-ui text-[13px] font-semibold cursor-pointer hover:bg-bg-surface-hover hover:text-accent active:scale-[0.97] transition-all duration-150">
             {t('aboutOpenRepository')}
           </button>
           <button
             type="button"
             onClick={() => openExternal('https://github.com/ClearLotus001/SvnDiffTool/releases')}
-            style={{
-              height: 32,
-              padding: '0 12px',
-              borderRadius: 9,
-              border: `1px solid ${T.border2}`,
-              background: 'transparent',
-              color: T.t1,
-              fontFamily: FONT_UI,
-              fontSize: FONT_SIZE.sm,
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}>
+            className="h-8 px-3 rounded-[9px] border border-border-strong bg-transparent text-text-primary font-ui text-[13px] font-semibold cursor-pointer hover:bg-bg-surface-hover hover:text-accent active:scale-[0.97] transition-all duration-150">
             {t('aboutOpenReleases')}
           </button>
         </div>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
+      <div className="flex justify-end gap-2.5 mt-[18px]">
         {canUninstall && (
           <button
             type="button"
             onClick={onUninstall}
-            style={{
-              height: 34,
-              minWidth: 108,
-              padding: '0 14px',
-              borderRadius: 9,
-              border: `1px solid ${T.delBrd}`,
-              background: `${T.delBg}cc`,
-              color: T.delTx,
-              fontFamily: FONT_UI,
-              fontSize: FONT_SIZE.sm,
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}>
+            className="h-[34px] min-w-[108px] px-3.5 rounded-[9px] border border-diff-remove-border text-diff-remove-text font-ui text-[13px] font-bold cursor-pointer hover:brightness-110 active:scale-[0.97] transition-all duration-150"
+            style={{ background: cssAlpha('delBg', 'cc') }}>
             {t('aboutUninstallAction')}
           </button>
         )}
@@ -323,41 +181,24 @@ const AboutDialog = memo(({
           type="button"
           onClick={actionButton.onClick}
           disabled={actionButton.disabled}
-          style={{
-            height: 34,
-            minWidth: 108,
-            padding: '0 14px',
-            borderRadius: 9,
-            border: 'none',
-            background: actionButton.disabled ? T.bg3 : T.acc2,
-            color: actionButton.disabled ? T.t2 : '#fff',
-            fontFamily: FONT_UI,
-            fontSize: FONT_SIZE.sm,
-            fontWeight: 700,
-            cursor: actionButton.disabled ? 'not-allowed' : 'pointer',
-          }}>
+          className={`
+            h-[34px] min-w-[108px] px-3.5 rounded-[9px] border-none
+            font-ui text-[13px] font-bold transition-all duration-150
+            ${actionButton.disabled
+              ? 'bg-bg-elevated text-text-secondary cursor-not-allowed'
+              : 'bg-[var(--acc2)] text-[var(--btn-active-text)] cursor-pointer hover:-translate-y-px hover:brightness-105 active:scale-[0.97] shadow-[0_16px_30px_-24px_var(--acc2)]'
+            }
+          `}>
           {actionButton.label}
         </button>
         <button
           type="button"
           onClick={onClose}
-          style={{
-            height: 34,
-            minWidth: 86,
-            padding: '0 14px',
-            borderRadius: 9,
-            border: `1px solid ${T.border2}`,
-            background: 'transparent',
-            color: T.t1,
-            fontFamily: FONT_UI,
-            fontSize: FONT_SIZE.sm,
-            fontWeight: 600,
-            cursor: 'pointer',
-          }}>
+          className="h-[34px] min-w-[86px] px-3.5 rounded-[9px] border border-border-strong bg-transparent text-text-primary font-ui text-[13px] font-semibold cursor-pointer hover:bg-bg-surface-hover hover:text-accent active:scale-[0.97] transition-all duration-150">
           {t('aboutClose')}
         </button>
       </div>
-    </div>
+    </DialogFrame>
   );
 });
 

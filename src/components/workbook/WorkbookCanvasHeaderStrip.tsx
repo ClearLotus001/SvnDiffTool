@@ -3,7 +3,7 @@ import type { HorizontalVirtualColumnEntry } from '@/hooks/virtualization/useHor
 import { LN_W } from '@/constants/layout';
 import { FONT_CODE, getWorkbookFontScale } from '@/constants/typography';
 import { useI18n } from '@/context/i18n';
-import { useTheme } from '@/context/theme';
+import { useThemeTokens } from '@/context/theme';
 import type {
   WorkbookContextMenuPoint,
   WorkbookHiddenColumnSegment,
@@ -99,7 +99,7 @@ const WorkbookCanvasHeaderStrip = memo(({
   onColumnWidthChange,
   onAutoFitColumn,
 }: WorkbookCanvasHeaderStripProps) => {
-  const T = useTheme();
+  const T = useThemeTokens();
   const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef(0);
@@ -109,11 +109,18 @@ const WorkbookCanvasHeaderStrip = memo(({
   const [hiddenColumnHover, setHiddenColumnHover] = useState<WorkbookAnchorTooltipState | null>(null);
   const selectionLookup = useMemo(() => buildWorkbookSelectionLookup(selection), [selection]);
   const primarySelection = selection.primary;
+  const headerColumnPartition = useMemo(() => {
+    const frozenEntries = renderColumns.filter(entry => entry.position < freezeColumnCount);
+    const floatingEntries = renderColumns.filter(entry => entry.position >= freezeColumnCount);
+    const frozenWidth = frozenEntries.reduce((sum, entry) => sum + entry.displayWidth, 0);
+    const contentLeft = LN_W + 3;
+    return { frozenEntries, floatingEntries, frozenWidth, contentLeft };
+  }, [renderColumns, freezeColumnCount]);
 
   useEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller) return undefined;
-    const handleScroll = () => setHiddenColumnHover(null);
+    const handleScroll = () => setHiddenColumnHover((prev) => (prev !== null ? null : prev));
     scroller.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
       scroller.removeEventListener('scroll', handleScroll);
@@ -208,9 +215,7 @@ const WorkbookCanvasHeaderStrip = memo(({
         drawLeft: drawX,
         drawWidth: pairWidth,
         contentLeft,
-        frozenWidth: renderColumns
-          .filter(renderEntry => renderEntry.position < freezeColumnCount)
-          .reduce((sum, renderEntry) => sum + renderEntry.displayWidth, 0),
+        frozenWidth: headerColumnPartition.frozenWidth,
         frozen: entry.position < freezeColumnCount,
       });
       if (!viewportRect || x < viewportRect.left || x >= viewportRect.left + viewportRect.width) continue;
@@ -245,6 +250,8 @@ const WorkbookCanvasHeaderStrip = memo(({
     return null;
   };
 
+  const drawRef = useRef<() => void>(() => {});
+
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -276,18 +283,13 @@ const WorkbookCanvasHeaderStrip = memo(({
       const borderRegistry = createWorkbookCanvasBorderRegistry();
       const deferredFocusDraws: Array<() => void> = [];
 
-      const contentLeft = LN_W + 3;
-      const frozenWidth = renderColumns
-        .filter(renderEntry => renderEntry.position < freezeColumnCount)
-        .reduce((sum, renderEntry) => sum + renderEntry.displayWidth, 0);
+      const { contentLeft, frozenWidth, frozenEntries, floatingEntries } = headerColumnPartition;
       const layerViewports = getWorkbookCanvasLayerViewports({
         contentLeft,
         contentRight,
         frozenWidth,
       });
       const scrollViewport = layerViewports.scroll ?? layerViewports.content;
-      const frozenEntries = renderColumns.filter(entry => entry.position < freezeColumnCount);
-      const floatingEntries = renderColumns.filter(entry => entry.position >= freezeColumnCount);
       const drawColumn = (entry: HorizontalVirtualColumnEntry) => {
         const pairWidth = mode === 'single'
           ? entry.width
@@ -303,11 +305,7 @@ const WorkbookCanvasHeaderStrip = memo(({
         const label = getWorkbookColumnLabel(column);
         const isSelectedColumn = Boolean(
           selectionLookup.columnKeys.has(`${sheetName}:${column}`)
-          || selection.items.some(item => (
-            item.kind === 'cell'
-            && item.sheetName === sheetName
-            && item.colIndex === column
-          ))
+          || selectionLookup.cellColumnKeys.has(`${sheetName}:${column}`)
         );
         const isBaseFocused = isSelectedColumn && primarySelection?.side === 'base';
         const isMineFocused = isSelectedColumn && primarySelection?.side === 'mine';
@@ -440,20 +438,14 @@ const WorkbookCanvasHeaderStrip = memo(({
       ctx.restore();
     };
 
-    const scheduleDraw = () => {
-      if (rafRef.current) return;
-      rafRef.current = requestAnimationFrame(() => {
-        rafRef.current = 0;
-        draw();
-      });
-    };
-
-    const scroller = scrollRef.current;
-    scroller?.addEventListener('scroll', scheduleDraw, { passive: true });
+    drawRef.current = draw;
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+    }
     draw();
 
     return () => {
-      scroller?.removeEventListener('scroll', scheduleDraw);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = 0;
     };
@@ -462,6 +454,7 @@ const WorkbookCanvasHeaderStrip = memo(({
     cursor,
     fixedSide,
     freezeColumnCount,
+    headerColumnPartition,
     hiddenColumnSegments,
     columnLayoutByColumn,
     mode,
@@ -472,6 +465,7 @@ const WorkbookCanvasHeaderStrip = memo(({
     resolveHiddenIndicatorLayouts,
     scrollRef,
     selection,
+    selectionLookup.cellColumnKeys,
     selectionLookup.columnKeys,
     sheetName,
     showFixedSideAccent,
@@ -479,6 +473,28 @@ const WorkbookCanvasHeaderStrip = memo(({
     T,
     viewportWidth,
   ]);
+
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+
+    let lastScrollLeft = scroller.scrollLeft ?? 0;
+    const onScroll = () => {
+      const nextScrollLeft = scroller.scrollLeft ?? 0;
+      if (nextScrollLeft === lastScrollLeft) return;
+      lastScrollLeft = nextScrollLeft;
+      if (rafRef.current) return;
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = 0;
+        drawRef.current();
+      });
+    };
+
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      scroller.removeEventListener('scroll', onScroll);
+    };
+  }, [scrollRef]);
 
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (!onColumnWidthChange || !onAutoFitColumn || event.button !== 0) return;

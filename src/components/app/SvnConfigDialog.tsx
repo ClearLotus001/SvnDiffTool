@@ -1,10 +1,13 @@
 import { memo } from 'react';
-import { FONT_CODE, FONT_SIZE, FONT_UI } from '@/constants/typography';
+import { Settings, X } from 'lucide-react';
 import { useI18n } from '@/context/i18n';
-import { useTheme } from '@/context/theme';
+import { cssAlpha, cssAlphaRaw, cssVar } from '@/theme/cssUtils';
+import DialogFrame from '@/components/shared/DialogFrame';
+import type { AnimatedVisibilityState } from '@/hooks/ui/useAnimatedVisibility';
 import type { SvnDiffViewerScope, SvnDiffViewerStatus } from '@/types';
 
 interface SvnConfigDialogProps {
+  animationState: AnimatedVisibilityState;
   status: SvnDiffViewerStatus | null;
   loading: boolean;
   applyingScope: SvnDiffViewerScope | null;
@@ -17,48 +20,14 @@ interface SvnConfigDialogProps {
 }
 
 function normalizeCommand(value: string | null | undefined) {
-  return (value ?? '')
-    .trim()
-    .replace(/\s+/g, ' ')
-    .toLowerCase();
-}
-
-function ConfigIcon() {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round">
-      <path d="M8 2.5v1.2" />
-      <path d="M8 12.3v1.2" />
-      <path d="m4.8 4.8.9.9" />
-      <path d="m10.3 10.3.9.9" />
-      <path d="M2.5 8h1.2" />
-      <path d="M12.3 8h1.2" />
-      <path d="m4.8 11.2.9-.9" />
-      <path d="m10.3 5.7.9-.9" />
-      <circle cx="8" cy="8" r="2.4" />
-    </svg>
-  );
+  return (value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
 const SvnConfigDialog = memo(({
-  status,
-  loading,
-  applyingScope,
-  isRestoringDefault,
-  error,
-  onApply,
-  onRestoreDefault,
-  onRefresh,
-  onClose,
+  animationState,
+  status, loading, applyingScope, isRestoringDefault, error,
+  onApply, onRestoreDefault, onRefresh, onClose,
 }: SvnConfigDialogProps) => {
-  const T = useTheme();
   const { t } = useI18n();
   const isBusy = applyingScope !== null || isRestoringDefault;
   const normalizedCommand = normalizeCommand(status?.command);
@@ -70,184 +39,86 @@ const SvnConfigDialog = memo(({
         && normalizeCommand(status.workbookDiffCommands[extension]) === normalizedCommand
       )).length
     : 0;
-  const canRestoreDefault = Boolean(
-    status?.available
-    && status.canRestoreDefault,
-  );
+  const canRestoreDefault = Boolean(status?.available && status.canRestoreDefault);
 
   const currentModeLabel = (() => {
     switch (status?.currentMode) {
-      case 'all-files':
-        return t('svnConfigModeAllFiles');
-      case 'excel-only':
-        return t('svnConfigModeExcelOnly');
-      case 'mixed':
-        return t('svnConfigModeMixed');
-      case 'unsupported':
-        return t('svnConfigModeUnsupported');
-      case 'unconfigured':
-      default:
-        return t('svnConfigModeUnconfigured');
+      case 'all-files': return t('svnConfigModeAllFiles');
+      case 'excel-only': return t('svnConfigModeExcelOnly');
+      case 'mixed': return t('svnConfigModeMixed');
+      case 'unsupported': return t('svnConfigModeUnsupported');
+      case 'unconfigured': default: return t('svnConfigModeUnconfigured');
     }
   })();
 
   const availabilityHint = (() => {
     if (!status) return '';
     switch (status.reason) {
-      case 'windows-only':
-        return t('svnConfigAvailabilityWindowsOnly');
-      case 'packaged-only':
-        return t('svnConfigAvailabilityPackagedOnly');
-      case 'ready':
-      default:
-        return t('svnConfigAvailabilityReady');
+      case 'windows-only': return t('svnConfigAvailabilityWindowsOnly');
+      case 'packaged-only': return t('svnConfigAvailabilityPackagedOnly');
+      case 'ready': default: return t('svnConfigAvailabilityReady');
     }
   })();
 
-  const InfoCard = ({
-    label,
-    value,
-    mono = false,
-  }: {
-    label: string;
-    value: string;
-    mono?: boolean;
-  }) => (
-    <div
-      style={{
-        borderRadius: 18,
-        padding: '14px 16px',
-        background: `linear-gradient(180deg, ${T.bg0} 0%, ${T.bg1} 100%)`,
-        border: `1px solid ${T.border}`,
-        display: 'grid',
-        gap: 8,
-        minWidth: 0,
-        }}>
-        <div
-          style={{
-            color: T.t2,
-            fontSize: FONT_SIZE.xs,
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
-          fontWeight: 700,
-        }}>
-        {label}
-      </div>
-      <div
-        style={{
-          color: T.t0,
-          fontSize: mono ? FONT_SIZE.sm : FONT_SIZE.lg,
-          lineHeight: mono ? 1.65 : 1.15,
-          fontWeight: mono ? 600 : 850,
-          fontFamily: mono ? FONT_CODE : FONT_UI,
-          wordBreak: mono ? 'break-all' : 'normal',
-        }}>
+  const InfoCard = ({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) => (
+    <div className="rounded-[18px] p-[14px_16px] bg-bg-base border border-border-default grid gap-2 min-w-0">
+      <div className="text-text-secondary text-[11px] uppercase tracking-widest font-bold">{label}</div>
+      <div className={`text-text-title ${mono ? 'text-[13px] leading-relaxed font-semibold font-code break-all' : 'text-[15px] leading-tight font-[850] font-ui'}`}>
         {value}
       </div>
     </div>
   );
 
   const ScopeCard = ({
-    scope,
-    accent,
-    title,
-    body,
+    scope, accent, title, body,
   }: {
-    scope: SvnDiffViewerScope;
-    accent: string;
-    title: string;
-    body: string;
+    scope: SvnDiffViewerScope; accent: string; title: string; body: string;
   }) => {
     const current = status?.currentMode === scope;
     const busy = applyingScope === scope;
+    const isDisabled = !status?.available || loading || isBusy;
 
     return (
       <div
+        className="relative rounded-[22px] p-[20px_20px_18px] border grid gap-3 min-h-[212px] content-start"
         style={{
-          position: 'relative',
-          borderRadius: 22,
-          padding: '20px 20px 18px',
-          background: `linear-gradient(180deg, ${current ? `${accent}10` : T.bg1} 0%, ${T.bg0} 100%)`,
-          border: `1px solid ${current ? `${accent}40` : T.border}`,
-          boxShadow: `0 20px 40px -34px ${T.border2}`,
-          display: 'grid',
-          gap: 12,
-          minHeight: 212,
-          alignContent: 'start',
+          background: `linear-gradient(180deg, ${current ? cssAlphaRaw(accent, '10') : 'var(--bg-surface-solid)'} 0%, var(--bg-base) 100%)`,
+          borderColor: current ? cssAlphaRaw(accent, '40') : undefined,
+          boxShadow: `0 20px 40px -34px var(--border-strong)`,
         }}>
         <div
           aria-hidden="true"
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 22,
-            right: 22,
-            height: 1,
-            background: `linear-gradient(90deg, ${accent}88 0%, ${accent}18 55%, ${accent}00 100%)`,
-          }}
+          className="absolute top-0 left-[22px] right-[22px] h-px"
+          style={{ background: `linear-gradient(90deg, ${cssAlphaRaw(accent, '88')} 0%, ${cssAlphaRaw(accent, '18')} 55%, ${cssAlphaRaw(accent, '00')} 100%)` }}
         />
-
-        <div style={{ display: 'grid', gap: 12, justifyItems: 'center', textAlign: 'center' }}>
-          <div
-            style={{
-              color: T.t0,
-              fontSize: 22,
-              fontWeight: 860,
-              lineHeight: 1.15,
-              letterSpacing: -0.35,
-              whiteSpace: 'nowrap',
-            }}>
+        <div className="grid gap-3 justify-items-center text-center">
+          <div className="text-text-title text-[22px] font-[860] leading-tight tracking-tight whitespace-nowrap">
             {title}
           </div>
           {current && (
             <span
-              style={{
-                height: 26,
-                padding: '0 12px',
-                borderRadius: 999,
-                display: 'inline-flex',
-                alignItems: 'center',
-                background: `${accent}16`,
-                color: accent,
-                fontSize: FONT_SIZE.xs,
-                fontWeight: 800,
-                flexShrink: 0,
-              }}>
+              className="h-[26px] px-3 rounded-full inline-flex items-center text-[11px] font-extrabold shrink-0"
+              style={{ background: cssAlphaRaw(accent, '16'), color: `var(${accent})` }}>
               {t('svnConfigCurrentBadge')}
             </span>
           )}
         </div>
-
-        <div
-          style={{
-            color: T.t2,
-            fontSize: FONT_SIZE.sm,
-            lineHeight: 1.75,
-            minHeight: 46,
-            textAlign: 'center',
-          }}>
-          {body}
-        </div>
-
+        <div className="text-text-secondary text-[13px] leading-[1.75] min-h-[46px] text-center">{body}</div>
         <button
-          className="svn-config-action-btn"
           type="button"
-          disabled={!status?.available || loading || isBusy}
+          disabled={isDisabled}
           onClick={() => onApply(scope)}
-          style={{
-            height: 44,
-            borderRadius: 14,
-            border: 'none',
-            background: !status?.available || loading || isBusy
-              ? T.bg3
-              : `linear-gradient(135deg, ${accent} 0%, ${accent}dd 100%)`,
-            color: !status?.available || loading || isBusy ? T.t2 : '#fff',
-            fontFamily: FONT_UI,
-            fontSize: FONT_SIZE.sm,
-            fontWeight: 800,
-            cursor: !status?.available || loading || isBusy ? 'not-allowed' : 'pointer',
-            boxShadow: !status?.available || loading || isBusy ? 'none' : `0 18px 34px -26px ${accent}`,
-            transition: 'transform 160ms ease, filter 160ms ease, box-shadow 160ms ease',
+          className={`
+            h-11 rounded-[14px] border-none font-ui text-[13px] font-extrabold
+            transition-all duration-150
+            ${isDisabled
+              ? 'bg-bg-elevated text-text-secondary cursor-not-allowed shadow-none'
+              : 'text-[var(--btn-active-text)] cursor-pointer hover:-translate-y-px hover:brightness-[1.03] active:scale-[0.97]'
+            }
+          `}
+          style={isDisabled ? undefined : {
+            background: `linear-gradient(135deg, var(${accent}) 0%, ${cssAlphaRaw(accent, 'dd')} 100%)`,
+            boxShadow: `0 18px 34px -26px var(${accent})`,
           }}>
           {busy ? t('svnConfigApplying') : scope === 'all-files' ? t('svnConfigApplyAllFiles') : t('svnConfigApplyExcelOnly')}
         </button>
@@ -256,341 +127,126 @@ const SvnConfigDialog = memo(({
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%, -50%)',
-        zIndex: 100,
-        width: 840,
-        maxWidth: 'calc(100vw - 32px)',
-        maxHeight: 'calc(100vh - 72px)',
-        overflow: 'hidden',
-        background: T.bg1,
-        border: `1px solid ${T.border2}`,
-        borderRadius: 28,
-        padding: '24px 24px 20px',
-        boxShadow: '0 28px 78px rgba(0,0,0,0.35)',
-        fontFamily: FONT_UI,
-        boxSizing: 'border-box',
-      }}>
+    <DialogFrame
+      animationState={animationState}
+      className="w-[840px] max-w-[calc(100vw-32px)] max-h-[calc(100vh-72px)] overflow-hidden bg-bg-surface-solid border border-border-strong rounded-[28px] p-[24px_24px_20px] shadow-2xl font-ui box-border">
       <button
-        className="svn-config-close-btn"
         type="button"
         onClick={onClose}
-        style={{
-          position: 'absolute',
-          top: 16,
-          right: 16,
-          width: 34,
-          height: 34,
-          borderRadius: 10,
-          border: 'none',
-          background: 'transparent',
-          color: T.t1,
-          cursor: 'pointer',
-          fontSize: 18,
-          fontFamily: FONT_UI,
-          lineHeight: 1,
-          transition: 'background 160ms ease, color 160ms ease, transform 160ms ease',
-        }}>
-        ×
+        className="absolute top-4 right-4 size-[34px] rounded-[10px] border-none bg-transparent text-text-primary cursor-pointer flex items-center justify-center hover:bg-bg-surface-hover hover:text-accent active:scale-95 transition-all duration-150">
+        <X size={16} />
       </button>
 
-      <div style={{ display: 'grid', gap: 14 }}>
-        <header style={{ display: 'grid', gap: 10, justifyItems: 'center', textAlign: 'center' }}>
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 12,
-              flexWrap: 'wrap',
-            }}>
+      <div className="grid gap-3.5">
+        <header className="grid gap-2.5 justify-items-center text-center">
+          <div className="inline-flex items-center justify-center gap-3 flex-wrap">
             <div
               aria-hidden="true"
+              className="size-[42px] rounded-[14px] inline-flex items-center justify-center shrink-0"
               style={{
-                width: 42,
-                height: 42,
-                borderRadius: 14,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: T.acc,
-                background: `${T.acc}12`,
-                border: `1px solid ${T.acc}24`,
-                flexShrink: 0,
+                color: cssVar('acc'),
+                background: cssAlpha('acc', '12'),
+                border: `1px solid ${cssAlpha('acc', '24')}`,
               }}>
-              <ConfigIcon />
+              <Settings size={18} />
             </div>
-            <div
-              style={{
-                color: T.t0,
-                fontSize: 32,
-                fontWeight: 920,
-                lineHeight: 1.08,
-                letterSpacing: -1,
-              }}>
+            <div className="text-text-title text-[32px] font-[920] leading-none tracking-tight">
               {t('svnConfigTitle')}
             </div>
           </div>
-          <div
-            style={{
-              maxWidth: 660,
-              color: T.t2,
-              fontSize: FONT_SIZE.sm,
-              lineHeight: 1.75,
-            }}>
+          <div className="max-w-[660px] text-text-secondary text-[13px] leading-[1.75]">
             {t('svnConfigSubtitle')}
           </div>
         </header>
 
-        <section
-          style={{
-            borderRadius: 24,
-            padding: '16px',
-            background: `linear-gradient(180deg, ${T.bg1} 0%, ${T.bg0} 100%)`,
-            border: `1px solid ${T.border}`,
-            boxShadow: `0 18px 40px -34px ${T.border2}`,
-            display: 'grid',
-            gap: 12,
-          }}>
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 10,
-              textAlign: 'center',
-            }}>
-            <span style={{ color: T.t2, fontSize: FONT_SIZE.sm, fontWeight: 700 }}>
-              {t('svnConfigCurrentModeLabel')}
-            </span>
+        <section className="rounded-[24px] p-4 border border-border-default grid gap-3" style={{ background: `linear-gradient(180deg, var(--bg-surface-solid) 0%, var(--bg-base) 100%)`, boxShadow: `0 18px 40px -34px var(--border-strong)` }}>
+          <div className="flex flex-wrap items-center justify-center gap-2.5 text-center">
+            <span className="text-text-secondary text-[13px] font-bold">{t('svnConfigCurrentModeLabel')}</span>
             <span
-              style={{
-                minHeight: 30,
-                padding: '4px 14px',
-                borderRadius: 999,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: `${T.acc2}14`,
-                color: T.acc2,
-                fontSize: FONT_SIZE.sm,
-                fontWeight: 850,
-              }}>
+              className="min-h-[30px] py-1 px-3.5 rounded-full inline-flex items-center justify-center text-[13px] font-[850]"
+              style={{ background: cssAlpha('acc2', '14'), color: cssVar('acc2') }}>
               {loading && !status ? t('svnConfigLoading') : currentModeLabel}
             </span>
             {availabilityHint && (
-              <span style={{ color: T.t2, fontSize: FONT_SIZE.sm }}>
-                {availabilityHint}
-              </span>
+              <span className="text-text-secondary text-[13px]">{availabilityHint}</span>
             )}
           </div>
-
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr',
-              gap: 12,
-            }}>
-            <InfoCard
-              label={t('svnConfigExecutableLabel')}
-              value={status?.executablePath ?? '—'}
-              mono
-            />
-            <InfoCard
-              label={t('svnConfigWorkbookCoverageLabel')}
-              value={status ? `${workbookCoverage}/${status.workbookExtensions.length}` : '—'}
-            />
-            <InfoCard
-              label={t('svnConfigGlobalCommandLabel')}
-              value={status?.globalDiffCommand || t('svnConfigDefaultCommandFallback')}
-              mono
-            />
+          <div className="grid grid-cols-1 gap-3">
+            <InfoCard label={t('svnConfigExecutableLabel')} value={status?.executablePath ?? '—'} mono />
+            <InfoCard label={t('svnConfigWorkbookCoverageLabel')} value={status ? `${workbookCoverage}/${status.workbookExtensions.length}` : '—'} />
+            <InfoCard label={t('svnConfigGlobalCommandLabel')} value={status?.globalDiffCommand || t('svnConfigDefaultCommandFallback')} mono />
           </div>
         </section>
 
         {(error || (loading && !status)) && (
           <div
-            style={{
-              borderRadius: 18,
-              padding: '13px 15px',
-              background: error ? `${T.delBg}cc` : `${T.acc2}0f`,
-              border: `1px solid ${error ? T.delBrd : T.border}`,
-              color: error ? T.delTx : T.t1,
-              fontSize: FONT_SIZE.sm,
-              lineHeight: 1.7,
-              fontWeight: 700,
-              textAlign: 'center',
-            }}>
+            className={`rounded-[18px] p-[13px_15px] border text-[13px] leading-relaxed font-bold text-center ${error ? 'text-diff-remove-text border-diff-remove-border' : 'text-text-primary border-border-default'}`}
+            style={{ background: error ? cssAlpha('delBg', 'cc') : cssAlpha('acc2', '0f') }}>
             {error || t('svnConfigLoading')}
           </div>
         )}
 
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
-            gap: 16,
-          }}>
-          <ScopeCard
-            scope="all-files"
-            accent={T.acc}
-            title={t('svnConfigAllFilesTitle')}
-            body={t('svnConfigAllFilesBody')}
-          />
-          <ScopeCard
-            scope="excel-only"
-            accent={T.acc2}
-            title={t('svnConfigExcelOnlyTitle')}
-            body={t('svnConfigExcelOnlyBody')}
-          />
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(360px,1fr))] gap-4">
+          <ScopeCard scope="all-files" accent="--accent" title={t('svnConfigAllFilesTitle')} body={t('svnConfigAllFilesBody')} />
+          <ScopeCard scope="excel-only" accent="--acc2" title={t('svnConfigExcelOnlyTitle')} body={t('svnConfigExcelOnlyBody')} />
         </div>
 
         <section
-          style={{
-            borderRadius: 18,
-            padding: '14px 16px',
-            background: `${T.acc2}0d`,
-            border: `1px solid ${T.border}`,
-            color: T.t1,
-            fontSize: FONT_SIZE.sm,
-            lineHeight: 1.8,
-            textAlign: 'center',
-          }}>
+          className="rounded-[18px] p-[14px_16px] border border-border-default text-text-primary text-[13px] leading-[1.8] text-center"
+          style={{ background: cssAlpha('acc2', '0d') }}>
           {t('svnConfigSupportHint')}
         </section>
 
         <section
+          className="rounded-[18px] p-[16px_18px] border flex items-center justify-between gap-4 flex-wrap"
           style={{
-            borderRadius: 18,
-            padding: '16px 18px',
-            background: `linear-gradient(180deg, ${T.delBg}22 0%, ${T.bg0} 100%)`,
-            border: `1px solid ${T.delBrd}33`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 16,
-            flexWrap: 'wrap',
+            background: `linear-gradient(180deg, ${cssAlpha('delBg', '22')} 0%, var(--bg-base) 100%)`,
+            borderColor: cssAlpha('delBrd', '33'),
           }}>
-          <div style={{ display: 'grid', gap: 6, flex: '1 1 320px', minWidth: 0 }}>
-            <div
-              style={{
-                color: T.t0,
-                fontSize: FONT_SIZE.sm,
-                fontWeight: 820,
-              }}>
-              {t('svnConfigRestoreDefaultTitle')}
-            </div>
-            <div
-              style={{
-                color: T.t2,
-                fontSize: FONT_SIZE.sm,
-                lineHeight: 1.75,
-              }}>
-              {t('svnConfigRestoreDefaultBody')}
-            </div>
-            <div
-              style={{
-                color: T.t2,
-                fontSize: FONT_SIZE.xs,
-                lineHeight: 1.7,
-              }}>
-              {t('svnConfigRestoreDefaultHint')}
-            </div>
+          <div className="grid gap-1.5 flex-[1_1_320px] min-w-0">
+            <div className="text-text-title text-[13px] font-[820]">{t('svnConfigRestoreDefaultTitle')}</div>
+            <div className="text-text-secondary text-[13px] leading-[1.75]">{t('svnConfigRestoreDefaultBody')}</div>
+            <div className="text-text-secondary text-[11px] leading-relaxed">{t('svnConfigRestoreDefaultHint')}</div>
           </div>
-
           <button
-            className="svn-config-reset-btn"
             type="button"
             onClick={onRestoreDefault}
             disabled={!canRestoreDefault || loading || isBusy}
-            style={{
-              height: 42,
-              minWidth: 176,
-              padding: '0 18px',
-              borderRadius: 12,
-              border: `1px solid ${T.delBrd}`,
-              background: !canRestoreDefault || loading || isBusy ? T.bg3 : `${T.delBg}cc`,
-              color: !canRestoreDefault || loading || isBusy ? T.t2 : T.delTx,
-              fontFamily: FONT_UI,
-              fontSize: FONT_SIZE.sm,
-              fontWeight: 800,
-              cursor: !canRestoreDefault || loading || isBusy ? 'not-allowed' : 'pointer',
-              transition: 'background 160ms ease, color 160ms ease, transform 160ms ease, border-color 160ms ease',
-              flexShrink: 0,
-            }}>
+            className={`
+              h-[42px] min-w-[176px] px-[18px] rounded-xl border font-ui text-[13px] font-extrabold shrink-0
+              transition-all duration-150
+              ${!canRestoreDefault || loading || isBusy
+                ? 'bg-bg-elevated text-text-secondary border-border-default cursor-not-allowed'
+                : 'text-diff-remove-text border-diff-remove-border cursor-pointer hover:-translate-y-px hover:brightness-110 active:scale-[0.97]'
+              }
+            `}
+            style={!canRestoreDefault || loading || isBusy ? undefined : { background: cssAlpha('delBg', 'cc') }}>
             {isRestoringDefault ? t('svnConfigRestoringDefault') : t('svnConfigRestoreDefaultAction')}
           </button>
         </section>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+        <div className="flex justify-end gap-2.5">
           <button
-            className="svn-config-ghost-btn"
             type="button"
             onClick={onRefresh}
             disabled={loading || isBusy}
-            style={{
-              height: 38,
-              minWidth: 98,
-              padding: '0 16px',
-              borderRadius: 12,
-              border: `1px solid ${T.border2}`,
-              background: 'transparent',
-              color: loading || isBusy ? T.t2 : T.t1,
-              fontFamily: FONT_UI,
-              fontSize: FONT_SIZE.sm,
-              fontWeight: 700,
-              cursor: loading || isBusy ? 'not-allowed' : 'pointer',
-              transition: 'background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease',
-            }}>
+            className={`
+              h-[38px] min-w-[98px] px-4 rounded-xl border border-border-strong bg-transparent
+              font-ui text-[13px] font-bold transition-all duration-150
+              ${loading || isBusy ? 'text-text-secondary cursor-not-allowed' : 'text-text-primary cursor-pointer hover:bg-bg-surface-hover hover:-translate-y-px active:scale-[0.97]'}
+            `}>
             {t('svnConfigRefresh')}
           </button>
           <button
-            className="svn-config-primary-btn"
             type="button"
             onClick={onClose}
-            style={{
-              height: 38,
-              minWidth: 98,
-              padding: '0 16px',
-              borderRadius: 12,
-              border: 'none',
-              background: T.acc2,
-              color: '#fff',
-              fontFamily: FONT_UI,
-              fontSize: FONT_SIZE.sm,
-              fontWeight: 800,
-              cursor: 'pointer',
-              boxShadow: `0 16px 30px -24px ${T.acc2}`,
-              transition: 'transform 160ms ease, filter 160ms ease, box-shadow 160ms ease',
-            }}>
+            className="h-[38px] min-w-[98px] px-4 rounded-xl border-none bg-[var(--acc2)] text-[var(--btn-active-text)] font-ui text-[13px] font-extrabold cursor-pointer hover:-translate-y-px hover:brightness-[1.03] active:scale-[0.97] transition-all duration-150"
+            style={{ boxShadow: `0 16px 30px -24px var(--acc2)` }}>
             {t('svnConfigClose')}
           </button>
         </div>
-
-        <style>{`
-          .svn-config-action-btn:not(:disabled):hover,
-          .svn-config-reset-btn:not(:disabled):hover,
-          .svn-config-primary-btn:not(:disabled):hover {
-            transform: translateY(-1px);
-            filter: brightness(1.03) saturate(1.04);
-            box-shadow: 0 0 0 3px ${T.acc2}14, 0 24px 44px -28px ${T.border2};
-          }
-
-          .svn-config-ghost-btn:not(:disabled):hover,
-          .svn-config-close-btn:hover {
-            transform: translateY(-1px);
-            background: ${T.bg2};
-            color: ${T.t0};
-            border-color: ${T.border2};
-          }
-        `}</style>
       </div>
-    </div>
+    </DialogFrame>
   );
 });
 

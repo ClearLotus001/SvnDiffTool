@@ -1,17 +1,22 @@
 // src/components/GotoLine.tsx
 import { memo, useState, useEffect, useRef } from 'react';
-import { FONT_CODE, FONT_SIZE, FONT_UI } from '@/constants/typography';
 import { useI18n } from '@/context/i18n';
-import { useTheme } from '@/context/theme';
+import DialogFrame from '@/components/shared/DialogFrame';
+import type { AnimatedVisibilityState } from '@/hooks/ui/useAnimatedVisibility';
 
 interface GotoLineProps {
+  animationState: AnimatedVisibilityState;
   totalLines: number;
   onGoto: (lineNo: number) => void;
   onClose: () => void;
 }
 
-const GotoLine = memo(({ totalLines, onGoto, onClose }: GotoLineProps) => {
-  const T = useTheme();
+const GotoLine = memo(({
+  animationState,
+  totalLines,
+  onGoto,
+  onClose,
+}: GotoLineProps) => {
   const { t } = useI18n();
   const [val, setVal] = useState('');
   const [triedSubmit, setTriedSubmit] = useState(false);
@@ -32,13 +37,8 @@ const GotoLine = memo(({ totalLines, onGoto, onClose }: GotoLineProps) => {
     ? t('gotoOutOfRange', { totalLines: maxLine })
     : t('gotoPreview', { lineNo: parsedLine });
 
-  const helperColor = !hasLines
-    ? T.t2
-    : isValidLine
-    ? T.acc2
-    : hasValue || triedSubmit
-    ? T.delTx
-    : T.t2;
+  const helperIsError = hasLines && (hasValue || triedSubmit) && !isValidLine;
+  const helperIsSuccess = isValidLine;
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -50,32 +50,22 @@ const GotoLine = memo(({ totalLines, onGoto, onClose }: GotoLineProps) => {
       setTriedSubmit(true);
       return;
     }
-
     onGoto(parsedLine);
     onClose();
   };
 
   return (
-    <div style={{
-      position: 'fixed', top: '50%', left: '50%',
-      transform: 'translate(-50%,-50%)',
-      zIndex: 100,
-      background: T.bg1, border: `1px solid ${T.border2}`,
-      borderRadius: 14, padding: 18,
-      boxShadow: '0 18px 52px rgba(0,0,0,0.32)',
-      width: 340,
-      fontFamily: FONT_UI,
-    }}>
-      <div style={{ fontSize: FONT_SIZE.lg, color: T.t0, marginBottom: 6, fontFamily: FONT_UI, fontWeight: 700 }}>
+    <DialogFrame
+      animationState={animationState}
+      className="w-[340px] max-w-[calc(100vw-32px)] rounded-[14px] p-[18px] bg-bg-surface-solid border border-border-strong shadow-2xl font-ui">
+      <div className="text-[15px] text-text-title mb-1.5 font-bold">
         {t('gotoTitle')}
       </div>
-      <div style={{
-        fontSize: FONT_SIZE.sm,
-        color: helperColor,
-        marginBottom: 12,
-        minHeight: 16,
-        fontFamily: FONT_UI,
-      }}>
+      <div
+        className={`
+          text-[13px] mb-3 min-h-4
+          ${helperIsError ? 'text-diff-remove-text' : helperIsSuccess ? 'text-[var(--acc2)]' : 'text-text-secondary'}
+        `}>
         {helperText}
       </div>
       <input
@@ -94,39 +84,44 @@ const GotoLine = memo(({ totalLines, onGoto, onClose }: GotoLineProps) => {
         autoComplete="off"
         disabled={!hasLines}
         placeholder={hasLines ? t('gotoInputPlaceholder') : '—'}
-        style={{
-          width: '100%',
-          background: hasLines ? T.bg2 : T.bg1,
-          border: `1px solid ${isValidLine || !hasValue ? T.border2 : T.delBrd}`,
-          color: T.t0, padding: '0 12px',
-          borderRadius: 8, fontSize: FONT_SIZE.lg,
-          outline: 'none', fontFamily: FONT_CODE,
-          height: 38,
-          lineHeight: '38px',
-          boxSizing: 'border-box',
-          opacity: hasLines ? 1 : 0.65,
-        }} />
-      <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
-        <button onClick={onClose} style={{ background: 'transparent', border: `1px solid ${T.border2}`, color: T.t1, padding: '0 16px', borderRadius: 8, cursor: 'pointer', fontSize: FONT_SIZE.md, fontFamily: FONT_UI, height: 34 }}>{t('gotoCancel')}</button>
+        className={`
+          w-full h-[38px] px-3 rounded-lg
+          border text-text-title text-[15px] font-code
+          outline-none transition-colors duration-150
+          ${hasLines ? 'bg-bg-surface-hover' : 'bg-bg-surface-solid opacity-65'}
+          ${isValidLine || !hasValue ? 'border-border-strong' : 'border-diff-remove-border'}
+          focus:border-accent
+        `}
+      />
+      <div className="flex gap-2 mt-3 justify-end">
+        <button
+          onClick={onClose}
+          className="
+            h-[34px] px-4 rounded-lg
+            border border-border-strong bg-transparent
+            text-text-primary text-[14px] font-ui
+            cursor-pointer
+            hover:bg-bg-surface-hover hover:border-accent
+            active:scale-[0.97] transition-all duration-150
+          ">
+          {t('gotoCancel')}
+        </button>
         <button
           onClick={go}
           disabled={!isValidLine}
-          style={{
-            background: isValidLine ? T.acc2 : T.bg3,
-            border: 'none',
-            color: isValidLine ? '#fff' : T.t2,
-            padding: '0 16px',
-            borderRadius: 8,
-            cursor: isValidLine ? 'pointer' : 'not-allowed',
-            fontSize: FONT_SIZE.md,
-            fontFamily: FONT_UI,
-            height: 34,
-            minWidth: 76,
-          }}>
+          className={`
+            h-[34px] px-4 min-w-[76px] rounded-lg
+            border-none text-[14px] font-ui font-bold
+            transition-all duration-150
+            ${isValidLine
+              ? 'bg-[var(--acc2)] text-[var(--btn-active-text)] cursor-pointer hover:-translate-y-px hover:brightness-105 active:scale-[0.97] shadow-[0_16px_30px_-24px_var(--acc2)]'
+              : 'bg-bg-elevated text-text-secondary cursor-not-allowed'
+            }
+          `}>
           {t('gotoGo')}
         </button>
       </div>
-    </div>
+    </DialogFrame>
   );
 });
 

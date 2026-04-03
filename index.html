@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="theme-dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -7,7 +7,7 @@
     http-equiv="Content-Security-Policy"
     content="
       default-src 'self';
-      script-src 'self' http://localhost:5173;
+      script-src 'self' 'unsafe-inline' http://localhost:5173;
       connect-src 'self' http://localhost:5173 ws://localhost:5173;
       style-src 'self' 'unsafe-inline';
       font-src 'self' data:;
@@ -18,19 +18,97 @@
       frame-ancestors 'none';
     " />
   <title>SvnDiffTool</title>
+  <script>
+    (function () {
+      var THEME_MAP = { dark: 'theme-dark', light: 'theme-light', hc: 'theme-hc' };
+      var BG_MAP = { dark: '#09090B', light: '#F4F4F5', hc: '#000000' };
+      var FG_MAP = { dark: '#FAFAFA', light: '#09090B', hc: '#FFFFFF' };
+      var SETTINGS_KEY = 'svn-excel-diff-tool.settings';
+      var LOCALE_KEY = 'svn-excel-diff-tool.locale';
+
+      function detectTheme() {
+        var themeKey = 'dark';
+        try {
+          var raw = localStorage.getItem(SETTINGS_KEY);
+          if (raw) {
+            var parsed = JSON.parse(raw);
+            if (parsed && parsed.themeKey && THEME_MAP[parsed.themeKey]) {
+              themeKey = parsed.themeKey;
+            }
+          }
+        } catch (e) { /* ignore */ }
+        return themeKey;
+      }
+
+      function detectLocale() {
+        try {
+          var saved = localStorage.getItem(LOCALE_KEY);
+          if (saved === 'zh-CN' || saved === 'en-US') {
+            return saved;
+          }
+        } catch (e) { /* ignore */ }
+
+        var candidates = [];
+        try {
+          candidates = navigator.languages && navigator.languages.length
+            ? navigator.languages
+            : [navigator.language || ''];
+        } catch (e) { /* ignore */ }
+
+        for (var i = 0; i < candidates.length; i += 1) {
+          var normalized = String(candidates[i] || '').toLowerCase();
+          if (normalized.indexOf('zh') === 0) return 'zh-CN';
+          if (normalized.indexOf('en') === 0) return 'en-US';
+        }
+
+        return 'zh-CN';
+      }
+
+      var themeKey = detectTheme();
+      var locale = detectLocale();
+      var root = document.documentElement;
+      root.className = THEME_MAP[themeKey];
+      root.lang = locale;
+      root.style.setProperty('--boot-bg', BG_MAP[themeKey]);
+      root.style.setProperty('--boot-fg', FG_MAP[themeKey]);
+      if (window.svnDiff && typeof window.svnDiff.saveStartupAppearance === 'function') {
+        window.svnDiff.saveStartupAppearance({
+          themeKey: themeKey,
+          locale: locale
+        });
+      }
+    })();
+  </script>
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body, #root { width: 100%; height: 100%; overflow: hidden; }
-    body { background: #f4efe6; display: flex; width: 100vw; height: 100vh; }
-    #root { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; }
-    /* Custom scrollbar */
-    ::-webkit-scrollbar        { width: 8px; height: 8px; }
-    ::-webkit-scrollbar-track  { background: var(--scroll-track, transparent); }
-    ::-webkit-scrollbar-thumb  { background: var(--scroll-thumb, #4a433d); border-radius: 4px; }
-    ::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover, #5d544d); }
-    input, button, select, textarea { font-family: inherit; }
-    /* Prevent text selection during resize drag */
-    .no-select { user-select: none; }
+    html, body, #root {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    html, body {
+      margin: 0;
+      background: var(--boot-bg);
+      color: var(--boot-fg);
+    }
+
+    body {
+      display: flex;
+      width: 100vw;
+      height: 100vh;
+      font-family: 'Inter', 'Microsoft YaHei UI', 'Segoe UI', 'PingFang SC', system-ui, sans-serif;
+    }
+
+    #root {
+      flex: 1 1 auto;
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+    }
+
+    input, button, select, textarea {
+      font-family: inherit;
+    }
   </style>
 </head>
 <body>

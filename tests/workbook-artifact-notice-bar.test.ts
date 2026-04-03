@@ -6,13 +6,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import WorkbookArtifactNoticeBar from '../src/components/workbook/WorkbookArtifactNoticeBar';
 import { I18nProvider } from '../src/context/i18n';
 import { ThemeContext } from '../src/context/theme';
-import { THEMES } from '../src/theme';
 
 test('WorkbookArtifactNoticeBar renders prominent artifact-only diff copy', () => {
   const html = renderToStaticMarkup(
     React.createElement(
       ThemeContext.Provider,
-      { value: THEMES.light },
+      { value: 'light' },
       React.createElement(
         I18nProvider,
         null,

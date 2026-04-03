@@ -1,0 +1,342 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// src/store/appStore.ts — Centralized Zustand store for app-level state
+//
+// Replaces the ~48 useState declarations previously scattered across App.tsx.
+// State is organized into domain slices for maintainability.
+//
+// Usage:
+//   import { useAppStore } from '@/store/appStore';
+//   const themeKey = useAppStore((s) => s.themeKey);
+//   const setThemeKey = useAppStore((s) => s.setThemeKey);
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { create } from 'zustand';
+import type { SetStateAction } from 'react';
+
+import type {
+  AppUpdateState,
+  CompareContext,
+  DiffLine,
+  DiffSourceNoticeCode,
+  LayoutMode,
+  RevisionSelectionPair,
+  SvnDiffViewerScope,
+  SvnDiffViewerStatus,
+  SvnRevisionInfo,
+  ThemeKey,
+  WorkbookArtifactDiff,
+  WorkbookCompareMode,
+  WorkbookHiddenStateBySheet,
+  WorkbookMetadataMap,
+  WorkbookPrecomputedDeltaPayload,
+  WorkbookSelectionState,
+} from '@/types';
+import { getStoredAppSettings } from '@/utils/app/settings';
+import { createWorkbookSelectionState } from '@/utils/workbook/workbookSelectionState';
+import type { WorkbookColumnWidthBySheet } from '@/utils/workbook/workbookColumnWidths';
+import type { WorkbookContextMenuState, WorkbookFreezeStateMap } from '@/hooks/app/types';
+
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Resolve React-style SetStateAction (value or updater function). */
+function resolve<T>(prev: T, action: SetStateAction<T>): T {
+  return typeof action === 'function' ? (action as (prevState: T) => T)(prev) : action;
+}
+
+/** Create a standard setter that supports both direct values and updater functions. */
+function setter<K extends keyof AppState>(
+  set: (fn: (state: AppState) => AppState | Partial<AppState>) => void,
+  key: K,
+): (value: SetStateAction<AppState[K]>) => void {
+  return (value) => set((state) => {
+    const nextValue = resolve(state[key], value);
+    if (Object.is(nextValue, state[key])) return state;
+    return { [key]: nextValue } as Partial<AppState>;
+  });
+}
+
+
+// ── State & Actions ─────────────────────────────────────────────────────────
+
+// ---- UI Settings (persisted) ----
+interface UiSettingsSlice {
+  themeKey: ThemeKey;
+  layout: LayoutMode;
+  collapseCtx: boolean;
+  showWhitespace: boolean;
+  showHiddenColumns: boolean;
+  fontSize: number;
+  workbookCompareMode: WorkbookCompareMode;
+  setThemeKey: (v: SetStateAction<ThemeKey>) => void;
+  setLayout: (v: SetStateAction<LayoutMode>) => void;
+  setCollapseCtx: (v: SetStateAction<boolean>) => void;
+  setShowWhitespace: (v: SetStateAction<boolean>) => void;
+  setShowHiddenColumns: (v: SetStateAction<boolean>) => void;
+  setFontSize: (v: SetStateAction<number>) => void;
+  setWorkbookCompareMode: (v: SetStateAction<WorkbookCompareMode>) => void;
+}
+
+// ---- Diff Data ----
+interface DiffDataSlice {
+  diffLines: DiffLine[];
+  diffSourceNoticeCode: DiffSourceNoticeCode | null;
+  diffSourceNoticeDismissed: boolean;
+  precomputedWorkbookDelta: WorkbookPrecomputedDeltaPayload | null;
+  workbookArtifactDiff: WorkbookArtifactDiff | null;
+  artifactNoticeDismissed: boolean;
+  setDiffLines: (v: SetStateAction<DiffLine[]>) => void;
+  setDiffSourceNoticeCode: (v: SetStateAction<DiffSourceNoticeCode | null>) => void;
+  setDiffSourceNoticeDismissed: (v: SetStateAction<boolean>) => void;
+  setPrecomputedWorkbookDelta: (v: SetStateAction<WorkbookPrecomputedDeltaPayload | null>) => void;
+  setWorkbookArtifactDiff: (v: SetStateAction<WorkbookArtifactDiff | null>) => void;
+  setArtifactNoticeDismissed: (v: SetStateAction<boolean>) => void;
+}
+
+// ---- File Names ----
+interface FileNamesSlice {
+  baseName: string;
+  mineName: string;
+  launchBaseName: string;
+  launchMineName: string;
+  fileName: string;
+  setBaseName: (v: SetStateAction<string>) => void;
+  setMineName: (v: SetStateAction<string>) => void;
+  setLaunchBaseName: (v: SetStateAction<string>) => void;
+  setLaunchMineName: (v: SetStateAction<string>) => void;
+  setFileName: (v: SetStateAction<string>) => void;
+}
+
+// ---- Search ----
+interface SearchSlice {
+  searchQ: string;
+  searchRx: boolean;
+  searchCs: boolean;
+  searchWorkbookScope: 'all' | 'sheet';
+  activeSearchIdx: number;
+  searchJumpNonce: number;
+  setSearchQ: (v: SetStateAction<string>) => void;
+  setSearchRx: (v: SetStateAction<boolean>) => void;
+  setSearchCs: (v: SetStateAction<boolean>) => void;
+  setSearchWorkbookScope: (v: SetStateAction<'all' | 'sheet'>) => void;
+  setActiveSearchIdx: (v: SetStateAction<number>) => void;
+  setSearchJumpNonce: (v: SetStateAction<number>) => void;
+}
+
+// ---- Navigation ----
+interface NavigationSlice {
+  hunkIdx: number;
+  guidedPulseNonce: number;
+  setHunkIdx: (v: SetStateAction<number>) => void;
+  setGuidedPulseNonce: (v: SetStateAction<number>) => void;
+}
+
+// ---- Electron Environment ----
+interface ElectronEnvSlice {
+  isElectron: boolean;
+  isDevMode: boolean;
+  usesNativeWindowControls: boolean;
+  isWindowMaximized: boolean;
+  setIsElectron: (v: SetStateAction<boolean>) => void;
+  setIsDevMode: (v: SetStateAction<boolean>) => void;
+  setUsesNativeWindowControls: (v: SetStateAction<boolean>) => void;
+  setIsWindowMaximized: (v: SetStateAction<boolean>) => void;
+}
+
+// ---- SVN Revision ----
+interface RevisionSlice {
+  compareContext: CompareContext;
+  resetPair: RevisionSelectionPair | null;
+  revisionOptions: SvnRevisionInfo[];
+  baseRevisionInfo: SvnRevisionInfo | null;
+  mineRevisionInfo: SvnRevisionInfo | null;
+  canSwitchRevisions: boolean;
+  setCompareContext: (v: SetStateAction<CompareContext>) => void;
+  setResetPair: (v: SetStateAction<RevisionSelectionPair | null>) => void;
+  setRevisionOptions: (v: SetStateAction<SvnRevisionInfo[]>) => void;
+  setBaseRevisionInfo: (v: SetStateAction<SvnRevisionInfo | null>) => void;
+  setMineRevisionInfo: (v: SetStateAction<SvnRevisionInfo | null>) => void;
+  setCanSwitchRevisions: (v: SetStateAction<boolean>) => void;
+}
+
+// ---- Workbook UI ----
+interface WorkbookUiSlice {
+  workbookSelection: WorkbookSelectionState;
+  workbookHiddenStateBySheet: WorkbookHiddenStateBySheet;
+  workbookContextMenu: WorkbookContextMenuState | null;
+  workbookFreezeBySheet: WorkbookFreezeStateMap;
+  workbookColumnWidthBySheet: WorkbookColumnWidthBySheet;
+  activeWorkbookSheetName: string | null;
+  baseWorkbookMetadata: WorkbookMetadataMap | null;
+  mineWorkbookMetadata: WorkbookMetadataMap | null;
+  setWorkbookSelection: (v: SetStateAction<WorkbookSelectionState>) => void;
+  setWorkbookHiddenStateBySheet: (v: SetStateAction<WorkbookHiddenStateBySheet>) => void;
+  setWorkbookContextMenu: (v: SetStateAction<WorkbookContextMenuState | null>) => void;
+  setWorkbookFreezeBySheet: (v: SetStateAction<WorkbookFreezeStateMap>) => void;
+  setWorkbookColumnWidthBySheet: (v: SetStateAction<WorkbookColumnWidthBySheet>) => void;
+  setActiveWorkbookSheetName: (v: SetStateAction<string | null>) => void;
+  setBaseWorkbookMetadata: (v: SetStateAction<WorkbookMetadataMap | null>) => void;
+  setMineWorkbookMetadata: (v: SetStateAction<WorkbookMetadataMap | null>) => void;
+}
+
+// ---- App Update ----
+interface AppUpdateSlice {
+  appUpdateState: AppUpdateState | null;
+  setAppUpdateState: (v: SetStateAction<AppUpdateState | null>) => void;
+}
+
+// ---- SVN Diff Viewer Config ----
+interface SvnDiffViewerSlice {
+  svnDiffViewerStatus: SvnDiffViewerStatus | null;
+  isLoadingSvnDiffViewerStatus: boolean;
+  applyingSvnDiffViewerScope: SvnDiffViewerScope | null;
+  isRestoringSvnDiffViewerDefault: boolean;
+  svnDiffViewerError: string;
+  setSvnDiffViewerStatus: (v: SetStateAction<SvnDiffViewerStatus | null>) => void;
+  setIsLoadingSvnDiffViewerStatus: (v: SetStateAction<boolean>) => void;
+  setApplyingSvnDiffViewerScope: (v: SetStateAction<SvnDiffViewerScope | null>) => void;
+  setIsRestoringSvnDiffViewerDefault: (v: SetStateAction<boolean>) => void;
+  setSvnDiffViewerError: (v: SetStateAction<string>) => void;
+}
+
+
+// ── Combined Store Type ─────────────────────────────────────────────────────
+
+export type AppState =
+  & UiSettingsSlice
+  & DiffDataSlice
+  & FileNamesSlice
+  & SearchSlice
+  & NavigationSlice
+  & ElectronEnvSlice
+  & RevisionSlice
+  & WorkbookUiSlice
+  & AppUpdateSlice
+  & SvnDiffViewerSlice;
+
+
+// ── Store Creation ──────────────────────────────────────────────────────────
+
+const initialSettings = getStoredAppSettings();
+
+export const useAppStore = create<AppState>()((set) => ({
+  // ── UI Settings ───────────────────────────────────────────────────────
+  themeKey: initialSettings.themeKey,
+  layout: initialSettings.layout,
+  collapseCtx: initialSettings.collapseCtx,
+  showWhitespace: initialSettings.showWhitespace,
+  showHiddenColumns: initialSettings.showHiddenColumns,
+  fontSize: initialSettings.fontSize,
+  workbookCompareMode: initialSettings.workbookCompareMode,
+  setThemeKey: setter(set, 'themeKey'),
+  setLayout: setter(set, 'layout'),
+  setCollapseCtx: setter(set, 'collapseCtx'),
+  setShowWhitespace: setter(set, 'showWhitespace'),
+  setShowHiddenColumns: setter(set, 'showHiddenColumns'),
+  setFontSize: setter(set, 'fontSize'),
+  setWorkbookCompareMode: setter(set, 'workbookCompareMode'),
+
+  // ── Diff Data ─────────────────────────────────────────────────────────
+  diffLines: [],
+  diffSourceNoticeCode: null,
+  diffSourceNoticeDismissed: false,
+  precomputedWorkbookDelta: null,
+  workbookArtifactDiff: null,
+  artifactNoticeDismissed: false,
+  setDiffLines: setter(set, 'diffLines'),
+  setDiffSourceNoticeCode: setter(set, 'diffSourceNoticeCode'),
+  setDiffSourceNoticeDismissed: setter(set, 'diffSourceNoticeDismissed'),
+  setPrecomputedWorkbookDelta: setter(set, 'precomputedWorkbookDelta'),
+  setWorkbookArtifactDiff: setter(set, 'workbookArtifactDiff'),
+  setArtifactNoticeDismissed: setter(set, 'artifactNoticeDismissed'),
+
+  // ── File Names ────────────────────────────────────────────────────────
+  baseName: '',
+  mineName: '',
+  launchBaseName: '',
+  launchMineName: '',
+  fileName: '',
+  setBaseName: setter(set, 'baseName'),
+  setMineName: setter(set, 'mineName'),
+  setLaunchBaseName: setter(set, 'launchBaseName'),
+  setLaunchMineName: setter(set, 'launchMineName'),
+  setFileName: setter(set, 'fileName'),
+
+  // ── Search ────────────────────────────────────────────────────────────
+  searchQ: '',
+  searchRx: false,
+  searchCs: false,
+  searchWorkbookScope: 'sheet',
+  activeSearchIdx: -1,
+  searchJumpNonce: 0,
+  setSearchQ: setter(set, 'searchQ'),
+  setSearchRx: setter(set, 'searchRx'),
+  setSearchCs: setter(set, 'searchCs'),
+  setSearchWorkbookScope: setter(set, 'searchWorkbookScope'),
+  setActiveSearchIdx: setter(set, 'activeSearchIdx'),
+  setSearchJumpNonce: setter(set, 'searchJumpNonce'),
+
+  // ── Navigation ────────────────────────────────────────────────────────
+  hunkIdx: 0,
+  guidedPulseNonce: 0,
+  setHunkIdx: setter(set, 'hunkIdx'),
+  setGuidedPulseNonce: setter(set, 'guidedPulseNonce'),
+
+  // ── Electron Environment ──────────────────────────────────────────────
+  isElectron: false,
+  isDevMode: false,
+  usesNativeWindowControls: false,
+  isWindowMaximized: false,
+  setIsElectron: setter(set, 'isElectron'),
+  setIsDevMode: setter(set, 'isDevMode'),
+  setUsesNativeWindowControls: setter(set, 'usesNativeWindowControls'),
+  setIsWindowMaximized: setter(set, 'isWindowMaximized'),
+
+  // ── SVN Revision ──────────────────────────────────────────────────────
+  compareContext: 'literal_two_file_compare',
+  resetPair: null,
+  revisionOptions: [],
+  baseRevisionInfo: null,
+  mineRevisionInfo: null,
+  canSwitchRevisions: false,
+  setCompareContext: setter(set, 'compareContext'),
+  setResetPair: setter(set, 'resetPair'),
+  setRevisionOptions: setter(set, 'revisionOptions'),
+  setBaseRevisionInfo: setter(set, 'baseRevisionInfo'),
+  setMineRevisionInfo: setter(set, 'mineRevisionInfo'),
+  setCanSwitchRevisions: setter(set, 'canSwitchRevisions'),
+
+  // ── Workbook UI ───────────────────────────────────────────────────────
+  workbookSelection: createWorkbookSelectionState(null),
+  workbookHiddenStateBySheet: {},
+  workbookContextMenu: null,
+  workbookFreezeBySheet: {},
+  workbookColumnWidthBySheet: {},
+  activeWorkbookSheetName: null,
+  baseWorkbookMetadata: null,
+  mineWorkbookMetadata: null,
+  setWorkbookSelection: setter(set, 'workbookSelection'),
+  setWorkbookHiddenStateBySheet: setter(set, 'workbookHiddenStateBySheet'),
+  setWorkbookContextMenu: setter(set, 'workbookContextMenu'),
+  setWorkbookFreezeBySheet: setter(set, 'workbookFreezeBySheet'),
+  setWorkbookColumnWidthBySheet: setter(set, 'workbookColumnWidthBySheet'),
+  setActiveWorkbookSheetName: setter(set, 'activeWorkbookSheetName'),
+  setBaseWorkbookMetadata: setter(set, 'baseWorkbookMetadata'),
+  setMineWorkbookMetadata: setter(set, 'mineWorkbookMetadata'),
+
+  // ── App Update ────────────────────────────────────────────────────────
+  appUpdateState: null,
+  setAppUpdateState: setter(set, 'appUpdateState'),
+
+  // ── SVN Diff Viewer Config ────────────────────────────────────────────
+  svnDiffViewerStatus: null,
+  isLoadingSvnDiffViewerStatus: false,
+  applyingSvnDiffViewerScope: null,
+  isRestoringSvnDiffViewerDefault: false,
+  svnDiffViewerError: '',
+  setSvnDiffViewerStatus: setter(set, 'svnDiffViewerStatus'),
+  setIsLoadingSvnDiffViewerStatus: setter(set, 'isLoadingSvnDiffViewerStatus'),
+  setApplyingSvnDiffViewerScope: setter(set, 'applyingSvnDiffViewerScope'),
+  setIsRestoringSvnDiffViewerDefault: setter(set, 'isRestoringSvnDiffViewerDefault'),
+  setSvnDiffViewerError: setter(set, 'svnDiffViewerError'),
+}));

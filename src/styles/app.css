@@ -1,0 +1,650 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SvnDiffTool — Global Stylesheet (Tailwind CSS v4)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@import "tailwindcss";
+
+/* ─── Tailwind v4 Theme Token Registration ─────────────────────────────── */
+/* 通过 @theme 将 CSS Variables 注册为 Tailwind 工具类。
+   例如 --color-bg-base 注册后可使用 bg-bg-base 类名。 */
+
+@theme {
+  /* ── 背景色 ── */
+  --color-bg-base: var(--bg-base);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-surface-solid: var(--bg-surface-solid);
+  --color-bg-surface-hover: var(--bg-surface-hover);
+  --color-bg-elevated: var(--bg-elevated);
+
+  /* ── 边框色 ── */
+  --color-border-default: var(--border-color);
+  --color-border-strong: var(--border-strong);
+
+  /* ── 文字色 ── */
+  --color-text-title: var(--text-title);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+
+  /* ── 强调色 ── */
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-muted: var(--accent-muted);
+
+  /* ── Diff 新增色 ── */
+  --color-diff-add-bg: var(--diff-add-bg);
+  --color-diff-add-hl: var(--diff-add-hl);
+  --color-diff-add-text: var(--diff-add-text);
+  --color-diff-add-border: var(--diff-add-border);
+
+  /* ── Diff 删除色 ── */
+  --color-diff-remove-bg: var(--diff-remove-bg);
+  --color-diff-remove-hl: var(--diff-remove-hl);
+  --color-diff-remove-text: var(--diff-remove-text);
+  --color-diff-remove-border: var(--diff-remove-border);
+
+  /* ── Diff 修改色 ── */
+  --color-diff-modify-bg: var(--diff-modify-bg);
+  --color-diff-modify-hl: var(--diff-modify-hl);
+  --color-diff-modify-text: var(--diff-modify-text);
+  --color-diff-modify-border: var(--diff-modify-border);
+
+  /* ── 语法高亮 ── */
+  --color-syntax-keyword: var(--syntax-keyword);
+  --color-syntax-string: var(--syntax-string);
+  --color-syntax-number: var(--syntax-number);
+  --color-syntax-comment: var(--syntax-comment);
+  --color-syntax-punctuation: var(--syntax-punctuation);
+
+  /* ── 行号 ── */
+  --color-ln-bg: var(--ln-bg);
+  --color-ln-text: var(--ln-text);
+
+  /* ── 搜索高亮 ── */
+  --color-search-hl: var(--search-hl);
+  --color-search-active-bg: var(--search-active-bg);
+
+  /* ── 滚动条 ── */
+  --color-scroll-thumb: var(--scroll-thumb);
+  --color-scroll-thumb-hover: var(--scroll-thumb-hover);
+  --color-scroll-track: var(--scroll-track);
+
+  /* ── 字体 ── */
+  --font-ui: 'Inter', 'Microsoft YaHei UI', 'Segoe UI', 'PingFang SC', system-ui, sans-serif;
+  --font-code: 'JetBrains Mono', 'Cascadia Mono', 'Consolas', 'Monaco', monospace;
+
+  /* ── 字号 (对应 FONT_SIZE 常量，使用 app- 前缀避免覆盖 Tailwind 内置) ── */
+  --text-app-2xs: 11px;
+  --text-app-xs: 12px;
+  --text-app-sm: 14px;
+  --text-app-base: 15px;
+  --text-app-lg: 18px;
+
+  /* ── 辅助强调色 ── */
+  --color-acc2: var(--acc2);
+
+  /* ── 按钮激活态文字 ── */
+  --color-btn-active-text: var(--btn-active-text);
+
+  /* ── 模态遮罩 ── */
+  --color-modal-overlay: var(--modal-overlay);
+
+  /* ── MiniMap ── */
+  --color-mini-vp: var(--mini-vp);
+
+  /* ── 动画 ── */
+  --animate-cascade-fade-in: cascadeFadeIn 0.3s ease-out forwards;
+  --animate-pulse-flash: pulseFlash 0.4s ease-out;
+  --animate-slide-down: slideDown 0.2s ease-out forwards;
+  --animate-dialog-overlay-in: dialogOverlayIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-dialog-overlay-out: dialogOverlayOut 0.14s ease-in forwards;
+  --animate-dialog-surface-in: dialogSurfaceIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-dialog-surface-out: dialogSurfaceOut 0.16s cubic-bezier(0.4, 0, 1, 1) forwards;
+  --animate-floating-panel-in: floatingPanelIn 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-toolbar-panel-in: toolbarPanelIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-hover-card-in: hoverCardIn 0.14s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-region-dash: regionDashTravel 1s linear infinite;
+  --animate-guided-pulse: guidedPulse 1.5s ease-in-out infinite;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   三套主题 CSS Variables 定义
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── Dark Theme — "Modern Dark" ───────────────────────────────────── */
+.theme-dark {
+  /* 背景层级 */
+  --bg-base: #09090B;
+  --bg-surface: rgba(24, 24, 27, 0.70);
+  --bg-surface-solid: #18181B;
+  --bg-surface-hover: #27272A;
+  --bg-elevated: #27272A;
+
+  /* 边框 */
+  --border-color: #27272A;
+  --border-strong: #3F3F46;
+
+  /* 文字 */
+  --text-title: #FAFAFA;
+  --text-primary: #F4F4F5;
+  --text-secondary: #A1A1AA;
+
+  /* 强调色 */
+  --accent: #FAFAFA;
+  --accent-hover: #E4E4E7;
+  --accent-muted: rgba(250, 250, 250, 0.15);
+
+  /* Diff 新增 */
+  --diff-add-bg: #052E16;
+  --diff-add-hl: #064E3B;
+  --diff-add-text: #34D399;
+  --diff-add-border: #10B981;
+
+  /* Diff 删除 */
+  --diff-remove-bg: #450A0A;
+  --diff-remove-hl: #7F1D1D;
+  --diff-remove-text: #F87171;
+  --diff-remove-border: #EF4444;
+
+  /* Diff 修改 */
+  --diff-modify-bg: #451A03;
+  --diff-modify-hl: #78350F;
+  --diff-modify-text: #FBBF24;
+  --diff-modify-border: #F59E0B;
+
+  /* 语法高亮 */
+  --syntax-keyword: #E879F9;
+  --syntax-string: #93C5FD;
+  --syntax-number: #6EE7B7;
+  --syntax-comment: #71717A;
+  --syntax-punctuation: #D4D4D8;
+
+  /* 行号 */
+  --ln-bg: #18181B;
+  --ln-text: #71717A;
+
+  /* 滚动条 */
+  --scroll-thumb: rgba(161, 161, 170, 0.25);
+  --scroll-thumb-hover: rgba(161, 161, 170, 0.40);
+  --scroll-track: transparent;
+
+  /* 搜索 */
+  --search-hl: #7DD3FC;
+  --search-active-bg: rgba(125, 211, 252, 0.24);
+
+  /* MiniMap */
+  --mini-add: #34D399;
+  --mini-del: #F87171;
+  --mini-vp: rgba(161, 161, 170, 0.16);
+
+  /* 强调辅助色 */
+  --acc2: #60A5FA;
+
+  /* 按钮激活态 */
+  --btn-active-bg: var(--accent);
+  --btn-active-text: #09090B;
+
+  /* 毛玻璃 */
+  --glass-blur: blur(12px);
+
+  /* 模态遮罩 */
+  --modal-overlay: rgba(0, 0, 0, 0.60);
+}
+
+
+/* ─── Light Theme — "Modern Light" ──────────────────────────────────── */
+.theme-light {
+  /* 背景层级 */
+  --bg-base: #F4F4F5;
+  --bg-surface: rgba(255, 255, 255, 0.85);
+  --bg-surface-solid: #FFFFFF;
+  --bg-surface-hover: #F4F4F5;
+  --bg-elevated: #FFFFFF;
+
+  /* 边框 */
+  --border-color: #E4E4E7;
+  --border-strong: #D4D4D8;
+
+  /* 文字 */
+  --text-title: #09090B;
+  --text-primary: #09090B;
+  --text-secondary: #71717A;
+
+  /* 强调色 */
+  --accent: #09090B;
+  --accent-hover: #27272A;
+  --accent-muted: rgba(9, 9, 11, 0.10);
+
+  /* Diff 新增 */
+  --diff-add-bg: #D1FAE5;
+  --diff-add-hl: #A7F3D0;
+  --diff-add-text: #065F46;
+  --diff-add-border: #10B981;
+
+  /* Diff 删除 */
+  --diff-remove-bg: #FEE2E2;
+  --diff-remove-hl: #FECACA;
+  --diff-remove-text: #991B1B;
+  --diff-remove-border: #EF4444;
+
+  /* Diff 修改 */
+  --diff-modify-bg: #FEF3C7;
+  --diff-modify-hl: #FDE68A;
+  --diff-modify-text: #92400E;
+  --diff-modify-border: #F59E0B;
+
+  /* 语法高亮 */
+  --syntax-keyword: #7C3AED;
+  --syntax-string: #2563EB;
+  --syntax-number: #059669;
+  --syntax-comment: #71717A;
+  --syntax-punctuation: #52525B;
+
+  /* 行号 */
+  --ln-bg: #FFFFFF;
+  --ln-text: #A1A1AA;
+
+  /* 滚动条 */
+  --scroll-thumb: rgba(161, 161, 170, 0.40);
+  --scroll-thumb-hover: rgba(161, 161, 170, 0.55);
+  --scroll-track: transparent;
+
+  /* 搜索 */
+  --search-hl: #1D4ED8;
+  --search-active-bg: rgba(29, 78, 216, 0.18);
+
+  /* MiniMap */
+  --mini-add: #10B981;
+  --mini-del: #EF4444;
+  --mini-vp: rgba(9, 9, 11, 0.08);
+
+  /* 强调辅助色 */
+  --acc2: #3B82F6;
+
+  /* 按钮激活态 */
+  --btn-active-bg: var(--accent);
+  --btn-active-text: #FAFAFA;
+
+  /* 毛玻璃 */
+  --glass-blur: blur(16px);
+
+  /* 模态遮罩 */
+  --modal-overlay: rgba(9, 9, 11, 0.40);
+}
+
+
+/* ─── High Contrast Theme — "Ultra Sharp" ──────────────────────────────── */
+.theme-hc {
+  /* 背景层级 */
+  --bg-base: #000000;
+  --bg-surface: #000000;
+  --bg-surface-solid: #000000;
+  --bg-surface-hover: #1A1A1A;
+  --bg-elevated: #1A1A1A;
+
+  /* 边框 (强可见) */
+  --border-color: #FFFFFF;
+  --border-strong: #FFFFFF;
+
+  /* 文字 (AAA 级) */
+  --text-title: #FFFFFF;
+  --text-primary: #FFFFFF;
+  --text-secondary: #00FFFF;
+
+  /* 强调色 */
+  --accent: #FFFF00;
+  --accent-hover: #FFFF00;
+  --accent-muted: rgba(255, 255, 0, 0.20);
+
+  /* Diff 新增 */
+  --diff-add-bg: transparent;
+  --diff-add-hl: #003300;
+  --diff-add-text: #00FF00;
+  --diff-add-border: #00FF00;
+
+  /* Diff 删除 */
+  --diff-remove-bg: transparent;
+  --diff-remove-hl: #330000;
+  --diff-remove-text: #FF00FF;
+  --diff-remove-border: #FF00FF;
+
+  /* Diff 修改 */
+  --diff-modify-bg: transparent;
+  --diff-modify-hl: #333300;
+  --diff-modify-text: #FFFF00;
+  --diff-modify-border: #FFFF00;
+
+  /* 语法高亮 */
+  --syntax-keyword: #FFFFFF;
+  --syntax-string: #FFFFFF;
+  --syntax-number: #FFFFFF;
+  --syntax-comment: #FFFFFF;
+  --syntax-punctuation: #FFFFFF;
+
+  /* 行号 */
+  --ln-bg: #000000;
+  --ln-text: #00FFFF;
+
+  /* 滚动条 */
+  --scroll-thumb: #FFFFFF;
+  --scroll-thumb-hover: #FFFFFF;
+  --scroll-track: transparent;
+
+  /* 搜索 */
+  --search-hl: #00FFFF;
+  --search-active-bg: rgba(0, 255, 255, 0.28);
+
+  /* MiniMap */
+  --mini-add: #00FF00;
+  --mini-del: #FF00FF;
+  --mini-vp: rgba(255, 255, 255, 0.25);
+
+  /* 强调辅助色 */
+  --acc2: #00FFFF;
+
+  /* 按钮激活态 */
+  --btn-active-bg: var(--accent);
+  --btn-active-text: #000000;
+
+  /* 毛玻璃 (禁用) */
+  --glass-blur: blur(0px);
+
+  /* 模态遮罩 */
+  --modal-overlay: rgba(0, 0, 0, 0.80);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   全局基础样式
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* 现代焦点环 */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+
+.searchbar-input,
+.searchbar-input:focus,
+.searchbar-input:focus-visible,
+.searchbar-input:hover {
+  border-radius: 9999px !important;
+}
+
+.searchbar-input:focus,
+.searchbar-input:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scroll-track, transparent);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb, rgba(148, 163, 184, 0.25));
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  cursor: pointer;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scroll-thumb-hover, rgba(148, 163, 184, 0.40));
+  cursor: pointer;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   动画关键帧
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* 差异行进场淡入 */
+@keyframes cascadeFadeIn {
+  from { opacity: 0.5; background-color: transparent; }
+  to   { opacity: 1; }
+}
+
+/* 聚焦脉冲闪烁 (Excel 单元格选中) */
+@keyframes pulseFlash {
+  0%   { box-shadow: inset 0 0 0 2px var(--accent), 0 0 15px var(--accent); }
+  100% { box-shadow: inset 0 0 0 2px var(--accent); }
+}
+
+/* 面板滑入 */
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* 模态遮罩淡入淡出 */
+@keyframes dialogOverlayIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes dialogOverlayOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+/* 模态内容柔和浮现 */
+@keyframes dialogSurfaceIn {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.96);
+    filter: blur(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes dialogSurfaceOut {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+    filter: blur(6px);
+  }
+}
+
+/* 浮层/菜单进场 */
+@keyframes floatingPanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+/* 顶部工具条/搜索条 */
+@keyframes toolbarPanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Hover 卡片轻量浮现 */
+@keyframes hoverCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 区域虚线动画 (Diff overlay) */
+@keyframes regionDashTravel {
+  to { stroke-dashoffset: -100; }
+}
+
+/* 区域虚线反向动画 */
+@keyframes regionDashTravelReverse {
+  to { stroke-dashoffset: 100; }
+}
+
+/* 引导脉冲 (选中区域发光) */
+@keyframes guidedPulse {
+  0%   { box-shadow: 0 0 0 0 transparent, inset 0 0 0 2px var(--acc2); }
+  50%  { box-shadow: 0 0 0 8px color-mix(in srgb, var(--acc2) 15%, transparent), inset 0 0 0 2px var(--acc2); }
+  100% { box-shadow: 0 0 0 0 transparent, inset 0 0 0 2px color-mix(in srgb, var(--acc2) 72%, transparent); }
+}
+
+/* 区域发光脉冲 */
+@keyframes regionGlowPulse {
+  0%   { opacity: 0.44; transform: scale(0.985); }
+  50%  { opacity: 0.82; transform: scale(1.02); }
+  100% { opacity: 0.44; transform: scale(0.985); }
+}
+
+/* 旋转加载 */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   工具类补充
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* 毛玻璃效果 */
+@utility glass {
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+/* MiniMap 视口滑块：半透明磨砂玻璃 */
+.minimap-viewport-frosted {
+  left: 0;
+  right: 0;
+  overflow: hidden;
+  border-radius: 0;
+  border: 1px solid color-mix(in srgb, var(--scroll-thumb-hover) 64%, white 8%, transparent);
+  background-color: color-mix(in srgb, var(--mini-vp) 78%, transparent);
+  background-image:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.22) 0%,
+      rgba(255, 255, 255, 0.10) 20%,
+      rgba(255, 255, 255, 0.03) 100%
+    ),
+    linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.05) 0%,
+      rgba(255, 255, 255, 0.015) 34%,
+      rgba(255, 255, 255, 0.06) 100%
+    );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 rgba(15, 23, 42, 0.06),
+    0 0 0 1px rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(4px) saturate(118%);
+  -webkit-backdrop-filter: blur(4px) saturate(118%);
+  will-change: transform, height;
+}
+
+.minimap-viewport-frosted::before {
+  content: '';
+  position: absolute;
+  inset: 1px 1px auto;
+  height: 38%;
+  border-radius: inherit;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.22) 0%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  opacity: 0.68;
+  pointer-events: none;
+}
+
+.minimap-viewport-frosted::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  pointer-events: none;
+}
+
+/* 禁止选择 (拖拽时) */
+@utility no-select {
+  user-select: none;
+}
+
+.motion-dialog-overlay {
+  animation: var(--animate-dialog-overlay-in);
+  will-change: opacity;
+}
+
+.motion-dialog-overlay[data-state='exiting'] {
+  animation: var(--animate-dialog-overlay-out);
+}
+
+.motion-dialog-surface {
+  animation: var(--animate-dialog-surface-in);
+  transform-origin: center center;
+  will-change: transform, opacity, filter;
+}
+
+.motion-dialog-surface[data-state='exiting'] {
+  animation: var(--animate-dialog-surface-out);
+}
+
+.motion-floating-panel {
+  animation: var(--animate-floating-panel-in);
+  transform-origin: top center;
+  will-change: transform, opacity, filter;
+}
+
+.motion-toolbar-panel {
+  animation: var(--animate-toolbar-panel-in);
+  will-change: transform, opacity, filter;
+}
+
+.motion-hover-card {
+  animation: var(--animate-hover-card-in);
+  transform-origin: top center;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-dialog-overlay,
+  .motion-dialog-surface,
+  .motion-floating-panel,
+  .motion-toolbar-panel,
+  .motion-hover-card {
+    animation: none !important;
+    filter: none !important;
+    transform: none !important;
+  }
+}

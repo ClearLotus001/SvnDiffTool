@@ -22,35 +22,48 @@ export function buildSearchPattern(
   }
 }
 
-export function findMatches(
-  diffLines: DiffLine[],
+export function getSearchableLineContent(line: DiffLine): string {
+  return line.type === 'delete'
+    ? (line.base ?? '')
+    : (line.mine ?? line.base ?? '');
+}
+
+export function findMatchesInSearchableLines(
+  lines: readonly string[],
   pattern: RegExp | null,
 ): SearchMatch[] {
   if (!pattern) return [];
   const results: SearchMatch[] = [];
 
-  for (let lineIdx = 0; lineIdx < diffLines.length; lineIdx++) {
-    // lineIdx < diffLines.length — guaranteed in-bounds
-    const line = diffLines[lineIdx]!;
-    const content: string =
-      line.type === 'delete'
-        ? (line.base ?? '')
-        : (line.mine ?? line.base ?? '');
-
+  for (let lineIdx = 0; lineIdx < lines.length; lineIdx += 1) {
+    const content = lines[lineIdx] ?? '';
     if (!content) continue;
 
     pattern.lastIndex = 0;
     try {
-      let m: RegExpExecArray | null;
-      while ((m = pattern.exec(content)) !== null) {
-        results.push({ lineIdx, start: m.index, end: m.index + m[0].length });
-        if (m[0].length === 0) pattern.lastIndex++;
+      let match: RegExpExecArray | null;
+      while ((match = pattern.exec(content)) !== null) {
+        results.push({
+          lineIdx,
+          start: match.index,
+          end: match.index + match[0].length,
+          workbookTarget: null,
+        });
+        if (match[0].length === 0) pattern.lastIndex += 1;
       }
     } catch {
       pattern.lastIndex = 0;
     }
   }
+
   return results;
+}
+
+export function findMatches(
+  diffLines: DiffLine[],
+  pattern: RegExp | null,
+): SearchMatch[] {
+  return findMatchesInSearchableLines(diffLines.map(getSearchableLineContent), pattern);
 }
 
 export function navigateSearch(

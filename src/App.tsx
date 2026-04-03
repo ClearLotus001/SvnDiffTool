@@ -2,42 +2,26 @@
 // src/App.tsx  —  SvnExcelDiffTool root
 //
 // This file is now a thin orchestrator:
-//   - Loads diff data (Electron IPC)
-//   - Manages all top-level state
-//   - Handles keyboard shortcuts
+//   - Reads state from Zustand store (only fields needed for rendering)
+//   - Manages imperative refs
 //   - Renders the layout, delegating visuals to components/
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
-  useState, useRef, useEffect, useCallback, useMemo, startTransition, type SetStateAction,
+  useRef, useEffect, useCallback, useMemo, startTransition, type SetStateAction,
 } from 'react';
 
 import type {
-  DiffLine,
   DiffData,
-  ThemeKey,
-  LayoutMode,
-  AppUpdateState,
-  CompareContext,
-  RevisionSelectionPair,
+  SplitRow,
   SvnRevisionInfo,
-  WorkbookArtifactDiff,
-  WorkbookCompareMode,
   WorkbookCompareLayoutSnapshot,
-  DiffSourceNoticeCode,
-  WorkbookHiddenStateBySheet,
   WorkbookHorizontalLayoutSnapshot,
-  WorkbookMetadataMap,
   WorkbookMoveDirection,
-  WorkbookPrecomputedDeltaPayload,
-  WorkbookSelectionState,
-  SvnDiffViewerScope,
-  SvnDiffViewerStatus,
 } from '@/types';
-import { THEMES } from '@/theme';
 import { useI18n } from '@/context/i18n';
 import { ThemeContext } from '@/context/theme';
-import { FONT_UI } from '@/constants/typography';
+import { buildReplacementPairIndex } from '@/engine/text/textChangeAlignment';
 import {
   applyWorkbookExpandedBlocksChange,
   applyWorkbookLayoutSnapshot,
@@ -49,11 +33,6 @@ import {
   setWorkbookDebugEnabled,
   workbookDebugLog,
 } from '@/utils/workbook/workbookDebug';
-import { getStoredAppSettings } from '@/utils/app/settings';
-import {
-  type WorkbookColumnWidthBySheet,
-} from '@/utils/workbook/workbookColumnWidths';
-import { createWorkbookSelectionState } from '@/utils/workbook/workbookSelectionState';
 import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
 import { AppContent, AppDialogs } from '@/components/app-shell';
 import {
@@ -67,14 +46,14 @@ import {
   useElectronLifecycleEffects,
   useRevisionCompare,
   useRevisionQueryState,
+  useSyntaxHighlightPresentation,
   useWorkbookActions,
   useWorkbookViewEffects,
   cycleHunkIndex,
   type CachedDiffResult,
-  type WorkbookContextMenuState,
-  type WorkbookFreezeStateMap,
   type WorkbookUiController,
 } from '@/hooks/app';
+import { useAppStore } from '@/store/appStore';
 import PerfBar from '@/components/app/PerfBar';
 import DiffSourceNoticeBar from '@/components/diff/DiffSourceNoticeBar';
 import SearchBar from '@/components/diff/SearchBar';
@@ -88,63 +67,94 @@ import StatsBar from '@/components/navigation/StatsBar';
 // ROOT APP
 // ═════════════════════════════════════════════════════════════════════════════
 
+const EMPTY_REPLACEMENT_PAIR_INDEX = new Map<number, number>();
+
 export default function App() {
   const { t } = useI18n();
-  const initialSettingsRef = useRef(getStoredAppSettings());
-  const initialSettings = initialSettingsRef.current;
 
-  // ── State ──────────────────────────────────────────────────────────────────
-  const [themeKey, setThemeKey]             = useState<ThemeKey>(initialSettings.themeKey);
-  const [layout, setLayout]                 = useState<LayoutMode>(initialSettings.layout);
-  const [diffLines, setDiffLines]           = useState<DiffLine[]>([]);
-  const [baseName, setBaseName]             = useState('');
-  const [mineName, setMineName]             = useState('');
-  const [launchBaseName, setLaunchBaseName] = useState('');
-  const [launchMineName, setLaunchMineName] = useState('');
-  const [fileName, setFileName]             = useState('');
-  const [collapseCtx, setCollapseCtx]       = useState(initialSettings.collapseCtx);
-  const [showWhitespace, setShowWhitespace] = useState(initialSettings.showWhitespace);
-  const [showHiddenColumns, setShowHiddenColumns] = useState(initialSettings.showHiddenColumns);
-  const [workbookCompareMode, setWorkbookCompareMode] = useState<WorkbookCompareMode>(initialSettings.workbookCompareMode);
-  const [fontSize, setFontSize]             = useState(initialSettings.fontSize);
-  const [hunkIdx, setHunkIdx]               = useState(0);
-  const [searchQ, setSearchQ]               = useState('');
-  const [searchRx, setSearchRx]             = useState(false);
-  const [searchCs, setSearchCs]             = useState(false);
-  const [activeSearchIdx, setActiveSearchIdx] = useState(-1);
-  const [isElectron, setIsElectron]         = useState(false);
-  const [isDevMode, setIsDevMode]           = useState(false);
-  const [usesNativeWindowControls, setUsesNativeWindowControls] = useState(false);
-  const [isWindowMaximized, setIsWindowMaximized] = useState(false);
-  const [workbookSelection, setWorkbookSelection] = useState<WorkbookSelectionState>(() => createWorkbookSelectionState(null));
-  const [workbookHiddenStateBySheet, setWorkbookHiddenStateBySheet] = useState<WorkbookHiddenStateBySheet>({});
-  const [workbookContextMenu, setWorkbookContextMenu] = useState<WorkbookContextMenuState | null>(null);
-  const [baseWorkbookMetadata, setBaseWorkbookMetadata] = useState<WorkbookMetadataMap | null>(null);
-  const [mineWorkbookMetadata, setMineWorkbookMetadata] = useState<WorkbookMetadataMap | null>(null);
-  const [precomputedWorkbookDelta, setPrecomputedWorkbookDelta] = useState<WorkbookPrecomputedDeltaPayload | null>(null);
-  const [workbookArtifactDiff, setWorkbookArtifactDiff] = useState<WorkbookArtifactDiff | null>(null);
-  const [artifactNoticeDismissed, setArtifactNoticeDismissed] = useState(false);
-  const [diffSourceNoticeCode, setDiffSourceNoticeCode] = useState<DiffSourceNoticeCode | null>(null);
-  const [diffSourceNoticeDismissed, setDiffSourceNoticeDismissed] = useState(false);
-  const [compareContext, setCompareContext] = useState<CompareContext>('literal_two_file_compare');
-  const [resetPair, setResetPair] = useState<RevisionSelectionPair | null>(null);
-  const [revisionOptions, setRevisionOptions] = useState<SvnRevisionInfo[]>([]);
-  const [baseRevisionInfo, setBaseRevisionInfo] = useState<SvnRevisionInfo | null>(null);
-  const [mineRevisionInfo, setMineRevisionInfo] = useState<SvnRevisionInfo | null>(null);
-  const [canSwitchRevisions, setCanSwitchRevisions] = useState(false);
-  const [workbookFreezeBySheet, setWorkbookFreezeBySheet] = useState<WorkbookFreezeStateMap>({});
-  const [workbookColumnWidthBySheet, setWorkbookColumnWidthBySheet] = useState<WorkbookColumnWidthBySheet>({});
-  const [activeWorkbookSheetName, setActiveWorkbookSheetName] = useState<string | null>(null);
-  const [guidedPulseNonce, setGuidedPulseNonce] = useState(0);
-  const [appUpdateState, setAppUpdateState] = useState<AppUpdateState | null>(null);
-  const [svnDiffViewerStatus, setSvnDiffViewerStatus] = useState<SvnDiffViewerStatus | null>(null);
-  const [isLoadingSvnDiffViewerStatus, setIsLoadingSvnDiffViewerStatus] = useState(false);
-  const [applyingSvnDiffViewerScope, setApplyingSvnDiffViewerScope] = useState<SvnDiffViewerScope | null>(null);
-  const [isRestoringSvnDiffViewerDefault, setIsRestoringSvnDiffViewerDefault] = useState(false);
-  const [svnDiffViewerError, setSvnDiffViewerError] = useState('');
+  // ── Zustand Store (only fields needed for rendering / remaining hooks) ─
+  // UI Settings (needed by JSX: Toolbar, panelProps, etc.)
+  const themeKey = useAppStore((s) => s.themeKey);
+  const layout = useAppStore((s) => s.layout);
+  const collapseCtx = useAppStore((s) => s.collapseCtx);
+  const showWhitespace = useAppStore((s) => s.showWhitespace);
+  const showHiddenColumns = useAppStore((s) => s.showHiddenColumns);
+  const fontSize = useAppStore((s) => s.fontSize);
+  const workbookCompareMode = useAppStore((s) => s.workbookCompareMode);
+  const setThemeKey = useAppStore((s) => s.setThemeKey);
+  const setLayout = useAppStore((s) => s.setLayout);
+  const setCollapseCtx = useAppStore((s) => s.setCollapseCtx);
+  const setShowWhitespace = useAppStore((s) => s.setShowWhitespace);
+  const setShowHiddenColumns = useAppStore((s) => s.setShowHiddenColumns);
+  const setFontSize = useAppStore((s) => s.setFontSize);
+
+  // Diff Data (needed by JSX: notice bars, panelProps, debug)
+  const diffLines = useAppStore((s) => s.diffLines);
+  const diffSourceNoticeCode = useAppStore((s) => s.diffSourceNoticeCode);
+  const diffSourceNoticeDismissed = useAppStore((s) => s.diffSourceNoticeDismissed);
+  const precomputedWorkbookDelta = useAppStore((s) => s.precomputedWorkbookDelta);
+  const workbookArtifactDiff = useAppStore((s) => s.workbookArtifactDiff);
+  const artifactNoticeDismissed = useAppStore((s) => s.artifactNoticeDismissed);
+  const setArtifactNoticeDismissed = useAppStore((s) => s.setArtifactNoticeDismissed);
+  const setDiffSourceNoticeDismissed = useAppStore((s) => s.setDiffSourceNoticeDismissed);
+
+  // Search (needed by JSX: SearchBar, panelProps)
+  const searchQ = useAppStore((s) => s.searchQ);
+  const searchRx = useAppStore((s) => s.searchRx);
+  const searchCs = useAppStore((s) => s.searchCs);
+  const searchWorkbookScope = useAppStore((s) => s.searchWorkbookScope);
+  const activeSearchIdx = useAppStore((s) => s.activeSearchIdx);
+
+  // Navigation (needed by JSX: Toolbar, panelProps, handlers)
+  const hunkIdx = useAppStore((s) => s.hunkIdx);
+  const setHunkIdx = useAppStore((s) => s.setHunkIdx);
+  const setGuidedPulseNonce = useAppStore((s) => s.setGuidedPulseNonce);
+  const guidedPulseNonce = useAppStore((s) => s.guidedPulseNonce);
+
+  // Electron Environment (needed by JSX: Toolbar, SplitHeader, AppContent)
+  const isElectron = useAppStore((s) => s.isElectron);
+  const isDevMode = useAppStore((s) => s.isDevMode);
+  const usesNativeWindowControls = useAppStore((s) => s.usesNativeWindowControls);
+  const isWindowMaximized = useAppStore((s) => s.isWindowMaximized);
+
+  // SVN Revision (needed by JSX: SplitHeader)
+  const resetPair = useAppStore((s) => s.resetPair);
+  const revisionOptions = useAppStore((s) => s.revisionOptions);
+  const baseRevisionInfo = useAppStore((s) => s.baseRevisionInfo);
+  const mineRevisionInfo = useAppStore((s) => s.mineRevisionInfo);
+  const canSwitchRevisions = useAppStore((s) => s.canSwitchRevisions);
+
+  // Workbook UI (needed by JSX: AppContent, WorkbookFormulaBar, workbookUi controller)
+  const workbookSelection = useAppStore((s) => s.workbookSelection);
+  const workbookHiddenStateBySheet = useAppStore((s) => s.workbookHiddenStateBySheet);
+  const workbookContextMenu = useAppStore((s) => s.workbookContextMenu);
+  const workbookFreezeBySheet = useAppStore((s) => s.workbookFreezeBySheet);
+  const workbookColumnWidthBySheet = useAppStore((s) => s.workbookColumnWidthBySheet);
+  const activeWorkbookSheetName = useAppStore((s) => s.activeWorkbookSheetName);
+  const baseWorkbookMetadata = useAppStore((s) => s.baseWorkbookMetadata);
+  const mineWorkbookMetadata = useAppStore((s) => s.mineWorkbookMetadata);
+  const setWorkbookSelection = useAppStore((s) => s.setWorkbookSelection);
+  const setWorkbookHiddenStateBySheet = useAppStore((s) => s.setWorkbookHiddenStateBySheet);
+  const setWorkbookContextMenu = useAppStore((s) => s.setWorkbookContextMenu);
+  const setWorkbookFreezeBySheet = useAppStore((s) => s.setWorkbookFreezeBySheet);
+  const setWorkbookColumnWidthBySheet = useAppStore((s) => s.setWorkbookColumnWidthBySheet);
+  const setActiveWorkbookSheetName = useAppStore((s) => s.setActiveWorkbookSheetName);
+
+  // App Update (needed by JSX: Toolbar, AppDialogs)
+  const appUpdateState = useAppStore((s) => s.appUpdateState);
+
+  // SVN Diff Viewer Config (needed by JSX: AppDialogs)
+  const svnDiffViewerStatus = useAppStore((s) => s.svnDiffViewerStatus);
+  const isLoadingSvnDiffViewerStatus = useAppStore((s) => s.isLoadingSvnDiffViewerStatus);
+  const applyingSvnDiffViewerScope = useAppStore((s) => s.applyingSvnDiffViewerScope);
+  const isRestoringSvnDiffViewerDefault = useAppStore((s) => s.isRestoringSvnDiffViewerDefault);
+  const svnDiffViewerError = useAppStore((s) => s.svnDiffViewerError);
+
+  // ── Imperative Refs (not in store) ──────────────────────────────────────
   const loadSeqRef = useRef(0);
+  const startupBootstrapStartedRef = useRef(false);
   const hasLoadedDiffRef = useRef(false);
-  const workbookCompareModeRef = useRef<WorkbookCompareMode>(workbookCompareMode);
+  const workbookCompareModeRef = useRef(workbookCompareMode);
   const currentDiffDataRef = useRef<DiffData | null>(null);
   const diffResultCacheRef = useRef<Map<string, CachedDiffResult>>(new Map());
   const workbookLayoutSnapshotsRef = useRef<WorkbookLayoutSnapshotsByMode>(
@@ -154,7 +164,11 @@ export default function App() {
   const revisionOptionsRef = useRef<SvnRevisionInfo[]>([]);
   const revisionQuerySeqRef = useRef(0);
   const updateAutoCheckRequestedRef = useRef(false);
+  const scrollToIndexRef = useRef<((idx: number, align?: 'start' | 'center') => void) | null>(null);
+  const workbookMoveRef = useRef<((direction: WorkbookMoveDirection) => void) | null>(null);
+  const collapseNavigationRef = useRef<((direction: 'prev' | 'next') => void) | null>(null);
 
+  // ── Controller Hooks (useReducer-based, retained) ───────────────────────
   const dialogs = useDialogState();
   const { state: dialogState, actions: dialogActions } = dialogs;
   const {
@@ -203,31 +217,7 @@ export default function App() {
     isSwitchingRevisions,
   } = revisionQueryState;
 
-  const T = THEMES[themeKey];
-
-  // scrollToIndex exposed by the active panel — used by Goto and hunk nav
-  const scrollToIndexRef = useRef<((idx: number, align?: 'start' | 'center') => void) | null>(null);
-  const workbookMoveRef = useRef<((direction: WorkbookMoveDirection) => void) | null>(null);
-  const collapseNavigationRef = useRef<((direction: 'prev' | 'next') => void) | null>(null);
-
-  const persistedSettings = useMemo(() => ({
-    themeKey,
-    layout,
-    collapseCtx,
-    showWhitespace,
-    showHiddenColumns,
-    workbookCompareMode,
-    fontSize,
-  }), [
-    collapseCtx,
-    fontSize,
-    layout,
-    showHiddenColumns,
-    showWhitespace,
-    themeKey,
-    workbookCompareMode,
-  ]);
-
+  // ── Derived State ───────────────────────────────────────────────────────
   const workbookUi = useMemo<WorkbookUiController>(() => ({
     state: {
       selection: workbookSelection,
@@ -255,8 +245,16 @@ export default function App() {
     workbookFreezeBySheet,
     workbookHiddenStateBySheet,
     workbookSelection,
+    setWorkbookSelection,
+    setWorkbookHiddenStateBySheet,
+    setWorkbookContextMenu,
+    setWorkbookFreezeBySheet,
+    setWorkbookColumnWidthBySheet,
+    setActiveWorkbookSheetName,
+    setShowHiddenColumns,
   ]);
 
+  // ── useAppViewModel ───────────────────────────────────────────────────
   const {
     displayBaseName,
     displayMineName,
@@ -273,9 +271,11 @@ export default function App() {
     artifactNoticeKey,
     diffSourceNoticeKey,
     hunks,
-    textDiffPresentation,
+    textDiffStats,
     hunkPositions,
+    searchJumpNonce,
     searchMatches,
+    searchResultItems,
     workbookSections,
     workbookSectionRowIndex,
     isWorkbookMode,
@@ -289,59 +289,38 @@ export default function App() {
     totalLines,
     canLaunchUninstaller,
     handleSearch,
+    handleSearchPreviewNav,
     handleSearchNav,
+    handleSearchJump,
     handleGoto,
   } = useAppViewModel({
     t,
-    compareContext,
-    launchBaseName,
-    baseName,
-    launchMineName,
-    mineName,
-    fileName,
-    baseRevisionInfo,
-    mineRevisionInfo,
-    workbookSelection,
-    workbookFreezeBySheet,
-    baseWorkbookMetadata,
-    mineWorkbookMetadata,
-    workbookArtifactDiff,
-    diffSourceNoticeCode,
-    diffLines,
-    searchQ,
-    searchRx,
-    searchCs,
-    isElectron,
-    isDevMode,
-    workbookCompareMode,
-    precomputedWorkbookDelta,
-    hunkIdx,
-    activeWorkbookSheetName,
     workbookSharedExpandedBlocksRef,
-    setSearchQ,
-    setSearchRx,
-    setSearchCs,
-    setActiveSearchIdx,
     scrollToIndexRef,
   });
-
-  useAppChromeEffects({
-    theme: T,
-    isElectron,
-    usesNativeWindowControls,
-    revisionOptions,
-    revisionOptionsRef,
-    artifactNoticeKey,
-    setArtifactNoticeDismissed,
-    diffSourceNoticeKey,
-    setDiffSourceNoticeDismissed,
-    hasLoadedDiff,
-    hasLoadedDiffRef,
-    workbookCompareMode,
-    workbookCompareModeRef,
-    settings: persistedSettings,
+  const textDiffPresentation = useMemo(() => ({
+    stats: textDiffStats,
+    replacementPairIndex: (!isWorkbookMode && layout === 'unified')
+      ? buildReplacementPairIndex(diffLines)
+      : EMPTY_REPLACEMENT_PAIR_INDEX,
+  }), [diffLines, isWorkbookMode, layout, textDiffStats]);
+  const syntaxPresentation = useSyntaxHighlightPresentation({
+    currentDiffData: currentDiffDataRef.current,
+    isWorkbookMode,
+    themeKey,
   });
 
+  // ── Chrome Effects ────────────────────────────────────────────────────
+  useAppChromeEffects({
+    revisionOptionsRef,
+    artifactNoticeKey,
+    diffSourceNoticeKey,
+    hasLoadedDiff,
+    hasLoadedDiffRef,
+    workbookCompareModeRef,
+  });
+
+  // ── Diff Loader ───────────────────────────────────────────────────────
   const {
     beginDiffLoad,
     failDiffLoad,
@@ -366,34 +345,11 @@ export default function App() {
     diffLoad,
     revisionQuery,
     workbookUi,
-    setBaseName,
-    setMineName,
-    setLaunchBaseName,
-    setLaunchMineName,
-    setFileName,
-    setPrecomputedWorkbookDelta,
-    setWorkbookArtifactDiff,
-    setBaseWorkbookMetadata,
-    setMineWorkbookMetadata,
-    setRevisionOptions,
-    setBaseRevisionInfo,
-    setMineRevisionInfo,
-    setCompareContext,
-    setResetPair,
-    setCanSwitchRevisions,
-    setDiffLines,
-    setDiffSourceNoticeCode,
-    setHunkIdx,
-    setWorkbookCompareMode,
-    setIsLoadingSvnDiffViewerStatus,
-    setSvnDiffViewerError,
-    setSvnDiffViewerStatus,
-    setApplyingSvnDiffViewerScope,
-    setIsRestoringSvnDiffViewerDefault,
   });
 
+  // ── Revision Compare ──────────────────────────────────────────────────
   const {
-    queryRevisionOptionsPage,
+    handleEnsureRevisionOptionsLoaded,
     handleLoadMoreRevisionOptions,
     handleRevisionDateTimeQuery,
     handleRevisionCompareChange,
@@ -403,39 +359,23 @@ export default function App() {
     revisionQuerySeqRef,
     loadSeqRef,
     workbookCompareModeRef,
-    resetPair,
     revisionQuery,
     applyDiffData,
     beginDiffLoad,
     failDiffLoad,
-    setRevisionOptions,
-    setBaseRevisionInfo,
-    setMineRevisionInfo,
   });
 
+  // ── Electron Lifecycle ────────────────────────────────────────────────
   useElectronLifecycleEffects({
     applyDiffData,
-    beginDiffLoad,
     reloadCliDiffData,
-    queryRevisionOptionsPage,
+    startupBootstrapStartedRef,
     workbookCompareModeRef,
     loadSeqRef,
     revisionQuerySeqRef,
     updateAutoCheckRequestedRef,
     diffLoad,
     revisionQuery,
-    canSwitchRevisions,
-    setIsElectron,
-    setRevisionOptions,
-    setDiffSourceNoticeCode,
-    setCompareContext,
-    setResetPair,
-    setLaunchBaseName,
-    setLaunchMineName,
-    setIsDevMode,
-    setUsesNativeWindowControls,
-    setIsWindowMaximized,
-    setAppUpdateState,
   });
 
   const {
@@ -445,17 +385,18 @@ export default function App() {
     handleLaunchUninstaller,
   } = useAppUpdateActions(t);
 
+  // ── Event Handlers ────────────────────────────────────────────────────
   const handleScrollerReady = useCallback(
     (fn: (idx: number, align?: 'start' | 'center') => void) => {
       scrollToIndexRef.current = fn;
     },
     [],
   );
-  const handleLayoutChange = useCallback((nextLayout: LayoutMode) => {
+  const handleLayoutChange = useCallback((nextLayout: typeof layout) => {
     startTransition(() => {
       setLayout(nextLayout);
     });
-  }, []);
+  }, [setLayout]);
   const handleWorkbookLayoutSnapshotChange = useCallback((
     snapshot: WorkbookCompareLayoutSnapshot | WorkbookHorizontalLayoutSnapshot,
   ) => {
@@ -521,8 +462,8 @@ export default function App() {
   });
 
   const panelProps = useMemo(() => ({
-    diffLines, textDiffPresentation, collapseCtx, activeHunkIdx: hunkIdx,
-    searchMatches, activeSearchIdx, hunkPositions,
+    diffLines, textDiffPresentation, syntaxPresentation, collapseCtx, activeHunkIdx: hunkIdx,
+    searchMatches, activeSearchIdx, hunkPositions, searchJumpNonce,
     showWhitespace, fontSize,
     guidedLineIdx: null,
     guidedHunkRange: isWorkbookMode ? activeWorkbookGuidedRange : (hunks[hunkIdx] ?? null),
@@ -530,8 +471,8 @@ export default function App() {
     onScrollerReady: handleScrollerReady,
     onCollapseNavigationReady: handleCollapseNavigationReady,
   }), [
-    diffLines, textDiffPresentation, collapseCtx, hunkIdx,
-    searchMatches, activeSearchIdx, hunkPositions,
+    diffLines, textDiffPresentation, syntaxPresentation, collapseCtx, hunkIdx,
+    searchMatches, activeSearchIdx, hunkPositions, searchJumpNonce,
     showWhitespace, fontSize,
     isWorkbookMode, activeWorkbookGuidedRange, hunks,
     guidedPulseNonce,
@@ -539,28 +480,26 @@ export default function App() {
   ]);
 
   const handleHunkPrev = useCallback(() => startTransition(() => {
-    setHunkIdx(i => cycleHunkIndex(i, navigationCount, -1));
-  }), [navigationCount]);
+    setHunkIdx((i: number) => cycleHunkIndex(i, navigationCount, -1));
+  }), [navigationCount, setHunkIdx]);
   const handleHunkNext = useCallback(() => startTransition(() => {
-    setHunkIdx(i => cycleHunkIndex(i, navigationCount, 1));
-  }), [navigationCount]);
+    setHunkIdx((i: number) => cycleHunkIndex(i, navigationCount, 1));
+  }), [navigationCount, setHunkIdx]);
   const handlePickFile = useCallback(() => {
     void handlePickWorkingCopyFile();
   }, [handlePickWorkingCopyFile]);
-  const handleToggleGoto = useCallback(() => setShowGoto(v => !v), [setShowGoto]);
-  const handleToggleHelp = useCallback(() => setShowHelp(v => !v), [setShowHelp]);
-  const handleToggleAbout = useCallback(() => setShowAbout(v => !v), [setShowAbout]);
+  const handleToggleGoto = useCallback(() => setShowGoto((v: boolean) => !v), [setShowGoto]);
+  const handleToggleHelp = useCallback(() => setShowHelp((v: boolean) => !v), [setShowHelp]);
+  const handleToggleAbout = useCallback(() => setShowAbout((v: boolean) => !v), [setShowAbout]);
 
+  // ── Keyboard Shortcuts ────────────────────────────────────────────────
   useAppKeyboardShortcuts({
     dialogs,
     isWorkbookMode,
     selectedCell,
     navigationCount,
+    handleSearchPreviewNav,
     handleSearchNav,
-    setHunkIdx,
-    setShowWhitespace,
-    setFontSize,
-    setWorkbookContextMenu,
     workbookMoveRef,
     collapseNavigationRef,
   });
@@ -586,6 +525,19 @@ export default function App() {
   });
 
   useEffect(() => {
+    if (isWorkbookMode) return;
+    if (activeSearchIdx < 0) return;
+    const activeSearchMatch = searchMatches[activeSearchIdx] ?? null;
+    if (!activeSearchMatch) return;
+
+    const rafId = requestAnimationFrame(() => {
+      scrollToIndexRef.current?.(activeSearchMatch.lineIdx, 'center');
+    });
+
+    return () => cancelAnimationFrame(rafId);
+  }, [activeSearchIdx, isWorkbookMode, searchJumpNonce, searchMatches]);
+
+  useEffect(() => {
     setWorkbookDebugEnabled(isDevMode);
   }, [isDevMode]);
 
@@ -603,7 +555,7 @@ export default function App() {
       payloadSectionCount: precomputedWorkbookDelta?.sections.length ?? 0,
       activePayloadRowCount: activePayloadSection?.rows.length ?? 0,
       activeSectionRowCount: activeSectionRows.length,
-      activeSectionPreview: activeSectionRows.slice(0, 8).map((row) => ({
+      activeSectionPreview: activeSectionRows.slice(0, 8).map((row: SplitRow) => ({
         lineIdx: row.lineIdx,
         lineIdxs: row.lineIdxs,
         leftRowNumber: parseWorkbookRowLine(row.left)?.rowNumber ?? null,
@@ -621,13 +573,13 @@ export default function App() {
       })),
       activeDiffRegion: activeWorkbookDiffRegion
         ? {
-          id: activeWorkbookDiffRegion.id,
-          sheetName: activeWorkbookDiffRegion.sheetName,
-          startRowIndex: activeWorkbookDiffRegion.startRowIndex,
-          endRowIndex: activeWorkbookDiffRegion.endRowIndex,
-          startCol: activeWorkbookDiffRegion.startCol,
-          endCol: activeWorkbookDiffRegion.endCol,
-        }
+            id: activeWorkbookDiffRegion.id,
+            sheetName: activeWorkbookDiffRegion.sheetName,
+            startRowIndex: activeWorkbookDiffRegion.startRowIndex,
+            endRowIndex: activeWorkbookDiffRegion.endRowIndex,
+            startCol: activeWorkbookDiffRegion.startCol,
+            endCol: activeWorkbookDiffRegion.endCol,
+          }
         : null,
     });
   }, [
@@ -641,22 +593,11 @@ export default function App() {
     workbookSections,
   ]);
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────
 
   return (
-    <ThemeContext.Provider value={T}>
-      <div style={{
-        fontFamily: FONT_UI,
-        background: `linear-gradient(180deg, ${T.bg1} 0%, ${T.bg0} 22%, ${T.bg0} 100%)`,
-        color: T.t0,
-        display: 'flex', flexDirection: 'column',
-        position: 'relative',
-        flex: '1 1 auto',
-        width: '100%',
-        height: '100%',
-        overflow: 'hidden',
-        minWidth: 0, minHeight: 0,
-      }}>
+    <ThemeContext.Provider value={themeKey}>
+      <div className="font-ui bg-bg-surface-solid text-text-title flex flex-col relative flex-auto w-full h-full overflow-hidden min-w-0 min-h-0">
         <Toolbar
           fileName={displayFileName}
           themeKey={themeKey}         setThemeKey={setThemeKey}
@@ -690,10 +631,19 @@ export default function App() {
 
         {showSearch && (
           <SearchBar
+            query={searchQ}
+            isRegex={searchRx}
+            isCaseSensitive={searchCs}
+            isWorkbookMode={isWorkbookMode}
+            workbookSearchScope={searchWorkbookScope}
+            activeSheetName={activeWorkbookSheetName}
             matchCount={searchMatches.length}
             activeIdx={activeSearchIdx}
+            results={searchResultItems}
             onSearch={handleSearch}
+            onPreviewNav={handleSearchPreviewNav}
             onNav={handleSearchNav}
+            onJump={handleSearchJump}
             onClose={() => setShowSearch(false)}
           />
         )}
@@ -719,6 +669,7 @@ export default function App() {
             revisionQueryError={revisionQueryError}
             isLoadingMoreRevisions={isLoadingMoreRevisions}
             isSearchingRevisionDateTime={isSearchingRevisionDateTime}
+            onOpenRevisionPicker={handleEnsureRevisionOptionsLoaded}
             onRevisionChange={handleRevisionCompareChange}
             onResetCompare={canSwitchRevisions ? handleResetRevisionCompare : undefined}
             canResetCompare={Boolean(resetPair?.baseRevisionId || resetPair?.mineRevisionId)}
@@ -754,7 +705,6 @@ export default function App() {
         )}
 
         <AppContent
-          theme={T}
           loadingLabel={t('appLoadingDiff')}
           loadPhase={loadPhase}
           hasLoadedDiff={hasLoadedDiff}
@@ -851,7 +801,6 @@ export default function App() {
             void loadSvnDiffViewerStatus();
           }}
         />
-        <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}@keyframes guidedPulse{0%{box-shadow:0 0 0 0 ${T.acc2}00,inset 0 0 0 2px ${T.acc2}f2}50%{box-shadow:0 0 0 8px ${T.acc2}26,inset 0 0 0 2px ${T.acc2}}100%{box-shadow:0 0 0 0 ${T.acc2}00,inset 0 0 0 2px ${T.acc2}b8}}@keyframes regionDashTravel{from{stroke-dashoffset:0}to{stroke-dashoffset:-100}}@keyframes regionDashTravelReverse{from{stroke-dashoffset:0}to{stroke-dashoffset:100}}@keyframes regionGlowPulse{0%{opacity:.44;transform:scale(.985)}50%{opacity:.82;transform:scale(1.02)}100%{opacity:.44;transform:scale(.985)}}`}</style>
       </div>
     </ThemeContext.Provider>
   );

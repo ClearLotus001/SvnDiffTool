@@ -1,9 +1,8 @@
 // src/components/StatsBar.tsx
 import { memo, useMemo, type ReactNode } from 'react';
-import { FONT_CODE, FONT_SIZE, FONT_UI } from '@/constants/typography';
 import { useI18n } from '@/context/i18n';
 import type { TextDiffPresentation, WorkbookArtifactDiff, WorkbookCompareMode } from '@/types';
-import { useTheme } from '@/context/theme';
+import { cssAlpha, cssVar } from '@/theme/cssUtils';
 import Tooltip from '@/components/shared/Tooltip';
 import type { WorkbookSection } from '@/utils/workbook/workbookSections';
 import { summarizeWorkbookSectionChanges } from '@/utils/workbook/workbookSections';
@@ -25,45 +24,27 @@ interface StatsBarProps {
 }
 
 const Dot = ({ c }: { c: string }) => (
-  <span style={{ width: 7, height: 7, borderRadius: '50%', background: c, display: 'block', flexShrink: 0 }} />
+  <span className="size-[7px] rounded-full block shrink-0" style={{ background: c }} />
 );
 
 const RoleBadge = ({ side, accent }: { side: 'base' | 'mine'; accent: string }) => {
-  const glyphStyle = side === 'base'
-    ? {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
-        transform: 'rotate(45deg)',
-      }
-    : {
-        width: 7,
-        height: 7,
-        borderRadius: '50%',
-      };
+  const glyphCls = side === 'base'
+    ? 'size-1.5 rounded-[3px] rotate-45'
+    : 'size-[7px] rounded-full';
 
   return (
     <span
       aria-hidden="true"
+      className="inline-flex items-center justify-center size-3 min-w-3 rounded-full shrink-0 box-border"
       style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: 12,
-        height: 12,
-        minWidth: 12,
-        borderRadius: 999,
-        background: `${accent}14`,
-        border: `1px solid ${accent}40`,
-        boxSizing: 'border-box',
-        flexShrink: 0,
+        background: `color-mix(in srgb, ${accent} 8%, transparent)`,
+        border: `1px solid color-mix(in srgb, ${accent} 25%, transparent)`,
       }}>
       <span
+        className={`block ${glyphCls}`}
         style={{
-          display: 'block',
           background: accent,
-          boxShadow: `0 0 0 1px ${accent}22`,
-          ...glyphStyle,
+          boxShadow: `0 0 0 1px color-mix(in srgb, ${accent} 13%, transparent)`,
         }}
       />
     </span>
@@ -85,12 +66,9 @@ const StatsBar = memo(({
   workbookArtifactDiff = null,
   workbookSections = [],
 }: StatsBarProps) => {
-  const T = useTheme();
   const { t } = useI18n();
 
-  const stats = useMemo(() => {
-    return textDiffPresentation.stats;
-  }, [textDiffPresentation]);
+  const stats = useMemo(() => textDiffPresentation.stats, [textDiffPresentation]);
   const workbookSectionSummary = useMemo(
     () => summarizeWorkbookSectionChanges(workbookSections),
     [workbookSections],
@@ -98,24 +76,13 @@ const StatsBar = memo(({
 
   const metric = (color: string, value: string, label: string, tooltip?: ReactNode) => {
     const node = (
-      <div style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        flexShrink: 0,
-        lineHeight: 1,
-      }}>
+      <div className="inline-flex items-center gap-1.5 shrink-0 leading-none">
         <Dot c={color} />
-        <span style={{ color, fontFamily: FONT_CODE, fontSize: FONT_SIZE.sm }}>{value}</span>
-        <span style={{ color: T.t2, fontFamily: FONT_UI, fontSize: FONT_SIZE.sm }}>{label}</span>
+        <span className="font-code text-[13px]" style={{ color }}>{value}</span>
+        <span className="text-text-secondary font-ui text-[13px]">{label}</span>
       </div>
     );
-
-    return tooltip ? (
-      <Tooltip content={tooltip} maxWidth={320}>
-        {node}
-      </Tooltip>
-    ) : node;
+    return tooltip ? <Tooltip content={tooltip} maxWidth={320}>{node}</Tooltip> : node;
   };
 
   const metaPill = (
@@ -126,32 +93,14 @@ const StatsBar = memo(({
     side?: 'base' | 'mine',
   ) => (
     <Tooltip content={tooltip ?? value} maxWidth={360}>
-      <div
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 6,
-          minWidth: 0,
-          padding: '2px 8px',
-          borderRadius: 999,
-          background: T.bg2,
-          border: `1px solid ${T.border}`,
-          flexShrink: 0,
-        }}>
+      <div className="inline-flex items-center gap-1.5 min-w-0 py-0.5 px-2 rounded-full bg-bg-surface-hover border border-border-default shrink-0">
         {side && <RoleBadge side={side} accent={accent} />}
-        <span style={{ fontSize: FONT_SIZE.xs, color: accent, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap', fontFamily: FONT_UI }}>
+        <span
+          className="text-[11px] font-bold tracking-wider uppercase whitespace-nowrap font-ui"
+          style={{ color: accent }}>
           {label}
         </span>
-        <span style={{
-          color: T.t0,
-          fontSize: FONT_SIZE.sm,
-          fontWeight: 600,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          maxWidth: 180,
-          fontFamily: FONT_UI,
-        }}>
+        <span className="text-text-title text-[13px] font-semibold overflow-hidden text-ellipsis whitespace-nowrap max-w-[180px] font-ui">
           {value}
         </span>
       </div>
@@ -159,24 +108,19 @@ const StatsBar = memo(({
   );
 
   return (
-    <div style={{
-      background: T.bg1, borderTop: `1px solid ${T.border}`,
-      minHeight: 30, display: 'flex', alignItems: 'center',
-      gap: 10, padding: '4px 10px', flexShrink: 0,
-      width: '100%',
-      minWidth: 0,
-      fontSize: FONT_SIZE.sm, color: T.t2,
-      overflowX: 'auto',
-      fontFamily: FONT_UI,
-      position: 'relative',
-      zIndex: 18,
-      boxShadow: `0 -1px 0 ${T.border}, 0 -10px 24px -24px ${T.border2}`,
-    }}>
-      {metric(T.addTx, `+${stats.add + stats.chg}`, t('statsAdded'))}
-      {metric(T.delTx, `-${stats.del + stats.chg}`, t('statsRemoved'))}
-      {metric(T.chgTx, `~${stats.chg}`, t('statsModified'))}
+    <div
+      className="
+        bg-bg-surface-solid border-t border-border-default
+        min-h-[30px] flex items-center gap-2.5 py-1 px-2.5 shrink-0
+        w-full min-w-0 text-[13px] text-text-secondary
+        overflow-x-auto font-ui relative z-[18]
+      "
+      style={{ boxShadow: `0 -1px 0 var(--border-color), 0 -10px 24px -24px var(--border-strong)` }}>
+      {metric(cssVar('addTx'), `+${stats.add + stats.chg}`, t('statsAdded'))}
+      {metric(cssVar('delTx'), `-${stats.del + stats.chg}`, t('statsRemoved'))}
+      {metric(cssVar('chgTx'), `~${stats.chg}`, t('statsModified'))}
 
-      {fileName && metaPill(t('commonTableFile'), fileName, T.acc2)}
+      {fileName && metaPill(t('commonTableFile'), fileName, cssVar('acc2'))}
       {isWorkbookMode && (
         <Tooltip
           content={workbookCompareMode === 'strict'
@@ -184,26 +128,15 @@ const StatsBar = memo(({
             : t('toolbarCompareModeStatusContentHint')}
           maxWidth={360}>
           <div
+            className="inline-flex items-center gap-1.5 min-w-0 py-0.5 px-2 rounded-full border shrink-0"
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              minWidth: 0,
-              padding: '2px 8px',
-              borderRadius: 999,
-              background: workbookCompareMode === 'strict' ? `${T.acc2}10` : T.bg2,
-              border: `1px solid ${workbookCompareMode === 'strict' ? `${T.acc2}40` : T.border}`,
-              flexShrink: 0,
+              background: workbookCompareMode === 'strict' ? cssAlpha('acc2', '10') : undefined,
+              borderColor: workbookCompareMode === 'strict' ? cssAlpha('acc2', '40') : undefined,
             }}>
-            <Dot c={workbookCompareMode === 'strict' ? T.acc2 : T.t2} />
+            <Dot c={workbookCompareMode === 'strict' ? cssVar('acc2') : cssVar('t2')} />
             <span
-              style={{
-                fontSize: FONT_SIZE.xs,
-                color: workbookCompareMode === 'strict' ? T.acc2 : T.t1,
-                fontWeight: 700,
-                whiteSpace: 'nowrap',
-                fontFamily: FONT_UI,
-              }}>
+              className="text-[11px] font-bold whitespace-nowrap font-ui"
+              style={{ color: workbookCompareMode === 'strict' ? cssVar('acc2') : cssVar('t1') }}>
               {workbookCompareMode === 'strict'
                 ? t('toolbarCompareModeStatusStrict')
                 : t('toolbarCompareModeStatusContent')}
@@ -212,19 +145,19 @@ const StatsBar = memo(({
         </Tooltip>
       )}
       {isWorkbookMode && workbookSectionSummary.added > 0 && metric(
-        T.addTx,
+        cssVar('addTx'),
         `+${workbookSectionSummary.added}`,
         t('statsWorkbookSheetsAdded'),
         t('statsWorkbookSheetsAddedHint', { count: workbookSectionSummary.added }),
       )}
       {isWorkbookMode && workbookSectionSummary.deleted > 0 && metric(
-        T.delTx,
+        cssVar('delTx'),
         `-${workbookSectionSummary.deleted}`,
         t('statsWorkbookSheetsDeleted'),
         t('statsWorkbookSheetsDeletedHint', { count: workbookSectionSummary.deleted }),
       )}
       {isWorkbookMode && workbookSectionSummary.renamed > 0 && metric(
-        T.chgTx,
+        cssVar('chgTx'),
         `↦${workbookSectionSummary.renamed}`,
         t('statsWorkbookSheetsRenamed'),
         t('statsWorkbookSheetsRenamedHint', { count: workbookSectionSummary.renamed }),
@@ -234,45 +167,27 @@ const StatsBar = memo(({
           content={(
             <>
               <div>{t('statsArtifactOnlyDiffHintPrimary')}</div>
-              <div style={{ marginTop: 6, color: T.t2 }}>
+              <div className="mt-1.5 text-text-secondary">
                 {t('statsArtifactOnlyDiffHintSecondary')}
               </div>
             </>
           )}
           maxWidth={360}>
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              minWidth: 0,
-              padding: '2px 8px',
-              borderRadius: 999,
-              background: T.bg2,
-              border: `1px solid ${T.border2}`,
-              flexShrink: 0,
-            }}>
-            <Dot c={T.t2} />
-            <span
-              style={{
-                fontSize: FONT_SIZE.xs,
-                color: T.t2,
-                fontWeight: 700,
-                whiteSpace: 'nowrap',
-                fontFamily: FONT_UI,
-              }}>
+          <div className="inline-flex items-center gap-1.5 min-w-0 py-0.5 px-2 rounded-full bg-bg-surface-hover border border-border-strong shrink-0">
+            <Dot c={cssVar('t2')} />
+            <span className="text-[11px] text-text-secondary font-bold whitespace-nowrap font-ui">
               {t('statsArtifactOnlyDiffLabel')}
             </span>
           </div>
         </Tooltip>
       )}
-      {metaPill(baseTitle, baseVersionLabel, T.acc2, baseName, 'base')}
-      {metaPill(mineTitle, mineVersionLabel, T.acc, mineName, 'mine')}
+      {metaPill(baseTitle, baseVersionLabel, cssVar('acc2'), baseName, 'base')}
+      {metaPill(mineTitle, mineVersionLabel, cssVar('acc'), mineName, 'mine')}
 
-      <div style={{ flex: 1 }} />
-      <span style={{ whiteSpace: 'nowrap', fontFamily: FONT_UI, fontSize: FONT_SIZE.sm }}>{t('statsLines', { count: totalLines })}</span>
-      <span style={{ color: T.border2 }}>|</span>
-      <span style={{ whiteSpace: 'nowrap', fontFamily: FONT_UI, fontSize: FONT_SIZE.sm }}>{t('statsHints')}</span>
+      <div className="flex-1" />
+      <span className="whitespace-nowrap font-ui text-[13px]">{t('statsLines', { count: totalLines })}</span>
+      <span className="text-border-strong">|</span>
+      <span className="whitespace-nowrap font-ui text-[13px]">{t('statsHints')}</span>
     </div>
   );
 });

@@ -1,36 +1,40 @@
 // src/components/ShortcutsPanel.tsx
 import { memo } from 'react';
-import { FONT_CODE, FONT_SIZE, FONT_UI } from '@/constants/typography';
+import { X } from 'lucide-react';
 import { useI18n } from '@/context/i18n';
-import { useTheme } from '@/context/theme';
+import DialogFrame from '@/components/shared/DialogFrame';
+import type { AnimatedVisibilityState } from '@/hooks/ui/useAnimatedVisibility';
 
-const ShortcutsPanel = memo(({ onClose }: { onClose: () => void }) => {
-  const T = useTheme();
+const ShortcutsPanel = memo(({
+  animationState,
+  onClose,
+}: {
+  animationState: AnimatedVisibilityState;
+  onClose: () => void;
+}) => {
   const { shortcuts, t } = useI18n();
   return (
-    <div style={{
-      position: 'fixed', top: '50%', left: '50%',
-      transform: 'translate(-50%,-50%)',
-      zIndex: 100,
-      background: T.bg1, border: `1px solid ${T.border2}`,
-      borderRadius: 10, padding: '18px 24px',
-      boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
-      width: 380,
-      fontFamily: FONT_UI,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-        <span style={{ fontSize: FONT_SIZE.lg, fontWeight: 600, color: T.t0, fontFamily: FONT_UI }}>{t('shortcutsTitle')}</span>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', color: T.t1, cursor: 'pointer', fontSize: 18, fontFamily: FONT_UI }}>×</button>
+    <DialogFrame
+      animationState={animationState}
+      className="w-[380px] max-w-[calc(100vw-32px)] rounded-[10px] p-[18px_24px] bg-bg-surface-solid border border-border-strong shadow-2xl font-ui">
+      <div className="flex items-center justify-between mb-3.5">
+        <span className="text-[15px] font-semibold text-text-title">{t('shortcutsTitle')}</span>
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          className="size-7 rounded-lg bg-transparent border-none text-text-primary cursor-pointer flex items-center justify-center hover:bg-bg-surface-hover hover:text-accent active:scale-95 transition-all duration-150">
+          <X size={16} />
+        </button>
       </div>
       {shortcuts.map(([key, desc]) => (
-        <div key={key} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: `1px solid ${T.border}` }}>
-          <code style={{ background: T.bg3, color: T.acc2, padding: '1px 6px', borderRadius: 4, fontSize: FONT_SIZE.sm, fontFamily: FONT_CODE }}>
+        <div key={key} className="flex justify-between py-1.5 border-b border-border-default">
+          <code className="bg-bg-elevated text-[var(--acc2)] py-px px-1.5 rounded text-[13px] font-code">
             {key}
           </code>
-          <span style={{ fontSize: FONT_SIZE.md, color: T.t1, fontFamily: FONT_UI }}>{desc}</span>
+          <span className="text-[14px] text-text-primary font-ui">{desc}</span>
         </div>
       ))}
-    </div>
+    </DialogFrame>
   );
 });
 

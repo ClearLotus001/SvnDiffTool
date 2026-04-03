@@ -8,6 +8,7 @@ import {
   summarizeDiffChanges,
 } from '../src/engine/text/textChangeAlignment';
 import { buildSplitRows } from '../src/engine/text/diff';
+import { buildSearchPattern, findMatchesInSearchableLines } from '../src/engine/text/search';
 
 function makeDeleteLine(base: string, baseLineNo: number): DiffLine {
   return {
@@ -161,4 +162,34 @@ test('buildReplacementPairIndex tracks only high-confidence replacement pairs', 
   assert.equal(pairIndex.has(3), false);
   assert.equal(pairIndex.has(4), false);
   assert.equal(pairIndex.has(5), false);
+});
+
+test('buildSplitRows reuses cached rows for the same diffLines reference', () => {
+  const diffLines: DiffLine[] = [
+    makeDeleteLine('const alpha = 1;', 10),
+    makeAddLine('const alpha = 2;', 10),
+  ];
+
+  const first = buildSplitRows(diffLines);
+  const second = buildSplitRows(diffLines);
+
+  assert.equal(first, second);
+});
+
+test('findMatchesInSearchableLines returns stable line indexes without diff objects', () => {
+  const pattern = buildSearchPattern('needle', { isRegex: false, isCaseSensitive: false });
+  const matches = findMatchesInSearchableLines([
+    'first needle',
+    'second',
+    'third needle needle',
+  ], pattern);
+
+  assert.deepEqual(
+    matches.map((match) => ({ lineIdx: match.lineIdx, start: match.start, end: match.end })),
+    [
+      { lineIdx: 0, start: 6, end: 12 },
+      { lineIdx: 2, start: 6, end: 12 },
+      { lineIdx: 2, start: 13, end: 19 },
+    ],
+  );
 });

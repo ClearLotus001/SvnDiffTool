@@ -1,8 +1,6 @@
 // src/components/CollapseBar.tsx
 import { memo } from 'react';
-import { FONT_CODE, FONT_SIZE, FONT_UI } from '@/constants/typography';
 import { useI18n } from '@/context/i18n';
-import { useTheme } from '@/context/theme';
 import { ROW_H } from '@/hooks/virtualization/useVirtual';
 
 interface CollapseBarProps {
@@ -22,67 +20,59 @@ interface CollapseBarProps {
 }
 
 const CollapseBar = memo(({ count, expandCount, onExpand, onExpandAll, palette }: CollapseBarProps) => {
-  const T = useTheme();
   const { t } = useI18n();
   const shouldShowPartialExpand = expandCount < count;
-  const singleActionLabel = shouldShowPartialExpand ? t('collapseBarExpandCount', { count: expandCount }) : t('collapseBarExpandAll');
+  const singleActionLabel = shouldShowPartialExpand
+    ? t('collapseBarExpandCount', { count: expandCount })
+    : t('collapseBarExpandAll');
   const singleActionHandler = shouldShowPartialExpand ? onExpand : (onExpandAll ?? onExpand);
 
   return (
     <div
-      style={{
-        height: ROW_H,
-        display: 'flex',
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        padding: '0 10px',
-        gap: 6,
-        background: palette?.background ?? T.bg2,
-        borderTop: `1px dashed ${palette?.border ?? T.border}`,
-        borderBottom: `1px dashed ${palette?.border ?? T.border}`,
-        color: palette?.subduedText ?? T.t2,
-        fontSize: FONT_SIZE.sm,
-        fontFamily: FONT_UI,
-        userSelect: 'none',
-      }}>
-      <span style={{ fontFamily: FONT_CODE }}>···</span>
-      <span style={{ color: palette?.accent ?? T.acc2, fontFamily: FONT_CODE }}>{t('collapseBarLines', { count })}</span>
+      style={{ height: ROW_H }}
+      className="
+        relative z-[3] pointer-events-auto flex items-center flex-wrap px-2.5 gap-1.5
+        bg-bg-surface-hover border-y border-dashed border-border-default
+        text-text-secondary text-[13px] font-ui select-none
+      ">
+      <span className="font-code">···</span>
+      <span
+        className="font-code"
+        style={{ color: palette?.accent ?? 'var(--acc2)' }}>
+        {t('collapseBarLines', { count })}
+      </span>
       <button
         type="button"
         onClick={singleActionHandler}
+        className="
+          relative z-[4] pointer-events-auto h-5 px-2 rounded-full
+          border border-border-default bg-bg-surface-solid
+          text-text-primary text-[10px] font-ui font-bold
+          cursor-pointer whitespace-nowrap
+          hover:border-accent hover:text-accent
+          active:scale-95 transition-all duration-150
+        "
         style={{
-          height: 20,
-          padding: '0 8px',
-          borderRadius: 999,
-          border: `1px solid ${palette?.buttonBorder ?? T.border}`,
-          background: T.bg1,
-          color: palette?.buttonText ?? T.t1,
-          fontSize: 10,
-          fontFamily: FONT_UI,
-          fontWeight: 700,
-          cursor: 'pointer',
-          whiteSpace: 'nowrap',
+          borderColor: palette?.buttonBorder,
+          color: palette?.buttonText,
         }}>
         {singleActionLabel}
       </button>
       {shouldShowPartialExpand && onExpandAll && (
         <button
           type="button"
-          onClick={() => {
-            onExpandAll();
-          }}
+          onClick={() => { onExpandAll(); }}
+          className="
+            relative z-[4] pointer-events-auto h-5 px-2 rounded-full
+            border border-border-default bg-bg-surface-solid
+            text-text-primary text-[10px] font-ui font-bold
+            cursor-pointer whitespace-nowrap
+            hover:border-accent hover:text-accent
+            active:scale-95 transition-all duration-150
+          "
           style={{
-            height: 20,
-            padding: '0 8px',
-            borderRadius: 999,
-            border: `1px solid ${palette?.buttonBorder ?? T.border}`,
-            background: T.bg1,
-            color: palette?.buttonText ?? T.t1,
-            fontSize: 10,
-            fontFamily: FONT_UI,
-            fontWeight: 700,
-            cursor: 'pointer',
-            whiteSpace: 'nowrap',
+            borderColor: palette?.buttonBorder,
+            color: palette?.buttonText,
           }}>
           {t('collapseBarExpandAll')}
         </button>

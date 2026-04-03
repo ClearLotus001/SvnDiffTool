@@ -134,7 +134,7 @@ function normalizeWorkbookDiffRegionNodes(nodes: WorkbookDiffRegionNode[]): Work
 
       return {
         ...anchorNode,
-        lineIdxs: mergeLineIdxs(group.map((node) => node.lineIdxs)),
+        lineIdxs: mergeLineIdxs(group.map((node) => node.lineIdxs ?? [])),
         rowNumberStart: rowNumberCandidates.length > 0 ? Math.min(...rowNumberCandidates) : 0,
         rowNumberEnd: rowNumberCandidates.length > 0 ? Math.max(...rowNumberCandidates) : 0,
         anchorSelection: anchorNode.anchorSelection,
@@ -367,7 +367,7 @@ function aggregateWorkbookDiffRegions(
     .map((block, regionIndex) => {
       const patches = block.patches.slice().sort(compareWorkbookDiffRegionNodes);
       const anchorPatch = patches[0]!;
-      const lineIdxs = mergeLineIdxs(patches.map((patch) => patch.lineIdxs));
+      const lineIdxs = mergeLineIdxs(patches.map((patch) => patch.lineIdxs ?? []));
       const rowNumberCandidates = patches
         .flatMap((patch) => [patch.rowNumberStart, patch.rowNumberEnd])
         .filter((value) => value > 0);

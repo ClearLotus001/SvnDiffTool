@@ -1,7 +1,6 @@
 import { memo } from 'react';
-import { FONT_SIZE, FONT_UI } from '@/constants/typography';
+import { X } from 'lucide-react';
 import { useI18n } from '@/context/i18n';
-import { useTheme } from '@/context/theme';
 import Tooltip from '@/components/shared/Tooltip';
 
 interface WorkbookArtifactNoticeBarProps {
@@ -9,58 +8,24 @@ interface WorkbookArtifactNoticeBarProps {
 }
 
 const WorkbookArtifactNoticeBar = memo(({ onClose }: WorkbookArtifactNoticeBarProps) => {
-  const T = useTheme();
   const { t } = useI18n();
 
   return (
     <div
       role="status"
       aria-live="polite"
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1fr) 28px',
-        gap: 12,
-        alignItems: 'center',
-        padding: '10px 14px',
-        margin: '0 10px',
-        borderRadius: 14,
-        border: `1px solid ${T.acc2}35`,
-        background: `linear-gradient(180deg, ${T.bg0} 0%, ${T.bg1} 100%)`,
-        boxShadow: `0 12px 24px -24px ${T.acc2}55, inset 0 1px 0 ${T.bg0}`,
-        position: 'relative',
-        overflow: 'hidden',
-        flexShrink: 0,
-      }}>
-      <div
-        style={{
-          minWidth: 0,
-          width: '100%',
-          textAlign: 'center',
-          justifySelf: 'center',
-          position: 'relative',
-          zIndex: 1,
-        }}>
-        <div
-          style={{
-            color: T.acc2,
-            fontFamily: FONT_UI,
-            fontSize: FONT_SIZE.sm,
-            fontWeight: 800,
-            lineHeight: 1.35,
-            textAlign: 'center',
-            textShadow: `0 1px 0 ${T.bg0}`,
-          }}>
+      className="
+        grid grid-cols-[minmax(0,1fr)_28px] gap-3 items-center
+        py-2.5 px-3.5 mx-2.5 rounded-[14px]
+        border border-[color-mix(in_srgb,var(--acc2)_21%,transparent)]
+        bg-[linear-gradient(180deg,var(--bg-base)_0%,var(--bg-surface-solid)_100%)]
+        relative overflow-hidden shrink-0
+      ">
+      <div className="min-w-0 w-full text-center justify-self-center relative z-[1]">
+        <div className="text-[var(--acc2)] font-ui text-[13px] font-extrabold leading-tight text-center">
           {t('artifactNoticeTitle')}
         </div>
-        <div
-          style={{
-            marginTop: 4,
-            color: T.t1,
-            fontFamily: FONT_UI,
-            fontSize: FONT_SIZE.sm,
-            lineHeight: 1.45,
-            textAlign: 'center',
-          }}>
+        <div className="mt-1 text-text-primary font-ui text-[13px] leading-snug text-center">
           {t('artifactNoticeBody')}
         </div>
       </div>
@@ -70,25 +35,15 @@ const WorkbookArtifactNoticeBar = memo(({ onClose }: WorkbookArtifactNoticeBarPr
           type="button"
           onClick={onClose}
           aria-label={t('artifactNoticeDismiss')}
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: 10,
-            border: `1px solid ${T.border}`,
-            background: `${T.bg0}cc`,
-            color: T.t2,
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 16,
-            lineHeight: 1,
-            fontFamily: FONT_UI,
-            flexShrink: 0,
-            position: 'relative',
-            zIndex: 1,
-          }}>
-          ×
+          className="
+            size-7 rounded-[10px] border border-border-default
+            bg-bg-base/80 text-text-secondary
+            cursor-pointer inline-flex items-center justify-center
+            shrink-0 relative z-[1]
+            hover:bg-bg-surface-hover hover:text-accent
+            active:scale-95 transition-all duration-150
+          ">
+          <X size={14} />
         </button>
       </Tooltip>
     </div>

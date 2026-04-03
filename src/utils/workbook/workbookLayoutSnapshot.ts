@@ -70,6 +70,7 @@ export function buildWorkbookHorizontalLayoutSnapshot(
   leftScrollLeft: number,
   rightScrollTop: number,
   rightScrollLeft: number,
+  splitRatio: number,
   expandedBlocks: CollapseExpansionState,
 ): WorkbookHorizontalLayoutSnapshot {
   return {
@@ -80,6 +81,7 @@ export function buildWorkbookHorizontalLayoutSnapshot(
     leftScrollLeft,
     rightScrollTop,
     rightScrollLeft,
+    splitRatio,
     expandedBlocks: cloneCollapseExpansionState(expandedBlocks),
   };
 }

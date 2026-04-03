@@ -1,72 +1,90 @@
 // src/components/Toolbar.tsx
 import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { FONT_CODE, FONT_SIZE, FONT_UI } from '@/constants/typography';
+import {
+  AlignJustify,
+  Columns2,
+  Rows2,
+  ChevronsLeft,
+  ChevronsRight,
+  Search,
+  ArrowRightToLine,
+  Globe,
+  FileText,
+  CircleHelp,
+  Info,
+  ChevronDown,
+  RefreshCw,
+  Download,
+  PackageCheck,
+  Minus,
+  Square,
+  Maximize2,
+  X,
+  Columns3,
+  GitCompareArrows,
+} from 'lucide-react';
 import { useI18n } from '@/context/i18n';
 import type { AppUpdateState, ThemeKey, LayoutMode, WorkbookCompareMode } from '@/types';
-import { THEMES } from '@/theme';
-import { useTheme } from '@/context/theme';
+import { THEME_KEYS } from '@/theme';
+import { cssVar } from '@/theme/cssUtils';
 import Tooltip from '@/components/shared/Tooltip';
 import ToolbarViewMenu from '@/components/navigation/ToolbarViewMenu';
 
 type IconName =
-  | 'layoutUnified'
-  | 'layoutSplit'
-  | 'layoutVertical'
-  | 'layoutTopBottom'
-  | 'prev'
-  | 'next'
-  | 'search'
-  | 'goto'
-  | 'collapse'
-  | 'expand'
-  | 'whitespace'
-  | 'hiddenColumns'
-  | 'language'
-  | 'file'
-  | 'help'
-  | 'brand'
-  | 'update'
-  | 'download'
-  | 'install'
-  | 'info'
-  | 'chevronDown'
-  | 'windowMinimize'
-  | 'windowMaximize'
-  | 'windowRestore'
-  | 'windowClose';
+  | 'layoutUnified' | 'layoutSplit' | 'layoutVertical' | 'layoutTopBottom'
+  | 'prev' | 'next' | 'search' | 'goto'
+  | 'language' | 'file' | 'help' | 'brand'
+  | 'update' | 'download' | 'install' | 'info' | 'chevronDown'
+  | 'windowMinimize' | 'windowMaximize' | 'windowRestore' | 'windowClose';
 
-const LAYOUT_OPTIONS: {
-  id: LayoutMode;
-}[] = [
+const ICON_MAP: Record<IconName, React.ElementType> = {
+  layoutUnified: AlignJustify,
+  layoutSplit: Columns2,
+  layoutVertical: Columns3,
+  layoutTopBottom: Rows2,
+  prev: ChevronsLeft,
+  next: ChevronsRight,
+  search: Search,
+  goto: ArrowRightToLine,
+  language: Globe,
+  file: FileText,
+  help: CircleHelp,
+  brand: GitCompareArrows,
+  update: RefreshCw,
+  download: Download,
+  install: PackageCheck,
+  info: Info,
+  chevronDown: ChevronDown,
+  windowMinimize: Minus,
+  windowMaximize: Square,
+  windowRestore: Maximize2,
+  windowClose: X,
+};
+
+function Icon({ name, size = 14 }: { name: IconName; size?: number }) {
+  const LucideIcon = ICON_MAP[name];
+  return LucideIcon ? <LucideIcon size={size} className="shrink-0" /> : null;
+}
+
+const LAYOUT_OPTIONS: { id: LayoutMode }[] = [
   { id: 'unified' },
   { id: 'split-h' },
   { id: 'split-v' },
 ];
 
 type LayoutLabelKey =
-  | 'toolbarLayoutUnified'
-  | 'toolbarLayoutSplit'
-  | 'toolbarLayoutVertical'
-  | 'toolbarLayoutWorkbookUnified'
-  | 'toolbarLayoutWorkbookColumns';
+  | 'toolbarLayoutUnified' | 'toolbarLayoutSplit' | 'toolbarLayoutVertical'
+  | 'toolbarLayoutWorkbookUnified' | 'toolbarLayoutWorkbookColumns';
 
 function getLayoutLabelKey(layout: LayoutMode, isWorkbookMode: boolean): LayoutLabelKey {
-  if (layout === 'unified') {
-    return isWorkbookMode ? 'toolbarLayoutWorkbookUnified' : 'toolbarLayoutUnified';
-  }
-  if (layout === 'split-v') {
-    return isWorkbookMode ? 'toolbarLayoutWorkbookColumns' : 'toolbarLayoutVertical';
-  }
+  if (layout === 'unified') return isWorkbookMode ? 'toolbarLayoutWorkbookUnified' : 'toolbarLayoutUnified';
+  if (layout === 'split-v') return isWorkbookMode ? 'toolbarLayoutWorkbookColumns' : 'toolbarLayoutVertical';
   return 'toolbarLayoutSplit';
 }
 
 function getLayoutIconName(layout: LayoutMode, isWorkbookMode: boolean): IconName {
-  if (layout === 'split-v') {
-    return isWorkbookMode ? 'layoutVertical' : 'layoutTopBottom';
-  }
-  if (layout === 'split-h') {
-    return 'layoutSplit';
-  }
+  if (layout === 'split-v') return isWorkbookMode ? 'layoutVertical' : 'layoutTopBottom';
+  if (layout === 'split-h') return 'layoutSplit';
   return 'layoutUnified';
 }
 
@@ -107,221 +125,6 @@ interface ToolbarProps {
   onInstallUpdate: () => void;
 }
 
-function Icon({ name, size = 12 }: { name: IconName; size?: number }) {
-  const common = {
-    width: size,
-    height: size,
-    viewBox: '0 0 16 16',
-    fill: 'none',
-    stroke: 'currentColor',
-    strokeWidth: 1.6,
-    strokeLinecap: 'round' as const,
-    strokeLinejoin: 'round' as const,
-    style: { flexShrink: 0 },
-  };
-
-  switch (name) {
-    case 'layoutUnified':
-      return (
-        <svg {...common}>
-          <path d="M3 4.5h10" />
-          <path d="M3 8h10" />
-          <path d="M3 11.5h10" />
-        </svg>
-      );
-    case 'layoutSplit':
-      return (
-        <svg {...common}>
-          <rect x="2.5" y="3" width="11" height="10" rx="2" />
-          <path d="M8 3.5v9" />
-        </svg>
-      );
-    case 'layoutVertical':
-      return (
-        <svg {...common}>
-          <rect x="2.5" y="3" width="11" height="10" rx="2" />
-          <path d="M6 3.5v9" />
-          <path d="M10 3.5v9" />
-        </svg>
-      );
-    case 'layoutTopBottom':
-      return (
-        <svg {...common}>
-          <rect x="2.5" y="3" width="11" height="10" rx="2" />
-          <path d="M3 8h10" />
-        </svg>
-      );
-    case 'prev':
-      return (
-        <svg {...common}>
-          <path d="M8 3.5 4.5 7 8 10.5" />
-          <path d="M11.5 3.5 8 7l3.5 3.5" />
-        </svg>
-      );
-    case 'next':
-      return (
-        <svg {...common}>
-          <path d="m8 3.5 3.5 3.5L8 10.5" />
-          <path d="M4.5 3.5 8 7l-3.5 3.5" />
-        </svg>
-      );
-    case 'search':
-      return (
-        <svg {...common}>
-          <circle cx="7" cy="7" r="3.5" />
-          <path d="m10 10 3 3" />
-        </svg>
-      );
-    case 'goto':
-      return (
-        <svg {...common}>
-          <path d="M3 4h6.5" />
-          <path d="m7 2 2.5 2L7 6" />
-          <path d="M3 12h10" />
-          <path d="m10 10 2.5 2-2.5 2" />
-        </svg>
-      );
-    case 'collapse':
-      return (
-        <svg {...common}>
-          <path d="M3 4h10" />
-          <path d="M3 8h10" />
-          <path d="M3 12h10" />
-          <path d="m8 6.5-2 2 2 2" />
-        </svg>
-      );
-    case 'expand':
-      return (
-        <svg {...common}>
-          <path d="M3 4h10" />
-          <path d="M3 8h10" />
-          <path d="M3 12h10" />
-          <path d="m6.5 8 2 2 2-2" />
-        </svg>
-      );
-    case 'whitespace':
-      return (
-        <svg {...common}>
-          <path d="M4 5.5v5" />
-          <path d="M4 10.5c0-1.6 1.2-2.6 2.7-2.6S9.5 9 9.5 10.5V12" />
-          <path d="M12 4v8" />
-          <path d="M10.5 4h3" />
-        </svg>
-      );
-    case 'hiddenColumns':
-      return (
-        <svg {...common}>
-          <rect x="2.5" y="3" width="3" height="10" rx="1" />
-          <rect x="10.5" y="3" width="3" height="10" rx="1" />
-          <path d="M7.5 3.5v9" strokeDasharray="1.5 1.5" />
-        </svg>
-      );
-    case 'language':
-      return (
-        <svg {...common}>
-          <circle cx="8" cy="8" r="5.5" />
-          <path d="M2.8 8h10.4" />
-          <path d="M8 2.5c1.8 1.6 2.8 3.4 2.8 5.5S9.8 11.9 8 13.5" />
-          <path d="M8 2.5C6.2 4.1 5.2 5.9 5.2 8S6.2 11.9 8 13.5" />
-        </svg>
-      );
-    case 'file':
-      return (
-        <svg {...common}>
-          <path d="M5 2.5h4l2.5 2.5v6A2 2 0 0 1 9.5 13h-4A2 2 0 0 1 3.5 11V4.5A2 2 0 0 1 5.5 2.5Z" />
-          <path d="M9 2.5v3h3" />
-        </svg>
-      );
-    case 'help':
-      return (
-        <svg {...common}>
-          <circle cx="8" cy="8" r="5.5" />
-          <path d="M6.5 6a1.7 1.7 0 0 1 3 1c0 1.2-1.5 1.5-1.5 2.7" />
-          <path d="M8 11.5h.01" />
-        </svg>
-      );
-    case 'brand':
-      return (
-        <svg {...common} viewBox="0 0 20 20">
-          <rect x="2.5" y="2.5" width="15" height="15" rx="5" fill="currentColor" stroke="none" />
-          <path d="M6.5 12.5h7" stroke="#fff" />
-          <path d="M6.5 8h4.5" stroke="#fff" />
-          <path d="m11.5 6.5 2 2-2 2" stroke="#fff" />
-        </svg>
-      );
-    case 'update':
-      return (
-        <svg {...common}>
-          <path d="M12.5 5.5V3h-2.5" />
-          <path d="M3.8 6.7A4.8 4.8 0 0 1 12.1 5" />
-          <path d="M3.5 10.5V13h2.5" />
-          <path d="M12.2 9.3A4.8 4.8 0 0 1 3.9 11" />
-        </svg>
-      );
-    case 'download':
-      return (
-        <svg {...common}>
-          <path d="M8 3.5v6" />
-          <path d="m5.5 7.5 2.5 2.5 2.5-2.5" />
-          <path d="M3.5 12.5h9" />
-        </svg>
-      );
-    case 'install':
-      return (
-        <svg {...common}>
-          <path d="M8 3.5v6" />
-          <path d="m5.5 7.5 2.5 2.5 2.5-2.5" />
-          <path d="M4 12.5h8" />
-          <path d="M5 12.5v1" />
-          <path d="M11 12.5v1" />
-        </svg>
-      );
-    case 'info':
-      return (
-        <svg {...common}>
-          <circle cx="8" cy="8" r="5.5" />
-          <path d="M8 7.2v3.1" />
-          <path d="M8 4.7h.01" />
-        </svg>
-      );
-    case 'chevronDown':
-      return (
-        <svg {...common}>
-          <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
-        </svg>
-      );
-    case 'windowMinimize':
-      return (
-        <svg {...common}>
-          <path d="M4 8h8" />
-        </svg>
-      );
-    case 'windowMaximize':
-      return (
-        <svg {...common}>
-          <rect x="4" y="4" width="8" height="8" rx="1.5" />
-        </svg>
-      );
-    case 'windowRestore':
-      return (
-        <svg {...common}>
-          <path d="M6 4h5v5" />
-          <path d="M6 4 4 6" />
-          <rect x="4" y="6" width="7" height="6" rx="1.2" />
-        </svg>
-      );
-    case 'windowClose':
-      return (
-        <svg {...common}>
-          <path d="m4.5 4.5 7 7" />
-          <path d="m11.5 4.5-7 7" />
-        </svg>
-      );
-    default:
-      return null;
-  }
-}
-
 const Toolbar = memo((props: ToolbarProps) => {
   const {
     fileName,
@@ -336,7 +139,6 @@ const Toolbar = memo((props: ToolbarProps) => {
     updateState, onCheckForUpdates, onDownloadUpdate, onInstallUpdate,
   } = props;
 
-  const T = useTheme();
   const { getThemeLabel, locale, setLocale, t } = useI18n();
   const nextLocale = locale === 'zh-CN' ? 'en-US' : 'zh-CN';
   const noDragStyle = (isElectron ? { WebkitAppRegion: 'no-drag' as const } : undefined) as CSSProperties | undefined;
@@ -389,202 +191,104 @@ const Toolbar = memo((props: ToolbarProps) => {
   const showFileActionText = responsiveMode !== 'tight';
   const showHunkTarget = (responsiveMode === 'regular' || responsiveMode === 'condensed') && !isWorkbookMode;
   const showThemeLabel = responsiveMode === 'regular' || responsiveMode === 'condensed';
-  const showViewLabel = true;
   const showLanguageText = responsiveMode === 'regular' || responsiveMode === 'condensed';
-  const compactFileMaxWidth = responsiveMode === 'compact' ? 148 : responsiveMode === 'condensed' ? 180 : 220;
-  const groupGap = responsiveMode === 'tight' ? 2 : 3;
-  const groupPadding = responsiveMode === 'tight' ? 1 : 2;
   const showUpdateLabel = responsiveMode !== 'tight';
   const nativeWindowControlsInset = usesNativeWindowControls ? 138 : 0;
   const windowMaximizeTooltip = isWindowMaximized ? t('toolbarWindowRestoreTitle') : t('toolbarWindowMaximizeTitle');
   const fileActionLabel = fileName ? t('toolbarSwitchFileLabel') : t('toolbarPickFileLabel');
   const fileActionTooltip = fileName ? t('toolbarSwitchFileTitle') : t('toolbarPickFileTitle');
+
   const updateAction = useMemo(() => {
     if (!isElectron || !updateState) return null;
-
     switch (updateState.status) {
-      case 'checking':
-        return {
-          label: t('toolbarUpdateChecking'),
-          icon: 'update' as const,
-          onClick: onCheckForUpdates,
-          disabled: true,
-          active: false,
-        };
-      case 'available':
-        return {
-          label: t('toolbarUpdateDownload'),
-          icon: 'download' as const,
-          onClick: onDownloadUpdate,
-          disabled: false,
-          active: true,
-        };
-      case 'downloading':
-        return {
-          label: `${t('toolbarUpdateDownloading')} ${Math.round(updateState.downloadPercent)}%`,
-          icon: 'download' as const,
-          onClick: onDownloadUpdate,
-          disabled: true,
-          active: true,
-        };
-      case 'downloaded':
-        return {
-          label: t('toolbarUpdateInstall'),
-          icon: 'install' as const,
-          onClick: onInstallUpdate,
-          disabled: false,
-          active: true,
-        };
-      case 'upToDate':
-        return {
-          label: t('toolbarUpdateUpToDate'),
-          icon: 'update' as const,
-          onClick: onCheckForUpdates,
-          disabled: true,
-          active: false,
-        };
-      case 'error':
-        return {
-          label: t('toolbarUpdateRetry'),
-          icon: 'update' as const,
-          onClick: onCheckForUpdates,
-          disabled: false,
-          active: true,
-        };
-      case 'disabled':
-        return {
-          label: t('toolbarUpdateDisabled'),
-          icon: 'update' as const,
-          onClick: onCheckForUpdates,
-          disabled: true,
-          active: false,
-        };
-      case 'unsupported':
-        return {
-          label: t('toolbarUpdateUnsupported'),
-          icon: 'update' as const,
-          onClick: onCheckForUpdates,
-          disabled: true,
-          active: false,
-        };
+      case 'checking': return { label: t('toolbarUpdateChecking'), icon: 'update' as const, onClick: onCheckForUpdates, disabled: true, active: false };
+      case 'available': return { label: t('toolbarUpdateDownload'), icon: 'download' as const, onClick: onDownloadUpdate, disabled: false, active: true };
+      case 'downloading': return { label: `${t('toolbarUpdateDownloading')} ${Math.round(updateState.downloadPercent)}%`, icon: 'download' as const, onClick: onDownloadUpdate, disabled: true, active: true };
+      case 'downloaded': return { label: t('toolbarUpdateInstall'), icon: 'install' as const, onClick: onInstallUpdate, disabled: false, active: true };
+      case 'upToDate': return { label: t('toolbarUpdateUpToDate'), icon: 'update' as const, onClick: onCheckForUpdates, disabled: true, active: false };
+      case 'error': return { label: t('toolbarUpdateRetry'), icon: 'update' as const, onClick: onCheckForUpdates, disabled: false, active: true };
+      case 'disabled': return { label: t('toolbarUpdateDisabled'), icon: 'update' as const, onClick: onCheckForUpdates, disabled: true, active: false };
+      case 'unsupported': return { label: t('toolbarUpdateUnsupported'), icon: 'update' as const, onClick: onCheckForUpdates, disabled: true, active: false };
       case 'idle':
-      default:
-        return {
-          label: t('toolbarUpdateCheck'),
-          icon: 'update' as const,
-          onClick: onCheckForUpdates,
-          disabled: false,
-          active: false,
-        };
+      default: return { label: t('toolbarUpdateCheck'), icon: 'update' as const, onClick: onCheckForUpdates, disabled: false, active: false };
     }
-  }, [
-    isElectron,
-    onCheckForUpdates,
-    onDownloadUpdate,
-    onInstallUpdate,
-    t,
-    updateState,
-  ]);
+  }, [isElectron, onCheckForUpdates, onDownloadUpdate, onInstallUpdate, t, updateState]);
 
   const Btn = ({
     active = false, onClick, children, tooltip = '', compact = false, disabled = false,
   }: {
-    active?: boolean;
-    onClick: () => void;
-    children: React.ReactNode;
-    tooltip?: string;
-    compact?: boolean;
-    disabled?: boolean;
+    active?: boolean; onClick: () => void; children: React.ReactNode;
+    tooltip?: string; compact?: boolean; disabled?: boolean;
   }) => {
     const button = (
-      <button className="svn-toolbar-btn" type="button" onClick={onClick} disabled={disabled} aria-label={tooltip || undefined} style={{
-      background: active ? `${T.acc}22` : 'transparent',
-      border: `1px solid ${active ? `${T.acc}66` : 'transparent'}`,
-      color: active ? T.acc : T.t0,
-      padding: compact
-        ? (responsiveMode === 'tight' ? '0 6px' : '0 8px')
-        : (responsiveMode === 'tight' ? '0 8px' : '0 10px'),
-      borderRadius: 8,
-      fontSize: FONT_SIZE.sm,
-      fontFamily: FONT_UI,
-      fontWeight: 600,
-      display: 'inline-flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 6,
-      whiteSpace: 'nowrap',
-      height: 28,
-      minWidth: compact ? 28 : 'auto',
-      lineHeight: 1,
-      opacity: disabled ? 0.45 : 1,
-      cursor: disabled ? 'not-allowed' : 'pointer',
-      transition: 'background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease, box-shadow 160ms ease',
-      ...noDragStyle,
-    }}>
-      {children}
-    </button>
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        aria-label={tooltip || undefined}
+        className={`
+          inline-flex items-center justify-center gap-1.5
+          h-7 rounded-lg text-[13px] font-ui font-semibold
+          whitespace-nowrap leading-none
+          transition-all duration-150
+          ${compact
+            ? (responsiveMode === 'tight' ? 'px-1.5 min-w-7' : 'px-2 min-w-7')
+            : (responsiveMode === 'tight' ? 'px-2' : 'px-2.5')
+          }
+          ${active
+            ? 'bg-[var(--accent)]/[0.13] border border-[var(--accent)]/40 text-accent'
+            : 'bg-transparent border border-transparent text-text-title'
+          }
+          ${disabled
+            ? 'opacity-45 cursor-not-allowed'
+            : 'cursor-pointer hover:-translate-y-px hover:bg-bg-elevated hover:border-border-strong hover:shadow-sm'
+          }
+        `}
+        style={noDragStyle}>
+        {children}
+      </button>
     );
     return tooltip ? <Tooltip content={tooltip} anchorStyle={noDragAnchorStyle}>{button}</Tooltip> : button;
   };
 
   const Group = ({ children }: { children: React.ReactNode }) => (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: groupGap,
-      padding: groupPadding,
-      background: T.bg2,
-      border: `1px solid ${T.border}`,
-      borderRadius: 12,
-      flexShrink: 0,
-      ...noDragStyle,
-    }}>
+    <div
+      className={`
+        flex items-center rounded-xl shrink-0
+        bg-bg-surface-hover border border-border-default
+        ${responsiveMode === 'tight' ? 'gap-0.5 p-px' : 'gap-0.5 p-0.5'}
+      `}
+      style={noDragStyle}>
       {children}
     </div>
   );
 
   const ThemeMenu = () => (
-    <div
-      ref={themeMenuRef}
-      style={{
-        position: 'relative',
-        ...noDragStyle,
-      }}>
+    <div ref={themeMenuRef} className="relative" style={noDragStyle}>
       <Tooltip content={getThemeLabel(themeKey)} anchorStyle={noDragAnchorStyle}>
         <button
-          className="svn-toolbar-btn"
           type="button"
           aria-haspopup="menu"
           aria-expanded={themeMenuOpen}
           onClick={() => setThemeMenuOpen((open) => !open)}
+          className="
+            h-8 rounded-[10px] border border-border-default
+            bg-bg-surface-hover text-text-title
+            font-ui text-[13px] font-bold
+            inline-flex items-center gap-2 cursor-pointer whitespace-nowrap
+            transition-all duration-150
+            hover:-translate-y-px hover:border-border-strong hover:shadow-sm
+          "
           style={{
-            height: 32,
             padding: showThemeLabel ? '0 10px 0 12px' : '0 10px',
-            borderRadius: 10,
-            border: `1px solid ${T.border}`,
-            background: T.bg2,
-            color: T.t0,
-            fontFamily: FONT_UI,
-            fontSize: FONT_SIZE.sm,
-            fontWeight: 700,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 8,
-            cursor: 'pointer',
-            whiteSpace: 'nowrap',
-            boxSizing: 'border-box',
-            transition: 'background 160ms ease, border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease',
             ...noDragStyle,
           }}>
           <span
             aria-hidden="true"
+            className="size-2 rounded-full shrink-0"
             style={{
-              width: 8,
-              height: 8,
-              borderRadius: 999,
-              background: themeKey === 'dark' ? T.t0 : themeKey === 'light' ? T.acc : T.acc2,
-              boxShadow: `0 0 0 3px ${T.bg1}`,
-              flexShrink: 0,
+              background: themeKey === 'dark' ? cssVar('t0') : themeKey === 'light' ? cssVar('acc') : cssVar('acc2'),
+              boxShadow: `0 0 0 3px var(--bg-surface-solid)`,
             }}
           />
           {showThemeLabel && <span>{getThemeLabel(themeKey)}</span>}
@@ -594,64 +298,41 @@ const Toolbar = memo((props: ToolbarProps) => {
       {themeMenuOpen && (
         <div
           role="menu"
-          style={{
-            position: 'absolute',
-            top: 'calc(100% + 8px)',
-            right: 0,
-            minWidth: 176,
-            padding: 6,
-            borderRadius: 14,
-            border: `1px solid ${T.border}`,
-            background: T.bg1,
-            boxShadow: `0 16px 40px -24px ${T.border2}`,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 4,
-            zIndex: 80,
-            ...noDragStyle,
-          }}>
-          {(Object.keys(THEMES) as ThemeKey[]).map((k) => {
+          className="
+            absolute top-[calc(100%+8px)] right-0 min-w-[176px] p-1.5
+            rounded-[14px] border border-border-default
+            bg-bg-surface-solid shadow-xl
+            flex flex-col gap-1 z-[80]
+          "
+          style={noDragStyle}>
+          {THEME_KEYS.map((k) => {
             const active = themeKey === k;
             return (
               <button
-                className="svn-toolbar-btn"
                 key={k}
                 type="button"
                 role="menuitemradio"
                 aria-checked={active}
-                onClick={() => {
-                  setThemeKey(k);
-                  setThemeMenuOpen(false);
-                }}
-                style={{
-                  height: 34,
-                  padding: '0 12px',
-                  borderRadius: 10,
-                  border: `1px solid ${active ? `${T.acc}44` : 'transparent'}`,
-                  background: active ? `${T.acc}16` : 'transparent',
-                  color: active ? T.acc : T.t0,
-                  fontFamily: FONT_UI,
-                  fontSize: FONT_SIZE.sm,
-                  fontWeight: active ? 700 : 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 10,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  transition: 'background 160ms ease, border-color 160ms ease, transform 160ms ease',
-                  ...noDragStyle,
-                }}>
+                onClick={() => { setThemeKey(k); setThemeMenuOpen(false); }}
+                className={`
+                  h-[34px] px-3 rounded-[10px] border
+                  font-ui text-[13px]
+                  flex items-center justify-between gap-2.5
+                  cursor-pointer text-left
+                  transition-all duration-150
+                  ${active
+                    ? 'border-[var(--accent)]/25 bg-[var(--accent)]/[0.08] text-accent font-bold'
+                    : 'border-transparent bg-transparent text-text-title font-semibold hover:bg-bg-surface-hover'
+                  }
+                `}
+                style={noDragStyle}>
                 <span>{getThemeLabel(k)}</span>
                 <span
                   aria-hidden="true"
+                  className="size-2 rounded-full shrink-0"
                   style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: 999,
-                    background: k === 'dark' ? T.t0 : k === 'light' ? T.acc : T.acc2,
+                    background: k === 'dark' ? cssVar('t0') : k === 'light' ? cssVar('acc') : cssVar('acc2'),
                     opacity: active ? 1 : 0.55,
-                    flexShrink: 0,
                   }}
                 />
               </button>
@@ -663,93 +344,53 @@ const Toolbar = memo((props: ToolbarProps) => {
   );
 
   return (
-    <div style={{
-      background: `linear-gradient(180deg, ${T.bg1} 0%, ${T.bg0} 100%)`,
-      borderBottom: `1px solid ${T.border}`,
-      display: 'flex',
-      alignItems: 'center',
-      flexWrap: 'nowrap',
-      gap: 8,
-      padding: `6px ${8 + nativeWindowControlsInset}px 6px 8px`,
-      minHeight: 44,
-      flexShrink: 0,
-      minWidth: 0,
-      overflow: 'visible',
-      position: 'relative',
-      zIndex: 20,
-      ...(isElectron ? { WebkitAppRegion: 'drag' as const } : {}),
-    }} ref={rootRef}>
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        alignContent: 'center',
-        flexWrap: 'nowrap',
-        gap: 6,
-        minWidth: 0,
-        flex: '1 1 auto',
-        overflow: 'hidden',
+    <div
+      ref={rootRef}
+      className="
+        flex items-center flex-nowrap gap-2
+        min-h-[44px] shrink-0 min-w-0 overflow-visible
+        relative z-20 border-b border-border-default
+        bg-bg-surface glass
+      "
+      style={{
+        padding: `6px ${8 + nativeWindowControlsInset}px 6px 8px`,
+        ...(isElectron ? { WebkitAppRegion: 'drag' as const } : {}),
       }}>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          marginRight: 2,
-          flexShrink: 0,
-          padding: '2px 4px 2px 0',
-          ...noDragStyle,
-        }}>
-          <div style={{
-            width: 28,
-            height: 28,
-            background: T.acc,
-            borderRadius: 10,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#fff',
-          }}>
+      {/* ── Left Section ── */}
+      <div className="flex items-center content-center flex-nowrap gap-1.5 min-w-0 flex-1 overflow-hidden">
+        {/* Brand */}
+        <div className="flex items-center gap-2 mr-0.5 shrink-0 py-0.5 pr-1" style={noDragStyle}>
+          <div className="size-7 bg-accent rounded-[10px] flex items-center justify-center text-btn-active-text">
             <Icon name="brand" size={14} />
           </div>
-          <span style={{ fontWeight: 700, fontSize: FONT_SIZE.md, letterSpacing: -0.1, color: T.t0, whiteSpace: 'nowrap', fontFamily: FONT_UI }}>
+          <span className="font-bold text-[14px] tracking-tight text-text-title whitespace-nowrap font-ui">
             SvnDiffTool
           </span>
         </div>
 
+        {/* File chip */}
         {showFileChip && fileName && (
           <Tooltip content={fileName} maxWidth={320} anchorStyle={noDragAnchorStyle}>
             <div
+              className="
+                inline-flex items-center gap-2 min-w-0 px-2 h-7
+                rounded-full bg-bg-surface-hover border border-border-default
+                text-text-title shrink
+              "
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                minWidth: 0,
-                maxWidth: compactFileMaxWidth,
-                padding: '0 8px',
-                height: 28,
-                borderRadius: 999,
-                background: T.bg2,
-                border: `1px solid ${T.border}`,
-                color: T.t0,
-                flexShrink: 1,
+                maxWidth: responsiveMode === 'compact' ? 148 : responsiveMode === 'condensed' ? 180 : 220,
                 flexBasis: 220,
                 ...noDragStyle,
               }}>
-              <span style={{ color: T.acc2, display: 'inline-flex', alignItems: 'center' }}>
-                <Icon name="file" />
+              <span className="text-[var(--acc2)] inline-flex items-center">
+                <Icon name="file" size={12} />
               </span>
               {showFileMeta && (
-                <span style={{ fontSize: FONT_SIZE.xs, color: T.t2, whiteSpace: 'nowrap', fontFamily: FONT_UI }}>
+                <span className="text-[11px] text-text-secondary whitespace-nowrap font-ui">
                   {t('toolbarFileLabel')}
                 </span>
               )}
-              <span style={{
-                fontSize: FONT_SIZE.sm,
-                fontWeight: 600,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                fontFamily: FONT_UI,
-              }}>
+              <span className="text-[13px] font-semibold overflow-hidden text-ellipsis whitespace-nowrap font-ui">
                 {fileName}
               </span>
             </div>
@@ -765,17 +406,13 @@ const Toolbar = memo((props: ToolbarProps) => {
           </Group>
         )}
 
+        {/* Layout group */}
         <Group>
           {LAYOUT_OPTIONS.map((option) => {
             const labelKey = getLayoutLabelKey(option.id, isWorkbookMode);
             const iconName = getLayoutIconName(option.id, isWorkbookMode);
-
             return (
-              <Btn
-                key={option.id}
-                active={layout === option.id}
-                onClick={() => setLayout(option.id)}
-                tooltip={t(labelKey)}>
+              <Btn key={option.id} active={layout === option.id} onClick={() => setLayout(option.id)} tooltip={t(labelKey)}>
                 <Icon name={iconName} />
                 {showLayoutText && <span>{t(labelKey)}</span>}
               </Btn>
@@ -783,33 +420,28 @@ const Toolbar = memo((props: ToolbarProps) => {
           })}
         </Group>
 
+        {/* Hunk navigation */}
         <Group>
           <Btn onClick={onPrev} tooltip={t('toolbarPrevHunkTitle')} compact>
             <Icon name="prev" />
           </Btn>
-          <span style={{ fontSize: FONT_SIZE.sm, color: T.t1, fontFamily: FONT_CODE, minWidth: 42, textAlign: 'center', lineHeight: 1, ...noDragStyle }}>
+          <span
+            className="text-[13px] text-text-primary font-code min-w-[42px] text-center leading-none"
+            style={noDragStyle}>
             {totalHunks > 0 ? `${hunkIdx + 1}/${totalHunks}` : '–/–'}
           </span>
           {showHunkTarget && hunkTargetLabel && (
             <Tooltip content={hunkTargetLabel} anchorStyle={noDragAnchorStyle}>
               <span
+                className="
+                  max-w-[132px] h-6 px-2 rounded-full
+                  border border-border-default
+                  text-[var(--acc2)] text-[11px] font-bold font-code
+                  inline-flex items-center min-w-0
+                  overflow-hidden text-ellipsis whitespace-nowrap
+                "
                 style={{
-                  maxWidth: 132,
-                  height: 24,
-                  padding: '0 8px',
-                  borderRadius: 999,
-                  border: `1px solid ${T.border}`,
-                  background: `${T.acc2}10`,
-                  color: T.acc2,
-                  fontSize: FONT_SIZE.xs,
-                  fontWeight: 700,
-                  fontFamily: FONT_CODE,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  minWidth: 0,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
+                  background: `color-mix(in srgb, var(--acc2, #6a9bcc) 6%, transparent)`,
                   ...noDragStyle,
                 }}>
                 {hunkTargetLabel}
@@ -821,6 +453,7 @@ const Toolbar = memo((props: ToolbarProps) => {
           </Btn>
         </Group>
 
+        {/* Search & Goto */}
         <Group>
           <Btn active={showSearch} onClick={() => setShowSearch(v => !v)} tooltip={t('toolbarSearchTitle')}>
             <Icon name="search" />
@@ -844,31 +477,17 @@ const Toolbar = memo((props: ToolbarProps) => {
           fontSize={fontSize}
           setFontSize={setFontSize}
           isWorkbookMode={isWorkbookMode}
-          showLabel={showViewLabel}
+          showLabel
           noDragStyle={noDragStyle}
           anchorStyle={noDragAnchorStyle}
         />
-
       </div>
 
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'flex-end',
-        alignContent: 'center',
-        flexWrap: 'nowrap',
-        gap: 6,
-        flex: '0 0 auto',
-        marginLeft: 8,
-        ...noDragStyle,
-      }}>
+      {/* ── Right Section ── */}
+      <div className="flex items-center justify-end content-center flex-nowrap gap-1.5 flex-none ml-2" style={noDragStyle}>
         {updateAction && (
           <Group>
-            <Btn
-              active={updateAction.active}
-              onClick={updateAction.onClick}
-              tooltip={updateState?.errorMessage || updateAction.label}
-              disabled={updateAction.disabled}>
+            <Btn active={updateAction.active} onClick={updateAction.onClick} tooltip={updateState?.errorMessage || updateAction.label} disabled={updateAction.disabled}>
               <Icon name={updateAction.icon} />
               {showUpdateLabel && <span>{updateAction.label}</span>}
             </Btn>
@@ -876,12 +495,12 @@ const Toolbar = memo((props: ToolbarProps) => {
         )}
 
         <Group>
-            <Btn onClick={() => setLocale(nextLocale)} tooltip={t('toolbarLanguageTitle')}>
-              <Icon name="language" />
-              {showLanguageText && (
-                <span>{locale === 'zh-CN' ? t('toolbarLanguageEn') : t('toolbarLanguageZh')}</span>
-              )}
-            </Btn>
+          <Btn onClick={() => setLocale(nextLocale)} tooltip={t('toolbarLanguageTitle')}>
+            <Icon name="language" />
+            {showLanguageText && (
+              <span>{locale === 'zh-CN' ? t('toolbarLanguageEn') : t('toolbarLanguageZh')}</span>
+            )}
+          </Btn>
           <Btn onClick={onAbout} tooltip={t('toolbarAboutTitle')} compact>
             <Icon name="info" />
           </Btn>
@@ -906,15 +525,6 @@ const Toolbar = memo((props: ToolbarProps) => {
           </Group>
         )}
       </div>
-
-      <style>{`
-        .svn-toolbar-btn:not(:disabled):hover {
-          transform: translateY(-1px);
-          background: ${T.bg3};
-          border-color: ${T.border2};
-          box-shadow: 0 8px 18px -16px ${T.border2};
-        }
-      `}</style>
     </div>
   );
 });

@@ -12,6 +12,7 @@ export { default as useDiffLoadState } from '@/hooks/app/useDiffLoadState';
 export { default as useElectronLifecycleEffects } from '@/hooks/app/useElectronLifecycleEffects';
 export { default as useRevisionCompare } from '@/hooks/app/useRevisionCompare';
 export { default as useRevisionQueryState } from '@/hooks/app/useRevisionQueryState';
+export { default as useSyntaxHighlightPresentation } from '@/hooks/app/useSyntaxHighlightPresentation';
 export { default as useWorkbookActions } from '@/hooks/app/useWorkbookActions';
 export { default as useWorkbookViewEffects } from '@/hooks/app/useWorkbookViewEffects';
 

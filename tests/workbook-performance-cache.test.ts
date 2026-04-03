@@ -2,8 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { buildWorkbookSplitRowCompareState } from '../src/utils/workbook/workbookCompare';
+import { computeWorkbookDiff } from '../src/engine/workbook/workbookDiff';
+import { createWorkbookRowLine, createWorkbookSheetLine } from '../src/utils/workbook/workbookDisplay';
+import { getWorkbookSections } from '../src/utils/workbook/workbookSections';
+import {
+  buildWorkbookSectionRowIndex,
+  buildWorkbookSectionRowIndexFromPrecomputedDelta,
+} from '../src/utils/workbook/workbookSheetIndex';
+import { buildWorkbookSheetPresentation } from '../src/utils/workbook/workbookMeta';
+import {
+  buildWorkbookCompareCellsMaps,
+  buildWorkbookRowEntryMaps,
+} from '../src/utils/workbook/workbookPanelHelpers';
 import type { SplitRow } from '../src/types/view';
-import type { WorkbookRowDelta } from '../src/types/workbook';
+import type { WorkbookPrecomputedDeltaPayload, WorkbookRowDelta } from '../src/types/workbook';
 
 function buildPrecomputedRowDelta(columnCount = 8): WorkbookRowDelta {
   const cellDeltas = new Map<number, WorkbookRowDelta['cellDeltas'] extends Map<number, infer T> ? T : never>();
@@ -68,4 +80,140 @@ test('buildWorkbookSplitRowCompareState keeps different visible-column subsets i
   assert.deepEqual(oddColumns.changedColumns, [1, 3, 5, 7]);
   assert.deepEqual(mixedColumns.changedColumns, [1]);
   assert.equal(mixedColumns.changedCount, 1);
+});
+
+test('buildWorkbookSectionRowIndex reuses cached result for identical inputs', () => {
+  const base = [
+    createWorkbookSheetLine('Thing'),
+    createWorkbookRowLine(1, ['ID', 'Name']),
+    createWorkbookRowLine(2, ['1001', 'Alice']),
+  ].join('\n');
+  const mine = [
+    createWorkbookSheetLine('Thing'),
+    createWorkbookRowLine(1, ['ID', 'Name']),
+    createWorkbookRowLine(2, ['1001', 'Alicia']),
+  ].join('\n');
+  const diffLines = computeWorkbookDiff(base, mine, 'strict');
+  const sections = getWorkbookSections(diffLines, 'strict');
+
+  const first = buildWorkbookSectionRowIndex(diffLines, sections, 'strict');
+  const second = buildWorkbookSectionRowIndex(diffLines, sections, 'strict');
+
+  assert.equal(first, second);
+});
+
+test('buildWorkbookSectionRowIndexFromPrecomputedDelta reuses cached result for identical inputs', () => {
+  const diffLines = [
+    {
+      type: 'equal' as const,
+      base: '@@sheet\tThing',
+      mine: '@@sheet\tThing',
+      baseLineNo: null,
+      mineLineNo: null,
+      baseCharSpans: null,
+      mineCharSpans: null,
+    },
+    {
+      type: 'equal' as const,
+      base: '@@row\t1\tID\tName',
+      mine: '@@row\t1\tID\tName',
+      baseLineNo: 1,
+      mineLineNo: 1,
+      baseCharSpans: null,
+      mineCharSpans: null,
+    },
+  ];
+
+  const payload: WorkbookPrecomputedDeltaPayload = {
+    compareMode: 'strict',
+    sections: [
+      {
+        name: 'Thing',
+        rows: [
+          {
+            lineIdx: 1,
+            lineIdxs: [1],
+            leftLineIdx: 1,
+            rightLineIdx: 1,
+            cellDeltas: [],
+            changedColumns: [],
+            strictOnlyColumns: [],
+            changedCount: 0,
+            hasChanges: false,
+            tone: 'equal',
+          },
+        ],
+      },
+    ],
+  };
+
+  const first = buildWorkbookSectionRowIndexFromPrecomputedDelta(diffLines, payload);
+  const second = buildWorkbookSectionRowIndexFromPrecomputedDelta(diffLines, payload);
+
+  assert.equal(first, second);
+});
+
+test('buildWorkbookSheetPresentation reuses cached result for identical inputs', () => {
+  const base = [
+    createWorkbookSheetLine('Thing'),
+    createWorkbookRowLine(1, ['ID', 'Name']),
+    createWorkbookRowLine(2, ['1001', 'Alice']),
+  ].join('\n');
+  const mine = [
+    createWorkbookSheetLine('Thing'),
+    createWorkbookRowLine(1, ['ID', 'Name']),
+    createWorkbookRowLine(2, ['1001', 'Alicia']),
+  ].join('\n');
+  const diffLines = computeWorkbookDiff(base, mine, 'strict');
+  const sections = getWorkbookSections(diffLines, 'strict');
+  const rows = buildWorkbookSectionRowIndex(diffLines, sections, 'strict').get('Thing')?.rows ?? [];
+
+  const first = buildWorkbookSheetPresentation(rows, 'Thing', null, null, 2, false, 'strict', []);
+  const second = buildWorkbookSheetPresentation(rows, 'Thing', null, null, 2, false, 'strict', []);
+
+  assert.equal(first, second);
+});
+
+test('buildWorkbookRowEntryMaps reuses cached result for identical inputs', () => {
+  const base = [
+    createWorkbookSheetLine('Thing'),
+    createWorkbookRowLine(1, ['ID', 'Name']),
+    createWorkbookRowLine(2, ['1001', 'Alice']),
+  ].join('\n');
+  const mine = [
+    createWorkbookSheetLine('Thing'),
+    createWorkbookRowLine(1, ['ID', 'Name']),
+    createWorkbookRowLine(2, ['1001', 'Alicia']),
+  ].join('\n');
+  const diffLines = computeWorkbookDiff(base, mine, 'strict');
+  const sections = getWorkbookSections(diffLines, 'strict');
+  const rows = buildWorkbookSectionRowIndex(diffLines, sections, 'strict').get('Thing')?.rows ?? [];
+  const presentation = buildWorkbookSheetPresentation(rows, 'Thing', null, null, 2, false, 'strict', []);
+
+  const first = buildWorkbookRowEntryMaps(rows, 'Thing', 'base', 'mine', presentation.visibleColumns);
+  const second = buildWorkbookRowEntryMaps(rows, 'Thing', 'base', 'mine', presentation.visibleColumns);
+
+  assert.equal(first, second);
+});
+
+test('buildWorkbookCompareCellsMaps reuses cached result for identical inputs', () => {
+  const base = [
+    createWorkbookSheetLine('Thing'),
+    createWorkbookRowLine(1, ['ID', 'Name']),
+    createWorkbookRowLine(2, ['1001', 'Alice']),
+  ].join('\n');
+  const mine = [
+    createWorkbookSheetLine('Thing'),
+    createWorkbookRowLine(1, ['ID', 'Name']),
+    createWorkbookRowLine(2, ['1001', 'Alicia']),
+  ].join('\n');
+  const diffLines = computeWorkbookDiff(base, mine, 'strict');
+  const sections = getWorkbookSections(diffLines, 'strict');
+  const rows = buildWorkbookSectionRowIndex(diffLines, sections, 'strict').get('Thing')?.rows ?? [];
+  const presentation = buildWorkbookSheetPresentation(rows, 'Thing', null, null, 2, false, 'strict', []);
+
+  const first = buildWorkbookCompareCellsMaps(rows, presentation.visibleColumns, 'strict');
+  const second = buildWorkbookCompareCellsMaps(rows, presentation.visibleColumns, 'strict');
+
+  assert.equal(first, second);
 });

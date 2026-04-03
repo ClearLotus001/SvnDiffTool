@@ -84,3 +84,25 @@ test('computeDiff fallback preserves unique anchors for oversized shifted files'
   assert.equal(result[1]?.mineLineNo, 2);
   assert.equal(result.filter((line) => line.type === 'equal').length, baseLines.length);
 });
+
+test('computeDiff preserves oversized shared prefix and suffix around a middle insertion', async () => {
+  const computeDiff = await loadComputeDiff();
+  const baseLines = Array.from({ length: 60_005 }, (_, index) => `line-${index + 1}`);
+  const insertAt = 1_234;
+  const mineLines = [
+    ...baseLines.slice(0, insertAt),
+    'line-NEW',
+    ...baseLines.slice(insertAt),
+  ];
+
+  const result = computeDiff(baseLines.join('\n'), mineLines.join('\n'));
+
+  assert.equal(result[insertAt - 1]?.type, 'equal');
+  assert.equal(result[insertAt - 1]?.base, `line-${insertAt}`);
+  assert.equal(result[insertAt]?.type, 'add');
+  assert.equal(result[insertAt]?.mine, 'line-NEW');
+  assert.equal(result[insertAt + 1]?.type, 'equal');
+  assert.equal(result[insertAt + 1]?.base, `line-${insertAt + 1}`);
+  assert.equal(result[insertAt + 1]?.mineLineNo, insertAt + 2);
+  assert.equal(result.filter((line) => line.type === 'equal').length, baseLines.length);
+});

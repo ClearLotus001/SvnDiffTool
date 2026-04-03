@@ -97,19 +97,23 @@ export default function useWorkbookViewEffects({
 
   useEffect(() => {
     if (!isWorkbookMode || activeSearchIdx < 0) return;
-    const lineIdx = searchMatches[activeSearchIdx]?.lineIdx;
+    const activeSearchMatch = searchMatches[activeSearchIdx] ?? null;
+    const lineIdx = activeSearchMatch?.lineIdx;
     if (lineIdx == null) return;
-    const sheetName = resolveWorkbookSheetNameForLineContext({
-      line: diffLines[lineIdx] ?? null,
-      context: lineSheetContexts[lineIdx] ?? null,
-      preferredSheetName: selectedCell?.sheetName ?? activeWorkbookDiffRegion?.sheetName ?? null,
-    });
+    const sheetName = activeSearchMatch?.workbookTarget?.sheetName
+      ?? resolveWorkbookSheetNameForLineContext({
+        line: diffLines[lineIdx] ?? null,
+        context: lineSheetContexts[lineIdx] ?? null,
+        preferredSheetName: selectedCell?.sheetName ?? activeWorkbookDiffRegion?.sheetName ?? null,
+      });
     if (!sheetName) return;
     setActiveWorkbookSheetName((prev) => (prev === sheetName ? prev : sheetName));
   }, [activeSearchIdx, activeWorkbookDiffRegion?.sheetName, diffLines, isWorkbookMode, lineSheetContexts, searchMatches, selectedCell?.sheetName, setActiveWorkbookSheetName]);
 
   useEffect(() => {
     if (!isWorkbookMode) return;
+    const activeSearchMatch = activeSearchIdx >= 0 ? (searchMatches[activeSearchIdx] ?? null) : null;
+    if (activeSearchMatch?.workbookTarget?.sheetName) return;
     const sheetName = activeWorkbookDiffRegion?.sheetName
       ?? (() => {
         const targetLineIdx = hunkPositions[hunkIdx];
@@ -123,12 +127,14 @@ export default function useWorkbookViewEffects({
     if (!sheetName) return;
     setActiveWorkbookSheetName((prev) => (prev === sheetName ? prev : sheetName));
   }, [
+    activeSearchIdx,
     activeWorkbookDiffRegion?.sheetName,
     diffLines,
     hunkIdx,
     hunkPositions,
     isWorkbookMode,
     lineSheetContexts,
+    searchMatches,
     selectedCell?.sheetName,
     setActiveWorkbookSheetName,
   ]);

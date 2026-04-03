@@ -1,8 +1,6 @@
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { FONT_SIZE, FONT_UI } from '@/constants/typography';
-import { useTheme } from '@/context/theme';
-import type { Theme } from '@/types';
+import type { ThemeTokens } from '@/theme/tokens';
 
 export type TooltipPlacement = 'top' | 'bottom';
 
@@ -27,8 +25,8 @@ const TOOLTIP_GAP = 8;
 const ARROW_SAFE_PADDING = 18;
 const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
-export function getTooltipSurfaceBackground(T: Theme): string {
-  return `linear-gradient(180deg, ${T.bg2} 0%, ${T.bg1} 100%)`;
+export function getTooltipSurfaceBackground(_T?: ThemeTokens): string {
+  return `linear-gradient(180deg, var(--bg-surface-hover) 0%, var(--bg-surface-solid) 100%)`;
 }
 
 interface TooltipArrowProps {
@@ -41,12 +39,7 @@ interface TooltipArrowProps {
 }
 
 export function TooltipArrow({
-  actualPlacement,
-  left,
-  width = 16,
-  height = 9,
-  borderColor,
-  fillColor,
+  actualPlacement, left, width = 16, height = 9, borderColor, fillColor,
 }: TooltipArrowProps) {
   const clipPath = actualPlacement === 'top'
     ? 'polygon(50% 100%, 0 0, 100% 0)'
@@ -61,24 +54,9 @@ export function TooltipArrow({
   return (
     <span
       aria-hidden
-      style={{
-        position: 'absolute',
-        left,
-        width,
-        height,
-        transform: 'translateX(-50%)',
-        background: borderColor,
-        clipPath,
-        ...outerPlacement,
-      }}>
-      <span
-        style={{
-          position: 'absolute',
-          background: fillColor,
-          clipPath,
-          ...innerPlacement,
-        }}
-      />
+      className="absolute -translate-x-1/2"
+      style={{ left, width, height, background: borderColor, clipPath, ...outerPlacement }}>
+      <span className="absolute" style={{ background: fillColor, clipPath, ...innerPlacement }} />
     </span>
   );
 }
@@ -93,42 +71,23 @@ export function computeTooltipLayout(
 ): TooltipLayout {
   const canPlaceTop = rect.top >= bubbleHeight + TOOLTIP_GAP + VIEWPORT_PADDING;
   const canPlaceBottom = viewportHeight - rect.bottom >= bubbleHeight + TOOLTIP_GAP + VIEWPORT_PADDING;
-  const actualPlacement = preferredPlacement === 'bottom'
-    ? 'bottom'
-    : canPlaceTop || !canPlaceBottom
-    ? 'top'
-    : 'bottom';
-
+  const actualPlacement = preferredPlacement === 'bottom' ? 'bottom' : canPlaceTop || !canPlaceBottom ? 'top' : 'bottom';
   const anchorCenter = rect.left + (rect.width / 2);
   const clampedLeft = Math.min(
     Math.max(anchorCenter - (bubbleWidth / 2), VIEWPORT_PADDING),
     Math.max(VIEWPORT_PADDING, viewportWidth - bubbleWidth - VIEWPORT_PADDING),
   );
-  const top = actualPlacement === 'top'
-    ? rect.top - TOOLTIP_GAP - bubbleHeight
-    : rect.bottom + TOOLTIP_GAP;
+  const top = actualPlacement === 'top' ? rect.top - TOOLTIP_GAP - bubbleHeight : rect.bottom + TOOLTIP_GAP;
   const arrowOffset = Math.min(
     Math.max(anchorCenter - clampedLeft, ARROW_SAFE_PADDING),
     Math.max(ARROW_SAFE_PADDING, bubbleWidth - ARROW_SAFE_PADDING),
   );
-
-  return {
-    left: clampedLeft,
-    top,
-    actualPlacement,
-    arrowOffset,
-  };
+  return { left: clampedLeft, top, actualPlacement, arrowOffset };
 }
 
 const Tooltip = memo(({
-  content,
-  children,
-  placement = 'top',
-  maxWidth = 260,
-  disabled = false,
-  anchorStyle,
+  content, children, placement = 'top', maxWidth = 260, disabled = false, anchorStyle,
 }: TooltipProps) => {
-  const T = useTheme();
   const id = useId();
   const anchorRef = useRef<HTMLSpanElement>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
@@ -159,72 +118,36 @@ const Tooltip = memo(({
     if (!bubble) return;
     const nextWidth = Math.ceil(bubble.offsetWidth);
     const nextHeight = Math.ceil(bubble.offsetHeight);
-    setBubbleSize((prev) => (
-      prev.width === nextWidth && prev.height === nextHeight
-        ? prev
-        : { width: nextWidth, height: nextHeight }
-    ));
+    setBubbleSize((prev) => (prev.width === nextWidth && prev.height === nextHeight ? prev : { width: nextWidth, height: nextHeight }));
   }, [maxWidth, open, rect, content]);
 
-  const resolvedContent: React.ReactNode = (() => {
-    if (typeof content === 'function') {
-      return open ? content() : null;
-    }
-    return content ?? null;
-  })();
+  const resolvedContent: React.ReactNode = typeof content === 'function' ? (open ? content() : null) : (content ?? null);
 
   const layout = useMemo(() => {
     if (!rect || typeof window === 'undefined') return null;
-    return computeTooltipLayout(
-      rect,
-      window.innerWidth,
-      window.innerHeight,
-      bubbleSize.width,
-      bubbleSize.height,
-      placement,
-    );
+    return computeTooltipLayout(rect, window.innerWidth, window.innerHeight, bubbleSize.width, bubbleSize.height, placement);
   }, [bubbleSize.height, bubbleSize.width, placement, rect]);
-  const surfaceBackground = getTooltipSurfaceBackground(T);
-
   const tooltip = !disabled && resolvedContent ? (
-    open &&
-    layout &&
-    typeof document !== 'undefined' &&
+    open && layout && typeof document !== 'undefined' &&
     createPortal(
       <div
         id={id}
         role="tooltip"
-        style={{
-          position: 'fixed',
-          left: layout.left,
-          top: layout.top,
-          zIndex: 9999,
-          pointerEvents: 'none',
-          opacity: 1,
-        }}>
+        className="fixed z-[9999] pointer-events-none opacity-100"
+        style={{ left: layout.left, top: layout.top }}>
         <div
           ref={bubbleRef}
+          className="relative p-[8px_10px] rounded-xl border border-border-default text-text-title text-[13px] leading-tight font-ui text-center whitespace-normal shadow-[0_14px_30px_rgba(0,0,0,0.12)]"
           style={{
-            position: 'relative',
             maxWidth,
-            padding: '8px 10px',
-            borderRadius: 12,
-            border: `1px solid ${T.border}`,
-            background: surfaceBackground,
-            color: T.t0,
-            fontSize: FONT_SIZE.sm,
-            lineHeight: 1.35,
-            fontFamily: FONT_UI,
-            boxShadow: '0 14px 30px rgba(0, 0, 0, 0.12)',
-            textAlign: 'center',
-            whiteSpace: 'normal',
+            background: `linear-gradient(180deg, var(--bg-surface-hover) 0%, var(--bg-surface-solid) 100%)`,
           }}>
           {resolvedContent}
           <TooltipArrow
             actualPlacement={layout.actualPlacement}
             left={layout.arrowOffset}
-            borderColor={T.border}
-            fillColor={layout.actualPlacement === 'top' ? T.bg1 : T.bg2}
+            borderColor="var(--border-color)"
+            fillColor={layout.actualPlacement === 'top' ? 'var(--bg-surface-solid)' : 'var(--bg-surface-hover)'}
           />
         </div>
       </div>,
@@ -241,7 +164,8 @@ const Tooltip = memo(({
         onMouseLeave={() => setOpen(false)}
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
-        style={{ display: 'inline-flex', flexShrink: 0, ...anchorStyle }}>
+        className="inline-flex shrink-0"
+        style={anchorStyle}>
         {children}
       </span>
       {tooltip}

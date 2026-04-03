@@ -1,11 +1,9 @@
 import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useTheme } from '@/context/theme';
-import { FONT_SIZE, FONT_UI } from '@/constants/typography';
 import { createPortal } from 'react-dom';
 import type { WorkbookCompareCellState } from '@/utils/workbook/workbookCompare';
 import { splitWorkbookCanvasTextLines } from '@/utils/workbook/workbookCanvasText';
 import WorkbookCompareTooltip from '@/components/workbook/WorkbookCompareTooltip';
-import { computeTooltipLayout, getTooltipSurfaceBackground, TooltipArrow } from '@/components/shared/Tooltip';
+import { computeTooltipLayout, TooltipArrow } from '@/components/shared/Tooltip';
 
 export interface WorkbookCanvasHoverCell {
   key: string;
@@ -33,7 +31,6 @@ const WorkbookCanvasHoverTooltip = memo(({
   baseTitle,
   mineTitle,
 }: WorkbookCanvasHoverTooltipProps) => {
-  const T = useTheme();
   const bubbleRef = useRef<HTMLDivElement>(null);
   const [bubbleSize, setBubbleSize] = useState({ width: 320, height: 96 });
   const normalizedDisplayValue = useMemo(() => {
@@ -66,64 +63,30 @@ const WorkbookCanvasHoverTooltip = memo(({
       'top',
     );
   }, [bubbleSize.height, bubbleSize.width, hover]);
-  const surfaceBackground = getTooltipSurfaceBackground(T);
 
   if (!hover || !layout || typeof document === 'undefined') return null;
 
   return createPortal(
     <div
-      style={{
-        position: 'fixed',
-        left: layout.left,
-        top: layout.top,
-        zIndex: 9999,
-        pointerEvents: 'none',
-      }}>
+      className="fixed z-[9999] pointer-events-none"
+      style={{ left: layout.left, top: layout.top }}>
       <div
         ref={bubbleRef}
+        className="relative max-w-[360px] px-2.5 py-2 rounded-xl font-ui text-app-xs leading-[1.35] shadow-[0_14px_30px_rgba(0,0,0,0.12)] border border-border-default text-text-title"
         style={{
-          position: 'relative',
-          maxWidth: 360,
-          padding: '8px 10px',
-          borderRadius: 12,
-          border: `1px solid ${T.border}`,
-          background: surfaceBackground,
-          color: T.t0,
-          fontSize: FONT_SIZE.sm,
-          lineHeight: 1.35,
-          fontFamily: FONT_UI,
-          boxShadow: '0 14px 30px rgba(0, 0, 0, 0.12)',
+          background: `linear-gradient(180deg, var(--bg-surface-hover) 0%, var(--bg-surface-solid) 100%)`,
         }}>
         {(hover.address || hover.displayValue) && (
-          <div
-            style={{
-              display: 'grid',
-              gap: 4,
-              marginBottom: 8,
-              paddingBottom: 8,
-              borderBottom: `1px solid ${T.border}`,
-            }}>
+          <div className="grid gap-1 mb-2 pb-2 border-b border-border-default">
             {hover.address && (
               <div
-                style={{
-                  color: T.t2,
-                  fontSize: FONT_SIZE.xs,
-                  fontWeight: 700,
-                  fontFamily: FONT_UI,
-                }}>
+                className="font-bold font-ui text-app-2xs text-text-secondary">
                 {hover.address}
               </div>
             )}
             {normalizedDisplayValue && (
               <div
-                style={{
-                  color: T.t0,
-                  fontSize: FONT_SIZE.sm,
-                  lineHeight: 1.4,
-                  fontFamily: FONT_UI,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                }}>
+                className="whitespace-pre-wrap break-words font-ui text-app-xs leading-[1.4] text-text-title">
                 {normalizedDisplayValue}
               </div>
             )}
@@ -137,8 +100,8 @@ const WorkbookCanvasHoverTooltip = memo(({
         <TooltipArrow
           actualPlacement={layout.actualPlacement}
           left={layout.arrowOffset}
-          borderColor={T.border}
-          fillColor={layout.actualPlacement === 'top' ? T.bg1 : T.bg2}
+          borderColor="var(--border-color)"
+          fillColor={layout.actualPlacement === 'top' ? 'var(--bg-surface-solid)' : 'var(--bg-surface-hover)'}
         />
       </div>
     </div>,

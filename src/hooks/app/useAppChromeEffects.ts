@@ -1,58 +1,83 @@
-import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { useEffect, useMemo, type MutableRefObject } from 'react';
 
-import type { SvnRevisionInfo, Theme, WorkbookCompareMode } from '@/types';
+import type { SvnRevisionInfo, WorkbookCompareMode } from '@/types';
 import { clearTokenCache } from '@/engine/text/tokenizer';
-import { saveStoredAppSettings, type AppSettings } from '@/utils/app/settings';
+import { saveStoredAppSettings } from '@/utils/app/settings';
+import { getComputedThemeTokens, invalidateThemeTokensCache, THEME_CLASS_MAP } from '@/theme';
+import { useAppStore } from '@/store/appStore';
 
 interface UseAppChromeEffectsArgs {
-  theme: Theme;
-  isElectron: boolean;
-  usesNativeWindowControls: boolean;
-  revisionOptions: SvnRevisionInfo[];
   revisionOptionsRef: MutableRefObject<SvnRevisionInfo[]>;
   artifactNoticeKey: string;
-  setArtifactNoticeDismissed: Dispatch<SetStateAction<boolean>>;
   diffSourceNoticeKey: string;
-  setDiffSourceNoticeDismissed: Dispatch<SetStateAction<boolean>>;
   hasLoadedDiff: boolean;
   hasLoadedDiffRef: MutableRefObject<boolean>;
-  workbookCompareMode: WorkbookCompareMode;
   workbookCompareModeRef: MutableRefObject<WorkbookCompareMode>;
-  settings: AppSettings;
 }
 
 export default function useAppChromeEffects({
-  theme,
-  isElectron,
-  usesNativeWindowControls,
-  revisionOptions,
   revisionOptionsRef,
   artifactNoticeKey,
-  setArtifactNoticeDismissed,
   diffSourceNoticeKey,
-  setDiffSourceNoticeDismissed,
   hasLoadedDiff,
   hasLoadedDiffRef,
-  workbookCompareMode,
   workbookCompareModeRef,
-  settings,
 }: UseAppChromeEffectsArgs) {
+  // ── Read state/setters directly from Zustand store ────────────────────
+  const themeKey = useAppStore((s) => s.themeKey);
+  const isElectron = useAppStore((s) => s.isElectron);
+  const usesNativeWindowControls = useAppStore((s) => s.usesNativeWindowControls);
+  const revisionOptions = useAppStore((s) => s.revisionOptions);
+  const setArtifactNoticeDismissed = useAppStore((s) => s.setArtifactNoticeDismissed);
+  const setDiffSourceNoticeDismissed = useAppStore((s) => s.setDiffSourceNoticeDismissed);
+  const workbookCompareMode = useAppStore((s) => s.workbookCompareMode);
+
+  // ── Persisted settings (derived from store) ───────────────────────────
+  const layout = useAppStore((s) => s.layout);
+  const collapseCtx = useAppStore((s) => s.collapseCtx);
+  const showWhitespace = useAppStore((s) => s.showWhitespace);
+  const showHiddenColumns = useAppStore((s) => s.showHiddenColumns);
+  const fontSize = useAppStore((s) => s.fontSize);
+
+  const settings = useMemo(() => ({
+    themeKey,
+    layout,
+    collapseCtx,
+    showWhitespace,
+    showHiddenColumns,
+    workbookCompareMode,
+    fontSize,
+  }), [
+    collapseCtx,
+    fontSize,
+    layout,
+    showHiddenColumns,
+    showWhitespace,
+    themeKey,
+    workbookCompareMode,
+  ]);
+
+  // 主题切换时同步 body className 并使 token 缓存失效
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const root = document.documentElement;
-    root.style.setProperty('--scroll-thumb', theme.scrollThumb);
-    root.style.setProperty('--scroll-thumb-hover', theme.scrollThumbHover);
-    root.style.setProperty('--scroll-track', theme.scrollTrack);
-  }, [theme]);
+    for (const themeClass of Object.values(THEME_CLASS_MAP)) {
+      root.classList.remove(themeClass);
+    }
+    root.classList.add(THEME_CLASS_MAP[themeKey]);
+    invalidateThemeTokensCache();
+  }, [themeKey]);
 
+  // 原生窗口控件的标题栏颜色跟随主题
   useEffect(() => {
     if (!isElectron || !usesNativeWindowControls || !window.svnDiff?.setTitleBarOverlay) return;
+    const T = getComputedThemeTokens(themeKey);
     window.svnDiff.setTitleBarOverlay({
-      color: theme.bg1,
-      symbolColor: theme.t0,
+      color: T.bg1,
+      symbolColor: T.t0,
       height: 44,
     });
-  }, [theme, isElectron, usesNativeWindowControls]);
+  }, [themeKey, isElectron, usesNativeWindowControls]);
 
   useEffect(() => {
     revisionOptionsRef.current = revisionOptions;
@@ -68,7 +93,7 @@ export default function useAppChromeEffects({
 
   useEffect(() => {
     clearTokenCache();
-  }, [theme]);
+  }, [themeKey]);
 
   useEffect(() => {
     hasLoadedDiffRef.current = hasLoadedDiff;
@@ -81,4 +106,8 @@ export default function useAppChromeEffects({
   useEffect(() => {
     saveStoredAppSettings(settings);
   }, [settings]);
+
+  useEffect(() => {
+    window.svnDiff?.saveStartupAppearance?.({ themeKey });
+  }, [themeKey]);
 }

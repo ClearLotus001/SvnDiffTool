@@ -1,6 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { FONT_SIZE, FONT_UI } from '@/constants/typography';
-import { useTheme } from '@/context/theme';
+import { useThemeTokens } from '@/context/theme';
 import { isWorkbookDebugEnabled, workbookDebugLog } from '@/utils/workbook/workbookDebug';
 import {
   getWorkbookCanvasDevicePixelRatio,
@@ -436,7 +436,7 @@ const WorkbookDiffRegionOverlay = memo(({
   canvasHeight: canvasHeightProp,
   onRepositionNeeded,
 }: WorkbookDiffRegionOverlayProps) => {
-  const T = useTheme();
+  const T = useThemeTokens();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawRef = useRef<((reason?: string) => void) | null>(null);
   const lastDebugLogAtRef = useRef(0);
@@ -736,21 +736,11 @@ const WorkbookDiffRegionOverlay = memo(({
     <div
       aria-hidden="true"
       data-pulse={pulseNonce}
-      style={{
-        position: 'absolute',
-        inset: 0,
-        pointerEvents: 'none',
-        zIndex: 8,
-      }}>
+      className="absolute inset-0 pointer-events-none z-[8]">
       <canvas
         ref={canvasRef}
-        style={{
-          position: 'absolute',
-          inset: 0,
-          width: viewportWidth,
-          height: effectiveCanvasHeight,
-          pointerEvents: 'none',
-        }}
+        className="absolute inset-0 pointer-events-none"
+        style={{ width: viewportWidth, height: effectiveCanvasHeight }}
       />
     </div>
   );

@@ -1,8 +1,9 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { FONT_UI, getWorkbookFontScale } from '@/constants/typography';
+import { Menu } from 'lucide-react';
+import { getWorkbookFontScale } from '@/constants/typography';
 import Tooltip from '@/components/shared/Tooltip';
 import { useI18n } from '@/context/i18n';
-import { useTheme } from '@/context/theme';
+import { cssAlpha, cssVar } from '@/theme/cssUtils';
 import type { WorkbookSection } from '@/utils/workbook/workbookSections';
 
 interface WorkbookSheetTabsProps {
@@ -13,115 +14,64 @@ interface WorkbookSheetTabsProps {
 }
 
 const WorkbookSheetTabs = memo(({
-  sections,
-  activeIndex,
-  onSelect,
-  fontSize,
+  sections, activeIndex, onSelect, fontSize,
 }: WorkbookSheetTabsProps) => {
-  const T = useTheme();
   const { t } = useI18n();
   const sizes = useMemo(() => getWorkbookFontScale(fontSize), [fontSize]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const hasSections = sections.length > 0;
 
   const getSectionTone = (section: WorkbookSection) => {
     switch (section.changeType) {
-      case 'add':
-        return {
-          accent: T.addTx,
-          border: T.addBrd,
-          background: T.addBg,
-        };
-      case 'delete':
-        return {
-          accent: T.delTx,
-          border: T.delBrd,
-          background: T.delBg,
-        };
-      case 'rename':
-        return {
-          accent: T.chgTx,
-          border: `${T.chgTx}66`,
-          background: T.chgBg,
-        };
-      default:
-        return {
-          accent: T.acc2,
-          border: `${T.acc2}66`,
-          background: `${T.acc2}16`,
-        };
+      case 'add': return { accent: cssVar('addTx'), border: cssVar('addBrd'), background: cssVar('addBg') };
+      case 'delete': return { accent: cssVar('delTx'), border: cssVar('delBrd'), background: cssVar('delBg') };
+      case 'rename': return { accent: cssVar('chgTx'), border: cssAlpha('chgTx', '66'), background: cssVar('chgBg') };
+      default: return { accent: cssVar('acc2'), border: cssAlpha('acc2', '66'), background: cssAlpha('acc2', '16') };
     }
   };
 
   const getSectionBadge = (section: WorkbookSection) => {
     switch (section.changeType) {
-      case 'add':
-        return '+';
-      case 'delete':
-        return '−';
-      case 'rename':
-        return section.renameRole === 'target' ? '↤' : '↦';
-      default:
-        return '';
+      case 'add': return '+';
+      case 'delete': return '−';
+      case 'rename': return section.renameRole === 'target' ? '↤' : '↦';
+      default: return '';
     }
   };
 
   const getSectionLabel = (section: WorkbookSection) => {
     switch (section.changeType) {
-      case 'add':
-        return t('workbookSheetTabAddedLabel', { name: section.name });
-      case 'delete':
-        return t('workbookSheetTabDeletedLabel', { name: section.name });
-      case 'rename':
-        return section.renameRole === 'target'
-          ? t('workbookSheetTabRenameTargetLabel', { name: section.name })
-          : t('workbookSheetTabRenameSourceLabel', { name: section.name });
-      default:
-        return section.displayName;
+      case 'add': return t('workbookSheetTabAddedLabel', { name: section.name });
+      case 'delete': return t('workbookSheetTabDeletedLabel', { name: section.name });
+      case 'rename': return section.renameRole === 'target'
+        ? t('workbookSheetTabRenameTargetLabel', { name: section.name })
+        : t('workbookSheetTabRenameSourceLabel', { name: section.name });
+      default: return section.displayName;
     }
   };
 
   const renderSectionTooltip = (section: WorkbookSection) => {
     if (section.changeType === 'rename' && section.renamePeerName) {
-      const previousName = section.renameRole === 'target'
-        ? section.renamePeerName
-        : section.name;
-      const currentName = section.renameRole === 'target'
-        ? section.name
-        : section.renamePeerName;
-      const title = section.renameRole === 'target'
-        ? t('workbookSheetTabTooltipRenameTargetTitle')
-        : t('workbookSheetTabTooltipRenameSourceTitle');
-      const hint = section.renameRole === 'target'
-        ? t('workbookSheetTabTooltipRenameTargetHint')
-        : t('workbookSheetTabTooltipRenameSourceHint');
+      const previousName = section.renameRole === 'target' ? section.renamePeerName : section.name;
+      const currentName = section.renameRole === 'target' ? section.name : section.renamePeerName;
+      const titleText = section.renameRole === 'target' ? t('workbookSheetTabTooltipRenameTargetTitle') : t('workbookSheetTabTooltipRenameSourceTitle');
+      const hint = section.renameRole === 'target' ? t('workbookSheetTabTooltipRenameTargetHint') : t('workbookSheetTabTooltipRenameSourceHint');
       return (
-        <div style={{ display: 'grid', gap: 4, textAlign: 'left' }}>
-          <strong>{title}</strong>
-          <span style={{ color: T.t1 }}>{hint}</span>
+        <div className="grid gap-1 text-left">
+          <strong>{titleText}</strong>
+          <span className="text-text-primary">{hint}</span>
           <span>{t('workbookSheetTabTooltipPreviousName', { name: previousName })}</span>
           <span>{t('workbookSheetTabTooltipCurrentName', { name: currentName })}</span>
         </div>
       );
     }
-
-    const title = section.changeType === 'add'
-      ? t('workbookSheetTabTooltipAddedTitle')
-      : section.changeType === 'delete'
-        ? t('workbookSheetTabTooltipDeletedTitle')
-        : t('workbookSheetTabTooltipSheetTitle');
-    const hint = section.changeType === 'add'
-      ? t('workbookSheetTabTooltipAddedHint')
-      : section.changeType === 'delete'
-        ? t('workbookSheetTabTooltipDeletedHint')
-        : t('workbookSheetTabTooltipSheetHint');
-
+    const titleText = section.changeType === 'add' ? t('workbookSheetTabTooltipAddedTitle') : section.changeType === 'delete' ? t('workbookSheetTabTooltipDeletedTitle') : t('workbookSheetTabTooltipSheetTitle');
+    const hint = section.changeType === 'add' ? t('workbookSheetTabTooltipAddedHint') : section.changeType === 'delete' ? t('workbookSheetTabTooltipDeletedHint') : t('workbookSheetTabTooltipSheetHint');
     return (
-      <div style={{ display: 'grid', gap: 4, textAlign: 'left' }}>
-        <strong>{title}</strong>
-        <span style={{ color: T.t1 }}>{hint}</span>
+      <div className="grid gap-1 text-left">
+        <strong>{titleText}</strong>
+        <span className="text-text-primary">{hint}</span>
         <span>{t('workbookSheetTabTooltipName', { name: section.name })}</span>
       </div>
     );
@@ -143,127 +93,55 @@ const WorkbookSheetTabs = memo(({
   useEffect(() => {
     if (!menuOpen) return;
     const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (menuRef.current?.contains(target ?? null)) return;
+      if (menuRef.current?.contains(event.target as Node | null)) return;
       setMenuOpen(false);
     };
     window.addEventListener('mousedown', handlePointerDown);
     return () => window.removeEventListener('mousedown', handlePointerDown);
   }, [menuOpen]);
 
-  if (!hasSections) return null;
+  if (sections.length === 0) return null;
 
   return (
     <div
+      className="flex items-end gap-2 pt-1.5 px-2.5 shrink-0 relative z-[16] border-t border-border-default"
       style={{
-        display: 'flex',
-        alignItems: 'flex-end',
-        gap: 8,
-        padding: '6px 10px 0',
-        background: `linear-gradient(180deg, ${T.bg1} 0%, ${T.bg0} 100%)`,
-        borderTop: `1px solid ${T.border}`,
-        flexShrink: 0,
-        position: 'relative',
-        zIndex: 16,
-        boxShadow: `0 -1px 0 ${T.border}, 0 -10px 22px -24px ${T.border2}`,
+        background: `linear-gradient(180deg, ${cssVar('bg1')} 0%, ${cssVar('bg0')} 100%)`,
+        boxShadow: `0 -1px 0 ${cssVar('border')}, 0 -10px 22px -24px ${cssVar('border2')}`,
       }}>
-      <div ref={menuRef} style={{ position: 'relative', flexShrink: 0 }}>
+      {/* Menu button */}
+      <div ref={menuRef} className="relative shrink-0">
         <button
           type="button"
-          onClick={() => setMenuOpen(open => !open)}
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: 10,
-            border: `1px solid ${T.border}`,
-            background: T.bg2,
-            color: T.t1,
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: `0 10px 18px -18px ${T.border2}`,
-          }}>
-          <span
-            aria-hidden="true"
-            style={{
-              width: 14,
-              height: 14,
-              display: 'grid',
-              placeItems: 'center',
-              lineHeight: 1,
-            }}>
-            <span style={{ fontSize: 16, transform: 'translateY(-1px)' }}>≡</span>
-          </span>
+          onClick={() => setMenuOpen((o) => !o)}
+          className="size-8 rounded-[10px] border border-border-default bg-bg-surface-hover text-text-primary cursor-pointer inline-flex items-center justify-center hover:text-accent hover:border-accent active:scale-95 transition-all duration-150"
+          style={{ boxShadow: `0 10px 18px -18px ${cssVar('border2')}` }}>
+          <Menu size={14} />
         </button>
         {menuOpen && (
           <div
-            style={{
-              position: 'absolute',
-              left: 0,
-              bottom: 'calc(100% + 8px)',
-              minWidth: 220,
-              maxHeight: 320,
-              overflowY: 'auto',
-              padding: 6,
-              borderRadius: 14,
-              border: `1px solid ${T.border}`,
-              background: T.bg1,
-              boxShadow: `0 16px 40px -24px ${T.border2}`,
-              display: 'grid',
-              gap: 4,
-            }}>
+            className="absolute left-0 bottom-[calc(100%+8px)] min-w-[220px] max-h-80 overflow-y-auto p-1.5 rounded-[14px] border border-border-default bg-bg-surface-solid grid gap-1 z-20"
+            style={{ boxShadow: `0 16px 40px -24px ${cssVar('border2')}` }}>
             {sections.map((section, index) => {
               const active = index === activeIndex;
               const tone = getSectionTone(section);
               const badge = getSectionBadge(section);
               const label = getSectionLabel(section);
               return (
-                <Tooltip
-                  key={`menu-${section.name}-${section.startLineIdx}`}
-                  content={renderSectionTooltip(section)}
-                  maxWidth={320}
-                  anchorStyle={{ display: 'block', width: '100%', flexShrink: 1 }}>
+                <Tooltip key={`menu-${section.name}-${section.startLineIdx}`} content={renderSectionTooltip(section)} maxWidth={320} anchorStyle={{ display: 'block', width: '100%', flexShrink: 1 }}>
                   <button
                     type="button"
-                    onClick={() => {
-                      onSelect(index);
-                      setMenuOpen(false);
-                    }}
+                    onClick={() => { onSelect(index); setMenuOpen(false); }}
+                    className="w-full h-[34px] px-3 rounded-[10px] cursor-pointer font-ui text-left whitespace-nowrap overflow-hidden text-ellipsis flex items-center gap-2 transition-all duration-150 hover:brightness-110"
                     style={{
-                      width: '100%',
-                      height: 34,
-                      padding: '0 12px',
-                      borderRadius: 10,
+                      fontSize: sizes.ui,
                       border: `1px solid ${active ? tone.border : 'transparent'}`,
                       background: active ? tone.background : 'transparent',
-                      color: active ? tone.accent : T.t0,
-                      cursor: 'pointer',
-                      fontFamily: FONT_UI,
-                      fontSize: sizes.ui,
+                      color: active ? tone.accent : cssVar('t0'),
                       fontWeight: active ? 700 : 600,
-                      textAlign: 'left',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
                     }}>
-                    {badge && (
-                      <span
-                        aria-hidden="true"
-                        style={{
-                          minWidth: 14,
-                          color: tone.accent,
-                          fontWeight: 800,
-                        }}>
-                        {badge}
-                      </span>
-                    )}
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {label}
-                    </span>
+                    {badge && <span aria-hidden="true" className="min-w-3.5 font-extrabold" style={{ color: tone.accent }}>{badge}</span>}
+                    <span className="overflow-hidden text-ellipsis">{label}</span>
                   </button>
                 </Tooltip>
               );
@@ -272,85 +150,37 @@ const WorkbookSheetTabs = memo(({
         )}
       </div>
 
-      <div
-        ref={scrollRef}
-        className="workbook-sheet-tabs-scroll"
-        style={{
-          display: 'flex',
-          alignItems: 'flex-end',
-          gap: 4,
-          overflowX: 'auto',
-          overflowY: 'hidden',
-          flex: 1,
-          minWidth: 0,
-          scrollbarWidth: 'none',
-          msOverflowStyle: 'none',
-        }}>
+      {/* Scrollable tabs */}
+      <div ref={scrollRef} className="flex items-end gap-1 overflow-x-auto overflow-y-hidden flex-1 min-w-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         {sections.map((section, index) => {
           const active = index === activeIndex;
           const tone = getSectionTone(section);
           const badge = getSectionBadge(section);
           const label = getSectionLabel(section);
           return (
-            <Tooltip
-              key={`${section.name}-${section.startLineIdx}`}
-              content={renderSectionTooltip(section)}
-              maxWidth={320}>
+            <Tooltip key={`${section.name}-${section.startLineIdx}`} content={renderSectionTooltip(section)} maxWidth={320}>
               <button
                 type="button"
                 onClick={() => onSelect(index)}
+                className="h-8 px-3.5 rounded-t-[10px] border-b-0 cursor-pointer font-ui whitespace-nowrap shrink-0 inline-flex items-center gap-2 max-w-[240px] transition-all duration-150"
                 style={{
-                  height: 32,
-                  padding: '0 14px',
-                  borderTopLeftRadius: 10,
-                  borderTopRightRadius: 10,
-                  borderBottom: 'none',
-                  borderLeft: `1px solid ${active ? tone.border : T.border}`,
-                  borderRight: `1px solid ${active ? tone.border : T.border}`,
+                  borderLeft: `1px solid ${active ? tone.border : cssVar('border')}`,
+                  borderRight: `1px solid ${active ? tone.border : cssVar('border')}`,
                   borderTop: `2px solid ${active ? tone.accent : 'transparent'}`,
-                  background: active ? T.bg1 : T.bg2,
-                  color: active ? T.t0 : T.t1,
-                  cursor: 'pointer',
-                  fontFamily: FONT_UI,
+                  background: active ? cssVar('bg1') : cssVar('bg2'),
+                  color: active ? cssVar('t0') : cssVar('t1'),
                   fontSize: sizes.ui,
                   fontWeight: active ? 700 : 600,
-                  whiteSpace: 'nowrap',
-                  boxShadow: active ? `0 -6px 14px -10px ${T.border2}` : 'none',
+                  boxShadow: active ? `0 -6px 14px -10px ${cssVar('border2')}` : 'none',
                   transform: active ? 'translateY(1px)' : 'none',
-                  flexShrink: 0,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  maxWidth: 240,
                 }}>
-                {badge && (
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      minWidth: 14,
-                      color: tone.accent,
-                      fontWeight: 800,
-                    }}>
-                    {badge}
-                  </span>
-                )}
-                <span
-                  style={{
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}>
-                  {label}
-                </span>
+                {badge && <span aria-hidden="true" className="min-w-3.5 font-extrabold" style={{ color: tone.accent }}>{badge}</span>}
+                <span className="overflow-hidden text-ellipsis">{label}</span>
               </button>
             </Tooltip>
           );
         })}
       </div>
-      <style>{`
-        .workbook-sheet-tabs-scroll::-webkit-scrollbar {
-          display: none;
-        }
-      `}</style>
     </div>
   );
 });

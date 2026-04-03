@@ -1,4 +1,4 @@
-import type { Theme } from '@/types';
+import type { ThemeTokens } from '@/theme/tokens';
 import type { WorkbookCompareMode } from '@/types';
 import type { WorkbookCompareCellState } from '@/utils/workbook/workbookCompare';
 import { getWorkbookCellChangeKind } from '@/utils/workbook/workbookCellContract';
@@ -25,7 +25,7 @@ export interface WorkbookMergeContinuationVisual {
   guideStroke: string;
 }
 
-function getWorkbookStrictOnlyVisual(theme: Theme): WorkbookCompareCellVisual {
+function getWorkbookStrictOnlyVisual(theme: ThemeTokens): WorkbookCompareCellVisual {
   return {
     background: `${theme.acc2}16`,
     border: `${theme.acc2}66`,
@@ -35,7 +35,7 @@ function getWorkbookStrictOnlyVisual(theme: Theme): WorkbookCompareCellVisual {
 }
 
 interface ResolveWorkbookCompareCellVisualOptions {
-  theme: Theme;
+  theme: ThemeTokens;
   compareCell: WorkbookCompareCellState | undefined;
   compareMode?: WorkbookCompareMode;
   side: 'base' | 'mine';
@@ -47,7 +47,7 @@ interface ResolveWorkbookCompareCellVisualOptions {
   defaultTextColor: string;
 }
 
-function getWorkbookSideAccentVisual(theme: Theme, side: 'base' | 'mine'): WorkbookCompareCellVisual {
+function getWorkbookSideAccentVisual(theme: ThemeTokens, side: 'base' | 'mine'): WorkbookCompareCellVisual {
   const accent = side === 'base' ? theme.acc2 : theme.acc;
   return {
     background: `${accent}12`,
@@ -70,11 +70,12 @@ export function resolveWorkbookCompareCellKind(
       : getWorkbookCellChangeKind(compareCell.baseCell, compareCell.mineCell, compareMode)
   );
 
-  return kind === 'modify' ? 'modify' : kind;
+  if (kind === 'mixed' || kind === 'modify') return 'modify';
+  return kind;
 }
 
 export function getWorkbookCompareBadgeVisual(
-  theme: Theme,
+  theme: ThemeTokens,
   kind: WorkbookCompareCellState['kind'],
 ): WorkbookCompareBadgeVisual {
   if (kind === 'add') {
@@ -99,7 +100,7 @@ export function getWorkbookCompareBadgeVisual(
 }
 
 export function getWorkbookCompareHintVisual(
-  theme: Theme,
+  theme: ThemeTokens,
   kind: Exclude<WorkbookCompareSemanticKind, 'equal'>,
 ): WorkbookCompareHintVisual {
   if (kind === 'strict-only') {
@@ -117,7 +118,7 @@ export function getWorkbookCompareHintVisual(
 }
 
 export function getWorkbookMergeContinuationVisual(
-  theme: Theme,
+  theme: ThemeTokens,
   borderColor: string,
 ): WorkbookMergeContinuationVisual {
   return {

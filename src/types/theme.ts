@@ -2,44 +2,16 @@
 // Theme types
 // ─────────────────────────────────────────────────────────────────────────────
 
+import type { ThemeTokens } from '@/theme/tokens';
+
 export type ThemeKey = 'dark' | 'light' | 'hc';
 
-export interface Theme {
-  bg0: string;
-  bg1: string;
-  bg2: string;
-  bg3: string;
-  bg4: string;
-  border: string;
-  border2: string;
-  t0: string;
-  t1: string;
-  t2: string;
-  addBg: string;
-  addHl: string;
-  addTx: string;
-  addBrd: string;
-  delBg: string;
-  delHl: string;
-  delTx: string;
-  delBrd: string;
-  chgBg: string;
-  chgTx: string;
-  acc: string;
-  acc2: string;
-  kw: string;
-  str: string;
-  num: string;
-  cmt: string;
-  punc: string;
-  lnBg: string;
-  lnTx: string;
-  scrollThumb: string;
-  scrollThumbHover: string;
-  scrollTrack: string;
-  miniAdd: string;
-  miniDel: string;
-  miniVp: string;
-  searchHl: string;
-  searchActiveBg: string;
-}
+/**
+ * @deprecated 旧 JS 内联主题对象接口，已被 CSS Variables + Tailwind CSS 替代。
+ *
+ * Canvas 渲染层请使用 `ThemeTokens`（from `@/theme/tokens`）配合
+ * `getComputedThemeTokens()` 读取运行时色值。
+ *
+ * 普通组件请直接使用 Tailwind 工具类（如 `bg-bg-base text-text-primary`）。
+ */
+export type Theme = ThemeTokens;

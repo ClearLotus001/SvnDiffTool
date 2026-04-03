@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState, type MutableRefObject, type RefObject } from 'react';
-import { useTheme } from '@/context/theme';
+import { useThemeTokens } from '@/context/theme';
 import { resolveWorkbookMiniMapColor } from '@/utils/workbook/workbookRowVisuals';
 
 export type WorkbookMiniMapTone = 'equal' | 'add' | 'delete' | 'mixed';
@@ -41,17 +41,16 @@ const WorkbookMiniMap = memo(({
   contentHeight,
   debugRef,
 }: WorkbookMiniMapProps) => {
-  const T = useTheme();
+  const T = useThemeTokens();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const contRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
-  const rafRef = useRef<number>(0);
   const [contHeight, setContHeight] = useState(320);
 
   const applyViewport = (top: number, height: number) => {
     const viewport = viewportRef.current;
     if (!viewport) return;
-    viewport.style.transform = `translateY(${top}px)`;
+    viewport.style.transform = `translate3d(0, ${top}px, 0)`;
     viewport.style.height = `${height}px`;
   };
 
@@ -122,11 +121,7 @@ const WorkbookMiniMap = memo(({
     };
 
     const onScroll = () => {
-      if (rafRef.current) return;
-      rafRef.current = requestAnimationFrame(() => {
-        rafRef.current = 0;
-        updateViewport();
-      });
+      updateViewport();
     };
 
     const ro = new ResizeObserver(updateViewport);
@@ -138,7 +133,6 @@ const WorkbookMiniMap = memo(({
     return () => {
       el.removeEventListener('scroll', onScroll);
       ro.disconnect();
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
   }, [contentHeight, contHeight, scrollRef]);
 
@@ -166,39 +160,25 @@ const WorkbookMiniMap = memo(({
     <div
       ref={contRef}
       onClick={handleClick}
+      className="relative overflow-hidden cursor-pointer shrink-0"
       style={{
         width: WIDTH,
         minWidth: WIDTH,
         background: T.bg0,
         borderLeft: `1px solid ${T.border}`,
-        position: 'relative',
-        overflow: 'hidden',
-        cursor: 'pointer',
-        flexShrink: 0,
       }}>
       <canvas
         ref={canvasRef}
-        style={{
-          position: 'absolute',
-          inset: 0,
-          width: '100%',
-          height: '100%',
-          imageRendering: 'pixelated',
-        }}
+        className="absolute inset-0 w-full h-full"
+        style={{ imageRendering: 'pixelated' }}
       />
       <div
         ref={viewportRef}
+        className="minimap-viewport-frosted absolute pointer-events-none"
         style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
           top: 0,
           height: 40,
-          background: T.miniVp,
-          border: `1px solid ${T.border}`,
-          pointerEvents: 'none',
-          transform: 'translateY(0px)',
-          willChange: 'transform, height',
+          transform: 'translate3d(0, 0px, 0)',
         }}
       />
     </div>

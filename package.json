@@ -12,6 +12,7 @@
     "dev:app": "tsx scripts/dev-app.ts",
     "dev:electron:watch": "tsc -p tsconfig.electron.json --watch --preserveWatchOutput",
     "dev:electron:run": "tsx scripts/dev-electron-runner.ts",
+    "generate:shiki-registry": "tsx scripts/generate-shiki-language-registry.ts",
     "lint": "npm run lint:eslint && npm run lint:exports",
     "lint:eslint": "eslint src electron scripts --max-warnings=0",
     "lint:exports": "tsx scripts/check-unused-exports.ts",
@@ -22,11 +23,13 @@
     "build:win:installer": "npm run build && tsx scripts/build-win-installer.ts",
     "build:win": "npm run build:win:installer",
     "build:win:release": "npm run build:win",
-    "typecheck": "npm run typecheck:renderer && npm run typecheck:electron && npm run typecheck:scripts",
+    "typecheck": "npm run typecheck:renderer && npm run typecheck:electron && npm run typecheck:scripts && npm run typecheck:tests",
     "typecheck:renderer": "tsc --noEmit",
     "typecheck:electron": "tsc -p tsconfig.electron.json --noEmit",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit",
+    "typecheck:tests": "tsc -p tsconfig.tests.json --noEmit",
     "test:workbook": "tsx --test tests/*.test.ts",
+    "test:workbook:search": "tsx --test tests/workbook-search-navigation.test.ts tests/workbook-selection-visual.test.ts",
     "verify:install-upgrade": "tsx scripts/verify-install-upgrade.ts",
     "verify:single-instance-cache": "tsx scripts/verify-single-instance-cache.ts",
     "report:package-sizes": "tsx scripts/report-package-sizes.ts",
@@ -90,6 +93,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.38.0",
+    "@tailwindcss/vite": "^4.2.2",
     "@types/node": "^18.19.130",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
@@ -100,16 +104,26 @@
     "eslint-plugin-react-hooks": "^7.0.0",
     "globals": "^16.4.0",
     "jiti": "^2.6.1",
+    "tailwindcss": "^4.2.2",
     "tsx": "^4.21.0",
     "typescript": "^5.3.0",
     "typescript-eslint": "^8.46.2",
     "vite": "^5.0.0"
   },
   "dependencies": {
+    "@shikijs/core": "^4.0.2",
+    "@shikijs/engine-javascript": "^4.0.2",
+    "@shikijs/langs": "^4.0.2",
+    "@shikijs/themes": "^4.0.2",
+    "@shikijs/types": "^4.0.2",
+    "@tailwindcss/vite": "^4.2.2",
     "electron-updater": "^6.3.9",
     "fast-xml-parser": "^5.5.6",
     "fflate": "^0.8.2",
+    "lucide-react": "^1.7.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "tailwindcss": "^4.2.2",
+    "zustand": "^5.0.12"
   }
 }

@@ -1,20 +1,19 @@
 /** Copy text to clipboard, falling back to the Electron bridge when needed. */
-export function copyText(text: string): void {
-  void (async () => {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-        return;
-      }
-    } catch {
-      // Fall through to the Electron clipboard bridge.
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
     }
+  } catch {
+    // Fall through to the Electron clipboard bridge.
+  }
 
-    if (window.svnDiff) {
-      window.svnDiff.writeClipboardText(text);
-      return;
-    }
+  if (window.svnDiff) {
+    window.svnDiff.writeClipboardText(text);
+    return true;
+  }
 
-    console.warn('Clipboard write failed: no browser or Electron clipboard API available.');
-  })();
+  console.warn('Clipboard write failed: no browser or Electron clipboard API available.');
+  return false;
 }

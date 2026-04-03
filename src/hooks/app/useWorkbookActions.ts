@@ -334,17 +334,17 @@ export default function useWorkbookActions({
           {
             id: 'copy-value',
             label: t('workbookContextCopyValue'),
-            onSelect: () => copyText(primary.value),
+            onSelect: () => { void copyText(primary.value); },
           },
           {
             id: 'copy-formula',
             label: t('workbookContextCopyFormula'),
-            onSelect: () => copyText(primary.formula),
+            onSelect: () => { void copyText(primary.formula); },
           },
           {
             id: 'copy-address',
             label: t('workbookContextCopyAddress'),
-            onSelect: () => copyText(primary.address),
+            onSelect: () => { void copyText(primary.address); },
           },
         ],
       });

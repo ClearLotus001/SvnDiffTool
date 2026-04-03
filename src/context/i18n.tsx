@@ -54,11 +54,27 @@ function formatMessage(template: string, params: TranslationParams = {}): string
   return template.replace(/\{(\w+)\}/g, (_, key: string) => String(params[key] ?? `{${key}}`));
 }
 
+function detectNavigatorLocale(): Locale {
+  if (typeof navigator === 'undefined') return 'zh-CN';
+
+  const candidates = Array.isArray(navigator.languages) && navigator.languages.length > 0
+    ? navigator.languages
+    : [navigator.language];
+
+  for (const candidate of candidates) {
+    const normalized = String(candidate ?? '').toLowerCase();
+    if (normalized.startsWith('zh')) return 'zh-CN';
+    if (normalized.startsWith('en')) return 'en-US';
+  }
+
+  return 'zh-CN';
+}
+
 function getInitialLocale(): Locale {
   if (typeof window === 'undefined') return 'zh-CN';
 
   const saved = window.localStorage.getItem(LOCALE_STORAGE_KEY);
-  return saved === 'en-US' || saved === 'zh-CN' ? saved : 'zh-CN';
+  return saved === 'en-US' || saved === 'zh-CN' ? saved : detectNavigatorLocale();
 }
 
 interface I18nContextValue {
@@ -78,6 +94,16 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
     }
+  }, [locale]);
+
+  useEffect(() => {
+    window.svnDiff?.saveStartupAppearance?.({ locale });
+  }, [locale]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.documentElement.lang = locale;
+    document.documentElement.setAttribute('data-app-locale', locale);
   }, [locale]);
 
   const value = useMemo<I18nContextValue>(() => {

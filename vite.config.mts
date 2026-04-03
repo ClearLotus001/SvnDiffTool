@@ -2,12 +2,18 @@ import { fileURLToPath, URL } from 'node:url';
 
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
 function resolveManualChunk(id: string): string | undefined {
   const normalized = id.replace(/\\/g, '/');
 
   if (normalized.includes('/node_modules/')) {
-    if (normalized.includes('/react/') || normalized.includes('/react-dom/')) {
+    if (
+      normalized.includes('/react/')
+      || normalized.includes('/react-dom/')
+      || normalized.includes('/scheduler/')
+      || normalized.includes('/use-sync-external-store/')
+    ) {
       return 'react-vendor';
     }
     return 'vendor';
@@ -17,7 +23,7 @@ function resolveManualChunk(id: string): string | undefined {
 }
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -34,6 +40,9 @@ export default defineConfig({
         },
       },
     },
+  },
+  worker: {
+    format: 'es',
   },
   server: {
     port: 5173,

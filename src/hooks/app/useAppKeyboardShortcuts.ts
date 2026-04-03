@@ -1,20 +1,17 @@
-import { startTransition, useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { startTransition, useEffect, useRef, type MutableRefObject } from 'react';
 
 import type { WorkbookMoveDirection, WorkbookSelectedCell } from '@/types';
 import { cycleHunkIndex } from '@/hooks/app/helpers';
-import type { WorkbookContextMenuState } from '@/hooks/app/types';
 import type { DialogController } from '@/hooks/app/contracts';
+import { useAppStore } from '@/store/appStore';
 
 interface UseAppKeyboardShortcutsArgs {
   dialogs: DialogController;
   isWorkbookMode: boolean;
   selectedCell: WorkbookSelectedCell | null;
   navigationCount: number;
+  handleSearchPreviewNav: (dir: 1 | -1) => void;
   handleSearchNav: (dir: 1 | -1) => void;
-  setHunkIdx: Dispatch<SetStateAction<number>>;
-  setShowWhitespace: Dispatch<SetStateAction<boolean>>;
-  setFontSize: Dispatch<SetStateAction<number>>;
-  setWorkbookContextMenu: Dispatch<SetStateAction<WorkbookContextMenuState | null>>;
   workbookMoveRef: MutableRefObject<((direction: WorkbookMoveDirection) => void) | null>;
   collapseNavigationRef: MutableRefObject<((direction: 'prev' | 'next') => void) | null>;
 }
@@ -30,14 +27,17 @@ export default function useAppKeyboardShortcuts({
   isWorkbookMode,
   selectedCell,
   navigationCount,
+  handleSearchPreviewNav,
   handleSearchNav,
-  setHunkIdx,
-  setShowWhitespace,
-  setFontSize,
-  setWorkbookContextMenu,
   workbookMoveRef,
   collapseNavigationRef,
 }: UseAppKeyboardShortcutsArgs) {
+  // ── Read setters directly from Zustand store ──────────────────────────
+  const setHunkIdx = useAppStore((s) => s.setHunkIdx);
+  const setShowWhitespace = useAppStore((s) => s.setShowWhitespace);
+  const setFontSize = useAppStore((s) => s.setFontSize);
+  const setWorkbookContextMenu = useAppStore((s) => s.setWorkbookContextMenu);
+
   const { state: dialogState, actions: dialogActions } = dialogs;
   const { showSearch, showGoto, showHelp } = dialogState;
   const showSearchRef = useRef(showSearch);
@@ -48,6 +48,17 @@ export default function useAppKeyboardShortcuts({
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (
+        showSearchRef.current
+        && !showGoto
+        && !showHelp
+        && !isEditableTarget(e.target)
+        && (e.key === 'ArrowUp' || e.key === 'ArrowDown')
+      ) {
+        e.preventDefault();
+        handleSearchPreviewNav(e.key === 'ArrowUp' ? -1 : 1);
+        return;
+      }
       if (
         isWorkbookMode
         && selectedCell
@@ -132,6 +143,7 @@ export default function useAppKeyboardShortcuts({
     return () => window.removeEventListener('keydown', handler);
   }, [
     collapseNavigationRef,
+    handleSearchPreviewNav,
     handleSearchNav,
     isWorkbookMode,
     navigationCount,

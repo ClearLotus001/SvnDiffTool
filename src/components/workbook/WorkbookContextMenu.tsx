@@ -1,7 +1,6 @@
 import { memo, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { FONT_SIZE, FONT_UI } from '@/constants/typography';
-import { useTheme } from '@/context/theme';
+import { cssVar } from '@/theme/cssUtils';
 import type { WorkbookContextMenuPoint } from '@/types';
 
 export interface WorkbookContextMenuAction {
@@ -27,25 +26,18 @@ const MENU_WIDTH = 248;
 const VIEWPORT_PADDING = 12;
 
 const WorkbookContextMenu = memo(({
-  anchorPoint,
-  sections,
-  onClose,
+  anchorPoint, sections, onClose,
 }: WorkbookContextMenuProps) => {
-  const T = useTheme();
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!anchorPoint) return;
-
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as Node | null;
       if (menuRef.current?.contains(target ?? null)) return;
       onClose();
     };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-
+    const handleKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
     window.addEventListener('mousedown', handlePointerDown);
     window.addEventListener('keydown', handleKeyDown);
     return () => {
@@ -57,14 +49,8 @@ const WorkbookContextMenu = memo(({
   const layout = useMemo(() => {
     if (!anchorPoint || typeof window === 'undefined') return null;
     return {
-      left: Math.min(
-        Math.max(anchorPoint.x, VIEWPORT_PADDING),
-        Math.max(VIEWPORT_PADDING, window.innerWidth - MENU_WIDTH - VIEWPORT_PADDING),
-      ),
-      top: Math.min(
-        Math.max(anchorPoint.y, VIEWPORT_PADDING),
-        Math.max(VIEWPORT_PADDING, window.innerHeight - VIEWPORT_PADDING - 240),
-      ),
+      left: Math.min(Math.max(anchorPoint.x, VIEWPORT_PADDING), Math.max(VIEWPORT_PADDING, window.innerWidth - MENU_WIDTH - VIEWPORT_PADDING)),
+      top: Math.min(Math.max(anchorPoint.y, VIEWPORT_PADDING), Math.max(VIEWPORT_PADDING, window.innerHeight - VIEWPORT_PADDING - 240)),
     };
   }, [anchorPoint]);
 
@@ -74,40 +60,23 @@ const WorkbookContextMenu = memo(({
     <div
       ref={menuRef}
       role="menu"
+      className="motion-floating-panel fixed p-2 rounded-2xl border border-border-default bg-bg-surface-solid grid gap-2 z-[160]"
       style={{
-        position: 'fixed',
         top: layout.top,
         left: layout.left,
         width: MENU_WIDTH,
-        padding: 8,
-        borderRadius: 16,
-        border: `1px solid ${T.border}`,
-        background: T.bg1,
-        boxShadow: `0 18px 44px -26px ${T.border2}`,
-        display: 'grid',
-        gap: 8,
-        zIndex: 160,
+        boxShadow: `0 18px 44px -26px ${cssVar('border2')}`,
       }}>
       {sections.map((section, sectionIndex) => (
         <div
           key={section.title ?? sectionIndex}
+          className="grid gap-1.5"
           style={{
-            display: 'grid',
-            gap: 6,
             paddingTop: sectionIndex === 0 ? 0 : 4,
-            borderTop: sectionIndex === 0 ? 'none' : `1px solid ${T.border}`,
+            borderTop: sectionIndex === 0 ? 'none' : `1px solid var(--border-color)`,
           }}>
           {section.title && (
-            <div
-              style={{
-                padding: '2px 8px 0',
-                color: T.t2,
-                fontFamily: FONT_UI,
-                fontSize: FONT_SIZE.xs,
-                fontWeight: 800,
-                letterSpacing: '0.06em',
-                textTransform: 'uppercase',
-              }}>
+            <div className="py-0.5 px-2 text-text-secondary font-ui text-[11px] font-extrabold tracking-wider uppercase">
               {section.title}
             </div>
           )}
@@ -117,28 +86,18 @@ const WorkbookContextMenu = memo(({
               type="button"
               role="menuitem"
               disabled={item.disabled}
-              onClick={() => {
-                if (item.disabled) return;
-                item.onSelect();
-                onClose();
-              }}
+              onClick={() => { if (!item.disabled) { item.onSelect(); onClose(); } }}
+              className={`
+                min-h-[34px] px-3 rounded-[10px] border-none
+                font-ui text-[13px] font-bold text-left
+                transition-all duration-150
+                ${item.disabled
+                  ? 'bg-transparent text-text-secondary opacity-50 cursor-not-allowed'
+                  : 'bg-bg-base cursor-pointer hover:bg-bg-surface-hover active:scale-[0.97]'
+                }
+              `}
               style={{
-                minHeight: 34,
-                padding: '0 12px',
-                borderRadius: 10,
-                border: 'none',
-                background: item.disabled ? 'transparent' : T.bg0,
-                color: item.disabled
-                  ? T.t2
-                  : item.tone === 'danger'
-                  ? T.delTx
-                  : T.t0,
-                fontFamily: FONT_UI,
-                fontSize: FONT_SIZE.sm,
-                fontWeight: 700,
-                cursor: item.disabled ? 'not-allowed' : 'pointer',
-                textAlign: 'left',
-                opacity: item.disabled ? 0.5 : 1,
+                color: !item.disabled && item.tone === 'danger' ? cssVar('delTx') : undefined,
               }}>
               {item.label}
             </button>

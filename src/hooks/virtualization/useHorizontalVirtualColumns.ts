@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import type { WorkbookMergeRange } from '@/utils/workbook/workbookMeta';
 import { clampWorkbookColumnWidth } from '@/utils/workbook/workbookColumnWidths';
 
@@ -77,7 +77,7 @@ function shouldRetainHorizontalWindow(
   if (windowWidth <= availableWidth) return true;
 
   const margin = Math.max(
-    160,
+    480,
     Math.min(windowWidth * 0.25, availableWidth * 0.5),
   );
 
@@ -149,6 +149,7 @@ export function computeHorizontalWindow(
   mergedRanges: PositionedMergedColumnRange[],
   overscanMin = DEFAULT_MIN_OVERSCAN_COLUMNS,
   overscanFactor = DEFAULT_OVERSCAN_FACTOR,
+  precomputedPrefixSums?: number[],
 ): HorizontalWindow {
   if (nonFrozenDisplayWidths.length === 0) {
     return {
@@ -159,7 +160,7 @@ export function computeHorizontalWindow(
     };
   }
 
-  const nonFrozenPrefixSums = buildPrefixSums(nonFrozenDisplayWidths);
+  const nonFrozenPrefixSums = precomputedPrefixSums ?? buildPrefixSums(nonFrozenDisplayWidths);
   const totalNonFrozenWidth = nonFrozenPrefixSums[nonFrozenPrefixSums.length - 1] ?? 0;
   const availableWidth = Math.max(1, viewportWidth - frozenWidth);
   const maxScrollLeft = Math.max(0, totalNonFrozenWidth - availableWidth);
@@ -234,6 +235,7 @@ export function useHorizontalVirtualColumns({
   const viewportWidthRef = useRef(1200);
   const windowRangeRef = useRef(windowRange);
   const rafRef = useRef(0);
+  const resizeRafRef = useRef(0);
   const rangeUpdateCountRef = useRef(1);
   const lastCalcMsRef = useRef(0);
   const syncKeyRef = useRef(syncKey);
@@ -276,29 +278,43 @@ export function useHorizontalVirtualColumns({
     };
   }, [cellWidth, columns, frozenCount, getColumnWidth, mergedRanges, widthMultiplier]);
 
-  const applyWindowRange = useMemo(() => (
+  // Use a ref so that the scroll/resize listeners (which depend on
+  // applyWindowRange) are not torn down and re-attached every time `layout`
+  // changes. The ref is always up-to-date because it is written synchronously
+  // during render.
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
+
+  const overscanMinRef = useRef(overscanMin);
+  overscanMinRef.current = overscanMin;
+  const overscanFactorRef = useRef(overscanFactor);
+  overscanFactorRef.current = overscanFactor;
+
+  const applyWindowRange = useCallback(
     (scrollLeft: number, nextViewportWidth: number) => {
+      const currentLayout = layoutRef.current;
       const prevRange = windowRangeRef.current;
       if (shouldRetainHorizontalWindow(
-        layout.nonFrozenPrefixSums,
+        currentLayout.nonFrozenPrefixSums,
         prevRange,
         scrollLeft,
         nextViewportWidth,
-        layout.frozenWidth,
+        currentLayout.frozenWidth,
       )) {
         return;
       }
 
       const calcStart = getNow();
       const nextRange = computeHorizontalWindow(
-        layout.nonFrozenDisplayWidths,
-        layout.clampedFrozenCount,
+        currentLayout.nonFrozenDisplayWidths,
+        currentLayout.clampedFrozenCount,
         scrollLeft,
         nextViewportWidth,
-        layout.frozenWidth,
-        layout.positionedMergedRanges,
-        overscanMin,
-        overscanFactor,
+        currentLayout.frozenWidth,
+        currentLayout.positionedMergedRanges,
+        overscanMinRef.current,
+        overscanFactorRef.current,
+        currentLayout.nonFrozenPrefixSums,
       );
       lastCalcMsRef.current = getNow() - calcStart;
 
@@ -314,8 +330,9 @@ export function useHorizontalVirtualColumns({
       windowRangeRef.current = nextRange;
       rangeUpdateCountRef.current += 1;
       setWindowRange(nextRange);
-    }
-  ), [layout.clampedFrozenCount, layout.frozenWidth, layout.nonFrozenDisplayWidths, layout.nonFrozenPrefixSums, layout.positionedMergedRanges, overscanFactor, overscanMin]);
+    },
+    [],
+  );
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -328,6 +345,14 @@ export function useHorizontalVirtualColumns({
       applyWindowRange(scrollLeftRef.current, nextViewportWidth);
     };
 
+    const scheduleViewportUpdate = () => {
+      if (resizeRafRef.current) return;
+      resizeRafRef.current = requestAnimationFrame(() => {
+        resizeRafRef.current = 0;
+        updateViewport();
+      });
+    };
+
     const onScroll = () => {
       scrollLeftRef.current = Math.max(0, Math.round(el.scrollLeft));
       if (rafRef.current) return;
@@ -337,7 +362,7 @@ export function useHorizontalVirtualColumns({
       });
     };
 
-    const ro = new ResizeObserver(updateViewport);
+    const ro = new ResizeObserver(scheduleViewportUpdate);
     ro.observe(el);
     updateViewport();
     el.addEventListener('scroll', onScroll, { passive: true });
@@ -346,12 +371,16 @@ export function useHorizontalVirtualColumns({
       el.removeEventListener('scroll', onScroll);
       ro.disconnect();
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (resizeRafRef.current) cancelAnimationFrame(resizeRafRef.current);
     };
   }, [applyWindowRange, scrollRef]);
 
+  // When layout metrics change, recompute the column window once.
+  // (Previously this was driven by `applyWindowRange` identity change.)
   useEffect(() => {
     applyWindowRange(scrollLeftRef.current, viewportWidthRef.current);
-  }, [applyWindowRange]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layout]);
 
   useLayoutEffect(() => {
     if (syncKeyRef.current === syncKey) return;
@@ -361,19 +390,21 @@ export function useHorizontalVirtualColumns({
     if (el && el.scrollLeft !== 0) {
       el.scrollTo({ left: 0, behavior: 'auto' });
     }
+    const currentLayout = layoutRef.current;
     const nextRange = computeHorizontalWindow(
-      layout.nonFrozenDisplayWidths,
-      layout.clampedFrozenCount,
+      currentLayout.nonFrozenDisplayWidths,
+      currentLayout.clampedFrozenCount,
       0,
       viewportWidthRef.current,
-      layout.frozenWidth,
-      layout.positionedMergedRanges,
-      overscanMin,
-      overscanFactor,
+      currentLayout.frozenWidth,
+      currentLayout.positionedMergedRanges,
+      overscanMinRef.current,
+      overscanFactorRef.current,
+      currentLayout.nonFrozenPrefixSums,
     );
     windowRangeRef.current = nextRange;
     setWindowRange(nextRange);
-  }, [layout.clampedFrozenCount, layout.frozenWidth, layout.nonFrozenDisplayWidths, layout.positionedMergedRanges, overscanFactor, overscanMin, scrollRef, syncKey]);
+  }, [scrollRef, syncKey]);
 
   const effectiveWindowRange = useMemo(() => (
     syncKeyRef.current !== syncKey
@@ -386,9 +417,20 @@ export function useHorizontalVirtualColumns({
         layout.positionedMergedRanges,
         overscanMin,
         overscanFactor,
+        layout.nonFrozenPrefixSums,
       )
       : windowRange
-  ), [layout.clampedFrozenCount, layout.frozenWidth, layout.nonFrozenDisplayWidths, layout.positionedMergedRanges, overscanFactor, overscanMin, syncKey, windowRange]);
+  ), [layout, overscanFactor, overscanMin, syncKey, windowRange]);
+
+  // Cache columnEntries to maintain referential stability when the window
+  // range hasn't actually changed. Without this, every windowRange update
+  // produces a new array via [...frozenEntries, ...virtualEntries], which
+  // invalidates all downstream memo() components (canvas strips) and causes
+  // expensive useLayoutEffect re-runs with full canvas repaints.
+  const columnEntriesCacheRef = useRef<{
+    key: string;
+    entries: HorizontalVirtualColumnEntry[];
+  }>({ key: '', entries: [] });
 
   return useMemo(() => {
     if (columns.length === 0) {
@@ -445,8 +487,17 @@ export function useHorizontalVirtualColumns({
       (nonFrozenPrefixSums[nonFrozenPrefixSums.length - 1] ?? 0) - (nonFrozenPrefixSums[effectiveWindowRange.endIndex] ?? 0),
     );
 
+    const cacheKey = `${columns.length}:${effectiveWindowRange.startIndex}:${effectiveWindowRange.endIndex}:${layout.clampedFrozenCount}`;
+    let columnEntries: HorizontalVirtualColumnEntry[];
+    if (columnEntriesCacheRef.current.key === cacheKey) {
+      columnEntries = columnEntriesCacheRef.current.entries;
+    } else {
+      columnEntries = [...frozenEntries, ...virtualEntries];
+      columnEntriesCacheRef.current = { key: cacheKey, entries: columnEntries };
+    }
+
     return {
-      columnEntries: [...frozenEntries, ...virtualEntries],
+      columnEntries,
       totalWidth,
       frozenWidth,
       leadingSpacerWidth,

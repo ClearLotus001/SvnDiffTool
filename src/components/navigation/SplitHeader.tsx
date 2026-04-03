@@ -1,8 +1,7 @@
 import { memo } from 'react';
 import type { LayoutMode, SvnRevisionInfo } from '@/types';
-import { FONT_CODE, FONT_SIZE, FONT_UI } from '@/constants/typography';
 import { useI18n } from '@/context/i18n';
-import { useTheme } from '@/context/theme';
+import { cssAlpha } from '@/theme/cssUtils';
 import { extractDisplayName, extractVersionLabel } from '@/utils/diff/diffMeta';
 import RevisionPicker from '@/components/navigation/RevisionPicker';
 import RevisionLogHoverCard from '@/components/navigation/RevisionLogHoverCard';
@@ -11,10 +10,10 @@ import Tooltip from '@/components/shared/Tooltip';
 interface SplitHeaderProps {
   baseName: string;
   mineName: string;
-  baseTitle: string;
-  mineTitle: string;
-  baseValueLabel: string;
-  mineValueLabel: string;
+  baseTitle?: string;
+  mineTitle?: string;
+  baseValueLabel?: string;
+  mineValueLabel?: string;
   layout: LayoutMode;
   isWorkbookMode: boolean;
   baseRevisionInfo?: SvnRevisionInfo | null;
@@ -29,6 +28,7 @@ interface SplitHeaderProps {
   isLoadingMoreRevisions?: boolean;
   isSearchingRevisionDateTime?: boolean;
   onRevisionChange?: ((baseRevisionId: string, mineRevisionId: string) => void) | undefined;
+  onOpenRevisionPicker?: (() => void) | undefined;
   onResetCompare?: (() => void) | undefined;
   canResetCompare?: boolean;
   onLoadMoreRevisions?: (() => void) | undefined;
@@ -42,36 +42,19 @@ function buildRevisionLogText(info: SvnRevisionInfo | null) {
 }
 
 const SplitHeader = memo(({
-  baseName,
-  mineName,
-  baseTitle = '',
-  mineTitle = '',
-  baseValueLabel = '',
-  mineValueLabel = '',
-  layout,
-  isWorkbookMode,
-  baseRevisionInfo = null,
-  mineRevisionInfo = null,
-  revisionOptions = null,
-  canSwitchRevisions = false,
-  isLoadingRevisionOptions = false,
-  isSwitchingRevisions = false,
-  revisionHasMore = false,
-  revisionQueryDateTime = '',
-  revisionQueryError = '',
-  isLoadingMoreRevisions = false,
-  isSearchingRevisionDateTime = false,
-  onRevisionChange,
-  onResetCompare,
-  canResetCompare = false,
-  onLoadMoreRevisions,
-  onRevisionDateTimeQuery,
+  baseName, mineName,
+  baseTitle = '', mineTitle = '',
+  baseValueLabel = '', mineValueLabel = '',
+  layout, isWorkbookMode,
+  baseRevisionInfo = null, mineRevisionInfo = null,
+  revisionOptions = null, canSwitchRevisions = false,
+  isLoadingRevisionOptions = false, isSwitchingRevisions = false,
+  revisionHasMore = false, revisionQueryDateTime = '', revisionQueryError = '',
+  isLoadingMoreRevisions = false, isSearchingRevisionDateTime = false,
+  onRevisionChange, onOpenRevisionPicker, onResetCompare, canResetCompare = false,
+  onLoadMoreRevisions, onRevisionDateTimeQuery,
 }: SplitHeaderProps) => {
-  const T = useTheme();
   const { t } = useI18n();
-  const headerPillHeight = 28;
-  const headerPillPadding = '0 10px';
-  const headerPillRadius = 999;
   const baseVersion = baseValueLabel.trim() || baseRevisionInfo?.revision || extractVersionLabel(baseName) || t('commonBase');
   const mineVersion = mineValueLabel.trim() || mineRevisionInfo?.revision || extractVersionLabel(mineName) || t('commonMine');
   const baseDisplayName = extractDisplayName(baseName);
@@ -79,66 +62,31 @@ const SplitHeader = memo(({
   const options = revisionOptions ?? [];
 
   const resolveAxisLabel = (side: 'base' | 'mine') => {
-    if (isWorkbookMode && layout === 'unified') {
-      return side === 'base' ? t('splitHeaderAxisTop') : t('splitHeaderAxisBottom');
-    }
+    if (isWorkbookMode && layout === 'unified') return side === 'base' ? t('splitHeaderAxisTop') : t('splitHeaderAxisBottom');
     if (layout === 'split-v') {
-      if (isWorkbookMode) {
-        return side === 'base' ? t('splitHeaderAxisLeftColumn') : t('splitHeaderAxisRightColumn');
-      }
+      if (isWorkbookMode) return side === 'base' ? t('splitHeaderAxisLeftColumn') : t('splitHeaderAxisRightColumn');
       return side === 'base' ? t('splitHeaderAxisTop') : t('splitHeaderAxisBottom');
     }
     return side === 'base' ? t('splitHeaderAxisLeftPane') : t('splitHeaderAxisRightPane');
   };
 
   const renderRoleBadge = (side: 'base' | 'mine') => {
-    const accent = side === 'base' ? T.acc2 : T.acc;
-    const glyphStyle = side === 'base'
-      ? {
-          width: 6,
-          height: 6,
-          borderRadius: 2,
-          transform: 'rotate(45deg)',
-        }
-      : {
-          width: 7,
-          height: 7,
-          borderRadius: '50%',
-        };
-
+    const accentVar = side === 'base' ? '--acc2' : '--accent';
+    const glyphCls = side === 'base' ? 'size-1.5 rounded-[2px] rotate-45' : 'size-[7px] rounded-full';
     return (
       <span
         aria-hidden="true"
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: 12,
-          height: 12,
-          minWidth: 12,
-          borderRadius: 999,
-          background: `${accent}14`,
-          border: `1px solid ${accent}38`,
-          boxSizing: 'border-box',
-          flexShrink: 0,
-        }}>
-        <span
-          style={{
-            display: 'block',
-            background: accent,
-            boxShadow: `0 0 0 1px ${accent}22`,
-            ...glyphStyle,
-          }}
-        />
+        className="inline-flex items-center justify-center size-3 min-w-3 rounded-full shrink-0 box-border"
+        style={{ background: cssAlpha(side === 'base' ? 'acc2' : 'acc', '14'), border: `1px solid ${cssAlpha(side === 'base' ? 'acc2' : 'acc', '38')}` }}>
+        <span className={`block ${glyphCls}`} style={{ background: `var(${accentVar})`, boxShadow: `0 0 0 1px ${cssAlpha(side === 'base' ? 'acc2' : 'acc', '22')}` }} />
       </span>
     );
   };
 
-  const renderMeta = (info: SvnRevisionInfo | null, fallbackText: string, accent: string) => {
+  const renderMeta = (info: SvnRevisionInfo | null, fallbackText: string, accent: string /* CSS var name e.g. '--acc2' */) => {
     const primaryLog = buildRevisionLogText(info);
     const primary = primaryLog || fallbackText.trim();
     if (!primary) return null;
-
     return (
       <RevisionLogHoverCard
         accent={accent}
@@ -152,59 +100,25 @@ const SplitHeader = memo(({
     );
   };
 
-  const renderStaticVersion = (label: string, accent: string) => (
+  const renderStaticVersion = (label: string, accent: string /* CSS var name */) => (
     <Tooltip content={label} maxWidth={320}>
-      <span
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 8,
-          maxWidth: '100%',
-          minWidth: 0,
-          padding: headerPillPadding,
-          height: headerPillHeight,
-          borderRadius: headerPillRadius,
-          border: `1px solid ${T.border}`,
-          background: T.bg2,
-          flexShrink: 0,
-        }}>
-        <span
-          style={{
-            color: accent,
-            fontSize: FONT_SIZE.xs,
-            fontWeight: 700,
-            fontFamily: FONT_UI,
-            whiteSpace: 'nowrap',
-          }}>
+      <span className="inline-flex items-center gap-2 max-w-full min-w-0 px-2.5 h-7 rounded-full border border-border-default bg-bg-surface-hover shrink-0">
+        <span className="text-[11px] font-bold font-ui whitespace-nowrap" style={{ color: `var(${accent})` }}>
           {t('splitHeaderVersionLabel')}
         </span>
-        <span
-          style={{
-            minWidth: 0,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            color: T.t0,
-            fontSize: FONT_SIZE.sm,
-            fontWeight: 700,
-            fontFamily: FONT_CODE,
-          }}>
-            {label}
-          </span>
+        <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-title text-[13px] font-bold font-code">
+          {label}
+        </span>
       </span>
     </Tooltip>
   );
 
-  const renderRevisionSelect = (
-    side: 'base' | 'mine',
-    info: SvnRevisionInfo | null,
-  ) => {
+  const renderRevisionSelect = (side: 'base' | 'mine', info: SvnRevisionInfo | null) => {
     const otherId = side === 'base' ? mineRevisionInfo?.id ?? '' : baseRevisionInfo?.id ?? '';
-
     return (
       <RevisionPicker
         align={side === 'base' ? 'left' : 'right'}
-        accent={side === 'base' ? T.acc2 : T.acc}
+        accent={side === 'base' ? '--acc2' : '--accent'}
         title={side === 'base' ? baseTitle : mineTitle}
         value={info}
         options={options}
@@ -215,12 +129,10 @@ const SplitHeader = memo(({
         queryDateTime={revisionQueryDateTime}
         queryError={revisionQueryError}
         isSearchingDateTime={isSearchingRevisionDateTime}
+        onOpen={onOpenRevisionPicker}
         onChange={(nextId) => {
           if (!nextId) return;
-          if (side === 'base') {
-            onRevisionChange?.(nextId, otherId || mineRevisionInfo?.id || nextId);
-            return;
-          }
+          if (side === 'base') { onRevisionChange?.(nextId, otherId || mineRevisionInfo?.id || nextId); return; }
           onRevisionChange?.(otherId || baseRevisionInfo?.id || nextId, nextId);
         }}
         onLoadMore={onLoadMoreRevisions}
@@ -230,70 +142,25 @@ const SplitHeader = memo(({
   };
 
   const headerSide = (
-    side: 'base' | 'mine',
-    axis: string,
-    title: string,
-    name: string,
-    version: string,
-    info: SvnRevisionInfo | null,
-    divider = false,
+    side: 'base' | 'mine', axis: string, title: string, name: string,
+    version: string, info: SvnRevisionInfo | null, divider = false,
   ) => {
-    const accent = side === 'base' ? T.acc2 : T.acc;
+    const accent = side === 'base' ? '--acc2' : '--accent';
     const hasRevisionSwitch = canSwitchRevisions && Boolean(onRevisionChange);
     const normalizedVersion = version.trim();
     const staticVersionLabel = (
-      normalizedVersion
-      && normalizedVersion !== t('commonBase')
-      && normalizedVersion !== t('commonMine')
-    )
-      ? normalizedVersion
-      : t('splitHeaderVersionUnknown');
+      normalizedVersion && normalizedVersion !== t('commonBase') && normalizedVersion !== t('commonMine')
+    ) ? normalizedVersion : t('splitHeaderVersionUnknown');
 
     return (
       <div
-        style={{
-          display: 'grid',
-          gap: 6,
-          minWidth: 0,
-          padding: '8px 14px 9px',
-          minHeight: 58,
-          background: 'transparent',
-          borderLeft: divider ? `1px solid ${T.border}` : 'none',
-          borderTop: `1px solid ${T.border}`,
-        }}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            minWidth: 0,
-            flexWrap: 'wrap',
-          }}>
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              minWidth: 0,
-              flexWrap: 'wrap',
-            }}>
+        className="grid gap-1.5 min-w-0 p-[8px_14px_9px] min-h-[58px] bg-transparent border-t border-border-default"
+        style={{ borderLeft: divider ? `1px solid var(--border-color)` : 'none' }}>
+        <div className="flex items-center justify-between gap-3 min-w-0 flex-wrap">
+          <div className="inline-flex items-center gap-1.5 min-w-0 flex-wrap">
             <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                height: headerPillHeight,
-                padding: headerPillPadding,
-                borderRadius: headerPillRadius,
-                border: `1px solid ${T.border}`,
-                background: T.bg2,
-                color: accent,
-                fontFamily: FONT_UI,
-                fontSize: FONT_SIZE.sm,
-                fontWeight: 700,
-                whiteSpace: 'nowrap',
-              }}>
+              className="inline-flex items-center gap-2 h-7 px-2.5 rounded-full border border-border-default bg-bg-surface-hover font-ui text-[13px] font-bold whitespace-nowrap"
+              style={{ color: `var(${accent})` }}>
               {renderRoleBadge(side)}
               {title}
             </span>
@@ -302,40 +169,18 @@ const SplitHeader = memo(({
                 type="button"
                 onClick={onResetCompare}
                 disabled={!canResetCompare || isSwitchingRevisions}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  height: headerPillHeight,
-                  padding: headerPillPadding,
-                  borderRadius: headerPillRadius,
-                  border: `1px solid ${T.border}`,
-                  background: T.bg2,
-                  color: canResetCompare ? T.t1 : T.t2,
-                  fontFamily: FONT_UI,
-                  fontSize: FONT_SIZE.xs,
-                  fontWeight: 700,
-                  whiteSpace: 'nowrap',
-                  cursor: canResetCompare && !isSwitchingRevisions ? 'pointer' : 'default',
-                }}>
+                className={`
+                  inline-flex items-center h-7 px-2.5 rounded-full
+                  border border-border-default bg-bg-surface-hover
+                  font-ui text-[11px] font-bold whitespace-nowrap
+                  ${canResetCompare && !isSwitchingRevisions ? 'text-text-primary cursor-pointer hover:border-accent hover:text-accent' : 'text-text-secondary cursor-default'}
+                  transition-all duration-150
+                `}>
                 {t('revisionPickerReset')}
               </button>
             )}
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                height: headerPillHeight,
-                padding: headerPillPadding,
-                borderRadius: headerPillRadius,
-                border: `1px solid ${T.border}`,
-                background: T.bg2,
-                color: T.t2,
-                fontFamily: FONT_UI,
-                fontSize: FONT_SIZE.xs,
-                fontWeight: 600,
-                whiteSpace: 'nowrap',
-              }}>
-                {axis}
+            <span className="inline-flex items-center h-7 px-2.5 rounded-full border border-border-default bg-bg-surface-hover text-text-secondary font-ui text-[11px] font-semibold whitespace-nowrap">
+              {axis}
             </span>
           </div>
           {hasRevisionSwitch
@@ -343,34 +188,11 @@ const SplitHeader = memo(({
             : renderStaticVersion(staticVersionLabel, accent)}
         </div>
 
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            minWidth: 0,
-          }}>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              minWidth: 0,
-              flex: '1 1 auto',
-              minHeight: headerPillHeight,
-              paddingLeft: 4,
-            }}>
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center min-w-0 flex-1 min-h-7 pl-1">
             {renderMeta(info, name || title, accent) ?? (
               <Tooltip content={name || title} maxWidth={320}>
-                <span
-                  style={{
-                    minWidth: 0,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    color: T.t2,
-                    fontSize: FONT_SIZE.xs,
-                    fontFamily: FONT_UI,
-                  }}>
+                <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-secondary text-[11px] font-ui">
                   {name || title}
                 </span>
               </Tooltip>
@@ -382,39 +204,12 @@ const SplitHeader = memo(({
   };
 
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
-        gap: 0,
-        padding: 0,
-        width: '100%',
-        minWidth: 0,
-        background: `linear-gradient(180deg, ${T.bg1} 0%, ${T.bg0} 100%)`,
-        borderBottom: `1px solid ${T.border}`,
-        flexShrink: 0,
-      }}>
-      <div style={{ minWidth: 0 }}>
-        {headerSide(
-          'base',
-          resolveAxisLabel('base'),
-          baseTitle,
-          baseDisplayName,
-          baseVersion,
-          baseRevisionInfo,
-          false,
-        )}
+    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-0 p-0 w-full min-w-0 border-b border-border-default shrink-0 bg-bg-surface">
+      <div className="min-w-0">
+        {headerSide('base', resolveAxisLabel('base'), baseTitle, baseDisplayName, baseVersion, baseRevisionInfo, false)}
       </div>
-      <div style={{ minWidth: 0 }}>
-        {headerSide(
-          'mine',
-          resolveAxisLabel('mine'),
-          mineTitle,
-          mineDisplayName,
-          mineVersion,
-          mineRevisionInfo,
-          true,
-        )}
+      <div className="min-w-0">
+        {headerSide('mine', resolveAxisLabel('mine'), mineTitle, mineDisplayName, mineVersion, mineRevisionInfo, true)}
       </div>
     </div>
   );
