@@ -6,6 +6,7 @@ export interface CollapseRevealRange {
 export type CollapseExpansionState = Record<string, CollapseRevealRange[]>;
 
 export const EMPTY_COLLAPSE_EXPANSION_STATE: CollapseExpansionState = Object.freeze({});
+const MANUAL_COLLAPSE_BLOCK_ID = '__manual-collapse__';
 
 const TARGET_REVEAL_RADIUS = 24;
 
@@ -66,6 +67,20 @@ export function areCollapseExpansionStatesEqual(
   return true;
 }
 
+export function cloneCollapseExpansionState(
+  state: CollapseExpansionState,
+): CollapseExpansionState {
+  const entries = Object.entries(state);
+  if (entries.length === 0) return EMPTY_COLLAPSE_EXPANSION_STATE;
+
+  return Object.fromEntries(
+    entries.map(([blockId, ranges]) => [
+      blockId,
+      ranges.map((range) => ({ ...range })),
+    ]),
+  );
+}
+
 function mergeRangesIntoState(
   state: CollapseExpansionState,
   blockId: string,
@@ -77,6 +92,28 @@ function mergeRangesIntoState(
   return {
     ...state,
     [blockId]: nextRanges,
+  };
+}
+
+function replaceRangesInState(
+  state: CollapseExpansionState,
+  blockId: string,
+  nextRanges: CollapseRevealRange[],
+): CollapseExpansionState {
+  const normalizedRanges = normalizeRevealRanges(nextRanges);
+  const currentRanges = state[blockId] ?? [];
+  if (areRangesEqual(currentRanges, normalizedRanges)) return state;
+
+  if (normalizedRanges.length === 0) {
+    if (!(blockId in state)) return state;
+    const nextState = { ...state };
+    delete nextState[blockId];
+    return Object.keys(nextState).length === 0 ? EMPTY_COLLAPSE_EXPANSION_STATE : nextState;
+  }
+
+  return {
+    ...state,
+    [blockId]: normalizedRanges,
   };
 }
 
@@ -171,4 +208,77 @@ export function revealCollapsedLine(
   const start = Math.max(segmentStart, targetIndex - radius);
   const end = Math.min(segmentEnd, targetIndex + radius);
   return mergeRangesIntoState(state, blockId, [{ start, end }]);
+}
+
+export function getManualCollapsedRanges(
+  state: CollapseExpansionState,
+): CollapseRevealRange[] {
+  return normalizeRevealRanges(state[MANUAL_COLLAPSE_BLOCK_ID] ?? []);
+}
+
+export function isLineManuallyCollapsed(
+  state: CollapseExpansionState,
+  lineIdx: number,
+): boolean {
+  return getManualCollapsedRanges(state).some((range) => (
+    lineIdx >= range.start && lineIdx <= range.end
+  ));
+}
+
+export function addManualCollapsedRange(
+  state: CollapseExpansionState,
+  startLineIdx: number,
+  endLineIdx: number,
+): CollapseExpansionState {
+  if (endLineIdx < startLineIdx) return state;
+  return mergeRangesIntoState(state, MANUAL_COLLAPSE_BLOCK_ID, [{
+    start: startLineIdx,
+    end: endLineIdx,
+  }]);
+}
+
+export function removeManualCollapsedRange(
+  state: CollapseExpansionState,
+  startLineIdx: number,
+  endLineIdx: number,
+): CollapseExpansionState {
+  if (endLineIdx < startLineIdx) return state;
+
+  const nextRanges: CollapseRevealRange[] = [];
+  let changed = false;
+
+  getManualCollapsedRanges(state).forEach((range) => {
+    if (endLineIdx < range.start || startLineIdx > range.end) {
+      nextRanges.push(range);
+      return;
+    }
+
+    changed = true;
+    if (startLineIdx > range.start) {
+      nextRanges.push({
+        start: range.start,
+        end: startLineIdx - 1,
+      });
+    }
+    if (endLineIdx < range.end) {
+      nextRanges.push({
+        start: endLineIdx + 1,
+        end: range.end,
+      });
+    }
+  });
+
+  if (!changed) return state;
+  return replaceRangesInState(state, MANUAL_COLLAPSE_BLOCK_ID, nextRanges);
+}
+
+export function revealManualCollapsedLine(
+  state: CollapseExpansionState,
+  lineIdx: number,
+): CollapseExpansionState {
+  const targetRange = getManualCollapsedRanges(state).find((range) => (
+    lineIdx >= range.start && lineIdx <= range.end
+  ));
+  if (!targetRange) return state;
+  return removeManualCollapsedRange(state, targetRange.start, targetRange.end);
 }

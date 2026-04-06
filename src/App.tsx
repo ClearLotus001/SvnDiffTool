@@ -8,17 +8,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
-  useRef, useEffect, useCallback, useMemo, startTransition, type SetStateAction,
+  useRef, useEffect, useCallback, useMemo, useState, startTransition, type SetStateAction,
 } from 'react';
 
 import type {
   DiffData,
   SplitRow,
   SvnRevisionInfo,
+  TextLayoutSnapshot,
+  TextLineSelectionSummary,
   WorkbookCompareLayoutSnapshot,
   WorkbookHorizontalLayoutSnapshot,
   WorkbookMoveDirection,
 } from '@/types';
+import { createEmptyTextLayoutSnapshots, type TextLayoutSnapshotsByMode } from '@/utils/diff/textLayoutState';
+import { buildVersionCopyText } from '@/utils/diff/textCopy';
 import { useI18n } from '@/context/i18n';
 import { ThemeContext } from '@/context/theme';
 import { buildReplacementPairIndex } from '@/engine/text/textChangeAlignment';
@@ -33,7 +37,12 @@ import {
   setWorkbookDebugEnabled,
   workbookDebugLog,
 } from '@/utils/workbook/workbookDebug';
-import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
+import { buildE2EDiffData, shouldEnableE2EBridge } from '@/utils/app/e2eBridge';
+import {
+  cloneCollapseExpansionState,
+  EMPTY_COLLAPSE_EXPANSION_STATE,
+  type CollapseExpansionState,
+} from '@/utils/collapse/collapseState';
 import { AppContent, AppDialogs } from '@/components/app-shell';
 import {
   useAppChromeEffects,
@@ -62,6 +71,8 @@ import WorkbookArtifactNoticeBar from '@/components/workbook/WorkbookArtifactNot
 import Toolbar from '@/components/navigation/Toolbar';
 import SplitHeader from '@/components/navigation/SplitHeader';
 import StatsBar from '@/components/navigation/StatsBar';
+import { copyText } from '@/utils/app/clipboard';
+import { debugLog } from '@/hooks/app/helpers';
 
 // ═════════════════════════════════════════════════════════════════════════════
 // ROOT APP
@@ -152,11 +163,15 @@ export default function App() {
 
   // ── Imperative Refs (not in store) ──────────────────────────────────────
   const loadSeqRef = useRef(0);
-  const startupBootstrapStartedRef = useRef(false);
+  const startupRevealRequestedRef = useRef(false);
   const hasLoadedDiffRef = useRef(false);
   const workbookCompareModeRef = useRef(workbookCompareMode);
   const currentDiffDataRef = useRef<DiffData | null>(null);
   const diffResultCacheRef = useRef<Map<string, CachedDiffResult>>(new Map());
+  const textLayoutSnapshotsRef = useRef<TextLayoutSnapshotsByMode>(
+    createEmptyTextLayoutSnapshots(),
+  );
+  const textSharedExpandedBlocksRef = useRef<CollapseExpansionState>(EMPTY_COLLAPSE_EXPANSION_STATE);
   const workbookLayoutSnapshotsRef = useRef<WorkbookLayoutSnapshotsByMode>(
     createEmptyWorkbookLayoutSnapshots(),
   );
@@ -338,6 +353,8 @@ export default function App() {
     workbookCompareModeRef,
     currentDiffDataRef,
     diffResultCacheRef,
+    textLayoutSnapshotsRef,
+    textSharedExpandedBlocksRef,
     workbookLayoutSnapshotsRef,
     workbookSharedExpandedBlocksRef,
     revisionQuerySeqRef,
@@ -369,7 +386,6 @@ export default function App() {
   useElectronLifecycleEffects({
     applyDiffData,
     reloadCliDiffData,
-    startupBootstrapStartedRef,
     workbookCompareModeRef,
     loadSeqRef,
     revisionQuerySeqRef,
@@ -397,6 +413,27 @@ export default function App() {
       setLayout(nextLayout);
     });
   }, [setLayout]);
+  const handleTextLayoutSnapshotChange = useCallback((snapshot: TextLayoutSnapshot) => {
+    textLayoutSnapshotsRef.current = {
+      ...textLayoutSnapshotsRef.current,
+      [snapshot.layout]: snapshot,
+    };
+  }, []);
+  const handleTextExpandedBlocksChange = useCallback((expandedBlocks: CollapseExpansionState) => {
+    const nextExpandedBlocks = cloneCollapseExpansionState(expandedBlocks);
+    textSharedExpandedBlocksRef.current = nextExpandedBlocks;
+    textLayoutSnapshotsRef.current = {
+      unified: textLayoutSnapshotsRef.current.unified
+        ? { ...textLayoutSnapshotsRef.current.unified, expandedBlocks: nextExpandedBlocks }
+        : textLayoutSnapshotsRef.current.unified,
+      'split-h': textLayoutSnapshotsRef.current['split-h']
+        ? { ...textLayoutSnapshotsRef.current['split-h'], expandedBlocks: nextExpandedBlocks }
+        : textLayoutSnapshotsRef.current['split-h'],
+      'split-v': textLayoutSnapshotsRef.current['split-v']
+        ? { ...textLayoutSnapshotsRef.current['split-v'], expandedBlocks: nextExpandedBlocks }
+        : textLayoutSnapshotsRef.current['split-v'],
+    };
+  }, []);
   const handleWorkbookLayoutSnapshotChange = useCallback((
     snapshot: WorkbookCompareLayoutSnapshot | WorkbookHorizontalLayoutSnapshot,
   ) => {
@@ -461,8 +498,10 @@ export default function App() {
     setHunkIdx,
   });
 
+  const [textLineSelectionSummary, setTextLineSelectionSummary] = useState<TextLineSelectionSummary | null>(null);
+
   const panelProps = useMemo(() => ({
-    diffLines, textDiffPresentation, syntaxPresentation, collapseCtx, activeHunkIdx: hunkIdx,
+    diffLines, textDiffPresentation, syntaxPresentation, baseVersionLabel, mineVersionLabel, collapseCtx, activeHunkIdx: hunkIdx,
     searchMatches, activeSearchIdx, hunkPositions, searchJumpNonce,
     showWhitespace, fontSize,
     guidedLineIdx: null,
@@ -470,8 +509,9 @@ export default function App() {
     guidedPulseNonce,
     onScrollerReady: handleScrollerReady,
     onCollapseNavigationReady: handleCollapseNavigationReady,
+    onLineSelectionChange: setTextLineSelectionSummary,
   }), [
-    diffLines, textDiffPresentation, syntaxPresentation, collapseCtx, hunkIdx,
+    diffLines, textDiffPresentation, syntaxPresentation, baseVersionLabel, mineVersionLabel, collapseCtx, hunkIdx,
     searchMatches, activeSearchIdx, hunkPositions, searchJumpNonce,
     showWhitespace, fontSize,
     isWorkbookMode, activeWorkbookGuidedRange, hunks,
@@ -485,9 +525,35 @@ export default function App() {
   const handleHunkNext = useCallback(() => startTransition(() => {
     setHunkIdx((i: number) => cycleHunkIndex(i, navigationCount, 1));
   }), [navigationCount, setHunkIdx]);
+  const handleCopyBaseVersion = useCallback(async () => (
+    copyText(buildVersionCopyText(diffLines, 'base'))
+  ), [diffLines]);
+  const handleCopyMineVersion = useCallback(async () => (
+    copyText(buildVersionCopyText(diffLines, 'mine'))
+  ), [diffLines]);
+  useEffect(() => {
+    if (isWorkbookMode || !hasLoadedDiff) {
+      setTextLineSelectionSummary(null);
+    }
+  }, [hasLoadedDiff, isWorkbookMode]);
+  useEffect(() => {
+    debugLog('app-load-state', {
+      loadPhase,
+      hasLoadedDiff,
+      isLoadingDiff,
+      isElectron,
+      isWorkbookMode,
+      fileName: displayFileName,
+    });
+  }, [displayFileName, hasLoadedDiff, isElectron, isLoadingDiff, isWorkbookMode, loadPhase]);
   const handlePickFile = useCallback(() => {
     void handlePickWorkingCopyFile();
   }, [handlePickWorkingCopyFile]);
+  const handleInitialVisualReady = useCallback(() => {
+    if (startupRevealRequestedRef.current) return;
+    startupRevealRequestedRef.current = true;
+    window.svnDiff?.notifyRendererReady?.();
+  }, []);
   const handleToggleGoto = useCallback(() => setShowGoto((v: boolean) => !v), [setShowGoto]);
   const handleToggleHelp = useCallback(() => setShowHelp((v: boolean) => !v), [setShowHelp]);
   const handleToggleAbout = useCallback(() => setShowAbout((v: boolean) => !v), [setShowAbout]);
@@ -512,6 +578,7 @@ export default function App() {
     isWorkbookMode,
     selectedCell,
     activeSearchIdx,
+    searchJumpNonce,
     searchMatches,
     activeWorkbookDiffRegion,
     hunkPositions,
@@ -523,6 +590,28 @@ export default function App() {
     scrollToIndexRef,
     diffLines,
   });
+
+  useEffect(() => {
+    if (!shouldEnableE2EBridge()) return undefined;
+
+    window.__SVN_DIFF_E2E__ = {
+      loadTextDiff: async (payload) => {
+        if (payload.layout) setLayout(payload.layout);
+        if (typeof payload.collapseCtx === 'boolean') setCollapseCtx(payload.collapseCtx);
+        await applyDiffData(buildE2EDiffData(payload));
+      },
+      getSnapshot: () => ({
+        hasLoadedDiff,
+        layout,
+        isWorkbookMode,
+        fileName: displayFileName,
+      }),
+    };
+
+    return () => {
+      delete window.__SVN_DIFF_E2E__;
+    };
+  }, [applyDiffData, displayFileName, hasLoadedDiff, isWorkbookMode, layout, setCollapseCtx, setLayout]);
 
   useEffect(() => {
     if (isWorkbookMode) return;
@@ -595,212 +684,229 @@ export default function App() {
 
   // ── Render ─────────────────────────────────────────────────────────────
 
+  const windowFrameClassName = isElectron && !isWindowMaximized
+    ? 'app-window-frame app-window-frame--floating'
+    : 'app-window-frame app-window-frame--flush';
+  const windowSurfaceClassName = isElectron && !isWindowMaximized
+    ? 'app-window-surface app-window-surface--floating app-shell-no-select font-ui text-text-title flex flex-col relative flex-auto w-full h-full overflow-hidden min-w-0 min-h-0'
+    : 'app-window-surface app-window-surface--flush app-shell-no-select font-ui text-text-title flex flex-col relative flex-auto w-full h-full overflow-hidden min-w-0 min-h-0';
+
   return (
     <ThemeContext.Provider value={themeKey}>
-      <div className="font-ui bg-bg-surface-solid text-text-title flex flex-col relative flex-auto w-full h-full overflow-hidden min-w-0 min-h-0">
-        <Toolbar
-          fileName={displayFileName}
-          themeKey={themeKey}         setThemeKey={setThemeKey}
-          layout={layout}             setLayout={handleLayoutChange}
-          hunkIdx={hunkIdx}           totalHunks={navigationCount}
-          hunkTargetLabel={currentNavigationLabel}
-          onPrev={handleHunkPrev}
-          onNext={handleHunkNext}
-          showSearch={showSearch}     setShowSearch={setShowSearch}
-          collapseCtx={collapseCtx}   setCollapseCtx={setCollapseCtx}
-          showWhitespace={showWhitespace} setShowWhitespace={setShowWhitespace}
-          showHiddenColumns={showHiddenColumns} setShowHiddenColumns={setShowHiddenColumns}
-          workbookCompareMode={workbookCompareMode}
-          setWorkbookCompareMode={handleWorkbookCompareModeChange}
-          fontSize={fontSize}         setFontSize={setFontSize}
-          onPickFile={handlePickFile}
-          onGoto={handleToggleGoto}
-          onHelp={handleToggleHelp}
-          onAbout={handleToggleAbout}
-          isElectron={isElectron}
-          usesNativeWindowControls={usesNativeWindowControls}
-          isWindowMaximized={isWindowMaximized}
-          isWorkbookMode={isWorkbookMode}
-          updateState={appUpdateState}
-          onCheckForUpdates={handleCheckForAppUpdate}
-          onDownloadUpdate={handleDownloadAppUpdate}
-          onInstallUpdate={handleInstallDownloadedUpdate}
-        />
-
-        {isDevMode && <PerfBar metrics={loadPerfMetrics} />}
-
-        {showSearch && (
-          <SearchBar
-            query={searchQ}
-            isRegex={searchRx}
-            isCaseSensitive={searchCs}
+      <div className={windowFrameClassName}>
+        <div className={windowSurfaceClassName}>
+          <Toolbar
+            fileName={displayFileName}
+            themeKey={themeKey}         setThemeKey={setThemeKey}
+            layout={layout}             setLayout={handleLayoutChange}
+            hunkIdx={hunkIdx}           totalHunks={navigationCount}
+            hunkTargetLabel={currentNavigationLabel}
+            onPrev={handleHunkPrev}
+            onNext={handleHunkNext}
+            showSearch={showSearch}     setShowSearch={setShowSearch}
+            collapseCtx={collapseCtx}   setCollapseCtx={setCollapseCtx}
+            showWhitespace={showWhitespace} setShowWhitespace={setShowWhitespace}
+            showHiddenColumns={showHiddenColumns} setShowHiddenColumns={setShowHiddenColumns}
+            workbookCompareMode={workbookCompareMode}
+            setWorkbookCompareMode={handleWorkbookCompareModeChange}
+            fontSize={fontSize}         setFontSize={setFontSize}
+            onPickFile={handlePickFile}
+            onGoto={handleToggleGoto}
+            onHelp={handleToggleHelp}
+            onAbout={handleToggleAbout}
+            isElectron={isElectron}
+            usesNativeWindowControls={usesNativeWindowControls}
+            isWindowMaximized={isWindowMaximized}
             isWorkbookMode={isWorkbookMode}
-            workbookSearchScope={searchWorkbookScope}
-            activeSheetName={activeWorkbookSheetName}
-            matchCount={searchMatches.length}
-            activeIdx={activeSearchIdx}
-            results={searchResultItems}
-            onSearch={handleSearch}
-            onPreviewNav={handleSearchPreviewNav}
-            onNav={handleSearchNav}
-            onJump={handleSearchJump}
-            onClose={() => setShowSearch(false)}
+            updateState={appUpdateState}
+            onCheckForUpdates={handleCheckForAppUpdate}
+            onDownloadUpdate={handleDownloadAppUpdate}
+            onInstallUpdate={handleInstallDownloadedUpdate}
           />
-        )}
 
-        {hasLoadedDiff && !isLoadingDiff && (
-          <SplitHeader
+          {isDevMode && <PerfBar metrics={loadPerfMetrics} />}
+
+          {showSearch && (
+            <SearchBar
+              query={searchQ}
+              isRegex={searchRx}
+              isCaseSensitive={searchCs}
+              isWorkbookMode={isWorkbookMode}
+              workbookSearchScope={searchWorkbookScope}
+              activeSheetName={activeWorkbookSheetName}
+              matchCount={searchMatches.length}
+              activeIdx={activeSearchIdx}
+              results={searchResultItems}
+              onSearch={handleSearch}
+              onPreviewNav={handleSearchPreviewNav}
+              onNav={handleSearchNav}
+              onJump={handleSearchJump}
+              onClose={() => setShowSearch(false)}
+            />
+          )}
+
+          {hasLoadedDiff && !isLoadingDiff && (
+            <SplitHeader
+              baseName={displayBaseName}
+              mineName={displayMineName}
+              baseTitle={baseRoleTitle}
+              mineTitle={mineRoleTitle}
+              baseValueLabel={baseVersionLabel}
+              mineValueLabel={mineVersionLabel}
+              layout={layout}
+              isWorkbookMode={isWorkbookMode}
+              baseRevisionInfo={baseRevisionInfo}
+              mineRevisionInfo={mineRevisionInfo}
+              revisionOptions={revisionOptions}
+              canSwitchRevisions={canSwitchRevisions && isElectron}
+              isLoadingRevisionOptions={revisionOptionsStatus === 'loading'}
+              isSwitchingRevisions={isSwitchingRevisions || isLoadingDiff}
+              revisionHasMore={revisionHasMore}
+              revisionQueryDateTime={revisionQueryDateTime}
+              revisionQueryError={revisionQueryError}
+              isLoadingMoreRevisions={isLoadingMoreRevisions}
+              isSearchingRevisionDateTime={isSearchingRevisionDateTime}
+              onOpenRevisionPicker={handleEnsureRevisionOptionsLoaded}
+              onRevisionChange={handleRevisionCompareChange}
+              onResetCompare={canSwitchRevisions ? handleResetRevisionCompare : undefined}
+              canResetCompare={Boolean(resetPair?.baseRevisionId || resetPair?.mineRevisionId)}
+              onLoadMoreRevisions={handleLoadMoreRevisionOptions}
+              onRevisionDateTimeQuery={handleRevisionDateTimeQuery}
+              onBaseCopy={!isWorkbookMode ? handleCopyBaseVersion : undefined}
+              onMineCopy={!isWorkbookMode ? handleCopyMineVersion : undefined}
+            />
+          )}
+
+          {hasLoadedDiff && isWorkbookMode && (
+            <WorkbookFormulaBar
+              selection={workbookSelection}
+              fontSize={fontSize}
+              baseTitle={baseRoleTitle}
+              mineTitle={mineRoleTitle}
+              freezeState={activeFreezeState}
+              mergeRanges={activeSelectionMergeRanges}
+              onFreezeRow={handleFreezeRow}
+              onFreezeColumn={handleFreezeColumn}
+              onFreezePane={handleFreezePane}
+              onUnfreezeRow={handleUnfreezeRow}
+              onUnfreezeColumn={handleUnfreezeColumn}
+              onResetFreeze={handleResetFreeze}
+            />
+          )}
+          {hasLoadedDiff && isWorkbookMode && workbookArtifactDiff?.hasArtifactOnlyDiff && !artifactNoticeDismissed && (
+            <WorkbookArtifactNoticeBar onClose={() => setArtifactNoticeDismissed(true)} />
+          )}
+          {hasLoadedDiff && diffSourceNoticeCode && !diffSourceNoticeDismissed && (
+            <DiffSourceNoticeBar
+              code={diffSourceNoticeCode}
+              onClose={() => setDiffSourceNoticeDismissed(true)}
+            />
+          )}
+
+          <AppContent
+            loadingLabel={t('appLoadingDiff')}
+            loadPhase={loadPhase}
+            hasLoadedDiff={hasLoadedDiff}
+            loadError={loadError}
+            isElectron={isElectron}
+            isLoadingDiff={isLoadingDiff}
+            isWorkbookMode={isWorkbookMode}
+            layout={layout}
+            panelProps={panelProps}
+            textLayoutSnapshots={textLayoutSnapshotsRef.current}
+            onTextLayoutSnapshotChange={handleTextLayoutSnapshotChange}
+            textSharedExpandedBlocks={textSharedExpandedBlocksRef.current}
+            onTextExpandedBlocksChange={handleTextExpandedBlocksChange}
+            baseRoleTitle={baseRoleTitle}
+            mineRoleTitle={mineRoleTitle}
+            baseVersionLabel={baseVersionLabel}
+            mineVersionLabel={mineVersionLabel}
+            activeWorkbookDiffRegion={activeWorkbookDiffRegion}
+            activeWorkbookTargetCell={activeWorkbookTargetCell}
+            workbookSelection={workbookSelection}
+            onWorkbookSelectionRequest={handleWorkbookSelectionRequest}
+            onWorkbookNavigationReady={handleWorkbookNavigationReady}
+            baseWorkbookMetadata={baseWorkbookMetadata}
+            mineWorkbookMetadata={mineWorkbookMetadata}
+            workbookHiddenStateBySheet={workbookHiddenStateBySheet}
+            workbookFreezeBySheet={workbookFreezeBySheet}
+            workbookColumnWidthBySheet={workbookColumnWidthBySheet}
+            onWorkbookColumnWidthChange={handleWorkbookColumnWidthChange}
+            workbookSections={workbookSections}
+            workbookSectionRowIndex={workbookSectionRowIndex}
+            activeWorkbookSheetName={activeWorkbookSheetName}
+            onActiveWorkbookSheetChange={setActiveWorkbookSheetName}
+            workbookCompareMode={workbookCompareMode}
+            activeWorkbookSharedExpandedBlocks={activeWorkbookSharedExpandedBlocks}
+            onWorkbookExpandedBlocksChange={handleWorkbookExpandedBlocksChange}
+            isDevMode={isDevMode}
+            showHiddenColumns={showHiddenColumns}
+            workbookLayoutSnapshots={workbookLayoutSnapshotsRef.current}
+            onWorkbookLayoutSnapshotChange={handleWorkbookLayoutSnapshotChange}
+            workbookContextMenu={workbookContextMenu}
+            workbookContextMenuSections={workbookContextMenuSections}
+            onCloseWorkbookContextMenu={() => setWorkbookContextMenu(null)}
+            onPickWorkingCopyFile={() => {
+              void handlePickWorkingCopyFile();
+            }}
+            onOpenSvnConfig={handleOpenSvnConfig}
+            setWorkbookHiddenStateBySheet={setWorkbookHiddenStateBySheet}
+            onInitialVisualReady={handleInitialVisualReady}
+          />
+
+          <StatsBar
+            textDiffPresentation={textDiffPresentation}
             baseName={displayBaseName}
             mineName={displayMineName}
-            baseTitle={baseRoleTitle}
-            mineTitle={mineRoleTitle}
-            baseValueLabel={baseVersionLabel}
-            mineValueLabel={mineVersionLabel}
-            layout={layout}
-            isWorkbookMode={isWorkbookMode}
-            baseRevisionInfo={baseRevisionInfo}
-            mineRevisionInfo={mineRevisionInfo}
-            revisionOptions={revisionOptions}
-            canSwitchRevisions={canSwitchRevisions && isElectron}
-            isLoadingRevisionOptions={revisionOptionsStatus === 'loading'}
-            isSwitchingRevisions={isSwitchingRevisions || isLoadingDiff}
-            revisionHasMore={revisionHasMore}
-            revisionQueryDateTime={revisionQueryDateTime}
-            revisionQueryError={revisionQueryError}
-            isLoadingMoreRevisions={isLoadingMoreRevisions}
-            isSearchingRevisionDateTime={isSearchingRevisionDateTime}
-            onOpenRevisionPicker={handleEnsureRevisionOptionsLoaded}
-            onRevisionChange={handleRevisionCompareChange}
-            onResetCompare={canSwitchRevisions ? handleResetRevisionCompare : undefined}
-            canResetCompare={Boolean(resetPair?.baseRevisionId || resetPair?.mineRevisionId)}
-            onLoadMoreRevisions={handleLoadMoreRevisionOptions}
-            onRevisionDateTimeQuery={handleRevisionDateTimeQuery}
-          />
-        )}
-
-        {hasLoadedDiff && isWorkbookMode && (
-          <WorkbookFormulaBar
-            selection={workbookSelection}
-            fontSize={fontSize}
-            baseTitle={baseRoleTitle}
-            mineTitle={mineRoleTitle}
-            freezeState={activeFreezeState}
-            mergeRanges={activeSelectionMergeRanges}
-            onFreezeRow={handleFreezeRow}
-            onFreezeColumn={handleFreezeColumn}
-            onFreezePane={handleFreezePane}
-            onUnfreezeRow={handleUnfreezeRow}
-            onUnfreezeColumn={handleUnfreezeColumn}
-            onResetFreeze={handleResetFreeze}
-          />
-        )}
-        {hasLoadedDiff && isWorkbookMode && workbookArtifactDiff?.hasArtifactOnlyDiff && !artifactNoticeDismissed && (
-          <WorkbookArtifactNoticeBar onClose={() => setArtifactNoticeDismissed(true)} />
-        )}
-        {hasLoadedDiff && diffSourceNoticeCode && !diffSourceNoticeDismissed && (
-          <DiffSourceNoticeBar
-            code={diffSourceNoticeCode}
-            onClose={() => setDiffSourceNoticeDismissed(true)}
-          />
-        )}
-
-        <AppContent
-          loadingLabel={t('appLoadingDiff')}
-          loadPhase={loadPhase}
-          hasLoadedDiff={hasLoadedDiff}
-          loadError={loadError}
-          isElectron={isElectron}
-          isLoadingDiff={isLoadingDiff}
-          isWorkbookMode={isWorkbookMode}
-          layout={layout}
-          panelProps={panelProps}
-          baseRoleTitle={baseRoleTitle}
-          mineRoleTitle={mineRoleTitle}
-          baseVersionLabel={baseVersionLabel}
-          mineVersionLabel={mineVersionLabel}
-          activeWorkbookDiffRegion={activeWorkbookDiffRegion}
-          activeWorkbookTargetCell={activeWorkbookTargetCell}
-          workbookSelection={workbookSelection}
-          onWorkbookSelectionRequest={handleWorkbookSelectionRequest}
-          onWorkbookNavigationReady={handleWorkbookNavigationReady}
-          baseWorkbookMetadata={baseWorkbookMetadata}
-          mineWorkbookMetadata={mineWorkbookMetadata}
-          workbookHiddenStateBySheet={workbookHiddenStateBySheet}
-          workbookFreezeBySheet={workbookFreezeBySheet}
-          workbookColumnWidthBySheet={workbookColumnWidthBySheet}
-          onWorkbookColumnWidthChange={handleWorkbookColumnWidthChange}
-          workbookSections={workbookSections}
-          workbookSectionRowIndex={workbookSectionRowIndex}
-          activeWorkbookSheetName={activeWorkbookSheetName}
-          onActiveWorkbookSheetChange={setActiveWorkbookSheetName}
-          workbookCompareMode={workbookCompareMode}
-          activeWorkbookSharedExpandedBlocks={activeWorkbookSharedExpandedBlocks}
-          onWorkbookExpandedBlocksChange={handleWorkbookExpandedBlocksChange}
-          isDevMode={isDevMode}
-          showHiddenColumns={showHiddenColumns}
-          workbookLayoutSnapshots={workbookLayoutSnapshotsRef.current}
-          onWorkbookLayoutSnapshotChange={handleWorkbookLayoutSnapshotChange}
-          workbookContextMenu={workbookContextMenu}
-          workbookContextMenuSections={workbookContextMenuSections}
-          onCloseWorkbookContextMenu={() => setWorkbookContextMenu(null)}
-          onPickWorkingCopyFile={() => {
-            void handlePickWorkingCopyFile();
-          }}
-          onOpenSvnConfig={handleOpenSvnConfig}
-          setWorkbookHiddenStateBySheet={setWorkbookHiddenStateBySheet}
-        />
-
-        <StatsBar
-          textDiffPresentation={textDiffPresentation}
-          baseName={displayBaseName}
-          mineName={displayMineName}
-          baseTitle={baseStatsTitle}
-          mineTitle={mineStatsTitle}
-          fileName={displayFileName}
-          totalLines={totalLines}
+            baseTitle={baseStatsTitle}
+            mineTitle={mineStatsTitle}
+            fileName={displayFileName}
+            totalLines={totalLines}
           baseVersionLabel={baseVersionLabel}
           mineVersionLabel={mineVersionLabel}
           isWorkbookMode={isWorkbookMode}
           workbookCompareMode={workbookCompareMode}
           workbookArtifactDiff={workbookArtifactDiff}
           workbookSections={workbookSections}
+          lineSelectionSummary={!isWorkbookMode ? textLineSelectionSummary : null}
         />
 
-        <AppDialogs
-          showGoto={showGoto}
-          showHelp={showHelp}
-          showAbout={showAbout}
-          showSvnConfig={showSvnConfig}
-          totalLines={totalLines}
-          onGoto={handleGoto}
-          onCloseGoto={() => setShowGoto(false)}
-          onCloseHelp={() => setShowHelp(false)}
-          onCloseAbout={() => setShowAbout(false)}
-          onCloseSvnConfig={() => setShowSvnConfig(false)}
-          onCloseAll={closeAllDialogs}
-          appUpdateState={appUpdateState}
-          canLaunchUninstaller={canLaunchUninstaller}
-          onCheckForUpdates={handleCheckForAppUpdate}
-          onDownloadUpdate={handleDownloadAppUpdate}
-          onInstallUpdate={handleInstallDownloadedUpdate}
-          onLaunchUninstaller={() => {
-            void handleLaunchUninstaller();
-          }}
-          svnDiffViewerStatus={svnDiffViewerStatus}
-          isLoadingSvnDiffViewerStatus={isLoadingSvnDiffViewerStatus}
-          applyingSvnDiffViewerScope={applyingSvnDiffViewerScope}
-          isRestoringSvnDiffViewerDefault={isRestoringSvnDiffViewerDefault}
-          svnDiffViewerError={svnDiffViewerError}
-          onApplySvnDiffViewerScope={(scope) => {
-            void handleApplySvnDiffViewerScope(scope);
-          }}
-          onRestoreSvnDiffViewerDefault={() => {
-            void handleRestoreSvnDiffViewerDefault();
-          }}
-          onRefreshSvnDiffViewerStatus={() => {
-            void loadSvnDiffViewerStatus();
-          }}
-        />
+          <AppDialogs
+            showGoto={showGoto}
+            showHelp={showHelp}
+            showAbout={showAbout}
+            showSvnConfig={showSvnConfig}
+            totalLines={totalLines}
+            onGoto={handleGoto}
+            onCloseGoto={() => setShowGoto(false)}
+            onCloseHelp={() => setShowHelp(false)}
+            onCloseAbout={() => setShowAbout(false)}
+            onCloseSvnConfig={() => setShowSvnConfig(false)}
+            onCloseAll={closeAllDialogs}
+            appUpdateState={appUpdateState}
+            canLaunchUninstaller={canLaunchUninstaller}
+            onCheckForUpdates={handleCheckForAppUpdate}
+            onDownloadUpdate={handleDownloadAppUpdate}
+            onInstallUpdate={handleInstallDownloadedUpdate}
+            onLaunchUninstaller={() => {
+              void handleLaunchUninstaller();
+            }}
+            svnDiffViewerStatus={svnDiffViewerStatus}
+            isLoadingSvnDiffViewerStatus={isLoadingSvnDiffViewerStatus}
+            applyingSvnDiffViewerScope={applyingSvnDiffViewerScope}
+            isRestoringSvnDiffViewerDefault={isRestoringSvnDiffViewerDefault}
+            svnDiffViewerError={svnDiffViewerError}
+            onApplySvnDiffViewerScope={(scope) => {
+              void handleApplySvnDiffViewerScope(scope);
+            }}
+            onRestoreSvnDiffViewerDefault={() => {
+              void handleRestoreSvnDiffViewerDefault();
+            }}
+            onRefreshSvnDiffViewerStatus={() => {
+              void loadSvnDiffViewerStatus();
+            }}
+          />
+        </div>
       </div>
     </ThemeContext.Provider>
   );

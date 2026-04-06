@@ -1,7 +1,6 @@
 import type { SplitRow, WorkbookMergeRange } from '@/types';
 import {
-  buildWorkbookRowEntry,
-  type WorkbookRowEntry,
+  getWorkbookSideRowNumber,
 } from '@/utils/workbook/workbookNavigation';
 import type { WorkbookCompactRenderMode } from '@/utils/workbook/workbookRowBehavior';
 
@@ -16,8 +15,6 @@ export interface WorkbookStackedLayoutRow {
   row: SplitRow;
   renderMode: WorkbookCompactRenderMode;
   height: number;
-  baseEntry: WorkbookRowEntry | null;
-  mineEntry: WorkbookRowEntry | null;
   baseRowNumber: number | null;
   mineRowNumber: number | null;
 }
@@ -40,7 +37,7 @@ export interface WorkbookStackedMergedCoverageWindow {
 export interface WorkbookStackedTrackItem {
   sourceRowIndex: number;
   renderMode: WorkbookCompactRenderMode;
-  entry: WorkbookRowEntry;
+  rowNumber: number;
 }
 
 export interface WorkbookStackedVisualGroup {
@@ -53,6 +50,8 @@ export interface WorkbookStackedVisualGroup {
   mineTrack: WorkbookStackedTrackItem[];
   mergeWindows: WorkbookStackedMergeCoverageWindow[];
 }
+
+const MAX_PLAIN_ROWS_PER_GROUP = 256;
 
 function buildMergeWindowKey(
   side: 'base' | 'mine',
@@ -83,12 +82,12 @@ function buildTrack(
   side: 'base' | 'mine',
 ): WorkbookStackedTrackItem[] {
   return rows.flatMap((row, sourceRowIndex) => {
-    const entry = side === 'base' ? row.baseEntry : row.mineEntry;
-    return entry
+    const rowNumber = side === 'base' ? row.baseRowNumber : row.mineRowNumber;
+    return rowNumber != null
       ? [{
         sourceRowIndex,
         renderMode: row.renderMode,
-        entry,
+        rowNumber,
       }]
       : [];
   });
@@ -96,40 +95,25 @@ function buildTrack(
 
 export function buildWorkbookStackedLayoutRows(params: {
   rows: WorkbookStackedLayoutRowInput[];
-  sheetName: string;
-  baseVersion: string;
-  mineVersion: string;
-  visibleColumns: number[];
 }): WorkbookStackedLayoutRow[] {
-  const {
-    rows,
-    sheetName,
-    baseVersion,
-    mineVersion,
-    visibleColumns,
-  } = params;
+  const { rows } = params;
 
   return rows.map((item, index) => {
-    const baseEntry = buildWorkbookRowEntry(item.row, 'base', sheetName, baseVersion, visibleColumns);
-    const mineEntry = buildWorkbookRowEntry(item.row, 'mine', sheetName, mineVersion, visibleColumns);
-
     return {
       key: `stacked-layout-row:${index}:${item.row.lineIdx}`,
       row: item.row,
       renderMode: item.renderMode,
       height: item.height,
-      baseEntry,
-      mineEntry,
-      baseRowNumber: baseEntry?.rowNumber ?? null,
-      mineRowNumber: mineEntry?.rowNumber ?? null,
+      baseRowNumber: getWorkbookSideRowNumber(item.row, 'base'),
+      mineRowNumber: getWorkbookSideRowNumber(item.row, 'mine'),
     };
   });
 }
 
 export function buildWorkbookStackedMergeCoverageWindows(params: {
   rows: WorkbookStackedLayoutRow[];
-  baseMergeRanges: WorkbookMergeRange[];
-  mineMergeRanges: WorkbookMergeRange[];
+  baseMergeRanges: ReadonlyArray<WorkbookMergeRange>;
+  mineMergeRanges: ReadonlyArray<WorkbookMergeRange>;
 }): WorkbookStackedMergeCoverageWindow[] {
   const {
     rows,
@@ -138,7 +122,7 @@ export function buildWorkbookStackedMergeCoverageWindows(params: {
   } = params;
 
   const windows: WorkbookStackedMergeCoverageWindow[] = [];
-  const appendWindows = (side: 'base' | 'mine', ranges: WorkbookMergeRange[]) => {
+  const appendWindows = (side: 'base' | 'mine', ranges: ReadonlyArray<WorkbookMergeRange>) => {
     ranges
       .filter(isVerticalMerge)
       .forEach((range) => {
@@ -192,8 +176,8 @@ export function mergeWorkbookStackedCoverageWindows(
 
 export function buildWorkbookStackedVisualGroups(params: {
   rows: WorkbookStackedLayoutRow[];
-  baseMergeRanges: WorkbookMergeRange[];
-  mineMergeRanges: WorkbookMergeRange[];
+  baseMergeRanges: ReadonlyArray<WorkbookMergeRange>;
+  mineMergeRanges: ReadonlyArray<WorkbookMergeRange>;
 }): WorkbookStackedVisualGroup[] {
   const {
     rows,
@@ -230,17 +214,25 @@ export function buildWorkbookStackedVisualGroups(params: {
     });
   };
 
+  const pushPlainGroups = (startIndex: number, endIndex: number) => {
+    if (startIndex > endIndex) return;
+    for (let chunkStart = startIndex; chunkStart <= endIndex; chunkStart += MAX_PLAIN_ROWS_PER_GROUP) {
+      const chunkEnd = Math.min(endIndex, chunkStart + MAX_PLAIN_ROWS_PER_GROUP - 1);
+      pushGroup(chunkStart, chunkEnd, 'plain', []);
+    }
+  };
+
   let cursor = 0;
   mergedWindows.forEach((window) => {
     if (cursor < window.startIndex) {
-      pushGroup(cursor, window.startIndex - 1, 'plain', []);
+      pushPlainGroups(cursor, window.startIndex - 1);
     }
     pushGroup(window.startIndex, window.endIndex, 'merge', window.windows);
     cursor = window.endIndex + 1;
   });
 
   if (cursor < rows.length) {
-    pushGroup(cursor, rows.length - 1, 'plain', []);
+    pushPlainGroups(cursor, rows.length - 1);
   }
 
   return groups;

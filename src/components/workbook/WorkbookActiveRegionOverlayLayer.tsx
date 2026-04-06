@@ -2,22 +2,17 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import type { HorizontalVirtualColumnEntry } from '@/hooks/virtualization/useHorizontalVirtualColumns';
 import type { WorkbookDiffRegion } from '@/types';
 import {
-  buildWorkbookRegionOverlayBoxes,
-  buildWorkbookRegionOverlayBoxesFromGeometry,
+  buildWorkbookPatchOverlayBoxes,
+  buildWorkbookRegionOutlineOverlayBoxes,
   type WorkbookRegionOverlayBoundsMode,
 } from '@/utils/workbook/workbookRegionOverlay';
-import {
-  getWorkbookCanvasSpanGeometry,
-  getWorkbookColumnSpanBounds,
-} from '@/utils/workbook/workbookMergeLayout';
 import { isWorkbookDebugEnabled, workbookDebugLog } from '@/utils/workbook/workbookDebug';
-import { resolveWorkbookRegionTone } from '@/utils/workbook/workbookRowVisuals';
 import WorkbookDiffRegionOverlay, {
   mergeWorkbookDiffRegionOverlayBoxes,
 } from '@/components/workbook/WorkbookDiffRegionOverlay';
 
 interface WorkbookActiveRegionOverlayLayerProps {
-  scrollRef: RefObject<HTMLDivElement>;
+  scrollRef: RefObject<HTMLDivElement | null>;
   viewportWidth: number;
   stickyHeaderHeight: number;
   activeDiffRegion: WorkbookDiffRegion | null;
@@ -36,56 +31,6 @@ interface WorkbookActiveRegionOverlayLayerProps {
 
 const MIN_OVERLAY_BOX_SIZE = 4;
 const OVERLAY_DEBUG_THROTTLE_MS = 120;
-
-function findVisibleRowBounds(
-  visibleRows: Array<[number, { top: number; height: number }]>,
-  startRowIndex: number,
-  endRowIndex: number,
-): {
-  firstVisibleRowIndex: number;
-  lastVisibleRowIndex: number;
-  top: number;
-  bottom: number;
-} | null {
-  if (visibleRows.length === 0) return null;
-
-  let low = 0;
-  let high = visibleRows.length;
-  while (low < high) {
-    const middle = Math.floor((low + high) / 2);
-    if ((visibleRows[middle]?.[0] ?? Number.POSITIVE_INFINITY) < startRowIndex) {
-      low = middle + 1;
-    } else {
-      high = middle;
-    }
-  }
-
-  const firstIndex = low;
-  const firstRow = visibleRows[firstIndex];
-  if (!firstRow || firstRow[0] > endRowIndex) return null;
-
-  low = firstIndex;
-  high = visibleRows.length;
-  while (low < high) {
-    const middle = Math.floor((low + high) / 2);
-    if ((visibleRows[middle]?.[0] ?? Number.NEGATIVE_INFINITY) <= endRowIndex) {
-      low = middle + 1;
-    } else {
-      high = middle;
-    }
-  }
-
-  const lastIndex = Math.max(firstIndex, low - 1);
-  const lastRow = visibleRows[lastIndex];
-  if (!lastRow) return null;
-
-  return {
-    firstVisibleRowIndex: firstRow[0],
-    lastVisibleRowIndex: lastRow[0],
-    top: firstRow[1].top,
-    bottom: lastRow[1].top + lastRow[1].height,
-  };
-}
 
 function summarizeOverlayBoxes(boxes: ReturnType<typeof mergeWorkbookDiffRegionOverlayBoxes>) {
   return boxes.slice(0, 8).map((box) => ({
@@ -164,76 +109,51 @@ const WorkbookActiveRegionOverlayLayer = memo(({
     [visibleRowFrames],
   );
 
-  const resolveBoxes = useCallback((scrollLeft: number) => {
+  const resolveBoxSet = useCallback((scrollLeft: number) => {
     if (
       !activeDiffRegion
       || activeDiffRegion.sheetName !== activeSheetName
       || visibleRowFrames.size === 0
       || viewportWidth <= 0
     ) {
-      return [];
+      return { fillBoxes: [], outlineBoxes: [] };
     }
 
-    const patchBoxes = activeDiffRegion.patches.flatMap((patch, patchIndex) => {
-      if (filterPatch && !filterPatch(patch)) return [];
-
-      const boundsModes = resolvePatchBoundsModes(patch);
-      if (boundsModes.length === 0) return [];
-
-      const visibleBounds = findVisibleRowBounds(
-        sortedVisibleRows,
-        patch.startRowIndex,
-        patch.endRowIndex,
-      );
-      if (!visibleBounds) return [];
-      // NOTE:
-      // visibleRowFrames stores overlay content-space row coordinates. The
-      // canvas is now positioned at canvasAnchorTop in content-space, so box
-      // coordinates are mapped to canvas-space by subtracting canvasAnchorTop
-      // in the WorkbookDiffRegionOverlay draw function.
-
-      return boundsModes.flatMap((boundsMode, boundsIndex) => {
-        const bounds = getWorkbookColumnSpanBounds(
-          patch.startCol,
-          patch.endCol,
-          columnLayoutByColumn,
-          boundsMode,
-          freezeColumnCount,
-        );
-        const geometry = bounds
-          ? getWorkbookCanvasSpanGeometry(bounds, contentLeft, scrollLeft, frozenWidth)
-          : null;
-        if (!geometry) return [];
-
-        return buildWorkbookRegionOverlayBoxesFromGeometry({
-          geometry,
-          keyPrefix: `${activeDiffRegion.id}:${patchIndex}:${boundsMode}:${boundsIndex}`,
-          top: visibleBounds.top,
-          bottom: visibleBounds.bottom,
-          tone: resolveWorkbookRegionTone(patch.hasBaseSide, patch.hasMineSide),
-          openTop: visibleBounds.firstVisibleRowIndex > patch.startRowIndex,
-          openBottom: visibleBounds.lastVisibleRowIndex < patch.endRowIndex,
-        });
-      });
-    });
-
-    const mergedPatchBoxes = mergeWorkbookDiffRegionOverlayBoxes(patchBoxes)
-      .filter((box) => box.width > MIN_OVERLAY_BOX_SIZE && box.height > MIN_OVERLAY_BOX_SIZE);
-    if (mergedPatchBoxes.length > 0 || fallbackBoundsModes.length === 0) {
-      return mergedPatchBoxes;
-    }
-
-    return mergeWorkbookDiffRegionOverlayBoxes(buildWorkbookRegionOverlayBoxes({
+    const fillBoxes = mergeWorkbookDiffRegionOverlayBoxes(buildWorkbookPatchOverlayBoxes({
       region: activeDiffRegion,
-      visibleRowFrames,
-      boundsModes: fallbackBoundsModes,
+      visibleRows: sortedVisibleRows,
       columnLayoutByColumn,
       contentLeft,
       scrollLeft,
       frozenWidth,
       freezeColumnCount,
-      key: `${activeDiffRegion.id}:fallback`,
-    })).filter((box) => box.width > MIN_OVERLAY_BOX_SIZE && box.height > MIN_OVERLAY_BOX_SIZE);
+      resolvePatchBoundsModes,
+      ...(filterPatch ? { filterPatch } : {}),
+      keyPrefix: `${activeDiffRegion.id}:patch`,
+    }))
+      .filter((box) => box.width > MIN_OVERLAY_BOX_SIZE && box.height > MIN_OVERLAY_BOX_SIZE);
+
+    const outlineBoxes = fillBoxes.length > 0
+      ? fillBoxes
+      : mergeWorkbookDiffRegionOverlayBoxes(buildWorkbookRegionOutlineOverlayBoxes({
+        region: activeDiffRegion,
+        visibleRows: sortedVisibleRows,
+        columnLayoutByColumn,
+        contentLeft,
+        scrollLeft,
+        frozenWidth,
+        freezeColumnCount,
+        resolvePatchBoundsModes,
+        fallbackBoundsModes,
+        ...(filterPatch ? { filterPatch } : {}),
+        keyPrefix: `${activeDiffRegion.id}:outline`,
+      }))
+        .filter((box) => box.width > MIN_OVERLAY_BOX_SIZE && box.height > MIN_OVERLAY_BOX_SIZE);
+
+    return {
+      fillBoxes,
+      outlineBoxes,
+    };
   }, [
     activeDiffRegion,
     activeSheetName,
@@ -266,7 +186,7 @@ const WorkbookActiveRegionOverlayLayer = memo(({
     const scroller = scrollRef.current;
     const scrollLeft = Math.max(0, scroller?.scrollLeft ?? 0);
     const scrollTop = Math.max(0, scroller?.scrollTop ?? 0);
-    const resolvedBoxes = resolveBoxes(scrollLeft);
+    const resolvedBoxSet = resolveBoxSet(scrollLeft);
     const visibleRowFrameSample = Array.from(visibleRowFrames.entries())
       .filter(([rowIndex]) => (
         rowIndex >= Math.max(0, activeDiffRegion.startRowIndex - 2)
@@ -314,8 +234,10 @@ const WorkbookActiveRegionOverlayLayer = memo(({
         mineRowEnd: patch.mineRowEnd,
       })),
       visibleRowFrameSample,
-      resolvedBoxCount: resolvedBoxes.length,
-      resolvedBoxes: summarizeOverlayBoxes(resolvedBoxes),
+      fillBoxCount: resolvedBoxSet.fillBoxes.length,
+      fillBoxes: summarizeOverlayBoxes(resolvedBoxSet.fillBoxes),
+      outlineBoxCount: resolvedBoxSet.outlineBoxes.length,
+      outlineBoxes: summarizeOverlayBoxes(resolvedBoxSet.outlineBoxes),
       label: label ?? null,
       pulseNonce,
     });
@@ -324,7 +246,7 @@ const WorkbookActiveRegionOverlayLayer = memo(({
     activeSheetName,
     label,
     pulseNonce,
-    resolveBoxes,
+    resolveBoxSet,
     scrollRef,
     stickyHeaderHeight,
     viewportHeight,
@@ -350,7 +272,7 @@ const WorkbookActiveRegionOverlayLayer = memo(({
           style={{ width: viewportWidth, height: canvasHeight }}>
           <WorkbookDiffRegionOverlay
             scrollRef={scrollRef}
-            resolveBoxes={resolveBoxes}
+            resolveBoxSet={resolveBoxSet}
             viewportWidth={viewportWidth}
             viewportHeight={viewportHeight}
             stickyHeaderHeight={stickyHeaderHeight}

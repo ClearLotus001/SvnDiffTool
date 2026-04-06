@@ -101,6 +101,11 @@ export interface SearchResultItem {
   detail: string;
 }
 
+export interface TextLineSelectionSummary {
+  count: number;
+  rangeLabel: string | null;
+}
+
 export interface DiffPerformanceMetrics {
   source: 'cli' | 'revision-switch' | 'local-dev';
   mainLoadMs?: number;

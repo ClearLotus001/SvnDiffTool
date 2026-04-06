@@ -77,13 +77,19 @@ function resolveLocalModule(fromFile: string, specifier: string): string | null 
       : null;
 
   if (!resolvedBase) return null;
+  const normalizedBase = resolvedBase.replace(/\.(?:[cm]?js|jsx)$/, '');
 
   const candidates = [
     resolvedBase,
+    normalizedBase,
     `${resolvedBase}.ts`,
     `${resolvedBase}.tsx`,
+    `${normalizedBase}.ts`,
+    `${normalizedBase}.tsx`,
     path.join(resolvedBase, 'index.ts'),
     path.join(resolvedBase, 'index.tsx'),
+    path.join(normalizedBase, 'index.ts'),
+    path.join(normalizedBase, 'index.tsx'),
   ];
 
   const match = candidates.find(candidate => fs.existsSync(candidate) && fs.statSync(candidate).isFile());
@@ -158,6 +164,18 @@ function scanFile(absoluteFilePath: string) {
             });
           }
         }
+      }
+    }
+
+    if (
+      ts.isCallExpression(node)
+      && node.expression.kind === ts.SyntaxKind.ImportKeyword
+      && node.arguments.length >= 1
+      && ts.isStringLiteral(node.arguments[0]!)
+    ) {
+      const target = resolveLocalModule(absoluteFilePath, node.arguments[0]!.text);
+      if (target) {
+        addUsage(target, 'default');
       }
     }
 

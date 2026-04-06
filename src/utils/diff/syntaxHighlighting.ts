@@ -1,9 +1,9 @@
 import type { DiffLine, SyntaxPresentation, Token } from '@/types';
 import type { ThemeKey } from '@/theme';
 
-export const MAX_SYNTAX_HIGHLIGHT_TOTAL_CHARS = 300_000;
-export const MAX_SYNTAX_HIGHLIGHT_LINES = 8_000;
-export const MAX_SYNTAX_HIGHLIGHT_LINE_LENGTH = 2_000;
+const MAX_SYNTAX_HIGHLIGHT_TOTAL_CHARS = 300_000;
+const MAX_SYNTAX_HIGHLIGHT_LINES = 8_000;
+const MAX_SYNTAX_HIGHLIGHT_LINE_LENGTH = 2_000;
 
 export function resolveShikiTheme(themeKey: ThemeKey): string {
   switch (themeKey) {

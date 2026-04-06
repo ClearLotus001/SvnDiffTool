@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { useEffect, useMemo, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 
 import type {
   DiffLine,
@@ -12,9 +12,12 @@ import { revealWorkbookSelection } from '@/utils/workbook/workbookManualVisibili
 import { createWorkbookSelectionState } from '@/utils/workbook/workbookSelectionState';
 import {
   buildWorkbookLineSheetContexts,
-  resolveWorkbookSheetNameForLineContext,
   type WorkbookSection,
 } from '@/utils/workbook/workbookSections';
+import {
+  resolveWorkbookNavigationSheetSyncRequest,
+  resolveWorkbookSearchSheetSyncRequest,
+} from '@/utils/workbook/workbookSheetSync';
 import type { WorkbookUiController } from '@/hooks/app/contracts';
 
 interface UseWorkbookViewEffectsArgs {
@@ -25,6 +28,7 @@ interface UseWorkbookViewEffectsArgs {
   isWorkbookMode: boolean;
   selectedCell: WorkbookSelectedCell | null;
   activeSearchIdx: number;
+  searchJumpNonce: number;
   searchMatches: SearchMatch[];
   activeWorkbookDiffRegion: WorkbookDiffRegion | null;
   hunkPositions: number[];
@@ -45,6 +49,7 @@ export default function useWorkbookViewEffects({
   isWorkbookMode,
   selectedCell,
   activeSearchIdx,
+  searchJumpNonce,
   searchMatches,
   activeWorkbookDiffRegion,
   hunkPositions,
@@ -68,6 +73,39 @@ export default function useWorkbookViewEffects({
     () => buildWorkbookLineSheetContexts(diffLines),
     [diffLines],
   );
+  const preferredSheetNameRef = useRef<string | null>(selectedCell?.sheetName ?? null);
+  const lastSearchSheetSyncKeyRef = useRef('');
+  const lastNavigationSheetSyncKeyRef = useRef('');
+
+  useEffect(() => {
+    preferredSheetNameRef.current = selectedCell?.sheetName ?? null;
+  }, [selectedCell?.sheetName]);
+
+  useEffect(() => {
+    lastSearchSheetSyncKeyRef.current = '';
+    lastNavigationSheetSyncKeyRef.current = '';
+  }, [diffLines, workbookSections]);
+
+  const activeSearchRevealSelection = useMemo<WorkbookSelectedCell | null>(() => {
+    if (!isWorkbookMode || activeSearchIdx < 0) return null;
+    const target = searchMatches[activeSearchIdx]?.workbookTarget;
+    if (!target?.sheetName || (target.rowNumber == null && target.colIndex == null)) return null;
+
+    return {
+      kind: target.rowNumber != null
+        ? (target.colIndex != null ? 'cell' : 'row')
+        : 'column',
+      sheetName: target.sheetName,
+      side: target.side ?? selectedCell?.side ?? 'mine',
+      versionLabel: '',
+      rowNumber: target.rowNumber ?? 0,
+      colIndex: target.colIndex ?? -1,
+      colLabel: '',
+      address: '',
+      value: '',
+      formula: '',
+    };
+  }, [activeSearchIdx, isWorkbookMode, searchMatches, selectedCell?.side]);
 
   useEffect(() => {
     setHunkIdx((prev) => {
@@ -96,46 +134,53 @@ export default function useWorkbookViewEffects({
   }, [isWorkbookMode, selectedCell?.sheetName, setActiveWorkbookSheetName]);
 
   useEffect(() => {
-    if (!isWorkbookMode || activeSearchIdx < 0) return;
-    const activeSearchMatch = searchMatches[activeSearchIdx] ?? null;
-    const lineIdx = activeSearchMatch?.lineIdx;
-    if (lineIdx == null) return;
-    const sheetName = activeSearchMatch?.workbookTarget?.sheetName
-      ?? resolveWorkbookSheetNameForLineContext({
-        line: diffLines[lineIdx] ?? null,
-        context: lineSheetContexts[lineIdx] ?? null,
-        preferredSheetName: selectedCell?.sheetName ?? activeWorkbookDiffRegion?.sheetName ?? null,
-      });
-    if (!sheetName) return;
-    setActiveWorkbookSheetName((prev) => (prev === sheetName ? prev : sheetName));
-  }, [activeSearchIdx, activeWorkbookDiffRegion?.sheetName, diffLines, isWorkbookMode, lineSheetContexts, searchMatches, selectedCell?.sheetName, setActiveWorkbookSheetName]);
+    const syncRequest = resolveWorkbookSearchSheetSyncRequest({
+      isWorkbookMode,
+      activeSearchIdx,
+      searchJumpNonce,
+      searchMatches,
+      diffLines,
+      lineSheetContexts,
+      preferredSheetName: preferredSheetNameRef.current,
+      fallbackSheetName: activeWorkbookDiffRegion?.sheetName ?? null,
+    });
+    if (!syncRequest) return;
+    if (lastSearchSheetSyncKeyRef.current === syncRequest.eventKey) return;
+    lastSearchSheetSyncKeyRef.current = syncRequest.eventKey;
+    setActiveWorkbookSheetName((prev) => (prev === syncRequest.sheetName ? prev : syncRequest.sheetName));
+  }, [activeSearchIdx, activeWorkbookDiffRegion?.sheetName, diffLines, isWorkbookMode, lineSheetContexts, searchJumpNonce, searchMatches, setActiveWorkbookSheetName]);
 
   useEffect(() => {
-    if (!isWorkbookMode) return;
-    const activeSearchMatch = activeSearchIdx >= 0 ? (searchMatches[activeSearchIdx] ?? null) : null;
-    if (activeSearchMatch?.workbookTarget?.sheetName) return;
-    const sheetName = activeWorkbookDiffRegion?.sheetName
-      ?? (() => {
-        const targetLineIdx = hunkPositions[hunkIdx];
-        if (targetLineIdx == null) return null;
-        return resolveWorkbookSheetNameForLineContext({
-          line: diffLines[targetLineIdx] ?? null,
-          context: lineSheetContexts[targetLineIdx] ?? null,
-          preferredSheetName: selectedCell?.sheetName ?? null,
-        });
-      })();
-    if (!sheetName) return;
-    setActiveWorkbookSheetName((prev) => (prev === sheetName ? prev : sheetName));
+    if (!activeSearchRevealSelection) return;
+    setWorkbookHiddenStateBySheet((prev) => revealWorkbookSelection(prev, activeSearchRevealSelection));
+    setWorkbookContextMenu(null);
+  }, [activeSearchRevealSelection, searchJumpNonce, setWorkbookContextMenu, setWorkbookHiddenStateBySheet]);
+
+  useEffect(() => {
+    const syncRequest = resolveWorkbookNavigationSheetSyncRequest({
+      isWorkbookMode,
+      activeSearchIdx,
+      searchMatches,
+      activeWorkbookDiffRegion,
+      hunkIdx,
+      hunkPositions,
+      diffLines,
+      lineSheetContexts,
+      preferredSheetName: preferredSheetNameRef.current,
+    });
+    if (!syncRequest) return;
+    if (lastNavigationSheetSyncKeyRef.current === syncRequest.eventKey) return;
+    lastNavigationSheetSyncKeyRef.current = syncRequest.eventKey;
+    setActiveWorkbookSheetName((prev) => (prev === syncRequest.sheetName ? prev : syncRequest.sheetName));
   }, [
     activeSearchIdx,
-    activeWorkbookDiffRegion?.sheetName,
+    activeWorkbookDiffRegion,
     diffLines,
     hunkIdx,
     hunkPositions,
     isWorkbookMode,
     lineSheetContexts,
     searchMatches,
-    selectedCell?.sheetName,
     setActiveWorkbookSheetName,
   ]);
 

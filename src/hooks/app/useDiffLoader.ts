@@ -7,8 +7,9 @@ import type {
   WorkbookCompareMode,
   WorkbookMetadataSource,
 } from '@/types';
-import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
+import { EMPTY_COLLAPSE_EXPANSION_STATE, type CollapseExpansionState } from '@/utils/collapse/collapseState';
 import { buildDiffCacheKey } from '@/utils/diff/diffCacheKey';
+import { createEmptyTextLayoutSnapshots, type TextLayoutSnapshotsByMode } from '@/utils/diff/textLayoutState';
 import { isWorkbookFileName, resolveDiffTexts } from '@/utils/diff/diffSource';
 import { computeTextDiffAsync } from '@/utils/diff/computeTextDiffAsync';
 import { createEmptyWorkbookLayoutSnapshots, type WorkbookLayoutSnapshotsByMode } from '@/utils/workbook/workbookLayoutState';
@@ -39,6 +40,8 @@ interface UseDiffLoaderArgs {
   workbookCompareModeRef: MutableRefObject<WorkbookCompareMode>;
   currentDiffDataRef: MutableRefObject<DiffData | null>;
   diffResultCacheRef: MutableRefObject<Map<string, CachedDiffResult>>;
+  textLayoutSnapshotsRef: MutableRefObject<TextLayoutSnapshotsByMode>;
+  textSharedExpandedBlocksRef: MutableRefObject<CollapseExpansionState>;
   workbookLayoutSnapshotsRef: MutableRefObject<WorkbookLayoutSnapshotsByMode>;
   workbookSharedExpandedBlocksRef: MutableRefObject<Map<string, CollapseExpansionState>>;
   revisionQuerySeqRef: MutableRefObject<number>;
@@ -70,6 +73,8 @@ export default function useDiffLoader({
   workbookCompareModeRef,
   currentDiffDataRef,
   diffResultCacheRef,
+  textLayoutSnapshotsRef,
+  textSharedExpandedBlocksRef,
   workbookLayoutSnapshotsRef,
   workbookSharedExpandedBlocksRef,
   revisionQuerySeqRef,
@@ -144,6 +149,8 @@ export default function useDiffLoader({
     setWorkbookFreezeBySheet({});
     setWorkbookColumnWidthBySheet({});
     setActiveWorkbookSheetName(null);
+    textLayoutSnapshotsRef.current = createEmptyTextLayoutSnapshots();
+    textSharedExpandedBlocksRef.current = EMPTY_COLLAPSE_EXPANSION_STATE;
     workbookLayoutSnapshotsRef.current = createEmptyWorkbookLayoutSnapshots();
     workbookSharedExpandedBlocksRef.current = new Map();
   }, [
@@ -153,6 +160,8 @@ export default function useDiffLoader({
     setWorkbookFreezeBySheet,
     setWorkbookHiddenStateBySheet,
     setWorkbookSelection,
+    textLayoutSnapshotsRef,
+    textSharedExpandedBlocksRef,
     workbookLayoutSnapshotsRef,
     workbookSharedExpandedBlocksRef,
   ]);

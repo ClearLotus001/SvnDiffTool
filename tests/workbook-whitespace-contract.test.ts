@@ -12,8 +12,10 @@ import { buildWorkbookSectionRowIndex } from '../src/utils/workbook/workbookShee
 import {
   buildWorkbookCompareCells,
   buildWorkbookCompareRowState,
+  buildWorkbookSplitRowCompareState,
   parseWorkbookRowLine,
 } from '../src/utils/workbook/workbookCompare';
+import { getWorkbookMiniMapTone } from '../src/utils/workbook/workbookPanelHelpers';
 
 function escapeXml(value: string) {
   return value
@@ -186,4 +188,20 @@ test('row delta content mode collapses whitespace-only changes into equality', (
   assert.deepEqual(rowDelta.changedColumns, []);
   assert.deepEqual(rowDelta.strictOnlyColumns, []);
   assert.equal(rowDelta.tone, 'equal');
+});
+
+test('workbook minimap keeps strict-only rows on the blue strict-only tone', () => {
+  const baseText = workbookBytesToText(buildSharedStringWorkbook(' '), 'strict-space-base.xlsx');
+  const mineText = workbookBytesToText(buildSharedStringWorkbook(null), 'strict-space-mine.xlsx');
+  const diffLines = computeWorkbookDiff(baseText, mineText);
+  const rows = buildWorkbookSectionRowIndex(diffLines, getWorkbookSections(diffLines)).get('Thing')?.rows ?? [];
+  const changedRow = rows.find((row) => {
+    const left = parseWorkbookRowLine(row.left);
+    const right = parseWorkbookRowLine(row.right);
+    return left?.rowNumber === 2 && right?.rowNumber === 2;
+  });
+
+  assert.ok(changedRow);
+  assert.equal(buildWorkbookSplitRowCompareState(changedRow, undefined, 'strict').strictOnlyColumns.includes(1), true);
+  assert.equal(getWorkbookMiniMapTone(changedRow, [], 'strict'), 'strict-only');
 });

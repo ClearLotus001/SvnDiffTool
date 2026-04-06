@@ -69,8 +69,8 @@ const STATIC_THEME_TOKENS: Record<ThemeKey, ThemeTokens> = {
     miniAdd: '#34d399',
     miniDel: '#f87171',
     miniVp: '#27272a',
-    searchHl: '#7dd3fc',
-    searchActiveBg: 'rgba(125, 211, 252, 0.24)',
+    searchHl: '#38bdf8',
+    searchActiveBg: 'rgba(56, 189, 248, 0.30)',
     glassBlur: 'blur(12px)',
   },
   light: {
@@ -111,8 +111,8 @@ const STATIC_THEME_TOKENS: Record<ThemeKey, ThemeTokens> = {
     miniAdd: '#10b981',
     miniDel: '#ef4444',
     miniVp: '#e4e4e7',
-    searchHl: '#1d4ed8',
-    searchActiveBg: 'rgba(29, 78, 216, 0.18)',
+    searchHl: '#2563eb',
+    searchActiveBg: 'rgba(37, 99, 235, 0.24)',
     glassBlur: 'blur(16px)',
   },
   hc: {
@@ -154,7 +154,7 @@ const STATIC_THEME_TOKENS: Record<ThemeKey, ThemeTokens> = {
     miniDel: '#ff00ff',
     miniVp: '#333333',
     searchHl: '#00ffff',
-    searchActiveBg: 'rgba(0, 255, 255, 0.28)',
+    searchActiveBg: 'rgba(0, 255, 255, 0.38)',
     glassBlur: 'blur(0px)',
   },
 };

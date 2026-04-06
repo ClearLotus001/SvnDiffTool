@@ -1,5 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import fs from 'node:fs';
 import net from 'node:net';
+import os from 'node:os';
 import path from 'node:path';
 
 const rootDir = path.resolve(__dirname, '..');
@@ -7,9 +10,68 @@ const devServerHost = '127.0.0.1';
 const viteCliPath = path.join(rootDir, 'node_modules', 'vite', 'bin', 'vite.js');
 const tscCliPath = path.join(rootDir, 'node_modules', 'typescript', 'bin', 'tsc');
 const tsxCliPath = path.join(rootDir, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+const devAppLockHash = createHash('sha1').update(rootDir).digest('hex').slice(0, 10);
+const devAppLockDir = path.join(os.tmpdir(), 'SvnExcelDiffTool-dev');
+const devAppLockPath = path.join(devAppLockDir, `dev-app-${devAppLockHash}.lock.json`);
 
 const processes: ChildProcess[] = [];
 let shuttingDown = false;
+
+function isProcessAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function releaseDevAppLock() {
+  try {
+    if (!fs.existsSync(devAppLockPath)) return;
+    const raw = fs.readFileSync(devAppLockPath, 'utf-8');
+    const parsed = JSON.parse(raw) as { pid?: number };
+    if (parsed.pid !== process.pid) return;
+    fs.rmSync(devAppLockPath, { force: true });
+  } catch {
+    // Ignore best-effort lock cleanup failures.
+  }
+}
+
+function acquireDevAppLock() {
+  fs.mkdirSync(devAppLockDir, { recursive: true });
+
+  if (fs.existsSync(devAppLockPath)) {
+    try {
+      const raw = fs.readFileSync(devAppLockPath, 'utf-8');
+      const parsed = JSON.parse(raw) as { pid?: number; startedAt?: string; cwd?: string };
+      const existingPid = Number(parsed.pid ?? 0);
+      if (isProcessAlive(existingPid) && existingPid !== process.pid) {
+        throw new Error(
+          `Another 'npm run dev:app' is already running (pid ${existingPid}). ` +
+          'Please stop the existing dev session before starting a new one.',
+        );
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("Another 'npm run dev:app'")) {
+        throw error;
+      }
+    }
+
+    try {
+      fs.rmSync(devAppLockPath, { force: true });
+    } catch {
+      // Ignore stale lock cleanup failures; write below will surface issues.
+    }
+  }
+
+  fs.writeFileSync(devAppLockPath, JSON.stringify({
+    pid: process.pid,
+    cwd: rootDir,
+    startedAt: new Date().toISOString(),
+  }), 'utf-8');
+}
 
 function startChild(command: string, args: string[], label: string, env: NodeJS.ProcessEnv) {
   const child = spawn(command, args, {
@@ -42,6 +104,7 @@ function shutdown(exitCode = 0) {
     }
   }
 
+  releaseDevAppLock();
   setTimeout(() => process.exit(exitCode), 50);
 }
 
@@ -49,10 +112,12 @@ process.on('SIGINT', () => shutdown(0));
 process.on('SIGTERM', () => shutdown(0));
 
 async function main() {
+  acquireDevAppLock();
   const devServerPort = await findAvailablePort(5173);
   const devServerUrl = `http://${devServerHost}:${devServerPort}`;
   const childEnv: NodeJS.ProcessEnv = {
     ...process.env,
+    NODE_ENV: 'development',
     DEV_SERVER_URL: devServerUrl,
   };
 
@@ -85,5 +150,6 @@ function canListen(port: number): Promise<boolean> {
 
 void main().catch((error) => {
   console.error('[dev-app] failed to start', error);
+  releaseDevAppLock();
   shutdown(1);
 });

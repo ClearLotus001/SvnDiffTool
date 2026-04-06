@@ -20,9 +20,3 @@ ReactDOM.createRoot(root).render(
     </I18nProvider>
   </React.StrictMode>
 );
-
-window.requestAnimationFrame(() => {
-  window.requestAnimationFrame(() => {
-    window.svnDiff?.notifyRendererReady?.();
-  });
-});

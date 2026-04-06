@@ -139,19 +139,18 @@ function parseCellValue(cell: XmlNode, sharedStrings: string[]): WorkbookCellDis
   const rawValue = normalizeCellValue(collectOpenXmlText(cell.v));
   const formula = normalizeCellValue(collectOpenXmlText(cell.f));
 
-  let value = '';
-  if (type === 's') {
+  const value = type === 's'
+    ? (() => {
     const index = Number(rawValue.trim());
-    value = Number.isFinite(index) ? normalizeCellValue(sharedStrings[index] ?? '') : rawValue;
-  } else if (type === 'inlineStr') {
-    value = normalizeCellValue(collectOpenXmlText(cell.is));
-  } else if (type === 'b') {
-    value = rawValue === '1' ? 'TRUE' : 'FALSE';
-  } else if (type === 'e') {
-    value = rawValue ? `#${rawValue}` : '#ERROR';
-  } else {
-    value = rawValue;
-  }
+      return Number.isFinite(index) ? normalizeCellValue(sharedStrings[index] ?? '') : rawValue;
+    })()
+    : type === 'inlineStr'
+      ? normalizeCellValue(collectOpenXmlText(cell.is))
+      : type === 'b'
+        ? (rawValue === '1' ? 'TRUE' : 'FALSE')
+        : type === 'e'
+          ? (rawValue ? `#${rawValue}` : '#ERROR')
+          : rawValue;
 
   if (formula) {
     const normalizedFormula = `=${formula}`;

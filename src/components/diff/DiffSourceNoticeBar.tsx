@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { X } from 'lucide-react';
 import { useI18n } from '@/context/i18n';
 import type { DiffSourceNoticeCode } from '@/types';
+import { resolveDiffIndicatorCssPalette } from '@/utils/diff/diffIndicatorVisuals';
 import Tooltip from '@/components/shared/Tooltip';
 
 interface DiffSourceNoticeBarProps {
@@ -11,6 +12,7 @@ interface DiffSourceNoticeBarProps {
 
 const DiffSourceNoticeBar = memo(({ code, onClose }: DiffSourceNoticeBarProps) => {
   const { t } = useI18n();
+  const neutralPalette = resolveDiffIndicatorCssPalette('neutral');
 
   const title = code === 'unversioned-working-copy'
     ? t('sourceNoticeUnversionedTitle')
@@ -23,14 +25,16 @@ const DiffSourceNoticeBar = memo(({ code, onClose }: DiffSourceNoticeBarProps) =
     <div
       role="status"
       aria-live="polite"
-      className="
-        grid grid-cols-[minmax(0,1fr)_28px] gap-3 items-center
-        py-2.5 px-3.5 mx-2.5 rounded-[14px]
-        border border-accent/20 bg-bg-base
-        shadow-sm relative overflow-hidden shrink-0
-      ">
+      className="grid grid-cols-[minmax(0,1fr)_28px] gap-3 items-center py-2.5 px-3.5 mx-2.5 rounded-[14px] relative overflow-hidden shrink-0"
+      style={{
+        border: `1px solid ${neutralPalette.border}`,
+        background: `linear-gradient(180deg, ${neutralPalette.softBackground} 0%, var(--bg-base) 100%)`,
+        boxShadow: `0 10px 20px -24px ${neutralPalette.shadow}`,
+      }}>
       <div className="min-w-0 w-full text-center justify-self-center relative z-[1]">
-        <div className="text-accent font-ui text-[13px] font-extrabold leading-tight text-center">
+        <div
+          className="font-ui text-[13px] font-extrabold leading-tight text-center"
+          style={{ color: neutralPalette.text }}>
           {title}
         </div>
         <div className="mt-1 text-text-primary font-ui text-[13px] leading-snug text-center">

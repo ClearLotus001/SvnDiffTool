@@ -89,7 +89,7 @@ function computeVariableRange(params: {
 
 export function useVariableVirtual(
   heights: number[],
-  scrollRef: RefObject<HTMLDivElement>,
+  scrollRef: RefObject<HTMLDivElement | null>,
   options: UseVariableVirtualOptions = {},
 ): VariableVirtualResult {
   const overscanMin = options.overscanMin ?? DEFAULT_OVERSCAN_MIN;

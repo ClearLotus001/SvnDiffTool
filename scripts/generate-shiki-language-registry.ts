@@ -8,6 +8,70 @@ interface PackageJsonExports {
   exports?: Record<string, string>;
 }
 
+const COMMON_SHIKI_LANGUAGES = new Set<string>([
+  'bash',
+  'bat',
+  'c',
+  'cmake',
+  'codeowners',
+  'cpp',
+  'csharp',
+  'css',
+  'csv',
+  'diff',
+  'docker',
+  'dockerfile',
+  'dotenv',
+  'go',
+  'graphql',
+  'groovy',
+  'hcl',
+  'html',
+  'ini',
+  'java',
+  'javascript',
+  'jinja',
+  'json',
+  'json5',
+  'jsonc',
+  'jsonl',
+  'jsx',
+  'kotlin',
+  'less',
+  'lua',
+  'makefile',
+  'markdown',
+  'mdx',
+  'mermaid',
+  'mmd',
+  'nginx',
+  'nix',
+  'nu',
+  'perl',
+  'php',
+  'powershell',
+  'proto',
+  'python',
+  'r',
+  'ruby',
+  'rust',
+  'sass',
+  'scala',
+  'scss',
+  'shellscript',
+  'sql',
+  'swift',
+  'tf',
+  'tfvars',
+  'toml',
+  'tsx',
+  'typescript',
+  'vue',
+  'xml',
+  'yaml',
+  'yml',
+]);
+
 function sortLanguages(values: string[]): string[] {
   return [...values].sort((left, right) => left.localeCompare(right));
 }
@@ -17,7 +81,7 @@ function toSupportedLanguagesSource(languages: string[]): string {
   return `// AUTO-GENERATED FILE. DO NOT EDIT.
 // Run: npm run generate:shiki-registry
 
-export const SUPPORTED_SHIKI_LANGUAGES = [
+const SUPPORTED_SHIKI_LANGUAGES = [
 ${entries}
 ] as const;
 
@@ -56,13 +120,17 @@ async function main() {
   const packageJson = JSON.parse(
     await fs.readFile(packageJsonPath, 'utf-8'),
   ) as PackageJsonExports;
+  const profile = process.env.SVN_DIFF_SHIKI_PROFILE === 'full' ? 'full' : 'common';
 
   const exportsMap = packageJson.exports ?? {};
-  const languages = sortLanguages(
+  const allLanguages = sortLanguages(
     Object.keys(exportsMap)
       .filter((key) => key !== '.')
       .map((key) => key.replace(/^\.\//, '')),
   );
+  const languages = profile === 'full'
+    ? allLanguages
+    : allLanguages.filter((language) => COMMON_SHIKI_LANGUAGES.has(language));
 
   const generatedDir = path.join(process.cwd(), 'src', 'generated');
   await fs.mkdir(generatedDir, { recursive: true });
@@ -80,7 +148,7 @@ async function main() {
     ),
   ]);
 
-  console.log(`Generated Shiki language registry for ${languages.length} entries.`);
+  console.log(`Generated Shiki language registry for ${languages.length} entries (${profile} profile).`);
 }
 
 void main();

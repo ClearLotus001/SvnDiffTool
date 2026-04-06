@@ -4,6 +4,7 @@ import type { TranslationFn } from '@/context/i18n';
 import { copyText } from '@/utils/app/clipboard';
 import { exportTextFile } from '@/utils/app/fileExport';
 import { buildRendererDiagnosticReport } from '@/utils/app/rendererDiagnostics';
+import { closeCurrentWindow, retryCurrentPage } from '@/utils/app/windowActions';
 
 interface AppErrorBoundaryProps {
   children: React.ReactNode;
@@ -77,6 +78,14 @@ class AppErrorBoundaryInner extends React.Component<AppErrorBoundaryProps, AppEr
     })();
   };
 
+  private handleRetry = () => {
+    retryCurrentPage();
+  };
+
+  private handleClose = () => {
+    closeCurrentWindow();
+  };
+
   private handleExportReport = () => {
     void (async () => {
       try {
@@ -121,6 +130,20 @@ class AppErrorBoundaryInner extends React.Component<AppErrorBoundaryProps, AppEr
             {this.state.message}
           </div>
           <div className="flex flex-wrap gap-2 pt-1">
+            <button
+              type="button"
+              onClick={this.handleRetry}
+              className="h-8 px-3 rounded-[9px] border border-transparent bg-accent text-bg-base font-ui text-[13px] font-semibold cursor-pointer hover:bg-accent-hover active:scale-[0.97] transition-all duration-150"
+            >
+              {this.props.t('rendererErrorRetryAction')}
+            </button>
+            <button
+              type="button"
+              onClick={this.handleClose}
+              className="h-8 px-3 rounded-[9px] border border-border-strong bg-transparent text-text-primary font-ui text-[13px] font-semibold cursor-pointer hover:bg-bg-surface-hover hover:text-accent active:scale-[0.97] transition-all duration-150"
+            >
+              {this.props.t('rendererErrorCloseAction')}
+            </button>
             <button
               type="button"
               onClick={this.handleCopyReport}

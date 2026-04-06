@@ -17,6 +17,10 @@ import {
   buildWorkbookSectionRowIndexFromPrecomputedDelta,
   type IndexedWorkbookSectionRows,
 } from '@/utils/workbook/workbookSheetIndex';
+import {
+  getWorkbookSheetMaxRowNumber,
+  resolveWorkbookGotoTarget,
+} from '@/utils/workbook/workbookGoto';
 import { parseWorkbookDisplayLine } from '@/utils/workbook/workbookDisplay';
 import {
   buildWorkbookDiffRegions,
@@ -29,6 +33,8 @@ import { resolveWorkbookSearchMatchTarget } from '@/utils/workbook/workbookNavig
 import { getCompareContextLabels } from '@/hooks/app/helpers';
 import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
 import { useAppStore } from '@/store/appStore';
+import { createWorkbookSelectionState } from '@/utils/workbook/workbookSelectionState';
+import { revealWorkbookSelection } from '@/utils/workbook/workbookManualVisibility';
 
 interface UseAppViewModelArgs {
   t: TranslationFn;
@@ -119,6 +125,9 @@ export default function useAppViewModel({
   const setSearchWorkbookScope = useAppStore((s) => s.setSearchWorkbookScope);
   const setActiveSearchIdx = useAppStore((s) => s.setActiveSearchIdx);
   const setSearchJumpNonce = useAppStore((s) => s.setSearchJumpNonce);
+  const setWorkbookSelection = useAppStore((s) => s.setWorkbookSelection);
+  const setWorkbookHiddenStateBySheet = useAppStore((s) => s.setWorkbookHiddenStateBySheet);
+  const setWorkbookContextMenu = useAppStore((s) => s.setWorkbookContextMenu);
 
   // ── Derived state (same logic as before) ─────────────────────────────
   const displayBaseName = (
@@ -222,11 +231,8 @@ export default function useAppViewModel({
     [diffLines, hasSearchQuery],
   );
   const workbookLineSheetContexts = useMemo(
-    () => {
-      if (!shouldBuildWorkbookLineSheetContexts) return [];
-      return buildWorkbookLineSheetContexts(diffLines);
-    },
-    [diffLines, shouldBuildWorkbookLineSheetContexts],
+    () => ((shouldBuildWorkbookLineSheetContexts || isWorkbookCandidate) ? buildWorkbookLineSheetContexts(diffLines) : []),
+    [diffLines, isWorkbookCandidate, shouldBuildWorkbookLineSheetContexts],
   );
   useEffect(() => {
     const seq = ++searchSeqRef.current;
@@ -343,13 +349,22 @@ export default function useAppViewModel({
   }, [activeWorkbookDiffRegion, isWorkbookMode]);
 
   const totalLines = useMemo(() => {
+    if (isWorkbookMode) {
+      const activeSheetMaxRow = getWorkbookSheetMaxRowNumber(
+        diffLines,
+        workbookLineSheetContexts,
+        activeWorkbookSheetName,
+      );
+      if (activeSheetMaxRow > 0) return activeSheetMaxRow;
+    }
+
     let max = 0;
     diffLines.forEach((line) => {
       const lineMax = Math.max(line.baseLineNo ?? 0, line.mineLineNo ?? 0);
       if (lineMax > max) max = lineMax;
     });
     return max;
-  }, [diffLines]);
+  }, [activeWorkbookSheetName, diffLines, isWorkbookMode, workbookLineSheetContexts]);
   const searchResultItems = useMemo<SearchResultItem[]>(() => searchMatches.map((match, index) => {
     const line = diffLines[match.lineIdx] ?? null;
     const workbookTarget = match.workbookTarget;
@@ -458,6 +473,37 @@ export default function useAppViewModel({
   const handleGoto = useCallback((lineNo: number) => {
     if (!scrollToIndexRef.current) return;
 
+    if (isWorkbookMode && activeWorkbookSheetName) {
+      const resolvedGotoTarget = resolveWorkbookGotoTarget({
+        lineNo,
+        diffLines,
+        lineSheetContexts: workbookLineSheetContexts,
+        sheetName: activeWorkbookSheetName,
+        preferredSide: selectedCell?.sheetName === activeWorkbookSheetName
+          ? selectedCell.side
+          : null,
+        preferredColumn: selectedCell?.kind !== 'column'
+          ? (selectedCell?.colIndex ?? 0)
+          : selectedCell.colIndex,
+        preferredColumnLabel: selectedCell?.colLabel,
+        baseVersionLabel,
+        mineVersionLabel,
+      });
+
+      if (resolvedGotoTarget) {
+        setWorkbookSelection(createWorkbookSelectionState(resolvedGotoTarget.selection));
+        setWorkbookHiddenStateBySheet((prev) => revealWorkbookSelection(prev, resolvedGotoTarget.selection));
+        setWorkbookContextMenu(null);
+        scrollToIndexRef.current(resolvedGotoTarget.lineIdx, 'center');
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            scrollToIndexRef.current?.(resolvedGotoTarget.lineIdx, 'center');
+          });
+        });
+        return;
+      }
+    }
+
     // O(1) exact match via pre-built index
     const exactIdx = lineNoToIdx.get(lineNo);
     if (exactIdx !== undefined) {
@@ -484,7 +530,20 @@ export default function useAppViewModel({
     if (diffLines.length > 0) {
       scrollToIndexRef.current(nearestIdx, 'center');
     }
-  }, [diffLines, lineNoToIdx, scrollToIndexRef]);
+  }, [
+    activeWorkbookSheetName,
+    baseVersionLabel,
+    diffLines,
+    isWorkbookMode,
+    lineNoToIdx,
+    mineVersionLabel,
+    scrollToIndexRef,
+    selectedCell,
+    setWorkbookContextMenu,
+    setWorkbookHiddenStateBySheet,
+    setWorkbookSelection,
+    workbookLineSheetContexts,
+  ]);
 
   return {
     displayBaseName,

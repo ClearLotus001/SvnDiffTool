@@ -5,6 +5,9 @@ export function normalizeWorkbookCanvasText(value: string): string {
     .replace(/\r/g, '\n');
 }
 
+const WORKBOOK_CANVAS_CELL_TEXT_PADDING_X = 6;
+const WORKBOOK_CANVAS_CELL_TEXT_PADDING_Y = 2;
+
 export function splitWorkbookCanvasTextLines(value: string): string[] {
   const normalized = normalizeWorkbookCanvasText(value).replace(/\s\/\s/g, '\n').trim();
   if (!normalized) return [];
@@ -71,4 +74,50 @@ export function layoutWorkbookCanvasTextLines(params: {
     ? `${lastLine}…`
     : ellipsizeWorkbookCanvasLine(lastLine, maxWidth, measureText);
   return clipped;
+}
+
+const workbookCanvasFontMetricCache = new Map<string, { ascent: number; descent: number }>();
+const WORKBOOK_CANVAS_TEXT_SAMPLE = 'Hg国';
+
+function getWorkbookCanvasFontMetrics(
+  ctx: Pick<CanvasRenderingContext2D, 'font' | 'measureText'>,
+  fallbackFontSize: number,
+): { ascent: number; descent: number } {
+  const cacheKey = ctx.font || `${fallbackFontSize}px system-ui`;
+  const cached = workbookCanvasFontMetricCache.get(cacheKey);
+  if (cached) return cached;
+
+  const metrics = ctx.measureText(WORKBOOK_CANVAS_TEXT_SAMPLE);
+  const ascent = metrics.actualBoundingBoxAscent > 0
+    ? metrics.actualBoundingBoxAscent
+    : Math.max(1, fallbackFontSize * 0.78);
+  const descent = metrics.actualBoundingBoxDescent > 0
+    ? metrics.actualBoundingBoxDescent
+    : Math.max(1, fallbackFontSize * 0.22);
+  const resolved = { ascent, descent };
+  workbookCanvasFontMetricCache.set(cacheKey, resolved);
+  return resolved;
+}
+
+export function getWorkbookCanvasTextBaselineY(
+  ctx: Pick<CanvasRenderingContext2D, 'font' | 'measureText'>,
+  centerY: number,
+  fallbackFontSize: number,
+): number {
+  const { ascent, descent } = getWorkbookCanvasFontMetrics(ctx, fallbackFontSize);
+  return centerY + ((ascent - descent) / 2);
+}
+
+export function getWorkbookCanvasTextInsetRect(
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+): { left: number; top: number; width: number; height: number } {
+  return {
+    left: left + WORKBOOK_CANVAS_CELL_TEXT_PADDING_X,
+    top: top + WORKBOOK_CANVAS_CELL_TEXT_PADDING_Y,
+    width: Math.max(0, width - (WORKBOOK_CANVAS_CELL_TEXT_PADDING_X * 2)),
+    height: Math.max(0, height - (WORKBOOK_CANVAS_CELL_TEXT_PADDING_Y * 2)),
+  };
 }

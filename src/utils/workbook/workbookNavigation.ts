@@ -116,7 +116,7 @@ export function buildWorkbookRowEntry(
 export function buildWorkbookSelectedCell(
   entry: WorkbookRowEntry,
   requestedColIndex: number,
-  mergeRanges: WorkbookMergeRange[] = [],
+  mergeRanges: ReadonlyArray<WorkbookMergeRange> = [],
 ): WorkbookSelectedCell {
   const fallbackColumns = entry.cells.map((_, index) => index);
   const visibleColumns = entry.visibleColumns.length > 0 ? entry.visibleColumns : fallbackColumns;
@@ -222,44 +222,13 @@ export function resolveWorkbookSearchMatchTarget(
   };
 }
 
-export function buildWorkbookSearchMatchSelection(
-  row: SplitRow,
-  line: DiffLine | null,
-  match: Pick<SearchMatch, 'start' | 'end'>,
-  sheetName: string,
-  versionLabels: Record<'base' | 'mine', string>,
-  visibleColumns: number[] = [],
-  mergeRangesBySide: Partial<Record<'base' | 'mine', WorkbookMergeRange[]>> = {},
-): WorkbookSelectedCell | null {
-  const side = resolveWorkbookSearchSide(line);
-  if (!side) return null;
-
-  const requestedColIndex = resolveWorkbookSearchMatchColumnIndex(line, match);
-  if (requestedColIndex == null) return null;
-
-  const entry = buildWorkbookRowEntry(
-    row,
-    side,
-    sheetName,
-    versionLabels[side],
-    visibleColumns.length > 0 ? [] : visibleColumns,
-  );
-  if (!entry) return null;
-
-  return buildWorkbookSelectedCell(
-    entry,
-    requestedColIndex,
-    mergeRangesBySide[side] ?? [],
-  );
-}
-
 export function buildWorkbookSearchSelectionFromTarget(
   target: WorkbookSearchTarget | null | undefined,
   rowEntryByRowNumber: {
     base: Map<number, WorkbookRowEntry>;
     mine: Map<number, WorkbookRowEntry>;
   },
-  mergeRangesBySide: Partial<Record<'base' | 'mine', WorkbookMergeRange[]>> = {},
+  mergeRangesBySide: Partial<Record<'base' | 'mine', ReadonlyArray<WorkbookMergeRange>>> = {},
 ): WorkbookSelectedCell | null {
   if (!target?.side || target.rowNumber == null) return null;
 
@@ -290,7 +259,7 @@ export function moveWorkbookSelection(
   entries: WorkbookRowEntry[],
   selection: WorkbookSelectedCell | null,
   direction: WorkbookMoveDirection,
-  mergeRangesBySide: Partial<Record<'base' | 'mine', WorkbookMergeRange[]>> = {},
+  mergeRangesBySide: Partial<Record<'base' | 'mine', ReadonlyArray<WorkbookMergeRange>>> = {},
 ): WorkbookSelectedCell | null {
   if (!selection || selection.kind !== 'cell') return null;
 

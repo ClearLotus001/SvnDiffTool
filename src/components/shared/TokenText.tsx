@@ -17,6 +17,9 @@ interface TokenTextProps {
   searchRanges?: TokenSearchRange[] | undefined;
   searchHlBg?: string | undefined;
   activeSearchHlBg?: string | undefined;
+  selectionRanges?: TokenSearchRange[] | undefined;
+  selectionHlBg?: string | undefined;
+  selectionTextColor?: string | undefined;
 }
 
 interface AnnotatedSegment {
@@ -26,6 +29,7 @@ interface AnnotatedSegment {
   diffHighlighted: boolean;
   searchHighlighted: boolean;
   activeSearch: boolean;
+  selectionHighlighted: boolean;
 }
 
 function resolveFontStyle(fontStyle: number | null | undefined) {
@@ -48,11 +52,14 @@ const TokenText = memo(({
   searchRanges = [],
   searchHlBg,
   activeSearchHlBg,
+  selectionRanges = [],
+  selectionHlBg,
+  selectionTextColor,
 }: TokenTextProps) => {
   const themeKey = useTheme();
   const colors = useMemo(() => makeTokenColors(themeKey), [themeKey]);
   const annotatedSegments = useMemo<AnnotatedSegment[] | null>(() => {
-    if (searchRanges.length === 0 && (!charSpans || charSpans.length === 0)) return null;
+    if (searchRanges.length === 0 && selectionRanges.length === 0 && (!charSpans || charSpans.length === 0)) return null;
 
     const content = (charSpans?.map((span) => span.text).join('') ?? tokens.map((token) => token.text).join(''));
     if (!content) return null;
@@ -63,6 +70,7 @@ const TokenText = memo(({
     const diffHighlightByIndex = new Array<boolean>(length).fill(false);
     const searchHighlightByIndex = new Array<boolean>(length).fill(false);
     const activeSearchByIndex = new Array<boolean>(length).fill(false);
+    const selectionHighlightByIndex = new Array<boolean>(length).fill(false);
 
     let offset = 0;
     tokens.forEach((token) => {
@@ -94,6 +102,14 @@ const TokenText = memo(({
       }
     });
 
+    selectionRanges.forEach((range) => {
+      const start = Math.max(0, Math.min(length, range.start));
+      const end = Math.max(start, Math.min(length, range.end));
+      for (let index = start; index < end; index += 1) {
+        selectionHighlightByIndex[index] = true;
+      }
+    });
+
     const segments: AnnotatedSegment[] = [];
     let cursor = 0;
     while (cursor < length) {
@@ -102,6 +118,7 @@ const TokenText = memo(({
       const nextDiff = diffHighlightByIndex[cursor] ?? false;
       const nextSearch = searchHighlightByIndex[cursor] ?? false;
       const nextActive = activeSearchByIndex[cursor] ?? false;
+      const nextSelection = selectionHighlightByIndex[cursor] ?? false;
       let end = cursor + 1;
 
       while (end < length) {
@@ -111,6 +128,7 @@ const TokenText = memo(({
           || (diffHighlightByIndex[end] ?? false) !== nextDiff
           || (searchHighlightByIndex[end] ?? false) !== nextSearch
           || (activeSearchByIndex[end] ?? false) !== nextActive
+          || (selectionHighlightByIndex[end] ?? false) !== nextSelection
         ) {
           break;
         }
@@ -124,29 +142,33 @@ const TokenText = memo(({
         diffHighlighted: nextDiff,
         searchHighlighted: nextSearch,
         activeSearch: nextActive,
+        selectionHighlighted: nextSelection,
       });
       cursor = end;
     }
 
     return segments;
-  }, [charSpans, colors, searchRanges, tokens]);
+  }, [charSpans, colors, searchRanges, selectionRanges, tokens]);
 
   if (annotatedSegments) {
     return (
       <>
         {annotatedSegments.map((segment, index) => {
+          const isSelectionOnly = segment.selectionHighlighted && !segment.searchHighlighted && !segment.activeSearch;
           const background = segment.activeSearch
             ? activeSearchHlBg
             : segment.searchHighlighted
               ? searchHlBg
+              : segment.selectionHighlighted
+                ? selectionHlBg
               : segment.diffHighlighted
                 ? hlBg
                 : undefined;
           const style = {
-            color: segment.color,
-            borderRadius: background ? 2 : undefined,
+            color: isSelectionOnly ? segment.color : segment.selectionHighlighted && selectionTextColor ? selectionTextColor : segment.color,
+            borderRadius: background && !isSelectionOnly ? 2 : undefined,
             background,
-            padding: background ? '0 1px' : undefined,
+            padding: background && !isSelectionOnly ? '0 1px' : undefined,
             ...resolveFontStyle(segment.fontStyle),
           };
           return background ? (

@@ -45,7 +45,7 @@ function safeHandle(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`[ipc:${channel}] handler error:`, message);
-      throw new Error(message);
+      throw new Error(message, { cause: error });
     }
   });
 }

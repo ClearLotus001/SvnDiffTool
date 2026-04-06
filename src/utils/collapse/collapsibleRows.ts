@@ -191,6 +191,8 @@ export function buildCollapsedItems<RowT extends { lineIdx: number }, TRowItem, 
       hiddenStart: number;
       hiddenEnd: number;
       expandStep: number;
+      firstRow: RowT;
+      lastRow: RowT;
     }) => TCollapseItem;
   },
 ): Array<TRowItem | TCollapseItem> {
@@ -247,6 +249,8 @@ export function buildCollapsedItems<RowT extends { lineIdx: number }, TRowItem, 
           hiddenStart: cursor,
           hiddenEnd: range.start - 1,
           expandStep,
+          firstRow: hiddenRows[cursor]!,
+          lastRow: hiddenRows[range.start - 1]!,
         }));
       }
 
@@ -265,6 +269,8 @@ export function buildCollapsedItems<RowT extends { lineIdx: number }, TRowItem, 
         hiddenStart: cursor,
         hiddenEnd: hiddenCount - 1,
         expandStep,
+        firstRow: hiddenRows[cursor]!,
+        lastRow: hiddenRows[hiddenCount - 1]!,
       }));
     }
 
@@ -277,7 +283,7 @@ export function buildCollapsedItems<RowT extends { lineIdx: number }, TRowItem, 
 }
 
 export function findCollapsedRowTarget<RowT extends { lineIdx: number }>(
-  blocks: CollapsibleRowBlock<RowT>[],
+  blocks: readonly CollapsibleRowBlock<RowT>[],
   expandedBlocks: CollapseExpansionState,
   targetLineIdx: number,
   options: {

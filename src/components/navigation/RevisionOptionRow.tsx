@@ -83,10 +83,10 @@ const RevisionOptionRow = memo(({
   const normalizedQuery = searchQuery.replace(/^r(?=\d)/i, '');
 
   const rowBackground = selected
-    ? `linear-gradient(90deg, ${cssVar('addHl')} 0%, ${cssVar('addBg')} 100%)`
+    ? `linear-gradient(90deg, ${cssAlpha('acc2', '18')} 0%, ${cssAlpha('acc2', '0d')} 100%)`
     : hovered ? `linear-gradient(90deg, ${cssAlpha('acc2', '12')} 0%, ${cssVar('bg2')} 100%)` : 'transparent';
-  const revisionColor = selected ? cssVar('addBrd') : cssVar('acc2');
-  const rowStroke = selected ? cssVar('addBrd') : hovered ? cssAlpha('acc2', '88') : '';
+  const revisionColor = cssVar('acc2');
+  const rowStroke = selected ? cssAlpha('acc2', 'aa') : hovered ? cssAlpha('acc2', '88') : '';
   const rowStrokeWidth = selected ? 4 : 3;
 
   return (

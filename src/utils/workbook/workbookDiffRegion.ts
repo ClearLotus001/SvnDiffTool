@@ -44,15 +44,6 @@ function unionParent(parent: number[], left: number, right: number) {
   if (leftRoot !== rightRoot) parent[rightRoot] = leftRoot;
 }
 
-function intervalsOverlap(
-  startA: number,
-  endA: number,
-  startB: number,
-  endB: number,
-): boolean {
-  return startA <= endB && endA >= startB;
-}
-
 function intervalsTouch(
   startA: number,
   endA: number,
@@ -162,26 +153,25 @@ function patchesBelongToSameVisualRegion(
   left: WorkbookDiffRegionNode,
   right: WorkbookDiffRegionNode,
 ): boolean {
-  const rowsOverlap = intervalsOverlap(
+  const rowsTouch = intervalsTouch(
     left.startRowIndex,
     left.endRowIndex,
     right.startRowIndex,
     right.endRowIndex,
   );
-  const colsOverlap = intervalsOverlap(
+  const colsTouch = intervalsTouch(
     left.startCol,
     left.endCol,
     right.startCol,
     right.endCol,
   );
 
-  return (
-    rowsOverlap
-    && intervalsTouch(left.startCol, left.endCol, right.startCol, right.endCol)
-  ) || (
-    colsOverlap
-    && intervalsTouch(left.startRowIndex, left.endRowIndex, right.startRowIndex, right.endRowIndex)
-  );
+  // Workbook change islands are easier to navigate when staircase/corner-touching
+  // cells are treated as one visual region. We therefore use 8-neighbor style
+  // connectivity on the logical workbook grid: sharing an edge or just a corner
+  // both count as connected, while any gap larger than one row/column remains
+  // separate.
+  return rowsTouch && colsTouch;
 }
 
 function buildWorkbookDiffRegionBlocks(

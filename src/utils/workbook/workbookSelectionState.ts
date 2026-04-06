@@ -219,7 +219,7 @@ function selectionContainsCell(
   return getWorkbookSelectionKeySet(selection).has(buildWorkbookSelectionKey(target));
 }
 
-export function areWorkbookSelectionsEqual(
+function areWorkbookSelectionsEqual(
   left: WorkbookSelectionState | null | undefined,
   right: WorkbookSelectionState | null | undefined,
 ): boolean {

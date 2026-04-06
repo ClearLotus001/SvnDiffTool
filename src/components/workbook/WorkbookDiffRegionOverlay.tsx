@@ -372,8 +372,11 @@ export function buildWorkbookDiffRegionOverlayOutlineSegments(
 }
 
 interface WorkbookDiffRegionOverlayProps {
-  scrollRef: RefObject<HTMLDivElement>;
-  resolveBoxes: (scrollLeft: number) => WorkbookDiffRegionOverlayBox[];
+  scrollRef: RefObject<HTMLDivElement | null>;
+  resolveBoxSet: (scrollLeft: number) => {
+    fillBoxes: WorkbookDiffRegionOverlayBox[];
+    outlineBoxes: WorkbookDiffRegionOverlayBox[];
+  };
   viewportWidth: number;
   viewportHeight: number;
   stickyHeaderHeight: number;
@@ -425,7 +428,7 @@ function ellipsizeCanvasText(
 
 const WorkbookDiffRegionOverlay = memo(({
   scrollRef,
-  resolveBoxes,
+  resolveBoxSet,
   viewportWidth,
   viewportHeight,
   stickyHeaderHeight,
@@ -488,7 +491,7 @@ const WorkbookDiffRegionOverlay = memo(({
       // rows. We map box coordinates from content-space to canvas-space by
       // subtracting the canvas anchor instead of scrollTop. This eliminates
       // the 1-frame visual lag caused by compositor-driven scroll.
-      const boxes = resolveBoxes(scrollLeft)
+      const mapBoxesToCanvasSpace = (boxes: WorkbookDiffRegionOverlayBox[]) => boxes
         .map((box) => {
           if (isContentSpaceMode) {
             // Frozen rows have viewport-relative top (< stickyHeaderHeight).
@@ -515,6 +518,11 @@ const WorkbookDiffRegionOverlay = memo(({
           && box.top < effectiveCanvasHeight
           && box.top + box.height > 0
         ));
+      const resolvedBoxSet = resolveBoxSet(scrollLeft);
+      const fillBoxes = mapBoxesToCanvasSpace(resolvedBoxSet.fillBoxes);
+      const outlineBoxes = mapBoxesToCanvasSpace(
+        resolvedBoxSet.outlineBoxes.length > 0 ? resolvedBoxSet.outlineBoxes : resolvedBoxSet.fillBoxes,
+      );
 
       const dpr = getWorkbookCanvasDevicePixelRatio();
       syncWorkbookCanvasSurface(canvas, viewportWidth, effectiveCanvasHeight, dpr);
@@ -525,12 +533,12 @@ const WorkbookDiffRegionOverlay = memo(({
       ctx.save();
       ctx.scale(dpr, dpr);
       ctx.clearRect(0, 0, viewportWidth, effectiveCanvasHeight);
-      if (boxes.length === 0) {
+      if (fillBoxes.length === 0 && outlineBoxes.length === 0) {
         ctx.restore();
         return;
       }
 
-      const outlineSegments = buildWorkbookDiffRegionOverlayOutlineSegments(boxes);
+      const outlineSegments = buildWorkbookDiffRegionOverlayOutlineSegments(outlineBoxes);
       const pulseStrength = pulseNonce > 0 && pulseProgress < 1
         ? Math.sin(pulseProgress * Math.PI)
         : 0;
@@ -556,8 +564,19 @@ const WorkbookDiffRegionOverlay = memo(({
               progress: pulseProgress,
               strength: pulseStrength,
             },
-            boxCount: boxes.length,
-            boxes: boxes.slice(0, 8).map((box) => ({
+            fillBoxCount: fillBoxes.length,
+            fillBoxes: fillBoxes.slice(0, 8).map((box) => ({
+              key: box.key,
+              left: box.left,
+              top: box.top,
+              width: box.width,
+              height: box.height,
+              tone: box.tone ?? null,
+              openTop: Boolean(box.openTop),
+              openBottom: Boolean(box.openBottom),
+            })),
+            outlineBoxCount: outlineBoxes.length,
+            outlineBoxes: outlineBoxes.slice(0, 8).map((box) => ({
               key: box.key,
               left: box.left,
               top: box.top,
@@ -581,7 +600,7 @@ const WorkbookDiffRegionOverlay = memo(({
         }
       }
 
-      boxes.forEach((box) => {
+      fillBoxes.forEach((box) => {
         const palette = resolveWorkbookOverlayPalette(T, box.tone ?? 'mixed');
         const fillGradient = ctx.createLinearGradient(0, box.top, 0, box.top + box.height);
         fillGradient.addColorStop(0, applyOverlayAlpha(palette.mid, 0.07 + (pulseStrength * 0.06)));
@@ -627,7 +646,7 @@ const WorkbookDiffRegionOverlay = memo(({
       });
 
       if (label) {
-        const labelAnchor = boxes.reduce<WorkbookDiffRegionOverlayBox | null>((best, box) => {
+        const labelAnchor = outlineBoxes.reduce<WorkbookDiffRegionOverlayBox | null>((best, box) => {
           if (!best) return box;
           if (box.top < best.top) return box;
           if (box.top === best.top && box.left < best.left) return box;
@@ -674,7 +693,7 @@ const WorkbookDiffRegionOverlay = memo(({
       ctx.restore();
     };
     drawRef.current('layout');
-  }, [T, canvasAnchorTop, debugRegionId, effectiveCanvasHeight, isContentSpaceMode, label, pulseNonce, pulseProgress, resolveBoxes, scrollRef, stickyHeaderHeight, viewportHeight, viewportWidth]);
+  }, [T, canvasAnchorTop, debugRegionId, effectiveCanvasHeight, isContentSpaceMode, label, pulseNonce, pulseProgress, resolveBoxSet, scrollRef, stickyHeaderHeight, viewportHeight, viewportWidth]);
 
   useEffect(() => {
     const scroller = scrollRef.current;

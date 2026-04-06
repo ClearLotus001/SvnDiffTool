@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { X } from 'lucide-react';
 import { useI18n } from '@/context/i18n';
+import { resolveDiffIndicatorCssPalette } from '@/utils/diff/diffIndicatorVisuals';
 import Tooltip from '@/components/shared/Tooltip';
 
 interface WorkbookArtifactNoticeBarProps {
@@ -9,20 +10,22 @@ interface WorkbookArtifactNoticeBarProps {
 
 const WorkbookArtifactNoticeBar = memo(({ onClose }: WorkbookArtifactNoticeBarProps) => {
   const { t } = useI18n();
+  const neutralPalette = resolveDiffIndicatorCssPalette('neutral');
 
   return (
     <div
       role="status"
       aria-live="polite"
-      className="
-        grid grid-cols-[minmax(0,1fr)_28px] gap-3 items-center
-        py-2.5 px-3.5 mx-2.5 rounded-[14px]
-        border border-[color-mix(in_srgb,var(--acc2)_21%,transparent)]
-        bg-[linear-gradient(180deg,var(--bg-base)_0%,var(--bg-surface-solid)_100%)]
-        relative overflow-hidden shrink-0
-      ">
+      className="grid grid-cols-[minmax(0,1fr)_28px] gap-3 items-center py-2.5 px-3.5 mx-2.5 rounded-[14px] relative overflow-hidden shrink-0"
+      style={{
+        border: `1px solid ${neutralPalette.border}`,
+        background: `linear-gradient(180deg, ${neutralPalette.softBackground} 0%, var(--bg-surface-solid) 100%)`,
+        boxShadow: `0 10px 20px -24px ${neutralPalette.shadow}`,
+      }}>
       <div className="min-w-0 w-full text-center justify-self-center relative z-[1]">
-        <div className="text-[var(--acc2)] font-ui text-[13px] font-extrabold leading-tight text-center">
+        <div
+          className="font-ui text-[13px] font-extrabold leading-tight text-center"
+          style={{ color: neutralPalette.text }}>
           {t('artifactNoticeTitle')}
         </div>
         <div className="mt-1 text-text-primary font-ui text-[13px] leading-snug text-center">

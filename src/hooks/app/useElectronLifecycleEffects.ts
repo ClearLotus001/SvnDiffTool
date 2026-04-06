@@ -6,7 +6,7 @@ import type {
   WorkbookCompareMode,
 } from '@/types';
 import { clearTokenCache } from '@/engine/text/tokenizer';
-import { hasBytePayload } from '@/hooks/app/helpers';
+import { debugLog, hasBytePayload } from '@/hooks/app/helpers';
 import type { DiffLoadController, RevisionQueryController } from '@/hooks/app/contracts';
 import { useAppStore } from '@/store/appStore';
 
@@ -16,7 +16,6 @@ interface UseElectronLifecycleEffectsArgs {
     options?: { seq?: number; loadingAlreadyStarted?: boolean; compareMode?: WorkbookCompareMode },
   ) => Promise<void>;
   reloadCliDiffData: () => Promise<void>;
-  startupBootstrapStartedRef: MutableRefObject<boolean>;
   workbookCompareModeRef: MutableRefObject<WorkbookCompareMode>;
   loadSeqRef: MutableRefObject<number>;
   revisionQuerySeqRef: MutableRefObject<number>;
@@ -28,7 +27,6 @@ interface UseElectronLifecycleEffectsArgs {
 export default function useElectronLifecycleEffects({
   applyDiffData,
   reloadCliDiffData,
-  startupBootstrapStartedRef,
   workbookCompareModeRef,
   loadSeqRef,
   revisionQuerySeqRef,
@@ -53,16 +51,42 @@ export default function useElectronLifecycleEffects({
   const { actions: revisionQueryActions } = revisionQuery;
 
   useEffect(() => {
-    clearTokenCache();
     let cancelled = false;
 
-    if (startupBootstrapStartedRef.current) {
-      return undefined;
-    }
-    startupBootstrapStartedRef.current = true;
+    const inferRendererDevMode = async () => {
+      const isHttpDev = typeof window !== 'undefined'
+        && (window.location.protocol === 'http:' || window.location.protocol === 'https:')
+        && /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname);
+      if (isHttpDev) {
+        setIsDevMode(true);
+        return;
+      }
+
+      if (!window.svnDiff?.isDevMode) return;
+      try {
+        const nextIsDevMode = await window.svnDiff.isDevMode();
+        if (!cancelled) {
+          setIsDevMode(Boolean(nextIsDevMode));
+        }
+      } catch {
+        // Ignore bridge dev-mode probe failures and keep the current state.
+      }
+    };
+
+    void inferRendererDevMode();
+    return () => {
+      cancelled = true;
+    };
+  }, [setIsDevMode]);
+
+  useEffect(() => {
+    clearTokenCache();
+    let cancelled = false;
+    debugLog('electron-lifecycle:bootstrap-effect:start');
 
     const applyEmptyLaunchState = (seq: number) => {
       if (seq !== loadSeqRef.current) return;
+      debugLog('electron-lifecycle:apply-empty-launch-state', { seq });
       diffLoadActions.setLoading(false);
       diffLoadActions.setLoaded(false);
       diffLoadActions.setPhase('idle');
@@ -95,8 +119,10 @@ export default function useElectronLifecycleEffects({
     };
 
     const loadData = async () => {
+      debugLog('electron-lifecycle:load-data:start');
       if (!window.svnDiff?.getLaunchState) {
         if (!cancelled) {
+          debugLog('electron-lifecycle:bridge-missing');
           setIsElectron(false);
           diffLoadActions.setLoaded(false);
           diffLoadActions.setPhase('error');
@@ -111,7 +137,15 @@ export default function useElectronLifecycleEffects({
       let seq = 0;
       try {
         seq = ++loadSeqRef.current;
+        debugLog('electron-lifecycle:get-launch-state:request', { seq });
         const launchState = await window.svnDiff.getLaunchState(workbookCompareModeRef.current);
+        debugLog('electron-lifecycle:get-launch-state:resolved', {
+          seq,
+          cancelled,
+          currentSeq: loadSeqRef.current,
+          hasDiffData: Boolean(launchState?.diffData),
+          fileName: launchState?.diffData?.fileName ?? '',
+        });
         if (cancelled || seq !== loadSeqRef.current) return undefined;
 
         applyLaunchContext(launchState);
@@ -129,6 +163,16 @@ export default function useElectronLifecycleEffects({
             || Boolean(data.precomputedDiffLinesByMode?.content?.length)
           )
         );
+        debugLog('electron-lifecycle:launch-state:evaluated', {
+          seq,
+          hasDiffPayload,
+          baseContentType: typeof data?.baseContent,
+          mineContentType: typeof data?.mineContent,
+          baseBytes: hasBytePayload(data?.baseBytes) ? data.baseBytes.byteLength : 0,
+          mineBytes: hasBytePayload(data?.mineBytes) ? data.mineBytes.byteLength : 0,
+          strictDiffLines: data?.precomputedDiffLinesByMode?.strict?.length ?? 0,
+          contentDiffLines: data?.precomputedDiffLinesByMode?.content?.length ?? 0,
+        });
         if (hasDiffPayload) {
           await applyDiffData(data, {
             seq,
@@ -139,6 +183,10 @@ export default function useElectronLifecycleEffects({
         }
       } catch (error) {
         if (!cancelled && seq === loadSeqRef.current) {
+          debugLog('electron-lifecycle:load-data:error', {
+            seq,
+            message: error instanceof Error ? error.message : String(error),
+          });
           diffLoadActions.setLoading(false);
           diffLoadActions.setLoaded(false);
           diffLoadActions.setPhase('error');
@@ -167,6 +215,7 @@ export default function useElectronLifecycleEffects({
       });
     return () => {
       cancelled = true;
+      debugLog('electron-lifecycle:bootstrap-effect:cleanup');
       cleanup?.();
     };
   }, [
@@ -186,7 +235,6 @@ export default function useElectronLifecycleEffects({
     setResetPair,
     setRevisionOptions,
     setUsesNativeWindowControls,
-    startupBootstrapStartedRef,
     updateAutoCheckRequestedRef,
     workbookCompareModeRef,
   ]);

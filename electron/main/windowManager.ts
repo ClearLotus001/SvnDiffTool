@@ -1,13 +1,31 @@
 import { BrowserWindow, screen } from 'electron';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { DEFAULT_LAUNCH_MAXIMIZED, DEV_SERVER_URL, PRELOAD_PATH, RENDERER_DIST, USE_NATIVE_WINDOW_CONTROLS } from './constants.js';
+import { writeExternalDiffDebugLog } from './logger.js';
 import { getStartupPalette, readStartupAppearance } from './startupAppearance.js';
 import { getMainWindow, setMainWindow } from './state.js';
 import { resolveIconPath } from './svnHelpers.js';
 import type { AppUpdateState } from './types.js';
 
 const INITIAL_SHOW_FALLBACK_MS = 2500;
+const WINDOWED_STARTUP_INSET = 14;
+const WINDOW_CORNER_RADIUS = 18;
+const NATIVE_ROUNDED_CORNERS_MIN_WINDOWS_BUILD = 22000;
+
+function getWindowsBuildNumber(): number {
+  if (process.platform !== 'win32') return 0;
+  const releaseParts = os.release().split('.');
+  const buildPart = releaseParts[2] ?? releaseParts[releaseParts.length - 1] ?? '0';
+  const buildNumber = Number.parseInt(buildPart, 10);
+  return Number.isFinite(buildNumber) ? buildNumber : 0;
+}
+
+function supportsNativeRoundedCorners(): boolean {
+  return process.platform === 'win32'
+    && getWindowsBuildNumber() >= NATIVE_ROUNDED_CORNERS_MIN_WINDOWS_BUILD;
+}
 
 function shouldUseStableStartupBounds(): boolean {
   return process.platform === 'win32' && DEFAULT_LAUNCH_MAXIMIZED;
@@ -15,7 +33,82 @@ function shouldUseStableStartupBounds(): boolean {
 
 function getStartupWindowBounds() {
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-  return display.workArea;
+  const { x, y, width, height } = display.workArea;
+  const horizontalInset = Math.min(
+    Math.max(WINDOWED_STARTUP_INSET, Math.round(width * 0.012)),
+    Math.max(0, Math.floor((width - 960) / 2)),
+  );
+  const verticalInset = Math.min(
+    Math.max(WINDOWED_STARTUP_INSET, Math.round(height * 0.018)),
+    Math.max(0, Math.floor((height - 640) / 2)),
+  );
+
+  return {
+    x: x + horizontalInset,
+    y: y + verticalInset,
+    width: Math.max(900, width - (horizontalInset * 2)),
+    height: Math.max(500, height - (verticalInset * 2)),
+  };
+}
+
+function buildRoundedWindowShape(width: number, height: number, radius: number) {
+  if (width <= 0 || height <= 0) return [];
+
+  const safeRadius = Math.max(0, Math.min(radius, Math.floor(width / 2), Math.floor(height / 2)));
+  if (safeRadius <= 0) {
+    return [{ x: 0, y: 0, width, height }];
+  }
+
+  const rects: { x: number; y: number; width: number; height: number }[] = [];
+
+  for (let y = 0; y < safeRadius; y += 1) {
+    const distanceFromCornerCenter = safeRadius - y - 0.5;
+    const inset = Math.max(
+      0,
+      Math.ceil(safeRadius - Math.sqrt(Math.max(0, (safeRadius * safeRadius) - (distanceFromCornerCenter * distanceFromCornerCenter)))),
+    );
+    const rowWidth = Math.max(0, width - (inset * 2));
+    if (rowWidth <= 0) continue;
+
+    rects.push({ x: inset, y, width: rowWidth, height: 1 });
+
+    const mirroredY = height - y - 1;
+    if (mirroredY !== y) {
+      rects.push({ x: inset, y: mirroredY, width: rowWidth, height: 1 });
+    }
+  }
+
+  const middleHeight = Math.max(0, height - (safeRadius * 2));
+  if (middleHeight > 0) {
+    rects.push({
+      x: 0,
+      y: safeRadius,
+      width,
+      height: middleHeight,
+    });
+  }
+
+  return rects;
+}
+
+function applyRoundedShape(win: BrowserWindow): void {
+  if (process.platform !== 'win32' || win.isDestroyed()) return;
+  if (supportsNativeRoundedCorners()) {
+    win.setShape([]);
+    return;
+  }
+
+  const isSnapped = typeof (win as BrowserWindow & { isSnapped?: () => boolean }).isSnapped === 'function'
+    ? Boolean((win as BrowserWindow & { isSnapped: () => boolean }).isSnapped())
+    : false;
+
+  if (win.isMaximized() || win.isFullScreen() || isSnapped) {
+    win.setShape([]);
+    return;
+  }
+
+  const { width, height } = win.getBounds();
+  win.setShape(buildRoundedWindowShape(width, height, WINDOW_CORNER_RADIUS));
 }
 
 function revealWindow(win: BrowserWindow, options?: { focus?: boolean }): void {
@@ -147,12 +240,12 @@ export function createWindow(): void {
     minimizable: true,
     maximizable: true,
     fullscreenable: true,
-    thickFrame: process.platform === 'win32' ? false : true,
+    thickFrame: true,
     frame: false,
     titleBarStyle: 'hidden',
     ...(titleBarOverlay ? { titleBarOverlay } : {}),
     backgroundColor: startupPalette.backgroundColor,
-    ...(process.platform === 'win32' ? { roundedCorners: false } : {}),
+    ...(process.platform === 'win32' ? { roundedCorners: true } : {}),
     title: 'SvnDiffTool',
     webPreferences: {
       nodeIntegration: false,
@@ -162,12 +255,39 @@ export function createWindow(): void {
     },
     ...(iconPath ? { icon: iconPath } : {}),
   });
+  writeExternalDiffDebugLog('window:create', {
+    bounds: win.getBounds(),
+    isDev: process.env.NODE_ENV === 'development',
+    devServerUrl: process.env.NODE_ENV === 'development' ? DEV_SERVER_URL : null,
+  });
 
   setMainWindow(win);
 
   if (DEFAULT_LAUNCH_MAXIMIZED && !stableStartupBounds) {
     win.maximize();
   }
+
+  applyRoundedShape(win);
+
+  win.on('resize', () => applyRoundedShape(win));
+  win.on('maximize', () => applyRoundedShape(win));
+  win.on('unmaximize', () => applyRoundedShape(win));
+  win.on('enter-full-screen', () => applyRoundedShape(win));
+  win.on('leave-full-screen', () => applyRoundedShape(win));
+  win.on('show', () => {
+    writeExternalDiffDebugLog('window:show', {
+      bounds: win.getBounds(),
+      visible: win.isVisible(),
+    });
+  });
+  win.on('hide', () => {
+    writeExternalDiffDebugLog('window:hide', {
+      visible: win.isVisible(),
+    });
+  });
+  win.on('closed', () => {
+    writeExternalDiffDebugLog('window:closed');
+  });
 
   if (process.env.NODE_ENV === 'development') {
     void win.loadURL(DEV_SERVER_URL);
@@ -190,7 +310,14 @@ export function createWindow(): void {
   win.once('ready-to-show', () => {
     const current = getMainWindow();
     if (!current || current.isDestroyed()) return;
-    revealWindow(current);
+    applyRoundedShape(current);
+    writeExternalDiffDebugLog('window:ready-to-show', {
+      bounds: current.getBounds(),
+      visible: current.isVisible(),
+    });
+    // Keep the window hidden until the renderer explicitly reports that the
+    // React shell has painted; `ready-to-show` can fire while only the boot
+    // document is visible, which causes a first-frame flash on Windows.
     notifyWindowFrameState();
   });
 
@@ -205,6 +332,10 @@ export function createWindow(): void {
   });
 
   win.webContents.on('did-finish-load', () => {
+    applyRoundedShape(win);
+    writeExternalDiffDebugLog('window:did-finish-load', {
+      url: win.webContents.getURL(),
+    });
     notifyWindowFrameState();
   });
 

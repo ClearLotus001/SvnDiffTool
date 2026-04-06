@@ -6,27 +6,31 @@ import {
   useRef,
   useState,
   useMemo,
-  startTransition,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
+  type MouseEvent as ReactMouseEvent,
   type RefObject,
 } from 'react';
 import type {
   DiffLine,
+  Hunk,
   SearchMatch,
   SplitRow,
   SyntaxPresentation,
+  TextSplitLayoutSnapshot,
   WorkbookMoveDirection,
   WorkbookSelectedCell,
 } from '@/types';
 import { cssAlpha, cssVar } from '@/theme/cssUtils';
+import { useI18n } from '@/context/i18n';
 import { buildSplitRows } from '@/engine/text/diff';
+import {
+  clampSplitRatio,
+  useSplitPanelHorizontalState,
+} from '@/hooks/diff/useSplitPanelHorizontalState';
 import { useVariableVirtual } from '@/hooks/virtualization/useVariableVirtual';
 import { useVirtual, ROW_H } from '@/hooks/virtualization/useVirtual';
 import { LN_W } from '@/constants/layout';
 import { parseWorkbookDisplayLine, WORKBOOK_CELL_WIDTH } from '@/utils/workbook/workbookDisplay';
 import { extractVersionLabel } from '@/utils/diff/diffMeta';
-import { getSplitLineSyntaxTokens } from '@/utils/diff/syntaxHighlighting';
 import { getTextVerticalRenderMode } from '@/utils/diff/splitRowBehavior';
 import {
   findWorkbookSectionIndex,
@@ -39,29 +43,42 @@ import {
   moveWorkbookSelection,
 } from '@/utils/workbook/workbookNavigation';
 import {
+  addManualCollapsedRange,
+  cloneCollapseExpansionState,
+  EMPTY_COLLAPSE_EXPANSION_STATE,
+  getManualCollapsedRanges,
   type CollapseExpansionState,
   expandCollapseBlock,
   expandCollapseBlockFully,
   getCollapseLeadingRevealCount,
-  revealCollapsedLine,
+  removeManualCollapsedRange,
 } from '@/utils/collapse/collapseState';
 import {
   buildCollapsedItems,
   buildCollapsibleRowBlocks,
-  findCollapsedRowTarget,
 } from '@/utils/collapse/collapsibleRows';
+import { overlayManualCollapsedItems } from '@/utils/collapse/manualCollapse';
 import {
-  countRemainingCollapses,
-  findCyclicCollapseIndex,
-  getCollapseIndexes,
-  resolveActiveCollapsePosition,
-} from '@/utils/collapse/collapseNavigation';
-import SplitCell from '@/components/diff/SplitCell';
-import DiffRow from '@/components/diff/DiffRow';
+  doesSelectionIntersectLineRange,
+  isLineIdxWithinSelection,
+} from '@/utils/diff/lineRangeSelection';
+import { buildCollapseSelectionSurfaces, getManualLineSelectionAccent } from '@/utils/diff/selectionVisuals';
+import { useCollapseNavigationState, type CollapseNavigationHandler } from '@/hooks/diff/useCollapseNavigationState';
+import { useLogicalTextSelectionState } from '@/hooks/diff/useLogicalTextSelectionState';
+import { useResolvedTextLineNavigation } from '@/hooks/diff/useResolvedTextLineNavigation';
+import { useTextSearchDecorations } from '@/hooks/diff/useTextSearchDecorations';
+import { useTextSelectionContextMenu } from '@/hooks/diff/useTextSelectionContextMenu';
+import { useTextLineRangeSelectionState } from '@/hooks/diff/useTextLineRangeSelectionState';
+import { doesLogicalTextSelectionIntersectLineRange } from '@/utils/diff/logicalTextSelection';
+import { useSplitPanelLayoutSnapshotEffects } from '@/hooks/diff/useSplitPanelLayoutSnapshotEffects';
+import { useSplitPanelWorkbookNavigationRows } from '@/hooks/diff/useSplitPanelWorkbookNavigationRows';
+import SplitWorkbookStickyRegion from '@/components/diff/SplitWorkbookStickyRegion';
+import SplitHorizontalTextPane from '@/components/diff/SplitHorizontalTextPane';
+import SplitMainBodyContent from '@/components/diff/SplitMainBodyContent';
 import CollapseBar from '@/components/diff/CollapseBar';
 import CollapseJumpButton from '@/components/diff/CollapseJumpButton';
-import MiniMap from '@/components/diff/MiniMap';
-import type { TokenSearchRange } from '@/components/shared/TokenText';
+import MiniMap, { buildSplitMiniMapSegments } from '@/components/diff/MiniMap';
+import DiffContextMenu from '@/components/diff/DiffContextMenu';
 
 const CONTEXT_LINES = 3;
 const DOUBLE_ROW_H = (ROW_H * 2) + 1;
@@ -69,12 +86,11 @@ const DEFAULT_SPLIT_RATIO = 0.5;
 const MIN_SPLIT_RATIO = 0.2;
 const MAX_SPLIT_RATIO = 0.8;
 const SPLIT_DIVIDER_WIDTH = 12;
-type CollapseNavigationHandler = (direction: 'prev' | 'next') => void;
 
 // Fully typed — no `as any` casts
 type SplitItem =
   | { kind: 'split-line';     row: SplitRow; lineIdx: number }
-  | { kind: 'split-collapse'; count: number; blockId: string; fromIdx: number; toIdx: number; hiddenStart: number; hiddenEnd: number; expandStep: number };
+  | { kind: 'split-collapse'; source?: 'auto' | 'manual'; count: number; blockId: string; fromIdx: number; toIdx: number; hiddenStart: number; hiddenEnd: number; expandStep: number };
 
 function isEqualSplitRow(row: SplitRow): boolean {
   return row.left?.type === 'equal' && row.right?.type === 'equal';
@@ -88,18 +104,12 @@ function splitRowTouchesOrAfter(row: SplitRow, lineIdx: number): boolean {
   return row.lineIdxs.some(idx => idx >= lineIdx);
 }
 
-function getNow() {
-  return typeof performance !== 'undefined' ? performance.now() : Date.now();
-}
-
-function clampSplitRatio(value: number): number {
-  if (!Number.isFinite(value)) return DEFAULT_SPLIT_RATIO;
-  return Math.min(MAX_SPLIT_RATIO, Math.max(MIN_SPLIT_RATIO, value));
-}
-
-interface SplitPanelProps {
+export interface SplitPanelProps {
   diffLines: DiffLine[];
   syntaxPresentation?: SyntaxPresentation | null;
+  baseVersionLabel?: string;
+  mineVersionLabel?: string;
+  onLineSelectionChange?: ((selection: import('@/types').TextLineSelectionSummary | null) => void) | undefined;
   collapseCtx: boolean;
   activeHunkIdx: number;
   searchMatches: SearchMatch[];
@@ -108,6 +118,7 @@ interface SplitPanelProps {
   hunkPositions: number[];
   showWhitespace: boolean;
   fontSize: number;
+  guidedHunkRange?: Hunk | null;
   vertical: boolean;
   onScrollerReady: (scrollToIndex: (idx: number, align?: 'start' | 'center') => void) => void;
   onCollapseNavigationReady?: ((navigate: CollapseNavigationHandler | null) => void) | undefined;
@@ -116,32 +127,52 @@ interface SplitPanelProps {
   selectedCell?: WorkbookSelectedCell | null;
   onSelectCell?: (cell: WorkbookSelectedCell | null) => void;
   onWorkbookNavigationReady?: ((navigate: ((direction: WorkbookMoveDirection) => void) | null) => void) | undefined;
+  layoutSnapshot?: TextSplitLayoutSnapshot | null;
+  onLayoutSnapshotChange?: ((snapshot: TextSplitLayoutSnapshot) => void) | undefined;
+  sharedExpandedBlocks?: CollapseExpansionState | null;
+  onExpandedBlocksChange?: ((expandedBlocks: CollapseExpansionState) => void) | undefined;
 }
 
 const SplitPanel = memo(({
-  diffLines, syntaxPresentation = null, collapseCtx, activeHunkIdx, searchMatches, activeSearchIdx,
+  diffLines, syntaxPresentation = null, baseVersionLabel = '', mineVersionLabel = '', onLineSelectionChange, collapseCtx, activeHunkIdx, searchMatches, activeSearchIdx,
   searchJumpNonce,
-  hunkPositions, showWhitespace, fontSize, vertical, onScrollerReady, onCollapseNavigationReady,
+  hunkPositions, showWhitespace, fontSize, guidedHunkRange: _guidedHunkRange = null, vertical, onScrollerReady, onCollapseNavigationReady,
   baseName = '', mineName = '', selectedCell = null, onSelectCell, onWorkbookNavigationReady,
+  layoutSnapshot = null, onLayoutSnapshotChange, sharedExpandedBlocks = null, onExpandedBlocksChange,
 }: SplitPanelProps) => {
+  const { t } = useI18n();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const leftPaneScrollRef = useRef<HTMLDivElement>(null);
-  const rightPaneScrollRef = useRef<HTMLDivElement>(null);
-  const paneContainerRef = useRef<HTMLDivElement>(null);
-  const splitterCleanupRef = useRef<(() => void) | null>(null);
-  const splitRatioRef = useRef(DEFAULT_SPLIT_RATIO);
-  const splitRatioFrameRef = useRef(0);
-  const pendingSplitRatioRef = useRef(DEFAULT_SPLIT_RATIO);
-  const syncOwnerRef = useRef<'left' | 'right' | null>(null);
-  const programmaticScrollUntilRef = useRef<{ left: number; right: number }>({ left: 0, right: 0 });
+  const initialSplitRatio = layoutSnapshot?.layout === 'split-h'
+    ? clampSplitRatio(layoutSnapshot.splitRatio, MIN_SPLIT_RATIO, MAX_SPLIT_RATIO, DEFAULT_SPLIT_RATIO)
+    : DEFAULT_SPLIT_RATIO;
+  const {
+    paneContainerRef,
+    leftPaneScrollRef,
+    rightPaneScrollRef,
+    splitRatio,
+    splitRatioRef,
+    isResizingSplitter,
+    horizontalPaneGridTemplateColumns,
+    syncPaneScrollPosition,
+    handleHorizontalPaneScroll,
+    handleSplitterPointerDown,
+    handleSplitterKeyDown,
+    resetSplitRatio,
+    restoreSplitRatio,
+  } = useSplitPanelHorizontalState({
+    enabled: !vertical,
+    initialSplitRatio,
+    defaultSplitRatio: DEFAULT_SPLIT_RATIO,
+    minSplitRatio: MIN_SPLIT_RATIO,
+    maxSplitRatio: MAX_SPLIT_RATIO,
+    dividerWidth: SPLIT_DIVIDER_WIDTH,
+  });
   const pendingScrollAdjustRef = useRef(0);
-  const lastCollapseJumpIndexRef = useRef<number | null>(null);
-  const completedSearchJumpNonceRef = useRef<number>(-1);
-  const [expandedBlocks, setExpandedBlocks] = useState<CollapseExpansionState>({});
+  const [expandedBlocks, setExpandedBlocks] = useState<CollapseExpansionState>(() => (
+    cloneCollapseExpansionState(layoutSnapshot?.expandedBlocks ?? EMPTY_COLLAPSE_EXPANSION_STATE)
+  ));
+  const [selectionAnchorSide, setSelectionAnchorSide] = useState<'left' | 'right'>('left');
   const [activeWorkbookSectionIdx, setActiveWorkbookSectionIdx] = useState(0);
-  const [pendingScrollTarget, setPendingScrollTarget] = useState<{ lineIdx: number; align: 'start' | 'center' } | null>(null);
-  const [splitRatio, setSplitRatio] = useState(DEFAULT_SPLIT_RATIO);
-  const [isResizingSplitter, setIsResizingSplitter] = useState(false);
   const baseVersion = useMemo(() => extractVersionLabel(baseName) || baseName, [baseName]);
   const mineVersion = useMemo(() => extractVersionLabel(mineName) || mineName, [mineName]);
 
@@ -172,18 +203,19 @@ const SplitPanel = memo(({
   const collapsedSourceRows = isWorkbookMode ? visibleSplitRows : splitRows;
   const blockPrefix = isWorkbookMode
     ? `split-${activeWorkbookSection?.name ?? 'workbook'}`
-    : 'split-text';
+    : 'text';
   const rowBlocks = useMemo(
     () => buildCollapsibleRowBlocks(collapsedSourceRows, isEqualSplitRow),
     [collapsedSourceRows],
   );
-  const items = useMemo<SplitItem[]>(
+  const baseItems = useMemo<SplitItem[]>(
     () => buildCollapsedItems(rowBlocks, collapseCtx, expandedBlocks, {
       contextLines: CONTEXT_LINES,
       blockPrefix,
       buildRowItem: (row): SplitItem => ({ kind: 'split-line', row, lineIdx: row.lineIdx }),
       buildCollapseItem: ({ blockId, count, fromIdx, toIdx, hiddenStart, hiddenEnd, expandStep }): SplitItem => ({
         kind: 'split-collapse',
+        source: 'auto',
         count,
         blockId,
         fromIdx,
@@ -195,6 +227,34 @@ const SplitPanel = memo(({
     }),
     [blockPrefix, collapseCtx, expandedBlocks, rowBlocks],
   );
+  const manualCollapsedRanges = useMemo(
+    () => getManualCollapsedRanges(expandedBlocks),
+    [expandedBlocks],
+  );
+  const items = useMemo<SplitItem[]>(
+    () => overlayManualCollapsedItems(baseItems, manualCollapsedRanges, {
+      isLineItem: (item): item is SplitItem & { kind: 'split-line' } => item.kind === 'split-line',
+      getLineIdxs: (item) => item.kind === 'split-line' ? item.row.lineIdxs : [],
+      getCollapsedItemRange: (item) => item.kind === 'split-collapse'
+        ? {
+          startLineIdx: item.fromIdx,
+          endLineIdx: item.toIdx,
+        }
+        : null,
+      buildCollapseItem: ({ startLineIdx, endLineIdx, count }): SplitItem => ({
+        kind: 'split-collapse',
+        source: 'manual',
+        count,
+        blockId: `manual:${startLineIdx}:${endLineIdx}`,
+        fromIdx: startLineIdx,
+        toIdx: endLineIdx,
+        hiddenStart: 0,
+        hiddenEnd: Math.max(0, count - 1),
+        expandStep: count,
+      }),
+    }),
+    [baseItems, manualCollapsedRanges],
+  );
   const itemHeights = useMemo(
     () => items.map((item) => {
       if (item.kind === 'split-collapse') return ROW_H;
@@ -204,8 +264,8 @@ const SplitPanel = memo(({
     [items, vertical],
   );
   const activeScrollRef = horizontalSplitEnabled
-    ? (leftPaneScrollRef as RefObject<HTMLDivElement>)
-    : (scrollRef as RefObject<HTMLDivElement>);
+    ? (leftPaneScrollRef as RefObject<HTMLDivElement | null>)
+    : (scrollRef as RefObject<HTMLDivElement | null>);
   const constantVirtual = useVirtual(
     items.length,
     activeScrollRef,
@@ -223,190 +283,162 @@ const SplitPanel = memo(({
   const textRowLayoutStyle = isWorkbookMode
     ? { width: 'max-content' as const, minWidth: '100%' as const }
     : { width: 'max-content' as const, minWidth: '100%' as const };
-  const applySplitRatioStyle = useCallback((ratio: number) => {
-    const container = paneContainerRef.current;
-    if (!container) return;
-    container.style.setProperty('--split-left', `${(ratio * 100).toFixed(3)}%`);
-    container.style.setProperty('--split-right', `${((1 - ratio) * 100).toFixed(3)}%`);
-  }, []);
-  const flushPendingSplitRatio = useCallback(() => {
-    if (splitRatioFrameRef.current) {
-      cancelAnimationFrame(splitRatioFrameRef.current);
-      splitRatioFrameRef.current = 0;
-    }
-    const nextRatio = clampSplitRatio(pendingSplitRatioRef.current);
-    pendingSplitRatioRef.current = nextRatio;
-    splitRatioRef.current = nextRatio;
-    applySplitRatioStyle(nextRatio);
-    return nextRatio;
-  }, [applySplitRatioStyle]);
-  const queueSplitRatioUpdate = useCallback((ratio: number) => {
-    const nextRatio = clampSplitRatio(ratio);
-    pendingSplitRatioRef.current = nextRatio;
-    if (splitRatioFrameRef.current) return;
-    splitRatioFrameRef.current = requestAnimationFrame(() => {
-      splitRatioFrameRef.current = 0;
-      const frameRatio = clampSplitRatio(pendingSplitRatioRef.current);
-      splitRatioRef.current = frameRatio;
-      applySplitRatioStyle(frameRatio);
-    });
-  }, [applySplitRatioStyle]);
-  const commitSplitRatio = useCallback((ratio: number) => {
-    const nextRatio = clampSplitRatio(ratio);
-    pendingSplitRatioRef.current = nextRatio;
-    splitRatioRef.current = nextRatio;
-    applySplitRatioStyle(nextRatio);
-    setSplitRatio((prev) => (Math.abs(prev - nextRatio) < 0.001 ? prev : nextRatio));
-    return nextRatio;
-  }, [applySplitRatioStyle]);
-  const updateSplitRatioFromClientX = useCallback((clientX: number) => {
-    const container = paneContainerRef.current;
-    if (!container) return;
-    const rect = container.getBoundingClientRect();
-    if (rect.width <= SPLIT_DIVIDER_WIDTH) return;
-    const nextRatio = clampSplitRatio((clientX - rect.left) / rect.width);
-    queueSplitRatioUpdate(nextRatio);
-  }, [queueSplitRatioUpdate]);
-  const stopSplitterResize = useCallback(() => {
-    splitterCleanupRef.current?.();
-    splitterCleanupRef.current = null;
-    setIsResizingSplitter(false);
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-  }, []);
-  const handleSplitterPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    stopSplitterResize();
-    updateSplitRatioFromClientX(event.clientX);
-    setIsResizingSplitter(true);
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
 
-    const handlePointerMove = (moveEvent: PointerEvent) => {
-      updateSplitRatioFromClientX(moveEvent.clientX);
-    };
-    const handlePointerUp = () => {
-      const finalRatio = flushPendingSplitRatio();
-      setSplitRatio((prev) => (Math.abs(prev - finalRatio) < 0.001 ? prev : finalRatio));
-      stopSplitterResize();
-    };
-
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp);
-    window.addEventListener('pointercancel', handlePointerUp);
-
-    splitterCleanupRef.current = () => {
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerUp);
-      window.removeEventListener('pointercancel', handlePointerUp);
-    };
-  }, [flushPendingSplitRatio, stopSplitterResize, updateSplitRatioFromClientX]);
-  const handleSplitterKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.key === 'ArrowLeft') {
-      event.preventDefault();
-      commitSplitRatio(splitRatioRef.current - 0.02);
-      return;
-    }
-    if (event.key === 'ArrowRight') {
-      event.preventDefault();
-      commitSplitRatio(splitRatioRef.current + 0.02);
-    }
-  }, [commitSplitRatio]);
-  const syncPaneScrollPosition = useCallback((source: 'left' | 'right') => {
-    if (!horizontalSplitEnabled) return;
-    const from = source === 'left' ? leftPaneScrollRef.current : rightPaneScrollRef.current;
-    const to = source === 'left' ? rightPaneScrollRef.current : leftPaneScrollRef.current;
-    const targetSide = source === 'left' ? 'right' : 'left';
-    if (!from || !to) return;
-    if (syncOwnerRef.current && syncOwnerRef.current !== source) return;
-    syncOwnerRef.current = source;
-
-    if (Math.abs(to.scrollTop - from.scrollTop) > 1) {
-      programmaticScrollUntilRef.current[targetSide] = getNow() + 180;
-      to.scrollTop = from.scrollTop;
-    }
-    if (Math.abs(to.scrollLeft - from.scrollLeft) > 1) {
-      programmaticScrollUntilRef.current[targetSide] = getNow() + 180;
-      to.scrollLeft = from.scrollLeft;
-    }
-
-    requestAnimationFrame(() => {
-      syncOwnerRef.current = null;
-    });
-  }, [horizontalSplitEnabled]);
-  const handleHorizontalPaneScroll = useCallback((source: 'left' | 'right') => {
-    syncPaneScrollPosition(source);
-  }, [syncPaneScrollPosition]);
-  const horizontalPaneGridTemplateColumns = useMemo(() => {
-    return `minmax(0, calc(var(--split-left, 50%) - ${SPLIT_DIVIDER_WIDTH / 2}px)) ${SPLIT_DIVIDER_WIDTH}px minmax(0, calc(var(--split-right, 50%) - ${SPLIT_DIVIDER_WIDTH / 2}px))`;
-  }, []);
-
-  const revealLineIfCollapsed = useCallback((lineIdx: number) => {
-    const target = findCollapsedRowTarget(rowBlocks, expandedBlocks, lineIdx, {
-      contextLines: CONTEXT_LINES,
-      blockPrefix,
-      rowHasLineIdx: splitRowHasLineIdx,
-    });
-    if (!target) return false;
-    startTransition(() => {
-      setExpandedBlocks((prev) => revealCollapsedLine(
+  const {
+    lineRangeSelection,
+    setLineRangeSelection,
+    normalizedLineRangeSelection,
+    selectedLineCount,
+    selectedLineRangeLabel,
+    handleLineNumberSelection: handleCoreLineNumberSelection,
+    handleFoldSelectedRange,
+    handleClearSelectedRange,
+    handleBlankAreaPointerDown,
+  } = useTextLineRangeSelectionState({
+    onFoldRange: (startLineIdx, endLineIdx) => {
+      setExpandedBlocks((prev) => addManualCollapsedRange(
         prev,
-        target.blockId,
-        target.hiddenStart,
-        target.hiddenEnd,
-        target.targetIndex,
+        startLineIdx,
+        endLineIdx,
       ));
-    });
-    return true;
-  }, [blockPrefix, expandedBlocks, rowBlocks]);
+    },
+  });
+  const {
+    contextMenuPoint,
+    contextMenuSections,
+    closeContextMenu,
+    openTextSelectionContextMenu,
+    openLineSelectionContextMenu,
+  } = useTextSelectionContextMenu({
+    diffLines,
+    normalizedLineRangeSelection,
+    selectedLineCount,
+    baseVersionLabel,
+    mineVersionLabel,
+    onFoldSelectedRange: handleFoldSelectedRange,
+    onClearSelectedRange: handleClearSelectedRange,
+  });
+  const lineNumberTitle: string | undefined = undefined;
 
-  const scrollToResolvedLine = useCallback((lineIdx: number, align: 'start' | 'center' = 'center') => {
-    const exactIndex = items.findIndex((item) => item.kind === 'split-line' && splitRowHasLineIdx(item.row, lineIdx));
-    if (exactIndex >= 0) {
-      scrollToIndex(exactIndex, align);
-      if (horizontalSplitEnabled) requestAnimationFrame(() => syncPaneScrollPosition('left'));
-      setPendingScrollTarget((prev) => (
-        prev && prev.lineIdx === lineIdx && prev.align === align ? null : prev
-      ));
-      return true;
-    }
-    if (revealLineIfCollapsed(lineIdx)) {
-      setPendingScrollTarget({ lineIdx, align });
-      return false;
-    }
-    const nearestIndex = items.findIndex((item) => item.kind === 'split-line' && splitRowTouchesOrAfter(item.row, lineIdx));
-    if (nearestIndex >= 0) {
-      scrollToIndex(nearestIndex, align);
-      if (horizontalSplitEnabled) requestAnimationFrame(() => syncPaneScrollPosition('left'));
-      return true;
-    }
-    return false;
-  }, [horizontalSplitEnabled, items, revealLineIfCollapsed, scrollToIndex, syncPaneScrollPosition]);
+  const {
+    textSelection: leftTextSelection,
+    textSelectionCopyText: leftTextSelectionCopyText,
+    getTextSelectionRangeForLine: getLeftTextSelectionRangeForLine,
+    clearTextSelection: clearLeftTextSelection,
+  } = useLogicalTextSelectionState({
+    enabled: horizontalSplitEnabled,
+    hostRef: leftPaneScrollRef,
+    diffLines,
+    copyMode: 'base',
+    onSelectionIntent: () => {
+      setLineRangeSelection(null);
+      closeContextMenu();
+    },
+  });
+  const {
+    textSelection: rightTextSelection,
+    textSelectionCopyText: rightTextSelectionCopyText,
+    getTextSelectionRangeForLine: getRightTextSelectionRangeForLine,
+    clearTextSelection: clearRightTextSelection,
+  } = useLogicalTextSelectionState({
+    enabled: horizontalSplitEnabled,
+    hostRef: rightPaneScrollRef,
+    diffLines,
+    copyMode: 'mine',
+    onSelectionIntent: () => {
+      setLineRangeSelection(null);
+      closeContextMenu();
+    },
+  });
+  const {
+    textSelection: combinedTextSelection,
+    textSelectionCopyText: combinedTextSelectionCopyText,
+    getTextSelectionRangeForLine: getCombinedTextSelectionRangeForLine,
+    clearTextSelection: clearCombinedTextSelection,
+  } = useLogicalTextSelectionState({
+    enabled: !horizontalSplitEnabled && !isWorkbookMode,
+    hostRef: scrollRef,
+    diffLines,
+    copyMode: 'auto',
+    onSelectionIntent: () => {
+      setLineRangeSelection(null);
+      closeContextMenu();
+    },
+  });
 
+  const handleLineNumberSelection = useCallback((lineIdx: number, extend: boolean, side: 'left' | 'right' = 'left') => {
+    clearLeftTextSelection();
+    clearRightTextSelection();
+    clearCombinedTextSelection();
+    closeContextMenu();
+    setSelectionAnchorSide(side);
+    handleCoreLineNumberSelection(lineIdx, extend);
+  }, [clearCombinedTextSelection, clearLeftTextSelection, clearRightTextSelection, closeContextMenu, handleCoreLineNumberSelection]);
+
+  const {
+    searchMatchSet,
+    activeSearchLineIdx,
+    searchRangesByLineIdx,
+  } = useTextSearchDecorations(searchMatches, activeSearchIdx);
+  useResolvedTextLineNavigation({
+    itemsDependency: items,
+    rowBlocks,
+    expandedBlocks,
+    setExpandedBlocks,
+    contextLines: CONTEXT_LINES,
+    blockPrefix,
+    scrollToIndex,
+    findExactItemIndex: (lineIdx) => items.findIndex((item) => item.kind === 'split-line' && splitRowHasLineIdx(item.row, lineIdx)),
+    findNearestItemIndex: (lineIdx) => items.findIndex((item) => item.kind === 'split-line' && splitRowTouchesOrAfter(item.row, lineIdx)),
+    rowHasLineIdx: splitRowHasLineIdx,
+    onAfterScrollToIndex: horizontalSplitEnabled
+      ? () => { requestAnimationFrame(() => syncPaneScrollPosition('left')); }
+      : undefined,
+    onScrollerReady,
+    activeSearchLineIdx,
+    searchJumpNonce,
+  });
+  const selectionAccentColor = getManualLineSelectionAccent();
+  const selectedCollapseSurfaces = useMemo(
+    () => buildCollapseSelectionSurfaces(selectionAccentColor),
+    [selectionAccentColor],
+  );
+  const textSelectionCollapsePalette = useMemo(() => ({
+    background: `linear-gradient(90deg,
+      color-mix(in srgb, var(--text-selection-bg) 82%, var(--bg1) 18%) 0%,
+      color-mix(in srgb, var(--text-selection-bg) 24%, transparent) 100%)`,
+    border: 'color-mix(in srgb, var(--text-selection-bg) 64%, transparent)',
+    accent: cssVar('acc2'),
+    buttonBorder: 'color-mix(in srgb, var(--text-selection-bg) 42%, transparent)',
+    buttonText: cssVar('acc2'),
+    labelText: cssVar('t1'),
+    subduedText: cssVar('t2'),
+  }), []);
+  const activeTextSelection = horizontalSplitEnabled
+    ? (selectionAnchorSide === 'left' ? leftTextSelection : rightTextSelection)
+    : combinedTextSelection;
   useEffect(() => {
-    onScrollerReady((lineIdx, align) => {
-      scrollToResolvedLine(lineIdx, align ?? 'center');
-    });
-  }, [onScrollerReady, scrollToResolvedLine]);
+    onLineSelectionChange?.(
+      normalizedLineRangeSelection
+        ? { count: selectedLineCount, rangeLabel: selectedLineRangeLabel }
+        : null,
+    );
+    return () => onLineSelectionChange?.(null);
+  }, [normalizedLineRangeSelection, onLineSelectionChange, selectedLineCount, selectedLineRangeLabel]);
+  useEffect(() => {
+    setLineRangeSelection(null);
+    clearLeftTextSelection();
+    clearRightTextSelection();
+    clearCombinedTextSelection();
+  }, [clearCombinedTextSelection, clearLeftTextSelection, clearRightTextSelection, diffLines, isWorkbookMode, setLineRangeSelection, vertical]);
 
-  const searchMatchSet      = useMemo(() => new Set(searchMatches.map(m => m.lineIdx)), [searchMatches]);
-  const activeSearchLineIdx = activeSearchIdx >= 0
-    ? (searchMatches[activeSearchIdx]?.lineIdx ?? -1)
-    : -1;
-  const searchRangesByLineIdx = useMemo(() => {
-    const next = new Map<number, TokenSearchRange[]>();
-    searchMatches.forEach((match, index) => {
-      const ranges = next.get(match.lineIdx) ?? [];
-      ranges.push({
-        start: match.start,
-        end: match.end,
-        active: index === activeSearchIdx,
-      });
-      next.set(match.lineIdx, ranges);
-    });
-    return next;
-  }, [activeSearchIdx, searchMatches]);
+  const miniMapSegments = useMemo(
+    () => buildSplitMiniMapSegments(items, itemHeights, searchMatchSet),
+    [itemHeights, items, searchMatchSet],
+  );
+  const isSplitRowSelected = useCallback((row: SplitRow) => (
+    row.lineIdxs.some((lineIdx) => isLineIdxWithinSelection(lineRangeSelection, lineIdx))
+  ), [lineRangeSelection]);
   const getSplitRowSideLineIdx = useCallback((row: SplitRow, side: 'left' | 'right'): number | null => {
     if (side === 'left') {
       return row.left ? (row.lineIdxs[0] ?? null) : null;
@@ -441,28 +473,6 @@ const SplitPanel = memo(({
   }, [activeHunkIdx, hunkPositions, isWorkbookMode, workbookSections]);
 
   useEffect(() => {
-    if (searchJumpNonce === completedSearchJumpNonceRef.current) return;
-    if (activeSearchLineIdx < 0) {
-      completedSearchJumpNonceRef.current = searchJumpNonce;
-      return;
-    }
-    if (scrollToResolvedLine(activeSearchLineIdx, 'center')) {
-      completedSearchJumpNonceRef.current = searchJumpNonce;
-    }
-  }, [activeSearchLineIdx, scrollToResolvedLine, searchJumpNonce]);
-
-  useEffect(() => {
-    if (!pendingScrollTarget) return;
-    if (scrollToResolvedLine(pendingScrollTarget.lineIdx, pendingScrollTarget.align)) {
-      setPendingScrollTarget(null);
-    }
-  }, [items, pendingScrollTarget, scrollToResolvedLine]);
-
-  useEffect(() => {
-    lastCollapseJumpIndexRef.current = null;
-  }, [activeWorkbookSection?.name, diffLines]);
-
-  useEffect(() => {
     if (horizontalSplitEnabled) {
       const left = leftPaneScrollRef.current;
       const right = rightPaneScrollRef.current;
@@ -471,8 +481,6 @@ const SplitPanel = memo(({
       if (!scrollAdjust) return;
       pendingScrollAdjustRef.current = 0;
       const nextTop = Math.max(0, left.scrollTop + scrollAdjust);
-      programmaticScrollUntilRef.current.left = getNow() + 180;
-      programmaticScrollUntilRef.current.right = getNow() + 180;
       left.scrollTop = nextTop;
       right.scrollTop = nextTop;
       return;
@@ -483,7 +491,7 @@ const SplitPanel = memo(({
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTop = Math.max(0, el.scrollTop + scrollAdjust);
-  }, [horizontalSplitEnabled, items]);
+  }, [horizontalSplitEnabled, items, leftPaneScrollRef, rightPaneScrollRef, scrollRef]);
 
   const workbookFrozenRowHeight = frozenRow
     ? (vertical ? DOUBLE_ROW_H : ROW_H)
@@ -491,58 +499,34 @@ const SplitPanel = memo(({
   const workbookHeaderHeight = isWorkbookMode
     ? (vertical ? DOUBLE_ROW_H : ROW_H) + workbookFrozenRowHeight
     : 0;
-  const collapseIndexes = useMemo(
-    () => getCollapseIndexes(items, (item) => item.kind === 'split-collapse'),
-    [items],
-  );
-  const totalCollapseCount = useMemo(
-    () => countRemainingCollapses(items, 0, (item) => item.kind === 'split-collapse'),
-    [items],
-  );
-  const activeCollapsePosition = useMemo(
-    () => resolveActiveCollapsePosition(collapseIndexes, lastCollapseJumpIndexRef.current, startIdx),
-    [collapseIndexes, startIdx],
-  );
-  const handleJumpToNextCollapse = useCallback(() => {
-    const nextCollapseIndex = findCyclicCollapseIndex(
-      collapseIndexes,
-      lastCollapseJumpIndexRef.current,
-      endIdx,
-      'next',
-    );
-    if (nextCollapseIndex < 0) return;
-    lastCollapseJumpIndexRef.current = nextCollapseIndex;
-    scrollToIndex(nextCollapseIndex, 'start');
-  }, [collapseIndexes, endIdx, scrollToIndex]);
-  const handleJumpToPreviousCollapse = useCallback(() => {
-    const previousCollapseIndex = findCyclicCollapseIndex(
-      collapseIndexes,
-      lastCollapseJumpIndexRef.current,
-      startIdx,
-      'prev',
-    );
-    if (previousCollapseIndex < 0) return;
-    lastCollapseJumpIndexRef.current = previousCollapseIndex;
-    scrollToIndex(previousCollapseIndex, 'start');
-  }, [collapseIndexes, scrollToIndex, startIdx]);
+  const {
+    activeCollapseIndex,
+    activeCollapsePosition,
+    totalCollapseCount,
+    handleJumpToNextCollapse,
+    handleJumpToPreviousCollapse,
+    resetActiveCollapseNavigation,
+  } = useCollapseNavigationState({
+    items,
+    startIdx,
+    endIdx,
+    isCollapseItem: (item) => item.kind === 'split-collapse',
+    scrollToIndex,
+    onCollapseNavigationReady,
+  });
+  useEffect(() => {
+    resetActiveCollapseNavigation();
+  }, [activeWorkbookSection?.name, diffLines, resetActiveCollapseNavigation]);
   const columnLabels = getWorkbookColumnLabels(activeWorkbookSection?.maxColumns ?? 0);
   const singleGridWidth = (LN_W + 3) + (columnLabels.length * WORKBOOK_CELL_WIDTH);
-  const workbookNavigationRows = useMemo(() => {
-    if (!activeWorkbookSection) return [];
-    const sourceRows = [
-      ...(frozenRow ? [frozenRow] : []),
-      ...items.flatMap(item => item.kind === 'split-line' ? [item.row] : []),
-    ];
-
-    return sourceRows.flatMap(row => {
-      const entries: Array<NonNullable<ReturnType<typeof buildWorkbookRowEntry>>> = [];
-      const baseEntry = buildWorkbookRowEntry(row, 'base', activeWorkbookSection.name, baseVersion);
-      const mineEntry = buildWorkbookRowEntry(row, 'mine', activeWorkbookSection.name, mineVersion);
-      if (baseEntry) entries.push(baseEntry);
-      if (mineEntry) entries.push(mineEntry);
-      return entries;
-    });
-  }, [activeWorkbookSection, baseVersion, frozenRow, items, mineVersion]);
+  const workbookNavigationRows = useSplitPanelWorkbookNavigationRows({
+    activeSheetName: activeWorkbookSection?.name ?? null,
+    selectedCell,
+    frozenRow,
+    items,
+    baseVersion,
+    mineVersion,
+  });
 
   const handleWorkbookMove = useCallback((direction: WorkbookMoveDirection) => {
     if (!onSelectCell) return;
@@ -550,21 +534,44 @@ const SplitPanel = memo(({
     if (nextSelection) onSelectCell(nextSelection);
   }, [onSelectCell, selectedCell, workbookNavigationRows]);
 
+  const handlePaneContextMenu = useCallback((side: 'left' | 'right', event: ReactMouseEvent<HTMLElement>) => {
+    const textSelection = side === 'left' ? leftTextSelectionCopyText : rightTextSelectionCopyText;
+
+    if (openTextSelectionContextMenu(event, textSelection)) return;
+
+    if (selectionAnchorSide !== side) return;
+    void openLineSelectionContextMenu(event, side === 'left' ? 'base' : 'mine');
+  }, [leftTextSelectionCopyText, openLineSelectionContextMenu, openTextSelectionContextMenu, rightTextSelectionCopyText, selectionAnchorSide]);
+
+  const handleContextMenu = useCallback((event: ReactMouseEvent<HTMLElement>) => {
+    if (isWorkbookMode) return;
+    if (openTextSelectionContextMenu(event, combinedTextSelectionCopyText)) return;
+    void openLineSelectionContextMenu(event, 'both');
+  }, [combinedTextSelectionCopyText, isWorkbookMode, openLineSelectionContextMenu, openTextSelectionContextMenu]);
+  useEffect(() => {
+    const hasTextSelectionMenu = contextMenuSections.some((section) => (
+      section.items.some((item) => item.id === 'copy-selected-text')
+    ));
+    const hasAnyTextSelection = Boolean(
+      leftTextSelectionCopyText
+      || rightTextSelectionCopyText
+      || combinedTextSelectionCopyText,
+    );
+    if (hasTextSelectionMenu && !hasAnyTextSelection) {
+      closeContextMenu();
+    }
+  }, [
+    closeContextMenu,
+    combinedTextSelectionCopyText,
+    contextMenuSections,
+    leftTextSelectionCopyText,
+    rightTextSelectionCopyText,
+  ]);
+
   useEffect(() => {
     onWorkbookNavigationReady?.(handleWorkbookMove);
     return () => onWorkbookNavigationReady?.(null);
   }, [handleWorkbookMove, onWorkbookNavigationReady]);
-
-  useEffect(() => {
-    onCollapseNavigationReady?.((direction) => {
-      if (direction === 'prev') {
-        handleJumpToPreviousCollapse();
-        return;
-      }
-      handleJumpToNextCollapse();
-    });
-    return () => onCollapseNavigationReady?.(null);
-  }, [handleJumpToNextCollapse, handleJumpToPreviousCollapse, onCollapseNavigationReady]);
 
   useEffect(() => {
     if (!isWorkbookMode || !selectedCell || !activeWorkbookSection) return;
@@ -582,210 +589,89 @@ const SplitPanel = memo(({
     if (idx >= 0) scrollToIndex(idx, 'center');
   }, [activeWorkbookSection, baseVersion, isWorkbookMode, items, mineVersion, scrollToIndex, selectedCell]);
 
-  const renderWorkbookColumns = (accent: string, stickyLeftBase = 0) => (
-    <div style={{
-      display: 'flex',
-      height: ROW_H,
-      minWidth: singleGridWidth,
-      background: cssVar('bg1'),
-    }}>
-      <div style={{
-        width: LN_W + 3,
-        minWidth: LN_W + 3,
-        borderBottom: `1px solid ${cssVar('border')}`,
-        background: cssVar('bg2'),
-        position: 'sticky',
-        left: stickyLeftBase,
-        zIndex: 7,
-        boxShadow: `10px 0 14px -14px ${cssVar('border2')}`,
-      }} />
-      {columnLabels.map((label, index) => (
-        <div
-          key={label}
-          style={{
-            width: WORKBOOK_CELL_WIDTH,
-            minWidth: WORKBOOK_CELL_WIDTH,
-            maxWidth: WORKBOOK_CELL_WIDTH,
-            borderLeft: `1px solid ${cssVar('border')}`,
-            borderBottom: `1px solid ${cssVar('border')}`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: accent,
-            background: cssVar('bg1'),
-            fontSize: 11,
-            fontWeight: 700,
-            position: index === 0 ? 'sticky' : 'relative',
-            left: index === 0 ? stickyLeftBase + LN_W + 3 : undefined,
-            zIndex: index === 0 ? 6 : 1,
-            boxShadow: index === 0 ? `10px 0 14px -14px ${cssVar('border2')}` : undefined,
-          }}>
-          {label}
-        </div>
-      ))}
-    </div>
-  );
+  useSplitPanelLayoutSnapshotEffects({
+    diffIdentity: diffLines,
+    isWorkbookMode,
+    horizontalSplitEnabled,
+    layoutSnapshot,
+    sharedExpandedBlocks,
+    expandedBlocks,
+    setExpandedBlocks,
+    onLayoutSnapshotChange,
+    onExpandedBlocksChange,
+    scrollRef,
+    leftPaneScrollRef,
+    rightPaneScrollRef,
+    restoreSplitRatio,
+    splitRatio,
+    splitRatioRef,
+    defaultSplitRatio: DEFAULT_SPLIT_RATIO,
+  });
 
-  const renderWorkbookFrozenRow = () => {
-    if (!frozenRow) return null;
+  const renderTextCollapseBar = useCallback((
+    item: Extract<SplitItem, { kind: 'split-collapse' }>,
+    active = false,
+  ) => {
+    const collapseLineSelected = doesSelectionIntersectLineRange(lineRangeSelection, item.fromIdx, item.toIdx);
+    const collapseTextSelected = doesLogicalTextSelectionIntersectLineRange(activeTextSelection, item.fromIdx, item.toIdx);
     return (
-      <div
-        style={{
-          height: vertical ? DOUBLE_ROW_H : ROW_H,
-          display: 'flex',
-          flexDirection: vertical ? 'column' : 'row',
-          width: 'max-content',
-          minWidth: '100%',
-          background: cssVar('bg1'),
-        }}>
-        <SplitCell
-          line={frozenRow.left}
-          side="left"
-          syntaxTokens={getSplitLineSyntaxTokens(syntaxPresentation, frozenRow.left, 'left')}
-          widthMode={vertical ? 'content' : 'fill'}
-          lineNumberLayout={vertical ? 'paired' : 'single'}
-          isReplacementPair={Boolean(frozenRow.isReplacementPair)}
-          isSearchMatch={false}
-          isActiveSearch={false}
-          showWhitespace={showWhitespace}
-          fontSize={fontSize}
-          sheetName={activeWorkbookSection?.name ?? ''}
-          versionLabel={baseVersion}
-          selectedCell={selectedCell}
-          onSelectCell={onSelectCell}
-          stickyLeftBase={0}
-        />
-        <div
-          style={vertical
-            ? { height: 1, background: cssVar('border'), width: '100%', flexShrink: 0 }
-            : { width: 1, background: cssVar('border'), flexShrink: 0 }}
-        />
-        <SplitCell
-          line={frozenRow.right}
-          side="right"
-          syntaxTokens={getSplitLineSyntaxTokens(syntaxPresentation, frozenRow.right, 'right')}
-          widthMode={vertical ? 'content' : 'fill'}
-          lineNumberLayout={vertical ? 'paired' : 'single'}
-          isReplacementPair={Boolean(frozenRow.isReplacementPair)}
-          isSearchMatch={false}
-          isActiveSearch={false}
-          showWhitespace={showWhitespace}
-          fontSize={fontSize}
-          sheetName={activeWorkbookSection?.name ?? ''}
-          versionLabel={mineVersion}
-          selectedCell={selectedCell}
-          onSelectCell={onSelectCell}
-          stickyLeftBase={vertical ? 0 : singleGridWidth + 1}
-        />
-      </div>
+    <CollapseBar
+      count={item.count}
+      expandCount={Math.min(item.count, item.expandStep)}
+      active={active}
+      leadingInset={horizontalSplitEnabled ? LN_W : LN_W * 2}
+      leadingSurface={collapseLineSelected
+        ? selectedCollapseSurfaces.gutterBackground
+        : collapseTextSelected
+          ? `color-mix(in srgb, var(--text-selection-bg) 34%, ${cssVar('lnBg')} 66%)`
+          : cssVar('lnBg')}
+      leadingShadow={collapseLineSelected
+        ? selectedCollapseSurfaces.gutterShadow
+        : collapseTextSelected
+          ? '8px 0 14px -14px color-mix(in srgb, var(--text-selection-bg) 46%, transparent)'
+          : `8px 0 12px -12px ${cssAlpha('border2', '52')}`}
+      label={item.source === 'manual' ? t('manualCollapseBarLines', { count: item.count }) : undefined}
+      actionLabel={item.source === 'manual' ? t('manualCollapseBarReveal') : undefined}
+      palette={collapseLineSelected
+        ? selectedCollapseSurfaces.palette
+        : collapseTextSelected
+          ? textSelectionCollapsePalette
+          : undefined}
+      onExpand={() => {
+        if (item.source === 'manual') {
+          setExpandedBlocks((prev) => removeManualCollapsedRange(
+            prev,
+            item.fromIdx,
+            item.toIdx,
+          ));
+          return;
+        }
+
+        const revealCount = Math.min(item.count, item.expandStep);
+        pendingScrollAdjustRef.current += getCollapseLeadingRevealCount(item.count, revealCount) * ROW_H;
+        setExpandedBlocks((prev) => expandCollapseBlock(
+          prev,
+          item.blockId,
+          item.hiddenStart,
+          item.hiddenEnd,
+          revealCount,
+        ));
+      }}
+      onExpandAll={item.source === 'manual'
+        ? undefined
+        : () => {
+          setExpandedBlocks((prev) => expandCollapseBlockFully(
+            prev,
+            item.blockId,
+            item.hiddenStart,
+            item.hiddenEnd,
+          ));
+        }}
+    />
     );
-  };
-
-  useEffect(() => () => {
-    if (splitRatioFrameRef.current) cancelAnimationFrame(splitRatioFrameRef.current);
-    stopSplitterResize();
-  }, [stopSplitterResize]);
-
-  useEffect(() => {
-    splitRatioRef.current = splitRatio;
-    pendingSplitRatioRef.current = splitRatio;
-    applySplitRatioStyle(splitRatio);
-  }, [applySplitRatioStyle, splitRatio]);
+  }, [activeTextSelection, horizontalSplitEnabled, lineRangeSelection, selectedCollapseSurfaces, t, textSelectionCollapsePalette]);
 
   if (horizontalSplitEnabled) {
-    const renderTextPane = (side: 'left' | 'right') => (
-      <div className="flex-1 min-w-0 min-h-0 flex flex-col">
-        <div
-          ref={side === 'left' ? leftPaneScrollRef : rightPaneScrollRef}
-          onScroll={() => handleHorizontalPaneScroll(side)}
-          className="flex-1 overflow-auto relative min-w-0 min-h-0"
-          style={{ overflowAnchor: 'none' }}>
-          <div style={{ height: totalH, pointerEvents: 'none' }} />
-          <div style={{ position: 'absolute', top: rowWindowOffsetTop, left: 0, width: 'max-content', minWidth: '100%' }}>
-            {items.slice(startIdx, endIdx).map((item) => {
-              const key = item.kind === 'split-collapse'
-                ? `${side}-${item.blockId}-${item.hiddenStart}-${item.hiddenEnd}`
-                : `${side}-row-${item.lineIdx}`;
-
-              if (item.kind === 'split-collapse') {
-                if (side === 'right') {
-                  return (
-                    <div
-                      key={key}
-                      style={{
-                        height: ROW_H,
-                        minWidth: '100%',
-                        borderTop: `1px dashed ${cssVar('border')}`,
-                        borderBottom: `1px dashed ${cssVar('border')}`,
-                        background: cssVar('bg2'),
-                      }}
-                    />
-                  );
-                }
-
-                return (
-                  <div key={key} style={{ position: 'relative', zIndex: 12, pointerEvents: 'auto' }}>
-                    <CollapseBar
-                      count={item.count}
-                      expandCount={Math.min(item.count, item.expandStep)}
-                      onExpand={() => {
-                        const revealCount = Math.min(item.count, item.expandStep);
-                        pendingScrollAdjustRef.current += getCollapseLeadingRevealCount(item.count, revealCount) * ROW_H;
-                        setExpandedBlocks((prev) => expandCollapseBlock(
-                          prev,
-                          item.blockId,
-                          item.hiddenStart,
-                          item.hiddenEnd,
-                          revealCount,
-                        ));
-                      }}
-                      onExpandAll={() => {
-                        setExpandedBlocks((prev) => expandCollapseBlockFully(
-                          prev,
-                          item.blockId,
-                          item.hiddenStart,
-                          item.hiddenEnd,
-                        ));
-                      }}
-                    />
-                  </div>
-                );
-              }
-
-              const isSearchMatch = item.row.lineIdxs.some(idx => searchMatchSet.has(idx));
-              const isActiveSearch = item.row.lineIdxs.includes(activeSearchLineIdx);
-              const line = side === 'left' ? item.row.left : item.row.right;
-
-              return (
-                <div key={key} style={{ width: 'max-content', minWidth: '100%', height: ROW_H }}>
-                  <SplitCell
-                    line={line}
-                    side={side}
-                    syntaxTokens={getSplitLineSyntaxTokens(syntaxPresentation, line, side)}
-                    widthMode="content"
-                    lineNumberLayout="single"
-                    isReplacementPair={Boolean(item.row.isReplacementPair)}
-                    isSearchMatch={isSearchMatch}
-                    isActiveSearch={isActiveSearch}
-                    searchRanges={(() => {
-                      const sideLineIdx = getSplitRowSideLineIdx(item.row, side);
-                      return sideLineIdx != null ? (searchRangesByLineIdx.get(sideLineIdx) ?? []) : [];
-                    })()}
-                    showWhitespace={showWhitespace}
-                    fontSize={fontSize}
-                    sheetName=""
-                    versionLabel={side === 'left' ? baseVersion : mineVersion}
-                    selectedCell={null}
-                    onSelectCell={undefined}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    );
-
     return (
       <div className="flex-1 flex overflow-hidden min-w-0 min-h-0">
         <div className="relative flex-1 flex flex-col min-w-0 min-h-0">
@@ -797,7 +683,35 @@ const SplitPanel = memo(({
               gridTemplateColumns: horizontalPaneGridTemplateColumns,
               alignItems: 'stretch',
             }}>
-            {renderTextPane('left')}
+            <SplitHorizontalTextPane
+              side="left"
+              paneRef={leftPaneScrollRef}
+              onContextMenu={(event) => handlePaneContextMenu('left', event)}
+              onScroll={() => handleHorizontalPaneScroll('left')}
+              onPointerDown={handleBlankAreaPointerDown}
+              totalHeight={totalH}
+              rowWindowOffsetTop={rowWindowOffsetTop}
+              visibleItems={items.slice(startIdx, endIdx)}
+              startIdx={startIdx}
+              activeCollapseIndex={activeCollapseIndex}
+              renderTextCollapseBar={renderTextCollapseBar}
+              isCollapseTextSelected={(item) => doesLogicalTextSelectionIntersectLineRange(leftTextSelection, item.fromIdx, item.toIdx)}
+              isSplitRowSelected={isSplitRowSelected}
+              getSplitRowSideLineIdx={getSplitRowSideLineIdx}
+              searchMatchSet={searchMatchSet}
+              activeSearchLineIdx={activeSearchLineIdx}
+              searchRangesByLineIdx={searchRangesByLineIdx}
+              getTextSelectionRangeForLine={(lineIdx, lineLength) => (
+                getLeftTextSelectionRangeForLine(lineIdx, 'base', lineLength)
+              )}
+              syntaxPresentation={syntaxPresentation}
+              showWhitespace={showWhitespace}
+              fontSize={fontSize}
+              selectionAccentColor={selectionAccentColor}
+              lineNumberTitle={lineNumberTitle}
+              onLineNumberClick={handleLineNumberSelection}
+              versionLabel={baseVersion}
+            />
             <div
               role="separator"
               aria-orientation="vertical"
@@ -808,7 +722,7 @@ const SplitPanel = memo(({
               tabIndex={0}
               onPointerDown={handleSplitterPointerDown}
               onKeyDown={handleSplitterKeyDown}
-              onDoubleClick={() => commitSplitRatio(DEFAULT_SPLIT_RATIO)}
+              onDoubleClick={resetSplitRatio}
               style={{
                 position: 'relative',
                 cursor: 'col-resize',
@@ -841,7 +755,35 @@ const SplitPanel = memo(({
                 }}
               />
             </div>
-            {renderTextPane('right')}
+            <SplitHorizontalTextPane
+              side="right"
+              paneRef={rightPaneScrollRef}
+              onContextMenu={(event) => handlePaneContextMenu('right', event)}
+              onScroll={() => handleHorizontalPaneScroll('right')}
+              onPointerDown={handleBlankAreaPointerDown}
+              totalHeight={totalH}
+              rowWindowOffsetTop={rowWindowOffsetTop}
+              visibleItems={items.slice(startIdx, endIdx)}
+              startIdx={startIdx}
+              activeCollapseIndex={activeCollapseIndex}
+              renderTextCollapseBar={renderTextCollapseBar}
+              isCollapseTextSelected={(item) => doesLogicalTextSelectionIntersectLineRange(rightTextSelection, item.fromIdx, item.toIdx)}
+              isSplitRowSelected={isSplitRowSelected}
+              getSplitRowSideLineIdx={getSplitRowSideLineIdx}
+              searchMatchSet={searchMatchSet}
+              activeSearchLineIdx={activeSearchLineIdx}
+              searchRangesByLineIdx={searchRangesByLineIdx}
+              getTextSelectionRangeForLine={(lineIdx, lineLength) => (
+                getRightTextSelectionRangeForLine(lineIdx, 'mine', lineLength)
+              )}
+              syntaxPresentation={syntaxPresentation}
+              showWhitespace={showWhitespace}
+              fontSize={fontSize}
+              selectionAccentColor={selectionAccentColor}
+              lineNumberTitle={lineNumberTitle}
+              onLineNumberClick={handleLineNumberSelection}
+              versionLabel={mineVersion}
+            />
           </div>
           <CollapseJumpButton
             onPrev={handleJumpToPreviousCollapse}
@@ -850,12 +792,16 @@ const SplitPanel = memo(({
             totalCount={totalCollapseCount}
             storageKey="text-split-h"
           />
+          <DiffContextMenu
+            anchorPoint={contextMenuPoint}
+            sections={contextMenuSections}
+            onClose={closeContextMenu}
+          />
         </div>
         <MiniMap
-          diffLines={diffLines}
-          scrollRef={leftPaneScrollRef as RefObject<HTMLDivElement>}
-          totalH={totalH}
-          searchMatches={searchMatches}
+          segments={miniMapSegments}
+          scrollRef={leftPaneScrollRef as RefObject<HTMLDivElement | null>}
+          contentHeight={totalH}
         />
       </div>
     );
@@ -863,7 +809,7 @@ const SplitPanel = memo(({
 
   return (
     <div className="flex-1 flex overflow-hidden min-w-0 min-h-0">
-      <div className="relative flex-1 flex flex-col min-w-0 min-h-0">
+        <div className="relative flex-1 flex flex-col min-w-0 min-h-0">
         {isWorkbookMode && activeWorkbookSection && (
           <div style={{
             display: 'flex',
@@ -896,166 +842,61 @@ const SplitPanel = memo(({
           </div>
         )}
 
-        <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-auto relative min-w-0 min-h-0" style={{ overflowAnchor: 'none' }}>
+        <div
+          ref={scrollRef}
+          onContextMenu={handleContextMenu}
+          onPointerDown={handleBlankAreaPointerDown}
+          className="flex-1 overflow-y-auto overflow-x-auto relative min-w-0 min-h-0"
+          style={{ overflowAnchor: 'none' }}>
           <div style={{ height: totalH + workbookHeaderHeight, pointerEvents: 'none' }} />
           {isWorkbookMode && (
-            <div style={{
-              position: 'sticky',
-              top: 0,
-              zIndex: 30,
-              isolation: 'isolate',
-              background: cssVar('bg1'),
-              boxShadow: `0 1px 0 ${cssVar('border')}`,
-            }}>
-              {vertical ? (
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  {renderWorkbookColumns(cssVar('acc2'), 0)}
-                  <div style={{ height: 1, background: cssVar('border') }} />
-                  {renderWorkbookColumns(cssVar('acc'), 0)}
-                </div>
-              ) : (
-                <div style={{ display: 'flex', minWidth: 'max-content' }}>
-                  {renderWorkbookColumns(cssVar('acc2'), 0)}
-                  <div style={{ width: 1, background: cssVar('border'), flexShrink: 0 }} />
-                  {renderWorkbookColumns(cssVar('acc'), singleGridWidth + 1)}
-                </div>
-              )}
-              {renderWorkbookFrozenRow()}
-            </div>
+            <SplitWorkbookStickyRegion
+              vertical={vertical}
+              columnLabels={columnLabels}
+              singleGridWidth={singleGridWidth}
+              frozenRow={frozenRow}
+              syntaxPresentation={syntaxPresentation}
+              showWhitespace={showWhitespace}
+              fontSize={fontSize}
+              sheetName={activeWorkbookSection?.name ?? ''}
+              baseVersion={baseVersion}
+              mineVersion={mineVersion}
+              selectedCell={selectedCell}
+              onSelectCell={onSelectCell}
+            />
           )}
 
-          <div style={isWorkbookMode
-            ? { position: 'absolute', top: workbookHeaderHeight + rowWindowOffsetTop, left: 0, minWidth: '100%' }
-            : { position: 'absolute', top: workbookHeaderHeight + rowWindowOffsetTop, left: 0, width: 'max-content', minWidth: '100%' }}>
-          {items.slice(startIdx, endIdx).map((item) => {
-            const key = item.kind === 'split-collapse'
-              ? `${item.blockId}-${item.hiddenStart}-${item.hiddenEnd}`
-              : `row-${item.lineIdx}`;
-
-            if (item.kind === 'split-collapse') {
-              return (
-                <div key={key} style={{ position: 'relative', zIndex: 12, pointerEvents: 'auto' }}>
-                  <CollapseBar count={item.count} expandCount={Math.min(item.count, item.expandStep)}
-                    onExpand={() => {
-                      const revealCount = Math.min(item.count, item.expandStep);
-                      pendingScrollAdjustRef.current += getCollapseLeadingRevealCount(item.count, revealCount) * ROW_H;
-                      setExpandedBlocks(prev => expandCollapseBlock(
-                        prev,
-                        item.blockId,
-                        item.hiddenStart,
-                        item.hiddenEnd,
-                        revealCount,
-                      ));
-                    }}
-                    onExpandAll={() => {
-                      setExpandedBlocks(prev => expandCollapseBlockFully(
-                        prev,
-                        item.blockId,
-                        item.hiddenStart,
-                        item.hiddenEnd,
-                      ));
-                    }} />
-                </div>
-              );
-            }
-
-            // item.kind === 'split-line' — fully typed
-            const renderMode = vertical ? getTextVerticalRenderMode(item.row) : 'double';
-            const isSearchMatch = item.row.lineIdxs.some(idx => searchMatchSet.has(idx));
-            const isActiveSearch = item.row.lineIdxs.includes(activeSearchLineIdx);
-            const singleLine = renderMode === 'single-left'
-              ? item.row.left
-              : renderMode === 'single-right'
-              ? item.row.right
-              : renderMode === 'single-equal'
-              ? (item.row.left ?? item.row.right)
-              : null;
-
-            if (vertical && singleLine) {
-              return (
-                <div key={key} style={{ ...textRowLayoutStyle, height: ROW_H }}>
-                  <DiffRow
-                    line={singleLine}
-                    syntaxTokens={getSplitLineSyntaxTokens(
-                      syntaxPresentation,
-                      singleLine,
-                      singleLine === item.row.left ? 'left' : 'right',
-                    )}
-                    isReplacementPair={Boolean(item.row.isReplacementPair)}
-                    widthMode="content"
-                    isSearchMatch={isSearchMatch}
-                    isActiveSearch={isActiveSearch}
-                    searchRanges={(() => {
-                      const lineIdx = renderMode === 'single-left'
-                        ? getSplitRowSideLineIdx(item.row, 'left')
-                        : renderMode === 'single-right'
-                          ? getSplitRowSideLineIdx(item.row, 'right')
-                          : (item.row.lineIdxs[0] ?? null);
-                      return lineIdx != null ? (searchRangesByLineIdx.get(lineIdx) ?? []) : [];
-                    })()}
-                    showWhitespace={showWhitespace}
-                    fontSize={fontSize}
-                  />
-                </div>
-              );
-            }
-
-            const rowHeight = vertical && renderMode === 'double' ? DOUBLE_ROW_H : ROW_H;
-            return (
-              <div key={key} style={{
-                height: rowHeight,
-                display: 'flex',
-                flexDirection: vertical ? 'column' : 'row',
-                ...textRowLayoutStyle,
-              }}>
-                <SplitCell
-                  line={item.row.left} side="left"
-                  syntaxTokens={getSplitLineSyntaxTokens(syntaxPresentation, item.row.left, 'left')}
-                  widthMode={vertical ? 'content' : 'fill'}
-                  lineNumberLayout={vertical ? 'paired' : 'single'}
-                  isReplacementPair={Boolean(item.row.isReplacementPair)}
-                  isSearchMatch={isSearchMatch}
-                  isActiveSearch={isActiveSearch}
-                  searchRanges={(() => {
-                    const sideLineIdx = getSplitRowSideLineIdx(item.row, 'left');
-                    return sideLineIdx != null ? (searchRangesByLineIdx.get(sideLineIdx) ?? []) : [];
-                  })()}
-                  showWhitespace={showWhitespace}
-                   fontSize={fontSize}
-                   sheetName={activeWorkbookSection?.name ?? ''}
-                   versionLabel={baseVersion}
-                   selectedCell={selectedCell}
-                   onSelectCell={onSelectCell}
-                   stickyLeftBase={0}
-                 />
-                 <div
-                   style={vertical
-                     ? { height: 1, background: cssVar('border'), width: '100%', flexShrink: 0 }
-                     : { width: 1, background: cssVar('border'), flexShrink: 0 }} />
-                <SplitCell
-                  line={item.row.right} side="right"
-                  syntaxTokens={getSplitLineSyntaxTokens(syntaxPresentation, item.row.right, 'right')}
-                  widthMode={vertical ? 'content' : 'fill'}
-                  lineNumberLayout={vertical ? 'paired' : 'single'}
-                  isReplacementPair={Boolean(item.row.isReplacementPair)}
-                  isSearchMatch={isSearchMatch}
-                  isActiveSearch={isActiveSearch}
-                  searchRanges={(() => {
-                    const sideLineIdx = getSplitRowSideLineIdx(item.row, 'right');
-                    return sideLineIdx != null ? (searchRangesByLineIdx.get(sideLineIdx) ?? []) : [];
-                  })()}
-                  showWhitespace={showWhitespace}
-                   fontSize={fontSize}
-                   sheetName={activeWorkbookSection?.name ?? ''}
-                   versionLabel={mineVersion}
-                   selectedCell={selectedCell}
-                   onSelectCell={onSelectCell}
-                   stickyLeftBase={vertical ? 0 : singleGridWidth + 1}
-                 />
-               </div>
-             );
-          })}
-        </div>
+          <SplitMainBodyContent
+            isWorkbookMode={isWorkbookMode}
+            vertical={vertical}
+            activeWorkbookSectionName={activeWorkbookSection?.name ?? ''}
+            selectedCell={selectedCell}
+            onSelectCell={onSelectCell}
+            baseVersion={baseVersion}
+            mineVersion={mineVersion}
+            syntaxPresentation={syntaxPresentation}
+            showWhitespace={showWhitespace}
+            fontSize={fontSize}
+            items={items.slice(startIdx, endIdx)}
+            startIdx={startIdx}
+            activeCollapseIndex={activeCollapseIndex}
+            searchMatchSet={searchMatchSet}
+            activeSearchLineIdx={activeSearchLineIdx}
+            searchRangesByLineIdx={searchRangesByLineIdx}
+            selectionAccentColor={selectionAccentColor}
+            lineNumberTitle={lineNumberTitle}
+            textRowLayoutStyle={textRowLayoutStyle}
+            bodyContainerStyle={isWorkbookMode
+              ? { position: 'absolute', top: workbookHeaderHeight + rowWindowOffsetTop, left: 0, minWidth: '100%' }
+              : { position: 'absolute', top: workbookHeaderHeight + rowWindowOffsetTop, left: 0, width: 'max-content', minWidth: '100%' }}
+            onPointerDown={handleBlankAreaPointerDown}
+            isSplitRowSelected={isSplitRowSelected}
+            getSplitRowSideLineIdx={getSplitRowSideLineIdx}
+            getCombinedTextSelectionRangeForLine={getCombinedTextSelectionRangeForLine}
+            onLineNumberClick={handleLineNumberSelection}
+            renderTextCollapseBar={renderTextCollapseBar}
+            singleGridWidth={singleGridWidth}
+          />
         </div>
         <CollapseJumpButton
           onPrev={handleJumpToPreviousCollapse}
@@ -1064,12 +905,16 @@ const SplitPanel = memo(({
           totalCount={totalCollapseCount}
           storageKey={vertical ? 'text-split-v' : 'text-split-h'}
         />
+        <DiffContextMenu
+          anchorPoint={contextMenuPoint}
+          sections={contextMenuSections}
+          onClose={closeContextMenu}
+        />
       </div>
       <MiniMap
-        diffLines={diffLines}
-        scrollRef={scrollRef as RefObject<HTMLDivElement>}
-        totalH={totalH}
-        searchMatches={searchMatches} />
+        segments={miniMapSegments}
+        scrollRef={scrollRef as RefObject<HTMLDivElement | null>}
+        contentHeight={totalH} />
     </div>
   );
 });

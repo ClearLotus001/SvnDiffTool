@@ -169,8 +169,13 @@
   --scroll-track: transparent;
 
   /* 搜索 */
-  --search-hl: #7DD3FC;
-  --search-active-bg: rgba(125, 211, 252, 0.24);
+  --search-hl: #38BDF8;
+  --search-active-bg: rgba(56, 189, 248, 0.30);
+
+  /* 文本选中 */
+  --text-selection-bg: rgba(38, 79, 120, 0.60);
+  --text-selection-edge: rgba(38, 79, 120, 0.42);
+  --text-selection-color: #F8FBFF;
 
   /* MiniMap */
   --mini-add: #34D399;
@@ -250,8 +255,13 @@
   --scroll-track: transparent;
 
   /* 搜索 */
-  --search-hl: #1D4ED8;
-  --search-active-bg: rgba(29, 78, 216, 0.18);
+  --search-hl: #2563EB;
+  --search-active-bg: rgba(37, 99, 235, 0.24);
+
+  /* 文本选中 */
+  --text-selection-bg: rgba(173, 214, 255, 0.74);
+  --text-selection-edge: rgba(173, 214, 255, 0.50);
+  --text-selection-color: #0F172A;
 
   /* MiniMap */
   --mini-add: #10B981;
@@ -332,7 +342,12 @@
 
   /* 搜索 */
   --search-hl: #00FFFF;
-  --search-active-bg: rgba(0, 255, 255, 0.28);
+  --search-active-bg: rgba(0, 255, 255, 0.38);
+
+  /* 文本选中 */
+  --text-selection-bg: rgba(0, 255, 255, 0.76);
+  --text-selection-edge: rgba(0, 255, 255, 0.56);
+  --text-selection-color: #000000;
 
   /* MiniMap */
   --mini-add: #00FF00;
@@ -355,6 +370,118 @@
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   主窗口外框 / 圆角窗口态
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.app-window-frame {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--bg-base) 96%, white) 0%,
+      var(--bg-base) 100%
+    );
+  transition:
+    padding 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.app-window-frame::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    opacity 180ms ease,
+    inset 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.app-window-frame--floating {
+  padding: 0;
+  border-radius: 18px;
+  background: transparent;
+  box-shadow:
+    0 12px 30px -22px rgba(0, 0, 0, 0.26);
+}
+
+.app-window-frame--floating::before {
+  inset: 0;
+  opacity: 0;
+  box-shadow: none;
+}
+
+.app-window-frame--flush {
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.app-window-surface {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--bg-surface-solid) 97%, white) 0%,
+      var(--bg-surface-solid) 100%
+    );
+  transition:
+    border-radius 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.app-window-surface::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+.app-window-surface--floating {
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 92%, black 8%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 5%, transparent);
+}
+
+.app-window-surface--floating::before {
+  opacity: 1;
+  border-radius: inherit;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, white 4%, transparent) 0%,
+      transparent 12%
+    );
+  box-shadow: none;
+}
+
+.app-window-surface--flush {
+  border-radius: 0;
+  border: 0 solid transparent;
+  box-shadow: none;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
    全局基础样式
    ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -363,6 +490,72 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: inherit;
+}
+
+body,
+body * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea,
+select,
+[contenteditable="true"],
+.allow-text-selection,
+.allow-text-selection * {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
+.logical-text-selection-surface,
+.logical-text-selection-surface * {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-user-drag: none;
+}
+
+.logical-text-selection-overlay {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: linear-gradient(
+    180deg,
+    var(--text-selection-edge) 0%,
+    var(--text-selection-bg) 18%,
+    var(--text-selection-bg) 82%,
+    var(--text-selection-edge) 100%
+  );
+  pointer-events: none;
+  border-radius: 0;
+  z-index: 0;
+}
+
+.logical-text-selection-surface mark {
+  padding: 0 !important;
+  border-radius: 0 !important;
+  text-shadow: none;
+  box-shadow: none;
+}
+
+input::selection,
+textarea::selection,
+[contenteditable="true"]::selection,
+.allow-text-selection::selection,
+.allow-text-selection *::selection {
+  background: var(--text-selection-bg);
+  color: var(--text-selection-color);
+  text-shadow: none;
+}
+
+input::-moz-selection,
+textarea::-moz-selection,
+[contenteditable="true"]::-moz-selection,
+.allow-text-selection::-moz-selection,
+.allow-text-selection *::-moz-selection {
+  background: var(--text-selection-bg);
+  color: var(--text-selection-color);
+  text-shadow: none;
 }
 
 .searchbar-input,
@@ -525,6 +718,48 @@
   100% { opacity: 0.44; transform: scale(0.985); }
 }
 
+@keyframes selectionBarInFromAbove {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.975);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes selectionBarInFromBelow {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.975);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+/* 折叠条轻微进场强调 */
+@keyframes collapseBarFocusIn {
+  0% {
+    opacity: 0.92;
+    filter: brightness(0.985);
+  }
+  45% {
+    opacity: 1;
+    filter: brightness(1.045);
+  }
+  100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
+
 /* 旋转加载 */
 @keyframes spin {
   from { transform: rotate(0deg); }
@@ -540,6 +775,14 @@
 @utility glass {
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.collapse-bar[data-active="true"] {
+  animation: collapseBarFocusIn 220ms ease-out 1;
+}
+
+.collapse-bar-placeholder[data-active-collapse="true"] {
+  animation: collapseBarFocusIn 220ms ease-out 1;
 }
 
 /* MiniMap 视口滑块：半透明磨砂玻璃 */
@@ -626,6 +869,10 @@
   will-change: transform, opacity, filter;
 }
 
+.motion-selection-bar {
+  will-change: transform, opacity, filter;
+}
+
 .motion-toolbar-panel {
   animation: var(--animate-toolbar-panel-in);
   will-change: transform, opacity, filter;
@@ -641,6 +888,7 @@
   .motion-dialog-overlay,
   .motion-dialog-surface,
   .motion-floating-panel,
+  .motion-selection-bar,
   .motion-toolbar-panel,
   .motion-hover-card {
     animation: none !important;

@@ -8,6 +8,7 @@ import {
   resolveWorkbookAccentSurfaceVisual,
   resolveWorkbookAuxBarPalette,
   resolveWorkbookMiniMapColor,
+  resolveWorkbookMiniMapPaint,
   resolveWorkbookRowBorderColor,
   resolveWorkbookRowGutterBackground,
   resolveWorkbookRowLineNumberColor,
@@ -54,8 +55,13 @@ test('workbook row visuals resolve region and minimap tones consistently', () =>
   assert.equal(resolveWorkbookRegionTone(false, true), 'add');
   assert.equal(resolveWorkbookRegionTone(true, true), 'mixed');
   const mixedMiniMapColor = resolveWorkbookMiniMapColor(lightTheme, 'mixed');
+  const strictOnlyMiniMapColor = resolveWorkbookMiniMapColor(lightTheme, 'strict-only');
+  const mixedMiniMapPaint = resolveWorkbookMiniMapPaint(lightTheme, 'mixed');
   assert.notEqual(mixedMiniMapColor, lightTheme.bg2);
   assert.match(mixedMiniMapColor, /^(#|rgba?\()/i);
+  assert.equal(strictOnlyMiniMapColor, lightTheme.acc2);
+  assert.equal(mixedMiniMapPaint.kind, 'solid');
+  assert.equal(mixedMiniMapPaint.color, lightTheme.chgBg);
 });
 
 test('workbook row visuals resolve row surface, selection accent and gutter background consistently', () => {

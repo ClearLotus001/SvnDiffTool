@@ -56,6 +56,25 @@ writeExternalDiffDebugLog('process-start', {
   logsPath: getRuntimePathState().logsPath,
 });
 
+app.on('before-quit', (_event) => {
+  writeExternalDiffDebugLog('app:before-quit', {
+    windowCount: BrowserWindow.getAllWindows().length,
+  });
+});
+
+app.on('will-quit', (_event) => {
+  writeExternalDiffDebugLog('app:will-quit', {
+    windowCount: BrowserWindow.getAllWindows().length,
+  });
+});
+
+app.on('window-all-closed', () => {
+  writeExternalDiffDebugLog('app:window-all-closed', {
+    windowCount: BrowserWindow.getAllWindows().length,
+  });
+  app.quit();
+});
+
 // ---------------------------------------------------------------------------
 // Register all IPC handlers (must happen before window creation)
 // ---------------------------------------------------------------------------
@@ -117,10 +136,6 @@ if (maintenanceMode) {
 
 app.on('before-quit', () => {
   cleanupTrackedManagedTempFilesSync();
-});
-
-app.on('window-all-closed', () => {
-  app.quit();
 });
 
 app.on('activate', () => {

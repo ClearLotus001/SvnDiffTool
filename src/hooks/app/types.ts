@@ -8,7 +8,7 @@ import type {
 } from '@/types';
 
 export type WorkbookFreezeStateMap = Record<string, WorkbookFreezeState>;
-export type LoadPhase = 'idle' | 'loading' | 'ready' | 'error';
+export type LoadPhase = 'bootstrapping' | 'idle' | 'loading' | 'ready' | 'error';
 export type RevisionOptionsStatus = 'idle' | 'loading' | 'loaded' | 'error';
 
 export interface CachedDiffResult {

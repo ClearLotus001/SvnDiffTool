@@ -1,5 +1,6 @@
 import type { ThemeTokens } from '@/theme/tokens';
 import type { WorkbookCompareMode } from '@/types';
+import { resolveDiffIndicatorThemeVisual } from '@/utils/diff/diffIndicatorVisuals';
 import type { WorkbookCompareCellState } from '@/utils/workbook/workbookCompare';
 import { getWorkbookCellChangeKind } from '@/utils/workbook/workbookCellContract';
 
@@ -27,9 +28,7 @@ export interface WorkbookMergeContinuationVisual {
 
 function getWorkbookStrictOnlyVisual(theme: ThemeTokens): WorkbookCompareCellVisual {
   return {
-    background: `${theme.acc2}16`,
-    border: `${theme.acc2}66`,
-    textColor: theme.acc2,
+    ...resolveDiffIndicatorThemeVisual(theme, 'strict-only', 'strong'),
     maskOverlay: null,
   };
 }
@@ -78,42 +77,25 @@ export function getWorkbookCompareBadgeVisual(
   theme: ThemeTokens,
   kind: WorkbookCompareCellState['kind'],
 ): WorkbookCompareBadgeVisual {
-  if (kind === 'add') {
-    return {
-      background: `${theme.addBrd}12`,
-      border: `${theme.addBrd}33`,
-      textColor: theme.addTx,
-    };
-  }
-  if (kind === 'delete') {
-    return {
-      background: `${theme.delBrd}12`,
-      border: `${theme.delBrd}33`,
-      textColor: theme.delTx,
-    };
-  }
-  return {
-    background: `${theme.chgTx}12`,
-    border: `${theme.chgTx}33`,
-    textColor: theme.chgTx,
-  };
+  return resolveDiffIndicatorThemeVisual(
+    theme,
+    kind === 'add' || kind === 'delete' ? kind : 'modify',
+    'soft',
+  );
 }
 
 export function getWorkbookCompareHintVisual(
   theme: ThemeTokens,
   kind: Exclude<WorkbookCompareSemanticKind, 'equal'>,
 ): WorkbookCompareHintVisual {
-  if (kind === 'strict-only') {
-    return {
-      background: `${theme.acc2}14`,
-      border: `${theme.acc2}33`,
-      textColor: theme.acc2,
-    };
-  }
-
-  return getWorkbookCompareBadgeVisual(
+  return resolveDiffIndicatorThemeVisual(
     theme,
-    kind === 'modify' ? 'modify' : kind,
+    kind === 'strict-only'
+      ? 'strict-only'
+      : kind === 'modify'
+        ? 'modify'
+        : kind,
+    'soft',
   );
 }
 
@@ -156,18 +138,14 @@ export function resolveWorkbookCompareCellVisual({
 
   if (kind === 'add') {
     return {
-      background: T.addBg,
-      border: T.addBrd,
-      textColor: T.addTx,
+      ...resolveDiffIndicatorThemeVisual(T, 'add', 'strong'),
       maskOverlay: null,
     };
   }
 
   if (kind === 'delete') {
     return {
-      background: T.delBg,
-      border: T.delBrd,
-      textColor: T.delTx,
+      ...resolveDiffIndicatorThemeVisual(T, 'delete', 'strong'),
       maskOverlay: null,
     };
   }
@@ -176,9 +154,7 @@ export function resolveWorkbookCompareCellVisual({
   if (isSingleSidedRow) {
     const isAddSide = side === 'mine' && hasMineRow;
     return {
-      background: isAddSide ? T.addBg : T.delBg,
-      border: isAddSide ? T.addBrd : T.delBrd,
-      textColor: isAddSide ? T.addTx : T.delTx,
+      ...resolveDiffIndicatorThemeVisual(T, isAddSide ? 'add' : 'delete', 'strong'),
       maskOverlay: null,
     };
   }
@@ -188,9 +164,7 @@ export function resolveWorkbookCompareCellVisual({
   }
 
   return {
-    background: T.chgBg,
-    border: T.chgTx,
-    textColor: T.chgTx,
+    ...resolveDiffIndicatorThemeVisual(T, 'modify', 'strong'),
     maskOverlay: null,
   };
 }

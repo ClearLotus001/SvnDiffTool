@@ -1,8 +1,9 @@
 // src/components/UnifiedPanel.tsx  [v4 — typecheck clean]
-import { memo, useCallback, useEffect, useRef, useState, useMemo, startTransition, type RefObject } from 'react';
+import { memo, useCallback, useEffect, useRef, useState, useMemo, type MouseEvent as ReactMouseEvent, type RefObject } from 'react';
 import type {
   CollapseItem,
   DiffLine,
+  Hunk,
   LineItem,
   RenderItem,
   SearchMatch,
@@ -10,46 +11,61 @@ import type {
   TextDiffPresentation,
 } from '@/types';
 import { LN_W } from '@/constants/layout';
+import { useI18n } from '@/context/i18n';
 import { cssAlpha, cssVar } from '@/theme/cssUtils';
 import { useVirtual, ROW_H } from '@/hooks/virtualization/useVirtual';
 import { WORKBOOK_CELL_WIDTH } from '@/utils/workbook/workbookDisplay';
+import type { TextUnifiedLayoutSnapshot } from '@/types';
 import {
   findWorkbookSectionIndex,
   getWorkbookColumnLabels,
   getWorkbookSections,
 } from '@/utils/workbook/workbookSections';
 import {
+  addManualCollapsedRange,
+  areCollapseExpansionStatesEqual,
+  cloneCollapseExpansionState,
+  EMPTY_COLLAPSE_EXPANSION_STATE,
+  getManualCollapsedRanges,
   type CollapseExpansionState,
   expandCollapseBlock,
   expandCollapseBlockFully,
   getCollapseLeadingRevealCount,
-  revealCollapsedLine,
+  removeManualCollapsedRange,
 } from '@/utils/collapse/collapseState';
 import {
   buildCollapsedItems,
   buildCollapsibleRowBlocks,
-  findCollapsedRowTarget,
 } from '@/utils/collapse/collapsibleRows';
+import { overlayManualCollapsedItems } from '@/utils/collapse/manualCollapse';
 import {
-  countRemainingCollapses,
-  findCyclicCollapseIndex,
-  getCollapseIndexes,
-  resolveActiveCollapsePosition,
-} from '@/utils/collapse/collapseNavigation';
+  doesSelectionIntersectLineRange,
+  isLineIdxWithinSelection,
+} from '@/utils/diff/lineRangeSelection';
+import { buildCollapseSelectionSurfaces, getManualLineSelectionAccent } from '@/utils/diff/selectionVisuals';
+import { useCollapseNavigationState, type CollapseNavigationHandler } from '@/hooks/diff/useCollapseNavigationState';
+import { useResolvedTextLineNavigation } from '@/hooks/diff/useResolvedTextLineNavigation';
+import { useLogicalTextSelectionState } from '@/hooks/diff/useLogicalTextSelectionState';
+import { useTextSearchDecorations } from '@/hooks/diff/useTextSearchDecorations';
+import { useTextSelectionContextMenu } from '@/hooks/diff/useTextSelectionContextMenu';
+import { useTextLineRangeSelectionState } from '@/hooks/diff/useTextLineRangeSelectionState';
+import { doesLogicalTextSelectionIntersectLineRange } from '@/utils/diff/logicalTextSelection';
 import { getUnifiedLineSyntaxTokens } from '@/utils/diff/syntaxHighlighting';
 import DiffRow from '@/components/diff/DiffRow';
 import CollapseBar from '@/components/diff/CollapseBar';
 import CollapseJumpButton from '@/components/diff/CollapseJumpButton';
-import MiniMap from '@/components/diff/MiniMap';
-import type { TokenSearchRange } from '@/components/shared/TokenText';
+import MiniMap, { buildUnifiedMiniMapSegments } from '@/components/diff/MiniMap';
+import DiffContextMenu from '@/components/diff/DiffContextMenu';
 
 const CONTEXT_LINES = 3;
-type CollapseNavigationHandler = (direction: 'prev' | 'next') => void;
 
-interface UnifiedPanelProps {
+export interface UnifiedPanelProps {
   diffLines: DiffLine[];
   textDiffPresentation: TextDiffPresentation;
   syntaxPresentation?: SyntaxPresentation | null;
+  baseVersionLabel?: string;
+  mineVersionLabel?: string;
+  onLineSelectionChange?: ((selection: import('@/types').TextLineSelectionSummary | null) => void) | undefined;
   collapseCtx: boolean;
   activeHunkIdx: number;
   searchMatches: SearchMatch[];
@@ -58,22 +74,30 @@ interface UnifiedPanelProps {
   hunkPositions: number[];
   showWhitespace: boolean;
   fontSize: number;
+  guidedHunkRange?: Hunk | null;
   onScrollerReady: (scrollToIndex: (idx: number, align?: 'start' | 'center') => void) => void;
   onCollapseNavigationReady?: ((navigate: CollapseNavigationHandler | null) => void) | undefined;
+  layoutSnapshot?: TextUnifiedLayoutSnapshot | null;
+  onLayoutSnapshotChange?: ((snapshot: TextUnifiedLayoutSnapshot) => void) | undefined;
+  sharedExpandedBlocks?: CollapseExpansionState | null;
+  onExpandedBlocksChange?: ((expandedBlocks: CollapseExpansionState) => void) | undefined;
 }
 
 const UnifiedPanel = memo(({
-  diffLines, textDiffPresentation, syntaxPresentation = null, collapseCtx, activeHunkIdx, searchMatches, activeSearchIdx,
+  diffLines, textDiffPresentation, syntaxPresentation = null, baseVersionLabel = '', mineVersionLabel = '', onLineSelectionChange, collapseCtx, activeHunkIdx, searchMatches, activeSearchIdx,
   searchJumpNonce,
   hunkPositions, showWhitespace, fontSize, onScrollerReady, onCollapseNavigationReady,
+  guidedHunkRange: _guidedHunkRange = null,
+  layoutSnapshot = null, onLayoutSnapshotChange, sharedExpandedBlocks = null, onExpandedBlocksChange,
 }: UnifiedPanelProps) => {
+  const { t } = useI18n();
   const scrollRef = useRef<HTMLDivElement>(null);
   const pendingScrollAdjustRef = useRef(0);
-  const lastCollapseJumpIndexRef = useRef<number | null>(null);
-  const completedSearchJumpNonceRef = useRef<number>(-1);
-  const [expandedBlocks, setExpandedBlocks] = useState<CollapseExpansionState>({});
+  const snapshotEmitRafRef = useRef(0);
+  const [expandedBlocks, setExpandedBlocks] = useState<CollapseExpansionState>(() => (
+    cloneCollapseExpansionState(layoutSnapshot?.expandedBlocks ?? EMPTY_COLLAPSE_EXPANSION_STATE)
+  ));
   const [activeWorkbookSectionIdx, setActiveWorkbookSectionIdx] = useState(0);
-  const [pendingScrollTarget, setPendingScrollTarget] = useState<{ lineIdx: number; align: 'start' | 'center' } | null>(null);
   const workbookSections = useMemo(() => getWorkbookSections(diffLines), [diffLines]);
   const isWorkbookMode = workbookSections.length > 0;
   const activeWorkbookSection = workbookSections[activeWorkbookSectionIdx] ?? workbookSections[0];
@@ -90,18 +114,19 @@ const UnifiedPanel = memo(({
   }, [activeWorkbookSection?.startLineIdx, diffLines, isWorkbookMode, visibleDiffLines]);
   const blockPrefix = isWorkbookMode
     ? `unified-${activeWorkbookSection?.name ?? activeWorkbookSection?.startLineIdx ?? 0}`
-    : 'unified-text';
+    : 'text';
   const rowBlocks = useMemo(
     () => buildCollapsibleRowBlocks(visibleLineItems, (item) => item.line.type === 'equal'),
     [visibleLineItems],
   );
-  const items = useMemo<RenderItem[]>(
+  const baseItems = useMemo<RenderItem[]>(
     () => buildCollapsedItems(rowBlocks, collapseCtx, expandedBlocks, {
       contextLines: CONTEXT_LINES,
       blockPrefix,
       buildRowItem: (item): LineItem => ({ kind: 'line', line: item.line, lineIdx: item.lineIdx }),
       buildCollapseItem: ({ blockId, count, fromIdx, toIdx, hiddenStart, hiddenEnd, expandStep }): CollapseItem => ({
         kind: 'collapse',
+        source: 'auto',
         count,
         blockId,
         fromIdx,
@@ -113,76 +138,173 @@ const UnifiedPanel = memo(({
     }),
     [blockPrefix, collapseCtx, expandedBlocks, rowBlocks],
   );
+  const manualCollapsedRanges = useMemo(
+    () => getManualCollapsedRanges(expandedBlocks),
+    [expandedBlocks],
+  );
+  const items = useMemo<RenderItem[]>(
+    () => overlayManualCollapsedItems(baseItems, manualCollapsedRanges, {
+      isLineItem: (item): item is LineItem => item.kind === 'line',
+      getLineIdxs: (item) => item.kind === 'line' ? [item.lineIdx] : [],
+      getCollapsedItemRange: (item) => item.kind === 'collapse'
+        ? {
+          startLineIdx: item.fromIdx,
+          endLineIdx: item.toIdx,
+        }
+        : null,
+      buildCollapseItem: ({ startLineIdx, endLineIdx, count }): CollapseItem => ({
+        kind: 'collapse',
+        source: 'manual',
+        count,
+        blockId: `manual:${startLineIdx}:${endLineIdx}`,
+        fromIdx: startLineIdx,
+        toIdx: endLineIdx,
+        hiddenStart: 0,
+        hiddenEnd: Math.max(0, count - 1),
+        expandStep: count,
+      }),
+    }),
+    [baseItems, manualCollapsedRanges],
+  );
 
   const { totalH, startIdx, endIdx, scrollToIndex } = useVirtual(
     items.length,
-    scrollRef as RefObject<HTMLDivElement>,
+    scrollRef as RefObject<HTMLDivElement | null>,
     ROW_H,
     { overscanMin: 40, overscanFactor: 2 },
   );
 
-  const revealLineIfCollapsed = useCallback((lineIdx: number) => {
-    const target = findCollapsedRowTarget(rowBlocks, expandedBlocks, lineIdx, {
-      contextLines: CONTEXT_LINES,
-      blockPrefix,
-    });
-    if (!target) return false;
-    startTransition(() => {
-      setExpandedBlocks((prev) => revealCollapsedLine(
+  const {
+    lineRangeSelection,
+    setLineRangeSelection,
+    normalizedLineRangeSelection,
+    selectedLineCount,
+    selectedLineRangeLabel,
+    handleLineNumberSelection,
+    handleFoldSelectedRange,
+    handleClearSelectedRange,
+    handleBlankAreaPointerDown,
+  } = useTextLineRangeSelectionState({
+    onFoldRange: (startLineIdx, endLineIdx) => {
+      setExpandedBlocks((prev) => addManualCollapsedRange(
         prev,
-        target.blockId,
-        target.hiddenStart,
-        target.hiddenEnd,
-        target.targetIndex,
+        startLineIdx,
+        endLineIdx,
       ));
-    });
-    return true;
-  }, [blockPrefix, expandedBlocks, rowBlocks]);
+    },
+  });
+  const {
+    contextMenuPoint,
+    contextMenuSections,
+    closeContextMenu,
+    openTextSelectionContextMenu,
+    openLineSelectionContextMenu,
+  } = useTextSelectionContextMenu({
+    diffLines,
+    normalizedLineRangeSelection,
+    selectedLineCount,
+    baseVersionLabel,
+    mineVersionLabel,
+    onFoldSelectedRange: handleFoldSelectedRange,
+    onClearSelectedRange: handleClearSelectedRange,
+  });
+  const {
+    textSelection,
+    textSelectionCopyText,
+    getTextSelectionRangeForLine,
+    clearTextSelection,
+  } = useLogicalTextSelectionState({
+    enabled: !isWorkbookMode,
+    hostRef: scrollRef,
+    diffLines,
+    copyMode: 'display',
+    onSelectionIntent: () => {
+      setLineRangeSelection(null);
+      closeContextMenu();
+    },
+  });
+  const handleManagedLineNumberSelection = useCallback((lineIdx: number, extend: boolean) => {
+    clearTextSelection();
+    closeContextMenu();
+    handleLineNumberSelection(lineIdx, extend);
+  }, [clearTextSelection, closeContextMenu, handleLineNumberSelection]);
+  const lineNumberTitle: string | undefined = undefined;
 
-  const scrollToResolvedLine = useCallback((lineIdx: number, align: 'start' | 'center' = 'center') => {
-    const exactIndex = items.findIndex((item) => item.kind === 'line' && item.lineIdx === lineIdx);
-    if (exactIndex >= 0) {
-      scrollToIndex(exactIndex, align);
-      setPendingScrollTarget((prev) => (
-        prev && prev.lineIdx === lineIdx && prev.align === align ? null : prev
-      ));
-      return true;
-    }
-    if (revealLineIfCollapsed(lineIdx)) {
-      setPendingScrollTarget({ lineIdx, align });
-      return false;
-    }
-    const nearestIndex = items.findIndex((item) => item.kind === 'line' && item.lineIdx > lineIdx);
-    if (nearestIndex >= 0) {
-      scrollToIndex(nearestIndex, align);
-      return true;
-    }
-    return false;
-  }, [items, revealLineIfCollapsed, scrollToIndex]);
-
+  const {
+    searchMatchSet,
+    activeSearchLineIdx,
+    searchRangesByLineIdx,
+  } = useTextSearchDecorations(searchMatches, activeSearchIdx);
+  useResolvedTextLineNavigation({
+    itemsDependency: items,
+    rowBlocks,
+    expandedBlocks,
+    setExpandedBlocks,
+    contextLines: CONTEXT_LINES,
+    blockPrefix,
+    scrollToIndex,
+    findExactItemIndex: (lineIdx) => items.findIndex((item) => item.kind === 'line' && item.lineIdx === lineIdx),
+    findNearestItemIndex: (lineIdx) => items.findIndex((item) => item.kind === 'line' && item.lineIdx > lineIdx),
+    onScrollerReady,
+    activeSearchLineIdx,
+    searchJumpNonce,
+  });
+  const selectionAccentColor = getManualLineSelectionAccent();
+  const selectedCollapseSurfaces = useMemo(
+    () => buildCollapseSelectionSurfaces(selectionAccentColor),
+    [selectionAccentColor],
+  );
+  const textSelectionCollapsePalette = useMemo(() => ({
+    background: `linear-gradient(90deg,
+      color-mix(in srgb, var(--text-selection-bg) 82%, var(--bg1) 18%) 0%,
+      color-mix(in srgb, var(--text-selection-bg) 24%, transparent) 100%)`,
+    border: 'color-mix(in srgb, var(--text-selection-bg) 64%, transparent)',
+    accent: cssVar('acc2'),
+    buttonBorder: 'color-mix(in srgb, var(--text-selection-bg) 42%, transparent)',
+    buttonText: cssVar('acc2'),
+    labelText: cssVar('t1'),
+    subduedText: cssVar('t2'),
+  }), []);
   useEffect(() => {
-    onScrollerReady((lineIdx, align) => {
-      scrollToResolvedLine(lineIdx, align ?? 'center');
-    });
-  }, [onScrollerReady, scrollToResolvedLine]);
+    onLineSelectionChange?.(
+      normalizedLineRangeSelection
+        ? { count: selectedLineCount, rangeLabel: selectedLineRangeLabel }
+        : null,
+    );
+    return () => onLineSelectionChange?.(null);
+  }, [normalizedLineRangeSelection, onLineSelectionChange, selectedLineCount, selectedLineRangeLabel]);
 
-  const searchMatchSet      = useMemo(() => new Set(searchMatches.map(m => m.lineIdx)), [searchMatches]);
-  const activeSearchLineIdx = activeSearchIdx >= 0
-    ? (searchMatches[activeSearchIdx]?.lineIdx ?? -1)
-    : -1;
-  const searchRangesByLineIdx = useMemo(() => {
-    const next = new Map<number, TokenSearchRange[]>();
-    searchMatches.forEach((match, index) => {
-      const ranges = next.get(match.lineIdx) ?? [];
-      ranges.push({
-        start: match.start,
-        end: match.end,
-        active: index === activeSearchIdx,
-      });
-      next.set(match.lineIdx, ranges);
-    });
-    return next;
-  }, [activeSearchIdx, searchMatches]);
+  const handleContextMenu = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    if (isWorkbookMode) return;
+    if (openTextSelectionContextMenu(event, textSelectionCopyText)) return;
+    void openLineSelectionContextMenu(event, 'both');
+  }, [
+    isWorkbookMode,
+    openLineSelectionContextMenu,
+    openTextSelectionContextMenu,
+    textSelectionCopyText,
+  ]);
+  useEffect(() => {
+    const hasTextSelectionMenu = contextMenuSections.some((section) => (
+      section.items.some((item) => item.id === 'copy-selected-text')
+    ));
+    if (hasTextSelectionMenu && !textSelectionCopyText) {
+      closeContextMenu();
+    }
+  }, [closeContextMenu, contextMenuSections, textSelectionCopyText]);
+  useEffect(() => {
+    setLineRangeSelection(null);
+    clearTextSelection();
+  }, [clearTextSelection, diffLines, isWorkbookMode, setLineRangeSelection]);
+
+  const miniMapSegments = useMemo(
+    () => buildUnifiedMiniMapSegments(
+      items,
+      textDiffPresentation.replacementPairIndex,
+      searchMatchSet,
+    ),
+    [items, searchMatchSet, textDiffPresentation.replacementPairIndex],
+  );
 
   useEffect(() => {
     if (!isWorkbookMode || workbookSections.length === 0) return;
@@ -203,27 +325,25 @@ const UnifiedPanel = memo(({
     setActiveWorkbookSectionIdx(prev => (prev === nextSectionIdx ? prev : nextSectionIdx));
   }, [activeHunkIdx, hunkPositions, isWorkbookMode, workbookSections]);
 
-  useEffect(() => {
-    if (searchJumpNonce === completedSearchJumpNonceRef.current) return;
-    if (activeSearchLineIdx < 0) {
-      completedSearchJumpNonceRef.current = searchJumpNonce;
-      return;
-    }
-    if (scrollToResolvedLine(activeSearchLineIdx, 'center')) {
-      completedSearchJumpNonceRef.current = searchJumpNonce;
-    }
-  }, [activeSearchLineIdx, scrollToResolvedLine, searchJumpNonce]);
+  const {
+    activeCollapseIndex,
+    activeCollapsePosition,
+    totalCollapseCount,
+    handleJumpToNextCollapse,
+    handleJumpToPreviousCollapse,
+    resetActiveCollapseNavigation,
+  } = useCollapseNavigationState({
+    items,
+    startIdx,
+    endIdx,
+    isCollapseItem: (item) => item.kind === 'collapse',
+    scrollToIndex,
+    onCollapseNavigationReady,
+  });
 
   useEffect(() => {
-    if (!pendingScrollTarget) return;
-    if (scrollToResolvedLine(pendingScrollTarget.lineIdx, pendingScrollTarget.align)) {
-      setPendingScrollTarget(null);
-    }
-  }, [items, pendingScrollTarget, scrollToResolvedLine]);
-
-  useEffect(() => {
-    lastCollapseJumpIndexRef.current = null;
-  }, [diffLines, activeWorkbookSection?.name]);
+    resetActiveCollapseNavigation();
+  }, [activeWorkbookSection?.name, diffLines, resetActiveCollapseNavigation]);
 
   useEffect(() => {
     const scrollAdjust = pendingScrollAdjustRef.current;
@@ -236,51 +356,71 @@ const UnifiedPanel = memo(({
 
   const workbookHeaderHeight = isWorkbookMode ? ROW_H : 0;
   const columnLabels = getWorkbookColumnLabels(activeWorkbookSection?.maxColumns ?? 0);
-  const collapseIndexes = useMemo(
-    () => getCollapseIndexes(items, (item) => item.kind === 'collapse'),
-    [items],
-  );
-  const totalCollapseCount = useMemo(
-    () => countRemainingCollapses(items, 0, (item) => item.kind === 'collapse'),
-    [items],
-  );
-  const activeCollapsePosition = useMemo(
-    () => resolveActiveCollapsePosition(collapseIndexes, lastCollapseJumpIndexRef.current, startIdx),
-    [collapseIndexes, startIdx],
-  );
-  const handleJumpToNextCollapse = useCallback(() => {
-    const nextCollapseIndex = findCyclicCollapseIndex(
-      collapseIndexes,
-      lastCollapseJumpIndexRef.current,
-      endIdx,
-      'next',
-    );
-    if (nextCollapseIndex < 0) return;
-    lastCollapseJumpIndexRef.current = nextCollapseIndex;
-    scrollToIndex(nextCollapseIndex, 'start');
-  }, [collapseIndexes, endIdx, scrollToIndex]);
-  const handleJumpToPreviousCollapse = useCallback(() => {
-    const previousCollapseIndex = findCyclicCollapseIndex(
-      collapseIndexes,
-      lastCollapseJumpIndexRef.current,
-      startIdx,
-      'prev',
-    );
-    if (previousCollapseIndex < 0) return;
-    lastCollapseJumpIndexRef.current = previousCollapseIndex;
-    scrollToIndex(previousCollapseIndex, 'start');
-  }, [collapseIndexes, scrollToIndex, startIdx]);
 
   useEffect(() => {
-    onCollapseNavigationReady?.((direction) => {
-      if (direction === 'prev') {
-        handleJumpToPreviousCollapse();
-        return;
-      }
-      handleJumpToNextCollapse();
+    if (isWorkbookMode) return;
+    const snapshotState = sharedExpandedBlocks
+      ?? layoutSnapshot?.expandedBlocks
+      ?? EMPTY_COLLAPSE_EXPANSION_STATE;
+    setExpandedBlocks((previous) => (
+      areCollapseExpansionStatesEqual(previous, snapshotState)
+        ? previous
+        : cloneCollapseExpansionState(snapshotState)
+    ));
+
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const rafId = requestAnimationFrame(() => {
+      scroller.scrollTop = layoutSnapshot?.scrollTop ?? 0;
+      scroller.scrollLeft = layoutSnapshot?.scrollLeft ?? 0;
     });
-    return () => onCollapseNavigationReady?.(null);
-  }, [handleJumpToNextCollapse, handleJumpToPreviousCollapse, onCollapseNavigationReady]);
+    return () => cancelAnimationFrame(rafId);
+  }, [diffLines, isWorkbookMode, layoutSnapshot, sharedExpandedBlocks]);
+
+  const emitLayoutSnapshot = useCallback(() => {
+    if (isWorkbookMode || !onLayoutSnapshotChange) return;
+    const scroller = scrollRef.current;
+    onLayoutSnapshotChange({
+      layout: 'unified',
+      scrollTop: scroller?.scrollTop ?? 0,
+      scrollLeft: scroller?.scrollLeft ?? 0,
+      expandedBlocks: cloneCollapseExpansionState(expandedBlocks),
+    });
+  }, [expandedBlocks, isWorkbookMode, onLayoutSnapshotChange]);
+
+  useEffect(() => {
+    if (isWorkbookMode || !onLayoutSnapshotChange) return;
+    emitLayoutSnapshot();
+  }, [emitLayoutSnapshot, expandedBlocks, isWorkbookMode, onLayoutSnapshotChange]);
+
+  useEffect(() => {
+    if (isWorkbookMode || !onExpandedBlocksChange) return;
+    onExpandedBlocksChange(expandedBlocks);
+  }, [expandedBlocks, isWorkbookMode, onExpandedBlocksChange]);
+
+  useEffect(() => {
+    if (isWorkbookMode || !onLayoutSnapshotChange) return undefined;
+    const scroller = scrollRef.current;
+    if (!scroller) return undefined;
+
+    const handleScroll = () => {
+      if (snapshotEmitRafRef.current) return;
+      snapshotEmitRafRef.current = requestAnimationFrame(() => {
+        snapshotEmitRafRef.current = 0;
+        emitLayoutSnapshot();
+      });
+    };
+
+    scroller.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      scroller.removeEventListener('scroll', handleScroll);
+      if (snapshotEmitRafRef.current) {
+        cancelAnimationFrame(snapshotEmitRafRef.current);
+        snapshotEmitRafRef.current = 0;
+      }
+      emitLayoutSnapshot();
+    };
+  }, [emitLayoutSnapshot, isWorkbookMode, onLayoutSnapshotChange]);
 
   return (
     <div className="flex-1 flex overflow-hidden min-w-0 min-h-0">
@@ -317,7 +457,12 @@ const UnifiedPanel = memo(({
           </div>
         )}
 
-        <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-auto relative min-w-0 min-h-0" style={{ overflowAnchor: 'none' }}>
+        <div
+          ref={scrollRef}
+          onContextMenu={handleContextMenu}
+          onPointerDown={handleBlankAreaPointerDown}
+          className="flex-1 overflow-y-auto overflow-x-auto relative min-w-0 min-h-0"
+          style={{ overflowAnchor: 'none' }}>
           <div style={{ height: totalH + workbookHeaderHeight, pointerEvents: 'none' }} />
           {isWorkbookMode && (
             <div style={{
@@ -358,17 +503,61 @@ const UnifiedPanel = memo(({
             </div>
           )}
 
-          <div style={{ position: 'absolute', top: workbookHeaderHeight + (startIdx * ROW_H), left: 0, minWidth: '100%' }}>
-          {items.slice(startIdx, endIdx).map((item) => {
+          <div
+            onPointerDown={handleBlankAreaPointerDown}
+            style={isWorkbookMode
+              ? { position: 'absolute', top: workbookHeaderHeight + (startIdx * ROW_H), left: 0, minWidth: '100%' }
+              : { position: 'absolute', top: workbookHeaderHeight + (startIdx * ROW_H), left: 0, width: 'max-content', minWidth: '100%' }}>
+          {items.slice(startIdx, endIdx).map((item, visibleOffset) => {
+            const itemIndex = startIdx + visibleOffset;
             const key = item.kind === 'collapse'
               ? `${item.blockId}-${item.hiddenStart}-${item.hiddenEnd}`
               : `line-${item.lineIdx}`;
             if (item.kind === 'collapse') {
               const ci = item as CollapseItem;
+              const collapseLineSelected = doesSelectionIntersectLineRange(lineRangeSelection, ci.fromIdx, ci.toIdx);
+              const collapseTextSelected = doesLogicalTextSelectionIntersectLineRange(textSelection, ci.fromIdx, ci.toIdx);
+              const collapseSelected = collapseLineSelected || collapseTextSelected;
               return (
-                <div key={key} style={{ position: 'relative', zIndex: 12, pointerEvents: 'auto' }}>
-                  <CollapseBar count={ci.count} expandCount={Math.min(ci.count, ci.expandStep)}
+                <div
+                  key={key}
+                  data-collapse-range="true"
+                  data-collapse-start={ci.fromIdx}
+                  data-collapse-end={ci.toIdx}
+                  data-selection-band={collapseSelected ? 'true' : undefined}
+                  style={{ position: 'relative', zIndex: 12, pointerEvents: 'auto' }}>
+                  <CollapseBar
+                    count={ci.count}
+                    expandCount={Math.min(ci.count, ci.expandStep)}
+                    active={itemIndex === activeCollapseIndex}
+                    leadingInset={LN_W * 2}
+                    leadingSurface={collapseLineSelected
+                      ? selectedCollapseSurfaces.gutterBackground
+                      : collapseTextSelected
+                        ? `color-mix(in srgb, var(--text-selection-bg) 34%, ${cssVar('lnBg')} 66%)`
+                        : cssVar('lnBg')}
+                    leadingShadow={collapseLineSelected
+                      ? selectedCollapseSurfaces.gutterShadow
+                      : collapseTextSelected
+                        ? '8px 0 14px -14px color-mix(in srgb, var(--text-selection-bg) 46%, transparent)'
+                        : `8px 0 12px -12px ${cssAlpha('border2', '52')}`}
+                    label={ci.source === 'manual' ? t('manualCollapseBarLines', { count: ci.count }) : undefined}
+                    actionLabel={ci.source === 'manual' ? t('manualCollapseBarReveal') : undefined}
+                    palette={collapseLineSelected
+                      ? selectedCollapseSurfaces.palette
+                      : collapseTextSelected
+                        ? textSelectionCollapsePalette
+                        : undefined}
                     onExpand={() => {
+                      if (ci.source === 'manual') {
+                        setExpandedBlocks((prev) => removeManualCollapsedRange(
+                          prev,
+                          ci.fromIdx,
+                          ci.toIdx,
+                        ));
+                        return;
+                      }
+
                       const revealCount = Math.min(ci.count, ci.expandStep);
                       pendingScrollAdjustRef.current += getCollapseLeadingRevealCount(ci.count, revealCount) * ROW_H;
                       setExpandedBlocks(prev => expandCollapseBlock(
@@ -379,27 +568,66 @@ const UnifiedPanel = memo(({
                         revealCount,
                       ));
                     }}
-                    onExpandAll={() => {
-                      setExpandedBlocks(prev => expandCollapseBlockFully(
-                        prev,
-                        ci.blockId,
-                        ci.hiddenStart,
-                        ci.hiddenEnd,
-                      ));
-                    }} />
+                    onExpandAll={ci.source === 'manual'
+                      ? undefined
+                      : () => {
+                        setExpandedBlocks(prev => expandCollapseBlockFully(
+                          prev,
+                          ci.blockId,
+                          ci.hiddenStart,
+                          ci.hiddenEnd,
+                        ));
+                      }}
+                  />
                 </div>
               );
             }
             const li = item as LineItem;
+            const unifiedCopySide = li.line.base != null && li.line.mine != null
+              ? 'both'
+              : li.line.base != null
+                ? 'base'
+                : 'mine';
+            const unifiedLineText = li.line.type === 'add'
+              ? (li.line.mine ?? '')
+              : li.line.type === 'delete'
+                ? (li.line.base ?? '')
+                : (li.line.base ?? li.line.mine ?? '');
             return (
-              <DiffRow key={key} line={li.line}
-                syntaxTokens={getUnifiedLineSyntaxTokens(syntaxPresentation, li.line)}
-                isReplacementPair={textDiffPresentation.replacementPairIndex.has(li.lineIdx)}
-                isSearchMatch={searchMatchSet.has(li.lineIdx)}
-                isActiveSearch={activeSearchLineIdx === li.lineIdx}
-                searchRanges={searchRangesByLineIdx.get(li.lineIdx) ?? []}
-                showWhitespace={showWhitespace}
-                fontSize={fontSize} />
+              <div
+                key={key}
+                data-line-idx={li.lineIdx}
+                data-line-span-end={li.lineIdx}
+                data-selection-band={isLineIdxWithinSelection(lineRangeSelection, li.lineIdx) ? 'true' : undefined}
+                onPointerDown={handleBlankAreaPointerDown}
+                style={{ minWidth: '100%' }}>
+                <DiffRow line={li.line}
+                  copySide={unifiedCopySide}
+                  syntaxTokens={getUnifiedLineSyntaxTokens(syntaxPresentation, li.line)}
+                  isReplacementPair={textDiffPresentation.replacementPairIndex.has(li.lineIdx)}
+                  widthMode={isWorkbookMode ? 'fill' : 'content'}
+                  isSearchMatch={searchMatchSet.has(li.lineIdx)}
+                  isActiveSearch={activeSearchLineIdx === li.lineIdx}
+                  isRangeSelected={isLineIdxWithinSelection(lineRangeSelection, li.lineIdx)}
+                  isBaseLineSelected={isLineIdxWithinSelection(lineRangeSelection, li.lineIdx) && li.line.baseLineNo != null}
+                  isMineLineSelected={isLineIdxWithinSelection(lineRangeSelection, li.lineIdx) && li.line.mineLineNo != null}
+                  selectionAccentColor={selectionAccentColor}
+                  lineNumberTitle={!isWorkbookMode ? lineNumberTitle : undefined}
+                  onBaseLineNumberClick={!isWorkbookMode
+                    ? (event) => handleManagedLineNumberSelection(li.lineIdx, event.shiftKey)
+                    : undefined}
+                  onMineLineNumberClick={!isWorkbookMode
+                    ? (event) => handleManagedLineNumberSelection(li.lineIdx, event.shiftKey)
+                    : undefined}
+                  searchRanges={searchRangesByLineIdx.get(li.lineIdx) ?? []}
+                  showWhitespace={showWhitespace}
+                  fontSize={fontSize}
+                  allowTextSelection={!isWorkbookMode}
+                  textSelectionRange={!isWorkbookMode
+                    ? getTextSelectionRangeForLine(li.lineIdx, unifiedCopySide, unifiedLineText.length)
+                    : null}
+                />
+              </div>
             );
           })}
         </div>
@@ -411,12 +639,16 @@ const UnifiedPanel = memo(({
           totalCount={totalCollapseCount}
           storageKey="text-unified"
         />
+        <DiffContextMenu
+          anchorPoint={contextMenuPoint}
+          sections={contextMenuSections}
+          onClose={closeContextMenu}
+        />
       </div>
       <MiniMap
-        diffLines={diffLines}
-        scrollRef={scrollRef as RefObject<HTMLDivElement>}
-        totalH={totalH}
-        searchMatches={searchMatches} />
+        segments={miniMapSegments}
+        scrollRef={scrollRef as RefObject<HTMLDivElement | null>}
+        contentHeight={totalH} />
     </div>
   );
 });

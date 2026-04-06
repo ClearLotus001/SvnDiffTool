@@ -1,4 +1,5 @@
-import { memo } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { Check, Copy } from 'lucide-react';
 import type { LayoutMode, SvnRevisionInfo } from '@/types';
 import { useI18n } from '@/context/i18n';
 import { cssAlpha } from '@/theme/cssUtils';
@@ -33,6 +34,8 @@ interface SplitHeaderProps {
   canResetCompare?: boolean;
   onLoadMoreRevisions?: (() => void) | undefined;
   onRevisionDateTimeQuery?: ((value: string) => void) | undefined;
+  onBaseCopy?: (() => Promise<boolean> | boolean | void) | undefined;
+  onMineCopy?: (() => Promise<boolean> | boolean | void) | undefined;
 }
 
 function buildRevisionLogText(info: SvnRevisionInfo | null) {
@@ -53,8 +56,11 @@ const SplitHeader = memo(({
   isLoadingMoreRevisions = false, isSearchingRevisionDateTime = false,
   onRevisionChange, onOpenRevisionPicker, onResetCompare, canResetCompare = false,
   onLoadMoreRevisions, onRevisionDateTimeQuery,
+  onBaseCopy, onMineCopy,
 }: SplitHeaderProps) => {
   const { t } = useI18n();
+  const copyTimerRef = useRef<number | null>(null);
+  const [copiedSide, setCopiedSide] = useState<'base' | 'mine' | null>(null);
   const baseVersion = baseValueLabel.trim() || baseRevisionInfo?.revision || extractVersionLabel(baseName) || t('commonBase');
   const mineVersion = mineValueLabel.trim() || mineRevisionInfo?.revision || extractVersionLabel(mineName) || t('commonMine');
   const baseDisplayName = extractDisplayName(baseName);
@@ -141,6 +147,69 @@ const SplitHeader = memo(({
     );
   };
 
+  useEffect(() => () => {
+    if (copyTimerRef.current != null) {
+      window.clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = null;
+    }
+  }, []);
+
+  const handleCopyClick = useCallback(async (side: 'base' | 'mine') => {
+    const handler = side === 'base' ? onBaseCopy : onMineCopy;
+    if (!handler) return;
+    const result = await Promise.resolve(handler());
+    if (result === false) return;
+    setCopiedSide(side);
+    if (copyTimerRef.current != null) {
+      window.clearTimeout(copyTimerRef.current);
+    }
+    copyTimerRef.current = window.setTimeout(() => {
+      setCopiedSide((current) => (current === side ? null : current));
+      copyTimerRef.current = null;
+    }, 1200);
+  }, [onBaseCopy, onMineCopy]);
+
+  const renderCopyButton = (side: 'base' | 'mine', version: string) => {
+    const onCopy = side === 'base' ? onBaseCopy : onMineCopy;
+    if (!onCopy) return null;
+    const accent = side === 'base' ? '--acc2' : '--accent';
+    const accentKey = side === 'base' ? 'acc2' : 'acc';
+    const copied = copiedSide === side;
+    const tooltip = side === 'base'
+      ? `${t('copyFullBaseTitle')} · ${version}`
+      : `${t('copyFullMineTitle')} · ${version}`;
+
+    return (
+      <Tooltip content={tooltip}>
+        <button
+          type="button"
+          onClick={() => { void handleCopyClick(side); }}
+          aria-label={tooltip}
+          className="
+            size-7 rounded-lg
+            inline-flex items-center justify-center
+            border cursor-pointer shrink-0
+            transition-all duration-150
+            hover:border-border-strong hover:bg-bg-surface-hover
+            active:translate-y-0 active:scale-[0.98]
+            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/35
+          "
+          style={{
+            borderColor: copied ? cssAlpha(accentKey, '44') : cssAlpha(accentKey, '22'),
+            background: copied
+              ? `color-mix(in srgb, var(${accent}) 12%, var(--bg-surface-hover) 88%)`
+              : `color-mix(in srgb, var(${accent}) 4%, var(--bg-surface-solid) 96%)`,
+            color: copied ? `var(${accent})` : cssAlpha(accentKey, 'c8'),
+            boxShadow: copied ? `0 8px 16px -18px ${cssAlpha(accentKey, '28')}` : 'none',
+          }}>
+          {copied
+            ? <Check size={13} strokeWidth={2.5} />
+            : <Copy size={13} strokeWidth={2.2} />}
+        </button>
+      </Tooltip>
+    );
+  };
+
   const headerSide = (
     side: 'base' | 'mine', axis: string, title: string, name: string,
     version: string, info: SvnRevisionInfo | null, divider = false,
@@ -183,9 +252,12 @@ const SplitHeader = memo(({
               {axis}
             </span>
           </div>
-          {hasRevisionSwitch
-            ? renderRevisionSelect(side, info)
-            : renderStaticVersion(staticVersionLabel, accent)}
+          <div className="inline-flex items-center gap-1.5 min-w-0 shrink-0">
+            {hasRevisionSwitch
+              ? renderRevisionSelect(side, info)
+              : renderStaticVersion(staticVersionLabel, accent)}
+            {renderCopyButton(side, normalizedVersion || staticVersionLabel)}
+          </div>
         </div>
 
         <div className="flex items-center gap-2 min-w-0">

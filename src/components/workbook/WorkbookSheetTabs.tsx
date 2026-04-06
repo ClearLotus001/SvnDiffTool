@@ -3,7 +3,11 @@ import { Menu } from 'lucide-react';
 import { getWorkbookFontScale } from '@/constants/typography';
 import Tooltip from '@/components/shared/Tooltip';
 import { useI18n } from '@/context/i18n';
-import { cssAlpha, cssVar } from '@/theme/cssUtils';
+import { cssVar } from '@/theme/cssUtils';
+import {
+  resolveDiffIndicatorCssPalette,
+  resolveWorkbookSectionIndicatorTone,
+} from '@/utils/diff/diffIndicatorVisuals';
 import type { WorkbookSection } from '@/utils/workbook/workbookSections';
 
 interface WorkbookSheetTabsProps {
@@ -21,15 +25,6 @@ const WorkbookSheetTabs = memo(({
   const scrollRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-
-  const getSectionTone = (section: WorkbookSection) => {
-    switch (section.changeType) {
-      case 'add': return { accent: cssVar('addTx'), border: cssVar('addBrd'), background: cssVar('addBg') };
-      case 'delete': return { accent: cssVar('delTx'), border: cssVar('delBrd'), background: cssVar('delBg') };
-      case 'rename': return { accent: cssVar('chgTx'), border: cssAlpha('chgTx', '66'), background: cssVar('chgBg') };
-      default: return { accent: cssVar('acc2'), border: cssAlpha('acc2', '66'), background: cssAlpha('acc2', '16') };
-    }
-  };
 
   const getSectionBadge = (section: WorkbookSection) => {
     switch (section.changeType) {
@@ -124,7 +119,8 @@ const WorkbookSheetTabs = memo(({
             style={{ boxShadow: `0 16px 40px -24px ${cssVar('border2')}` }}>
             {sections.map((section, index) => {
               const active = index === activeIndex;
-              const tone = getSectionTone(section);
+              const indicatorTone = resolveWorkbookSectionIndicatorTone(section.changeType);
+              const palette = resolveDiffIndicatorCssPalette(indicatorTone);
               const badge = getSectionBadge(section);
               const label = getSectionLabel(section);
               return (
@@ -135,12 +131,12 @@ const WorkbookSheetTabs = memo(({
                     className="w-full h-[34px] px-3 rounded-[10px] cursor-pointer font-ui text-left whitespace-nowrap overflow-hidden text-ellipsis flex items-center gap-2 transition-all duration-150 hover:brightness-110"
                     style={{
                       fontSize: sizes.ui,
-                      border: `1px solid ${active ? tone.border : 'transparent'}`,
-                      background: active ? tone.background : 'transparent',
-                      color: active ? tone.accent : cssVar('t0'),
+                      border: `1px solid ${active ? palette.border : 'transparent'}`,
+                      background: active ? palette.background : 'transparent',
+                      color: active ? palette.text : cssVar('t0'),
                       fontWeight: active ? 700 : 600,
                     }}>
-                    {badge && <span aria-hidden="true" className="min-w-3.5 font-extrabold" style={{ color: tone.accent }}>{badge}</span>}
+                    {badge && <span aria-hidden="true" className="min-w-3.5 font-extrabold" style={{ color: palette.accent }}>{badge}</span>}
                     <span className="overflow-hidden text-ellipsis">{label}</span>
                   </button>
                 </Tooltip>
@@ -154,9 +150,11 @@ const WorkbookSheetTabs = memo(({
       <div ref={scrollRef} className="flex items-end gap-1 overflow-x-auto overflow-y-hidden flex-1 min-w-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         {sections.map((section, index) => {
           const active = index === activeIndex;
-          const tone = getSectionTone(section);
+          const indicatorTone = resolveWorkbookSectionIndicatorTone(section.changeType);
+          const palette = resolveDiffIndicatorCssPalette(indicatorTone);
           const badge = getSectionBadge(section);
           const label = getSectionLabel(section);
+          const activeTextColor = indicatorTone === 'neutral' ? cssVar('t0') : palette.text;
           return (
             <Tooltip key={`${section.name}-${section.startLineIdx}`} content={renderSectionTooltip(section)} maxWidth={320}>
               <button
@@ -164,17 +162,17 @@ const WorkbookSheetTabs = memo(({
                 onClick={() => onSelect(index)}
                 className="h-8 px-3.5 rounded-t-[10px] border-b-0 cursor-pointer font-ui whitespace-nowrap shrink-0 inline-flex items-center gap-2 max-w-[240px] transition-all duration-150"
                 style={{
-                  borderLeft: `1px solid ${active ? tone.border : cssVar('border')}`,
-                  borderRight: `1px solid ${active ? tone.border : cssVar('border')}`,
-                  borderTop: `2px solid ${active ? tone.accent : 'transparent'}`,
+                  borderLeft: `1px solid ${active ? palette.border : cssVar('border')}`,
+                  borderRight: `1px solid ${active ? palette.border : cssVar('border')}`,
+                  borderTop: `2px solid ${active ? palette.accent : 'transparent'}`,
                   background: active ? cssVar('bg1') : cssVar('bg2'),
-                  color: active ? cssVar('t0') : cssVar('t1'),
+                  color: active ? activeTextColor : cssVar('t1'),
                   fontSize: sizes.ui,
                   fontWeight: active ? 700 : 600,
-                  boxShadow: active ? `0 -6px 14px -10px ${cssVar('border2')}` : 'none',
+                  boxShadow: active ? `0 -6px 14px -10px ${palette.shadow}` : 'none',
                   transform: active ? 'translateY(1px)' : 'none',
                 }}>
-                {badge && <span aria-hidden="true" className="min-w-3.5 font-extrabold" style={{ color: tone.accent }}>{badge}</span>}
+                {badge && <span aria-hidden="true" className="min-w-3.5 font-extrabold" style={{ color: palette.accent }}>{badge}</span>}
                 <span className="overflow-hidden text-ellipsis">{label}</span>
               </button>
             </Tooltip>

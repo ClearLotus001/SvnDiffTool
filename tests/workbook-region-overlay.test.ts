@@ -3,8 +3,11 @@ import assert from 'node:assert/strict';
 
 import type { WorkbookDiffRegion } from '../src/types';
 import {
+  buildWorkbookPatchOverlayBoxes,
+  buildWorkbookRegionOutlineOverlayBoxes,
   buildWorkbookRegionOverlayBox,
   buildWorkbookRegionOverlayBoxes,
+  findVisibleWorkbookRowBounds,
   resolveWorkbookRegionHorizontalBounds,
 } from '../src/utils/workbook/workbookRegionOverlay';
 import {
@@ -37,15 +40,22 @@ const visibleRowFrames = new Map<number, { top: number; height: number }>([
   [0, { top: 24, height: 20 }],
   [1, { top: 44, height: 20 }],
 ]);
+const sortedVisibleRows = Array.from(visibleRowFrames.entries()).sort((left, right) => left[0] - right[0]);
 
 const columnLayoutByColumn = new Map([
-  [0, { column: 0, position: 0, width: 100, displayWidth: 200, offset: 0 }],
-  [1, { column: 1, position: 1, width: 100, displayWidth: 200, offset: 100 }],
+  [0, { column: 0, position: 0, width: 100, displayWidth: 200, offset: 0, absoluteOffset: 0 }],
+  [1, { column: 1, position: 1, width: 100, displayWidth: 200, offset: 100, absoluteOffset: 100 }],
+]);
+const wideColumnLayoutByColumn = new Map([
+  [0, { column: 0, position: 0, width: 100, displayWidth: 100, offset: 0, absoluteOffset: 0 }],
+  [1, { column: 1, position: 1, width: 100, displayWidth: 100, offset: 100, absoluteOffset: 100 }],
+  [2, { column: 2, position: 2, width: 100, displayWidth: 100, offset: 200, absoluteOffset: 200 }],
+  [3, { column: 3, position: 3, width: 100, displayWidth: 100, offset: 300, absoluteOffset: 300 }],
 ]);
 
 const discontinuousPairedColumnLayoutByColumn = new Map([
-  [0, { column: 0, position: 0, width: 100, displayWidth: 200, offset: 0 }],
-  [1, { column: 1, position: 1, width: 100, displayWidth: 200, offset: 200 }],
+  [0, { column: 0, position: 0, width: 100, displayWidth: 200, offset: 0, absoluteOffset: 0 }],
+  [1, { column: 1, position: 1, width: 100, displayWidth: 200, offset: 200, absoluteOffset: 200 }],
 ]);
 
 test('buildWorkbookRegionOverlayBox merges paired compare sides into one layout-level box', () => {
@@ -193,8 +203,8 @@ test('resolveWorkbookRegionHorizontalBounds merges patch spans across paired com
   const bounds = resolveWorkbookRegionHorizontalBounds({
     region,
     columnLayoutByColumn: new Map([
-      [1, { column: 1, position: 1, width: 100, displayWidth: 200, offset: 100 }],
-      [2, { column: 2, position: 2, width: 100, displayWidth: 200, offset: 300 }],
+      [1, { column: 1, position: 1, width: 100, displayWidth: 200, offset: 100, absoluteOffset: 100 }],
+      [2, { column: 2, position: 2, width: 100, displayWidth: 200, offset: 300, absoluteOffset: 300 }],
     ]),
     freezeColumnCount: 0,
     resolvePatchBoundsModes: (patch) => [
@@ -235,7 +245,7 @@ test('resolveWorkbookRegionHorizontalBounds can span both compare columns for a 
   const bounds = resolveWorkbookRegionHorizontalBounds({
     region,
     columnLayoutByColumn: new Map([
-      [1, { column: 1, position: 1, width: 100, displayWidth: 200, offset: 100 }],
+      [1, { column: 1, position: 1, width: 100, displayWidth: 200, offset: 100, absoluteOffset: 100 }],
     ]),
     freezeColumnCount: 0,
     resolvePatchBoundsModes: () => ['paired-shared'],
@@ -257,5 +267,256 @@ test('buildWorkbookDiffRegionOverlayOutlineSegments respects open top and bottom
   assert.deepEqual(outline, [
     { key: '40:mixed:12:42', left: 39, top: 12, width: 2, height: 30, tone: 'mixed' },
     { key: '140:mixed:12:42', left: 139, top: 12, width: 2, height: 30, tone: 'mixed' },
+  ]);
+});
+
+test('findVisibleWorkbookRowBounds resolves the visible slice for a region range', () => {
+  const bounds = findVisibleWorkbookRowBounds(sortedVisibleRows, 0, 1);
+
+  assert.deepEqual(bounds, {
+    firstVisibleRowIndex: 0,
+    lastVisibleRowIndex: 1,
+    top: 24,
+    bottom: 64,
+  });
+});
+
+test('buildWorkbookRegionOutlineOverlayBoxes wraps the full visible region span instead of isolated patch islands', () => {
+  const visibleRows = [
+    [0, { top: 24, height: 20 }],
+    [1, { top: 44, height: 20 }],
+    [2, { top: 64, height: 20 }],
+  ] as Array<[number, { top: number; height: number }]>;
+  const region = buildRegion({
+    endRowIndex: 2,
+    endCol: 3,
+    rowNumberEnd: 4,
+    patches: [
+      {
+        startRowIndex: 0,
+        endRowIndex: 2,
+        startCol: 0,
+        endCol: 1,
+        baseRowStart: 2,
+        baseRowEnd: 4,
+        mineRowStart: 2,
+        mineRowEnd: 4,
+        hasBaseSide: true,
+        hasMineSide: true,
+      },
+      {
+        startRowIndex: 1,
+        endRowIndex: 1,
+        startCol: 3,
+        endCol: 3,
+        baseRowStart: 3,
+        baseRowEnd: 3,
+        mineRowStart: 3,
+        mineRowEnd: 3,
+        hasBaseSide: true,
+        hasMineSide: true,
+      },
+    ],
+  });
+
+  const fillBoxes = buildWorkbookPatchOverlayBoxes({
+    region,
+    visibleRows,
+    columnLayoutByColumn: wideColumnLayoutByColumn,
+    contentLeft: 40,
+    scrollLeft: 0,
+    frozenWidth: 0,
+    freezeColumnCount: 0,
+    resolvePatchBoundsModes: () => ['single'],
+    keyPrefix: 'fill',
+  });
+  const outlineBoxes = buildWorkbookRegionOutlineOverlayBoxes({
+    region,
+    visibleRows,
+    columnLayoutByColumn: wideColumnLayoutByColumn,
+    contentLeft: 40,
+    scrollLeft: 0,
+    frozenWidth: 0,
+    freezeColumnCount: 0,
+    resolvePatchBoundsModes: () => ['single'],
+    fallbackBoundsModes: ['single'],
+    keyPrefix: 'outline',
+  });
+
+  assert.equal(fillBoxes.length, 2);
+  assert.deepEqual(outlineBoxes, [
+    {
+      key: 'outline:segment-0',
+      left: 40,
+      top: 24,
+      width: 400,
+      height: 60,
+      tone: 'mixed',
+      openTop: false,
+      openBottom: false,
+    },
+  ]);
+});
+
+test('buildWorkbookRegionOutlineOverlayBoxes respects side filtering for horizontal panes', () => {
+  const region = buildRegion({
+    endCol: 3,
+    patches: [
+      {
+        startRowIndex: 0,
+        endRowIndex: 1,
+        startCol: 0,
+        endCol: 0,
+        baseRowStart: 2,
+        baseRowEnd: 3,
+        mineRowStart: null,
+        mineRowEnd: null,
+        hasBaseSide: true,
+        hasMineSide: false,
+      },
+      {
+        startRowIndex: 0,
+        endRowIndex: 1,
+        startCol: 3,
+        endCol: 3,
+        baseRowStart: null,
+        baseRowEnd: null,
+        mineRowStart: 2,
+        mineRowEnd: 3,
+        hasBaseSide: false,
+        hasMineSide: true,
+      },
+    ],
+  });
+
+  const baseOutlineBoxes = buildWorkbookRegionOutlineOverlayBoxes({
+    region,
+    visibleRows: sortedVisibleRows,
+    columnLayoutByColumn: wideColumnLayoutByColumn,
+    contentLeft: 40,
+    scrollLeft: 0,
+    frozenWidth: 0,
+    freezeColumnCount: 0,
+    resolvePatchBoundsModes: () => ['single'],
+    fallbackBoundsModes: ['single'],
+    filterPatch: (patch) => patch.hasBaseSide,
+    keyPrefix: 'outline-base',
+  });
+  const mineOutlineBoxes = buildWorkbookRegionOutlineOverlayBoxes({
+    region,
+    visibleRows: sortedVisibleRows,
+    columnLayoutByColumn: wideColumnLayoutByColumn,
+    contentLeft: 40,
+    scrollLeft: 0,
+    frozenWidth: 0,
+    freezeColumnCount: 0,
+    resolvePatchBoundsModes: () => ['single'],
+    fallbackBoundsModes: ['single'],
+    filterPatch: (patch) => patch.hasMineSide,
+    keyPrefix: 'outline-mine',
+  });
+
+  assert.deepEqual(baseOutlineBoxes, [
+    {
+      key: 'outline-base:segment-0',
+      left: 40,
+      top: 24,
+      width: 100,
+      height: 40,
+      tone: 'delete',
+      openTop: false,
+      openBottom: false,
+    },
+  ]);
+  assert.deepEqual(mineOutlineBoxes, [
+    {
+      key: 'outline-mine:segment-0',
+      left: 340,
+      top: 24,
+      width: 100,
+      height: 40,
+      tone: 'add',
+      openTop: false,
+      openBottom: false,
+    },
+  ]);
+});
+
+test('buildWorkbookPatchOverlayBoxes respects paired base and mine half-widths in compare columns layout', () => {
+  const region = buildRegion({
+    startCol: 1,
+    endCol: 2,
+    patches: [
+      {
+        startRowIndex: 0,
+        endRowIndex: 0,
+        startCol: 1,
+        endCol: 1,
+        baseRowStart: 2,
+        baseRowEnd: 2,
+        mineRowStart: null,
+        mineRowEnd: null,
+        hasBaseSide: true,
+        hasMineSide: false,
+      },
+      {
+        startRowIndex: 0,
+        endRowIndex: 0,
+        startCol: 2,
+        endCol: 2,
+        baseRowStart: null,
+        baseRowEnd: null,
+        mineRowStart: 2,
+        mineRowEnd: 2,
+        hasBaseSide: false,
+        hasMineSide: true,
+      },
+    ],
+  });
+
+  const boxes = buildWorkbookPatchOverlayBoxes({
+    region,
+    visibleRows: sortedVisibleRows,
+    columnLayoutByColumn: new Map([
+      [1, { column: 1, position: 1, width: 100, displayWidth: 200, offset: 100, absoluteOffset: 100 }],
+      [2, { column: 2, position: 2, width: 100, displayWidth: 200, offset: 300, absoluteOffset: 300 }],
+    ]),
+    contentLeft: 40,
+    scrollLeft: 0,
+    frozenWidth: 0,
+    freezeColumnCount: 0,
+    resolvePatchBoundsModes: (patch) => (
+      patch.hasBaseSide && patch.hasMineSide
+        ? ['paired-shared']
+        : patch.hasBaseSide
+        ? ['paired-base']
+        : patch.hasMineSide
+        ? ['paired-mine']
+        : []
+    ),
+    keyPrefix: 'paired-halves',
+  });
+
+  assert.deepEqual(boxes, [
+    {
+      key: 'paired-halves:0:paired-base:0:segment-0',
+      left: 140,
+      top: 24,
+      width: 100,
+      height: 20,
+      tone: 'delete',
+      openTop: false,
+      openBottom: false,
+    },
+    {
+      key: 'paired-halves:1:paired-mine:0:segment-0',
+      left: 440,
+      top: 24,
+      width: 100,
+      height: 20,
+      tone: 'add',
+      openTop: false,
+      openBottom: false,
+    },
   ]);
 });

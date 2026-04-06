@@ -40,7 +40,7 @@ interface ColumnSelectionRequestMeta {
 interface WorkbookCanvasHeaderStripProps {
   mode: WorkbookCanvasHeaderMode;
   viewportWidth: number;
-  scrollRef: RefObject<HTMLDivElement>;
+  scrollRef: RefObject<HTMLDivElement | null>;
   freezeColumnCount: number;
   contentWidth: number;
   sheetName: string;

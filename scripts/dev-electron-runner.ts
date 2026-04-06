@@ -19,6 +19,7 @@ const devProfileDir = path.join(os.tmpdir(), 'SvnExcelDiffTool-dev', devProfileH
 const EARLY_EXIT_WINDOW_MS = 5_000;
 const MAX_EARLY_EXIT_RETRIES = 3;
 const EARLY_EXIT_RETRY_DELAY_MS = 800;
+const RESOURCE_STABLE_WINDOW_MS = 600;
 
 let electronProcess: ChildProcess | null = null;
 let shutdownRequested = false;
@@ -26,6 +27,7 @@ let restartQueued = false;
 let restartTimer: NodeJS.Timeout | null = null;
 let stableLaunchTimer: NodeJS.Timeout | null = null;
 let earlyExitRetryCount = 0;
+let lastLaunchedResourceSignature = '';
 
 async function waitForBundles() {
   while (!shutdownRequested) {
@@ -34,6 +36,35 @@ async function waitForBundles() {
     if (bundlesReady && serverReady) return;
     await sleep(250);
   }
+}
+
+function getResourceSignature() {
+  return readyResources.map((resourcePath) => {
+    const stat = fs.statSync(resourcePath);
+    return `${resourcePath}:${stat.size}:${stat.mtimeMs}`;
+  }).join('|');
+}
+
+async function waitForStableResources() {
+  await waitForBundles();
+
+  let stableSince = 0;
+  let previousSignature = '';
+  while (!shutdownRequested) {
+    const signature = getResourceSignature();
+    if (signature !== previousSignature) {
+      previousSignature = signature;
+      stableSince = Date.now();
+    }
+
+    if ((Date.now() - stableSince) >= RESOURCE_STABLE_WINDOW_MS) {
+      return signature;
+    }
+
+    await sleep(120);
+  }
+
+  return previousSignature;
 }
 
 async function isServerReady(url: string) {
@@ -56,11 +87,12 @@ function stopElectron() {
   electronProcess.kill();
 }
 
-function startElectron() {
+function startElectron(resourceSignature: string) {
   if (shutdownRequested) return;
 
   fs.mkdirSync(devProfileDir, { recursive: true });
   const launchStartedAt = Date.now();
+  lastLaunchedResourceSignature = resourceSignature;
 
   const childEnv: NodeJS.ProcessEnv = {
     ...process.env,
@@ -132,8 +164,9 @@ function startElectron() {
 }
 
 async function bootElectron() {
-  await waitForBundles();
-  startElectron();
+  const resourceSignature = await waitForStableResources();
+  if (shutdownRequested || electronProcess) return;
+  startElectron(resourceSignature);
 }
 
 function scheduleRestart() {
@@ -149,12 +182,16 @@ function scheduleRestart() {
 
     restartQueued = false;
     void bootElectron();
-  }, 180);
+  }, 320);
 }
 
 function watchBundle(filePath: string) {
   fs.watchFile(filePath, { interval: 250 }, (current, previous) => {
     if (current.mtimeMs === 0 || current.mtimeMs === previous.mtimeMs) return;
+    const nextSignature = readyResources.every(resourcePath => fs.existsSync(resourcePath))
+      ? getResourceSignature()
+      : '';
+    if (nextSignature && nextSignature === lastLaunchedResourceSignature) return;
     scheduleRestart();
   });
 }

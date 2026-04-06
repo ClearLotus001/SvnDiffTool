@@ -1,7 +1,15 @@
-import type { ComponentProps, Dispatch, SetStateAction } from 'react';
+import {
+  Suspense,
+  useEffect,
+  lazy,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from 'react';
 
 import type {
   LayoutMode,
+  TextLayoutSnapshot,
   WorkbookCompareLayoutSnapshot,
   WorkbookCompareMode,
   WorkbookDiffRegion,
@@ -16,24 +24,28 @@ import type {
 import type { LoadPhase, WorkbookContextMenuState } from '@/hooks/app';
 import { cssAlpha, cssVar } from '@/theme/cssUtils';
 import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
+import type { TextLayoutSnapshotsByMode } from '@/utils/diff/textLayoutState';
 import type { WorkbookColumnWidthBySheet } from '@/utils/workbook/workbookColumnWidths';
 import type { WorkbookLayoutSnapshotsByMode } from '@/utils/workbook/workbookLayoutState';
 import type { IndexedWorkbookSectionRows } from '@/utils/workbook/workbookSheetIndex';
 import type { WorkbookSection } from '@/utils/workbook/workbookSections';
 import type { WorkbookContextMenuSection } from '@/components/workbook/WorkbookContextMenu';
+import type { UnifiedPanelProps } from '@/components/diff/UnifiedPanel';
+import type { WorkbookComparePanelProps } from '@/components/workbook/WorkbookComparePanel';
 import {
   revealWorkbookColumns,
   revealWorkbookRows,
 } from '@/utils/workbook/workbookManualVisibility';
 import HomeStartPanel from '@/components/app/HomeStartPanel';
-import SplitPanel from '@/components/diff/SplitPanel';
-import UnifiedPanel from '@/components/diff/UnifiedPanel';
-import WorkbookComparePanel from '@/components/workbook/WorkbookComparePanel';
 import WorkbookContextMenu from '@/components/workbook/WorkbookContextMenu';
-import WorkbookHorizontalPanel from '@/components/workbook/WorkbookHorizontalPanel';
 
-type AppPanelProps = ComponentProps<typeof UnifiedPanel>
-  & Pick<ComponentProps<typeof WorkbookComparePanel>, 'guidedHunkRange' | 'guidedPulseNonce'>;
+const UnifiedPanel = lazy(() => import('@/components/diff/UnifiedPanel'));
+const SplitPanel = lazy(() => import('@/components/diff/SplitPanel'));
+const WorkbookComparePanel = lazy(() => import('@/components/workbook/WorkbookComparePanel'));
+const WorkbookHorizontalPanel = lazy(() => import('@/components/workbook/WorkbookHorizontalPanel'));
+
+type AppPanelProps = UnifiedPanelProps
+  & Pick<WorkbookComparePanelProps, 'guidedHunkRange' | 'guidedPulseNonce'>;
 
 interface AppContentProps {
   loadingLabel: string;
@@ -45,6 +57,10 @@ interface AppContentProps {
   isWorkbookMode: boolean;
   layout: LayoutMode;
   panelProps: AppPanelProps;
+  textLayoutSnapshots: TextLayoutSnapshotsByMode;
+  onTextLayoutSnapshotChange: (snapshot: TextLayoutSnapshot) => void;
+  textSharedExpandedBlocks: CollapseExpansionState;
+  onTextExpandedBlocksChange: (expandedBlocks: CollapseExpansionState) => void;
   baseRoleTitle: string;
   mineRoleTitle: string;
   baseVersionLabel: string;
@@ -83,6 +99,38 @@ interface AppContentProps {
   onPickWorkingCopyFile: () => void;
   onOpenSvnConfig: () => void;
   setWorkbookHiddenStateBySheet: Dispatch<SetStateAction<WorkbookHiddenStateBySheet>>;
+  onInitialVisualReady?: () => void;
+}
+
+function InitialVisualReadySignal({
+  onReady,
+}: {
+  onReady: (() => void) | undefined;
+}) {
+  useEffect(() => {
+    if (!onReady) return undefined;
+
+    let cancelled = false;
+    const useAnimationFrame = typeof requestAnimationFrame === 'function';
+    const handle = useAnimationFrame
+      ? requestAnimationFrame(() => {
+          if (!cancelled) onReady();
+        })
+      : window.setTimeout(() => {
+          if (!cancelled) onReady();
+        }, 0);
+
+    return () => {
+      cancelled = true;
+      if (useAnimationFrame && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(handle);
+        return;
+      }
+      clearTimeout(handle);
+    };
+  }, [onReady]);
+
+  return null;
 }
 
 function renderLoadingState(loadingLabel: string) {
@@ -100,9 +148,22 @@ function renderLoadingState(loadingLabel: string) {
   );
 }
 
+function renderLazyPanel(content: ReactNode, loadingLabel: string, onReady?: () => void) {
+  return (
+    <Suspense fallback={renderLoadingState(loadingLabel)}>
+      <>
+        <InitialVisualReadySignal onReady={onReady} />
+        {content}
+      </>
+    </Suspense>
+  );
+}
+
 export default function AppContent({
   loadingLabel, loadPhase, hasLoadedDiff, loadError,
   isElectron, isLoadingDiff, isWorkbookMode, layout, panelProps,
+  textLayoutSnapshots, onTextLayoutSnapshotChange,
+  textSharedExpandedBlocks, onTextExpandedBlocksChange,
   baseRoleTitle, mineRoleTitle, baseVersionLabel, mineVersionLabel,
   activeWorkbookDiffRegion, activeWorkbookTargetCell,
   workbookSelection, onWorkbookSelectionRequest, onWorkbookNavigationReady,
@@ -117,6 +178,7 @@ export default function AppContent({
   workbookLayoutSnapshots, onWorkbookLayoutSnapshotChange,
   workbookContextMenu, workbookContextMenuSections, onCloseWorkbookContextMenu,
   onPickWorkingCopyFile, onOpenSvnConfig, setWorkbookHiddenStateBySheet,
+  onInitialVisualReady,
 }: AppContentProps) {
   const handleRevealHiddenRows = (sheetName: string, rowNumbers: number[]) => {
     setWorkbookHiddenStateBySheet((prev) => revealWorkbookRows(prev, sheetName, rowNumbers));
@@ -132,136 +194,158 @@ export default function AppContent({
     return renderLoadingState(loadingLabel);
   }
 
+  if (!hasLoadedDiff && loadPhase === 'bootstrapping') {
+    return <div className="flex-1 w-full min-w-0 min-h-0" />;
+  }
+
   if (!hasLoadedDiff) {
     return (
-      <HomeStartPanel
-        error={loadError}
-        isElectron={isElectron}
-        onPickWorkingCopy={onPickWorkingCopyFile}
-        onOpenSvnConfig={onOpenSvnConfig}
-      />
+      <>
+        <InitialVisualReadySignal onReady={onInitialVisualReady} />
+        <HomeStartPanel
+          error={loadError}
+          isElectron={isElectron}
+          onPickWorkingCopy={onPickWorkingCopyFile}
+          onOpenSvnConfig={onOpenSvnConfig}
+        />
+      </>
     );
   }
 
+  const workbookComparePanelMode = layout === 'split-v' ? 'columns' : 'stacked';
+  const workbookComparePanelSnapshot = (
+    layout === 'split-v'
+      ? workbookLayoutSnapshots['split-v']
+      : workbookLayoutSnapshots.unified
+  ) as WorkbookCompareLayoutSnapshot | null;
+
   return (
     <div className="relative flex-1 flex overflow-hidden min-h-0 min-w-0">
-      {!isWorkbookMode && layout === 'unified' && <UnifiedPanel {...panelProps} />}
-      {!isWorkbookMode && layout === 'split-h' && <SplitPanel {...panelProps} vertical={false} />}
-      {!isWorkbookMode && layout === 'split-v' && <SplitPanel {...panelProps} vertical />}
+      {!isWorkbookMode && layout === 'unified' && (
+        renderLazyPanel(
+          <UnifiedPanel
+            {...panelProps}
+            layoutSnapshot={textLayoutSnapshots.unified}
+            onLayoutSnapshotChange={onTextLayoutSnapshotChange}
+            sharedExpandedBlocks={textSharedExpandedBlocks}
+            onExpandedBlocksChange={onTextExpandedBlocksChange}
+          />,
+          loadingLabel,
+          !isLoadingDiff ? onInitialVisualReady : undefined,
+        )
+      )}
+      {!isWorkbookMode && layout === 'split-h' && (
+        renderLazyPanel(
+          <SplitPanel
+            {...panelProps}
+            vertical={false}
+            layoutSnapshot={textLayoutSnapshots['split-h']}
+            onLayoutSnapshotChange={onTextLayoutSnapshotChange}
+            sharedExpandedBlocks={textSharedExpandedBlocks}
+            onExpandedBlocksChange={onTextExpandedBlocksChange}
+          />,
+          loadingLabel,
+          !isLoadingDiff ? onInitialVisualReady : undefined,
+        )
+      )}
+      {!isWorkbookMode && layout === 'split-v' && (
+        renderLazyPanel(
+          <SplitPanel
+            {...panelProps}
+            vertical
+            layoutSnapshot={textLayoutSnapshots['split-v']}
+            onLayoutSnapshotChange={onTextLayoutSnapshotChange}
+            sharedExpandedBlocks={textSharedExpandedBlocks}
+            onExpandedBlocksChange={onTextExpandedBlocksChange}
+          />,
+          loadingLabel,
+          !isLoadingDiff ? onInitialVisualReady : undefined,
+        )
+      )}
 
       {isWorkbookMode && (
         <div className="relative flex-1 min-w-0 min-h-0">
-          {layout === 'unified' && (
+          {layout !== 'split-h' && (
             <div className="relative flex w-full h-full min-w-0 min-h-0">
-              <WorkbookComparePanel
-                {...panelProps}
-                active
-                baseTitle={baseRoleTitle}
-                mineTitle={mineRoleTitle}
-                baseVersionLabel={baseVersionLabel}
-                mineVersionLabel={mineVersionLabel}
-                mode="stacked"
-                activeDiffRegion={activeWorkbookDiffRegion}
-                navigationTargetCell={activeWorkbookTargetCell}
-                selection={workbookSelection}
-                onSelectionRequest={onWorkbookSelectionRequest}
-                onWorkbookNavigationReady={onWorkbookNavigationReady}
-                baseWorkbookMetadata={baseWorkbookMetadata}
-                mineWorkbookMetadata={mineWorkbookMetadata}
-                workbookHiddenStateBySheet={workbookHiddenStateBySheet}
-                freezeStateBySheet={workbookFreezeBySheet}
-                columnWidthBySheet={workbookColumnWidthBySheet}
-                onColumnWidthChange={onWorkbookColumnWidthChange}
-                onRevealHiddenRows={handleRevealHiddenRows}
-                onRevealHiddenColumns={handleRevealHiddenColumns}
-                workbookSections={workbookSections}
-                workbookSectionRowIndex={workbookSectionRowIndex}
-                activeWorkbookSheetName={activeWorkbookSheetName}
-                onActiveWorkbookSheetChange={onActiveWorkbookSheetChange}
-                compareMode={workbookCompareMode}
-                sharedExpandedBlocks={activeWorkbookSharedExpandedBlocks}
-                onExpandedBlocksChange={onWorkbookExpandedBlocksChange}
-                showPerfDebug={isDevMode}
-                showHiddenColumns={showHiddenColumns}
-                tooltipDisabled={isLoadingDiff}
-                layoutSnapshot={workbookLayoutSnapshots.unified as WorkbookCompareLayoutSnapshot | null}
-                onLayoutSnapshotChange={onWorkbookLayoutSnapshotChange}
-              />
-            </div>
-          )}
-          {layout === 'split-v' && (
-            <div className="relative flex w-full h-full min-w-0 min-h-0">
-              <WorkbookComparePanel
-                {...panelProps}
-                active
-                baseTitle={baseRoleTitle}
-                mineTitle={mineRoleTitle}
-                baseVersionLabel={baseVersionLabel}
-                mineVersionLabel={mineVersionLabel}
-                mode="columns"
-                activeDiffRegion={activeWorkbookDiffRegion}
-                navigationTargetCell={activeWorkbookTargetCell}
-                selection={workbookSelection}
-                onSelectionRequest={onWorkbookSelectionRequest}
-                onWorkbookNavigationReady={onWorkbookNavigationReady}
-                baseWorkbookMetadata={baseWorkbookMetadata}
-                mineWorkbookMetadata={mineWorkbookMetadata}
-                workbookHiddenStateBySheet={workbookHiddenStateBySheet}
-                freezeStateBySheet={workbookFreezeBySheet}
-                columnWidthBySheet={workbookColumnWidthBySheet}
-                onColumnWidthChange={onWorkbookColumnWidthChange}
-                onRevealHiddenRows={handleRevealHiddenRows}
-                onRevealHiddenColumns={handleRevealHiddenColumns}
-                workbookSections={workbookSections}
-                workbookSectionRowIndex={workbookSectionRowIndex}
-                activeWorkbookSheetName={activeWorkbookSheetName}
-                onActiveWorkbookSheetChange={onActiveWorkbookSheetChange}
-                compareMode={workbookCompareMode}
-                sharedExpandedBlocks={activeWorkbookSharedExpandedBlocks}
-                onExpandedBlocksChange={onWorkbookExpandedBlocksChange}
-                showPerfDebug={isDevMode}
-                showHiddenColumns={showHiddenColumns}
-                tooltipDisabled={isLoadingDiff}
-                layoutSnapshot={workbookLayoutSnapshots['split-v'] as WorkbookCompareLayoutSnapshot | null}
-                onLayoutSnapshotChange={onWorkbookLayoutSnapshotChange}
-              />
+              {renderLazyPanel(
+                <WorkbookComparePanel
+                  {...panelProps}
+                  active
+                  baseTitle={baseRoleTitle}
+                  mineTitle={mineRoleTitle}
+                  baseVersionLabel={baseVersionLabel}
+                  mineVersionLabel={mineVersionLabel}
+                  mode={workbookComparePanelMode}
+                  activeDiffRegion={activeWorkbookDiffRegion}
+                  navigationTargetCell={activeWorkbookTargetCell}
+                  selection={workbookSelection}
+                  onSelectionRequest={onWorkbookSelectionRequest}
+                  onWorkbookNavigationReady={onWorkbookNavigationReady}
+                  baseWorkbookMetadata={baseWorkbookMetadata}
+                  mineWorkbookMetadata={mineWorkbookMetadata}
+                  workbookHiddenStateBySheet={workbookHiddenStateBySheet}
+                  freezeStateBySheet={workbookFreezeBySheet}
+                  columnWidthBySheet={workbookColumnWidthBySheet}
+                  onColumnWidthChange={onWorkbookColumnWidthChange}
+                  onRevealHiddenRows={handleRevealHiddenRows}
+                  onRevealHiddenColumns={handleRevealHiddenColumns}
+                  workbookSections={workbookSections}
+                  workbookSectionRowIndex={workbookSectionRowIndex}
+                  activeWorkbookSheetName={activeWorkbookSheetName}
+                  onActiveWorkbookSheetChange={onActiveWorkbookSheetChange}
+                  compareMode={workbookCompareMode}
+                  sharedExpandedBlocks={activeWorkbookSharedExpandedBlocks}
+                  onExpandedBlocksChange={onWorkbookExpandedBlocksChange}
+                  showPerfDebug={isDevMode}
+                  showHiddenColumns={showHiddenColumns}
+                  tooltipDisabled={isLoadingDiff}
+                  layoutSnapshot={workbookComparePanelSnapshot}
+                  onLayoutSnapshotChange={onWorkbookLayoutSnapshotChange}
+                />,
+                loadingLabel,
+                !isLoadingDiff ? onInitialVisualReady : undefined,
+              )}
             </div>
           )}
           {layout === 'split-h' && (
             <div className="relative flex w-full h-full min-w-0 min-h-0">
-              <WorkbookHorizontalPanel
-                {...panelProps}
-                active
-                baseTitle={baseRoleTitle}
-                mineTitle={mineRoleTitle}
-                baseVersionLabel={baseVersionLabel}
-                mineVersionLabel={mineVersionLabel}
-                activeDiffRegion={activeWorkbookDiffRegion}
-                navigationTargetCell={activeWorkbookTargetCell}
-                selection={workbookSelection}
-                onSelectionRequest={onWorkbookSelectionRequest}
-                onWorkbookNavigationReady={onWorkbookNavigationReady}
-                baseWorkbookMetadata={baseWorkbookMetadata}
-                mineWorkbookMetadata={mineWorkbookMetadata}
-                workbookHiddenStateBySheet={workbookHiddenStateBySheet}
-                freezeStateBySheet={workbookFreezeBySheet}
-                columnWidthBySheet={workbookColumnWidthBySheet}
-                onColumnWidthChange={onWorkbookColumnWidthChange}
-                onRevealHiddenRows={handleRevealHiddenRows}
-                onRevealHiddenColumns={handleRevealHiddenColumns}
-                workbookSections={workbookSections}
-                workbookSectionRowIndex={workbookSectionRowIndex}
-                activeWorkbookSheetName={activeWorkbookSheetName}
-                onActiveWorkbookSheetChange={onActiveWorkbookSheetChange}
-                compareMode={workbookCompareMode}
-                sharedExpandedBlocks={activeWorkbookSharedExpandedBlocks}
-                onExpandedBlocksChange={onWorkbookExpandedBlocksChange}
-                showPerfDebug={isDevMode}
-                showHiddenColumns={showHiddenColumns}
-                tooltipDisabled={isLoadingDiff}
-                layoutSnapshot={workbookLayoutSnapshots['split-h'] as WorkbookHorizontalLayoutSnapshot | null}
-                onLayoutSnapshotChange={onWorkbookLayoutSnapshotChange}
-              />
+              {renderLazyPanel(
+                <WorkbookHorizontalPanel
+                  {...panelProps}
+                  active
+                  baseTitle={baseRoleTitle}
+                  mineTitle={mineRoleTitle}
+                  baseVersionLabel={baseVersionLabel}
+                  mineVersionLabel={mineVersionLabel}
+                  activeDiffRegion={activeWorkbookDiffRegion}
+                  navigationTargetCell={activeWorkbookTargetCell}
+                  selection={workbookSelection}
+                  onSelectionRequest={onWorkbookSelectionRequest}
+                  onWorkbookNavigationReady={onWorkbookNavigationReady}
+                  baseWorkbookMetadata={baseWorkbookMetadata}
+                  mineWorkbookMetadata={mineWorkbookMetadata}
+                  workbookHiddenStateBySheet={workbookHiddenStateBySheet}
+                  freezeStateBySheet={workbookFreezeBySheet}
+                  columnWidthBySheet={workbookColumnWidthBySheet}
+                  onColumnWidthChange={onWorkbookColumnWidthChange}
+                  onRevealHiddenRows={handleRevealHiddenRows}
+                  onRevealHiddenColumns={handleRevealHiddenColumns}
+                  workbookSections={workbookSections}
+                  workbookSectionRowIndex={workbookSectionRowIndex}
+                  activeWorkbookSheetName={activeWorkbookSheetName}
+                  onActiveWorkbookSheetChange={onActiveWorkbookSheetChange}
+                  compareMode={workbookCompareMode}
+                  sharedExpandedBlocks={activeWorkbookSharedExpandedBlocks}
+                  onExpandedBlocksChange={onWorkbookExpandedBlocksChange}
+                  showPerfDebug={isDevMode}
+                  showHiddenColumns={showHiddenColumns}
+                  tooltipDisabled={isLoadingDiff}
+                  layoutSnapshot={workbookLayoutSnapshots['split-h'] as WorkbookHorizontalLayoutSnapshot | null}
+                  onLayoutSnapshotChange={onWorkbookLayoutSnapshotChange}
+                />,
+                loadingLabel,
+                !isLoadingDiff ? onInitialVisualReady : undefined,
+              )}
             </div>
           )}
         </div>

@@ -5,6 +5,7 @@ import { computeVirtualWindow } from '../src/hooks/virtualization/useVirtual';
 import {
   computeHorizontalWindow,
   preparePositionedMergedColumnRanges,
+  resolveStableHorizontalColumnEntries,
 } from '../src/hooks/virtualization/useHorizontalVirtualColumns';
 
 test('computeVirtualWindow keeps the rendered range stable for tiny scroll deltas', () => {
@@ -60,4 +61,53 @@ test('computeHorizontalWindow uses prefix sums for variable column widths', () =
   assert.equal(window.startIndex, 1);
   assert.equal(window.endIndex, 2);
   assert.equal(window.visibleColumnCount, 1);
+});
+
+test('resolveStableHorizontalColumnEntries invalidates cached entries when layout identity changes', () => {
+  const previousEntries = [
+    { column: 0, position: 0, width: 120, displayWidth: 120, offset: 0 },
+  ];
+  const nextEntries = [
+    { column: 0, position: 0, width: 180, displayWidth: 180, offset: 24 },
+  ];
+  const previousLayout = { version: 'before' };
+  const nextLayout = { version: 'after' };
+
+  const resolved = resolveStableHorizontalColumnEntries(
+    {
+      key: 'same-window',
+      layout: previousLayout,
+      entries: previousEntries,
+    },
+    'same-window',
+    nextLayout,
+    nextEntries,
+  );
+
+  assert.equal(resolved.entries, nextEntries);
+  assert.equal(resolved.layout, nextLayout);
+});
+
+test('resolveStableHorizontalColumnEntries reuses cached entries for the same layout identity', () => {
+  const layout = { version: 'stable' };
+  const previousEntries = [
+    { column: 1, position: 1, width: 96, displayWidth: 96, offset: 128 },
+  ];
+  const nextEntries = [
+    { column: 1, position: 1, width: 144, displayWidth: 144, offset: 256 },
+  ];
+
+  const resolved = resolveStableHorizontalColumnEntries(
+    {
+      key: 'stable-window',
+      layout,
+      entries: previousEntries,
+    },
+    'stable-window',
+    layout,
+    nextEntries,
+  );
+
+  assert.equal(resolved.entries, previousEntries);
+  assert.equal(resolved.layout, layout);
 });

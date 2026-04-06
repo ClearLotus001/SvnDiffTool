@@ -14,6 +14,8 @@ import {
 } from '@/utils/workbook/workbookSelectionVisual';
 import { buildWorkbookSelectionLookup } from '@/utils/workbook/workbookSelectionState';
 import {
+  getWorkbookCanvasTextInsetRect,
+  getWorkbookCanvasTextBaselineY,
   layoutWorkbookCanvasTextLines,
   normalizeWorkbookCanvasText,
 } from '@/utils/workbook/workbookCanvasText';
@@ -77,7 +79,7 @@ export interface WorkbookColumnsCanvasRow {
 interface WorkbookColumnsCanvasStripProps {
   rows: WorkbookColumnsCanvasRow[];
   viewportWidth: number;
-  scrollRef: RefObject<HTMLDivElement>;
+  scrollRef: RefObject<HTMLDivElement | null>;
   freezeColumnCount: number;
   contentWidth: number;
   sheetName: string;
@@ -91,8 +93,8 @@ interface WorkbookColumnsCanvasStripProps {
   visibleColumns: number[];
   renderColumns: HorizontalVirtualColumnEntry[];
   columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
-  baseMergedRanges: WorkbookMergeRange[];
-  mineMergedRanges: WorkbookMergeRange[];
+  baseMergedRanges: ReadonlyArray<WorkbookMergeRange>;
+  mineMergedRanges: ReadonlyArray<WorkbookMergeRange>;
   baseRowEntryByRowNumber: Map<number, WorkbookRowEntry>;
   mineRowEntryByRowNumber: Map<number, WorkbookRowEntry>;
   baseCompareCellsByRowNumber: Map<number, ReturnType<typeof buildWorkbookSplitRowCompareState>['cellDeltas']>;
@@ -349,18 +351,19 @@ const WorkbookColumnsCanvasStrip = memo(({
             });
 
             if (hasContent) {
+              const textRect = getWorkbookCanvasTextInsetRect(drawX, y, cellWidth, ROW_H);
               ctx.save();
               ctx.beginPath();
-              ctx.rect(drawX + 8, y + 1, Math.max(0, cellWidth - 16), ROW_H - 2);
+              ctx.rect(textRect.left, textRect.top, textRect.width, textRect.height);
               ctx.clip();
               ctx.fillStyle = cellVisual.textColor;
               ctx.font = `${sizes.ui}px ${FONT_UI}`;
               ctx.textAlign = 'left';
-              ctx.textBaseline = 'middle';
+              ctx.textBaseline = 'alphabetic';
               ctx.fillText(
                 normalizeWorkbookCanvasText(cell.value || '\u00A0').replace(/\n/g, ' / '),
-                drawX + 8,
-                y + (ROW_H / 2),
+                textRect.left,
+                getWorkbookCanvasTextBaselineY(ctx, y + (ROW_H / 2), sizes.ui),
               );
               ctx.restore();
             }
@@ -435,7 +438,8 @@ const WorkbookColumnsCanvasStrip = memo(({
           const selectionTop = regionTop;
           const selectionHeight = regionHeight;
           const textCenterY = getWorkbookCanvasRowSegmentCenterY(rowSegments) ?? (regionTop + (regionHeight / 2));
-          const textX = regionLeft + 8;
+          const textRect = getWorkbookCanvasTextInsetRect(regionLeft, regionTop, regionWidth, regionHeight);
+          const textX = textRect.left;
           const centerMergedText = Boolean(mergeInfo.region && regionSegments.length === 1);
           const withRowSegmentClip = (callback: () => void) => {
             ctx.save();
@@ -498,13 +502,19 @@ const WorkbookColumnsCanvasStrip = memo(({
             ctx.beginPath();
             rowSegments.forEach((rowSegment) => {
               regionSegments.forEach((segment) => {
-                ctx.rect(segment.left + 8, rowSegment.top + 1, Math.max(0, segment.width - 16), Math.max(0, rowSegment.height - 2));
+                const insetRect = getWorkbookCanvasTextInsetRect(
+                  segment.left,
+                  rowSegment.top,
+                  segment.width,
+                  rowSegment.height,
+                );
+                ctx.rect(insetRect.left, insetRect.top, insetRect.width, insetRect.height);
               });
             });
             ctx.clip();
             ctx.fillStyle = cellVisual.textColor;
             ctx.font = `${sizes.ui}px ${FONT_UI}`;
-            ctx.textBaseline = 'middle';
+            ctx.textBaseline = 'alphabetic';
             if (centerMergedText) {
               const lineHeight = Math.max(sizes.ui + 4, 16);
               const maxLines = Math.max(1, rowSegments.reduce((sum, rowSegment) => (
@@ -512,21 +522,25 @@ const WorkbookColumnsCanvasStrip = memo(({
               ), 0));
               const lines = layoutWorkbookCanvasTextLines({
                 value: cell.value || '',
-                maxWidth: Math.max(0, regionWidth - 16),
+                maxWidth: textRect.width,
                 maxLines,
                 measureText: (value) => ctx.measureText(value).width,
               });
               ctx.textAlign = 'center';
               const lineCenters = getWorkbookCanvasRowSegmentLineCenters(rowSegments, lines.length, lineHeight);
               lines.forEach((line, index) => {
-                ctx.fillText(line, regionLeft + (regionWidth / 2), lineCenters[index] ?? textCenterY);
+                ctx.fillText(
+                  line,
+                  regionLeft + (regionWidth / 2),
+                  getWorkbookCanvasTextBaselineY(ctx, lineCenters[index] ?? textCenterY, sizes.ui),
+                );
               });
             } else {
               ctx.textAlign = 'left';
               ctx.fillText(
                 normalizeWorkbookCanvasText(cell.value || '\u00A0').replace(/\n/g, ' / '),
                 textX,
-                textCenterY,
+                getWorkbookCanvasTextBaselineY(ctx, textCenterY, sizes.ui),
               );
             }
             ctx.restore();

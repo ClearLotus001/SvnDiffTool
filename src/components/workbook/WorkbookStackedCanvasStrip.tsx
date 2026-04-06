@@ -17,6 +17,7 @@ import {
   getWorkbookCanvasLayerViewports,
   getWorkbookCanvasRowSegmentBounds,
   getWorkbookCanvasRowSegmentCenterY,
+  getWorkbookCanvasRowSegmentLineCenters,
   findWorkbookMergeRange,
   getWorkbookMergedCompareCellFromRows,
   getWorkbookCanvasSpanRect,
@@ -31,6 +32,8 @@ import {
 } from '@/utils/workbook/workbookSelectionVisual';
 import { buildWorkbookSelectionLookup } from '@/utils/workbook/workbookSelectionState';
 import {
+  getWorkbookCanvasTextInsetRect,
+  getWorkbookCanvasTextBaselineY,
   layoutWorkbookCanvasTextLines,
   normalizeWorkbookCanvasText,
 } from '@/utils/workbook/workbookCanvasText';
@@ -97,7 +100,7 @@ export interface WorkbookCanvasRenderGroup {
 interface WorkbookStackedCanvasStripProps {
   groups: WorkbookCanvasRenderGroup[];
   viewportWidth: number;
-  scrollRef: RefObject<HTMLDivElement>;
+  scrollRef: RefObject<HTMLDivElement | null>;
   freezeColumnCount: number;
   contentWidth: number;
   sheetName: string;
@@ -111,12 +114,8 @@ interface WorkbookStackedCanvasStripProps {
   visibleColumns: number[];
   renderColumns: HorizontalVirtualColumnEntry[];
   columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
-  baseMergedRanges: WorkbookMergeRange[];
-  mineMergedRanges: WorkbookMergeRange[];
-  baseRowEntryByRowNumber: Map<number, WorkbookRowEntry>;
-  mineRowEntryByRowNumber: Map<number, WorkbookRowEntry>;
-  baseCompareCellsByRowNumber: Map<number, ReturnType<typeof buildWorkbookSplitRowCompareState>['cellDeltas']>;
-  mineCompareCellsByRowNumber: Map<number, ReturnType<typeof buildWorkbookSplitRowCompareState>['cellDeltas']>;
+  baseMergedRanges: ReadonlyArray<WorkbookMergeRange>;
+  mineMergedRanges: ReadonlyArray<WorkbookMergeRange>;
   compareMode: WorkbookCompareMode;
 }
 
@@ -175,6 +174,10 @@ interface CanvasGroupRuntime {
     base: Map<number, { top: number; height: number }>;
     mine: Map<number, { top: number; height: number }>;
   };
+  entryBySideRowNumber: {
+    base: Map<number, WorkbookRowEntry>;
+    mine: Map<number, WorkbookRowEntry>;
+  };
   compareCellsBySideRowNumber: {
     base: Map<number, ReturnType<typeof buildWorkbookSplitRowCompareState>['cellDeltas']>;
     mine: Map<number, ReturnType<typeof buildWorkbookSplitRowCompareState>['cellDeltas']>;
@@ -206,10 +209,6 @@ const WorkbookStackedCanvasStrip = memo(({
   columnLayoutByColumn,
   baseMergedRanges,
   mineMergedRanges,
-  baseRowEntryByRowNumber,
-  mineRowEntryByRowNumber,
-  baseCompareCellsByRowNumber,
-  mineCompareCellsByRowNumber,
   compareMode,
 }: WorkbookStackedCanvasStripProps) => {
   const T = useThemeTokens();
@@ -292,6 +291,10 @@ const WorkbookStackedCanvasStrip = memo(({
           base: new Map<number, { top: number; height: number }>(),
           mine: new Map<number, { top: number; height: number }>(),
         },
+        entryBySideRowNumber: {
+          base: new Map<number, WorkbookRowEntry>(),
+          mine: new Map<number, WorkbookRowEntry>(),
+        },
         compareCellsBySideRowNumber: {
           base: new Map<number, ReturnType<typeof buildWorkbookSplitRowCompareState>['cellDeltas']>(),
           mine: new Map<number, ReturnType<typeof buildWorkbookSplitRowCompareState>['cellDeltas']>(),
@@ -309,6 +312,9 @@ const WorkbookStackedCanvasStrip = memo(({
         visibleBands.base = { top, height: ROW_H };
         runtime.visibleBandsBySourceRowIndex.set(track.sourceRowIndex, visibleBands);
         if (rowFrame) {
+          if (rowFrame.baseEntry) {
+            runtime.entryBySideRowNumber.base.set(track.rowNumber, rowFrame.baseEntry);
+          }
           runtime.compareCellsBySideRowNumber.base.set(track.rowNumber, rowFrame.rowDelta.cellDeltas);
         }
       });
@@ -331,6 +337,9 @@ const WorkbookStackedCanvasStrip = memo(({
           runtime.visibleBandsBySourceRowIndex.set(track.sourceRowIndex, visibleBands);
         }
         if (rowFrame) {
+          if (rowFrame.mineEntry) {
+            runtime.entryBySideRowNumber.mine.set(track.rowNumber, rowFrame.mineEntry);
+          }
           runtime.compareCellsBySideRowNumber.mine.set(track.rowNumber, rowFrame.rowDelta.cellDeltas);
         }
       });
@@ -554,6 +563,7 @@ const WorkbookStackedCanvasStrip = memo(({
         const y = band.y;
         const h = band.height;
         const groupRuntime = groupRuntimeByKey.get(band.groupKey);
+        if (!groupRuntime) return;
         const rowNumber = entry?.rowNumber ?? 0;
         const cellTextColor = band.side === 'mine' ? T.t0 : T.t1;
         const deferredMergedDraws = layer === 'floating' ? floatingMergedDraws : frozenMergedDraws;
@@ -595,18 +605,19 @@ const WorkbookStackedCanvasStrip = memo(({
             });
 
             if (hasContent) {
+              const textRect = getWorkbookCanvasTextInsetRect(drawX, y, entryMeta.width, h);
               ctx.save();
               ctx.beginPath();
-              ctx.rect(drawX + 8, y + 1, Math.max(0, entryMeta.width - 16), Math.max(0, h - 2));
+              ctx.rect(textRect.left, textRect.top, textRect.width, textRect.height);
               ctx.clip();
               ctx.fillStyle = cellVisual.textColor;
               ctx.font = `${sizes.ui}px ${FONT_UI}`;
               ctx.textAlign = 'left';
-              ctx.textBaseline = 'middle';
+              ctx.textBaseline = 'alphabetic';
               ctx.fillText(
                 normalizeWorkbookCanvasText(cell.value || '\u00A0').replace(/\n/g, ' / '),
-                drawX + 8,
-                y + (h / 2),
+                textRect.left,
+                getWorkbookCanvasTextBaselineY(ctx, y + (h / 2), sizes.ui),
               );
               ctx.restore();
             }
@@ -639,8 +650,8 @@ const WorkbookStackedCanvasStrip = memo(({
 
           const anchorRowNumber = mergeInfo.region?.range.startRow ?? rowNumber;
           const anchorColumn = mergeInfo.region?.range.startCol ?? column;
-          const rowEntryByRowNumber = band.side === 'base' ? baseRowEntryByRowNumber : mineRowEntryByRowNumber;
-          const compareCellsByRowNumber = band.side === 'base' ? baseCompareCellsByRowNumber : mineCompareCellsByRowNumber;
+          const rowEntryByRowNumber = groupRuntime.entryBySideRowNumber[band.side];
+          const compareCellsByRowNumber = groupRuntime.compareCellsBySideRowNumber[band.side];
           const anchorEntry = rowEntryByRowNumber.get(anchorRowNumber) ?? entry;
           const cell = anchorEntry?.cells[anchorColumn] ?? { value: '', formula: '' };
           const compareCell = mergeInfo.region
@@ -689,7 +700,8 @@ const WorkbookStackedCanvasStrip = memo(({
           const anchorRowSegment = rowSegments[0] ?? { top: regionTop, height: regionHeight };
           const continuationRowSegments = rowSegments.slice(1);
           const textCenterY = getWorkbookCanvasRowSegmentCenterY(textRowSegments) ?? (regionTop + (regionHeight / 2));
-          const textX = regionLeft + 8;
+          const textRect = getWorkbookCanvasTextInsetRect(regionLeft, regionTop, regionWidth, regionHeight);
+          const textX = textRect.left;
           const centerMergedText = Boolean(mergeInfo.region && regionSegments.length === 1);
           const withRowSegmentClip = (targetRowSegments: typeof rowSegments, callback: () => void) => {
             ctx.save();
@@ -809,13 +821,19 @@ const WorkbookStackedCanvasStrip = memo(({
             ctx.beginPath();
             textRowSegments.forEach((rowSegment) => {
               regionSegments.forEach((segment) => {
-                ctx.rect(segment.left + 8, rowSegment.top + 1, Math.max(0, segment.width - 16), Math.max(0, rowSegment.height - 2));
+                const insetRect = getWorkbookCanvasTextInsetRect(
+                  segment.left,
+                  rowSegment.top,
+                  segment.width,
+                  rowSegment.height,
+                );
+                ctx.rect(insetRect.left, insetRect.top, insetRect.width, insetRect.height);
               });
             });
             ctx.clip();
             ctx.fillStyle = cellVisual.textColor;
             ctx.font = `${sizes.ui}px ${FONT_UI}`;
-            ctx.textBaseline = centerMergedText ? 'top' : 'middle';
+            ctx.textBaseline = 'alphabetic';
             if (centerMergedText) {
               const lineHeight = Math.max(sizes.ui + 4, 16);
               const maxLines = Math.max(1, textRowSegments.reduce((sum, rowSegment) => (
@@ -823,21 +841,25 @@ const WorkbookStackedCanvasStrip = memo(({
               ), 0));
               const lines = layoutWorkbookCanvasTextLines({
                 value: cell.value || '',
-                maxWidth: Math.max(0, regionWidth - 16),
+                maxWidth: textRect.width,
                 maxLines,
                 measureText: (value) => ctx.measureText(value).width,
               });
-              const lineStartY = (textRowSegments[0]?.top ?? regionTop) + 3;
               ctx.textAlign = 'center';
+              const lineCenters = getWorkbookCanvasRowSegmentLineCenters(textRowSegments, lines.length, lineHeight);
               lines.forEach((line, index) => {
-                ctx.fillText(line, regionLeft + (regionWidth / 2), lineStartY + (index * lineHeight));
+                ctx.fillText(
+                  line,
+                  regionLeft + (regionWidth / 2),
+                  getWorkbookCanvasTextBaselineY(ctx, lineCenters[index] ?? textCenterY, sizes.ui),
+                );
               });
             } else {
               ctx.textAlign = 'left';
               ctx.fillText(
                 normalizeWorkbookCanvasText(cell.value || '\u00A0').replace(/\n/g, ' / '),
                 textX,
-                textCenterY,
+                getWorkbookCanvasTextBaselineY(ctx, textCenterY, sizes.ui),
               );
             }
             ctx.restore();
@@ -942,7 +964,7 @@ const WorkbookStackedCanvasStrip = memo(({
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = 0;
     };
-  }, [baseCompareCellsByRowNumber, baseMergedRanges, baseRowEntryByRowNumber, columnLayoutByColumn, columnPartition, compareMode, contentWidth, dragPreviewActive, freezeColumnCount, groupRuntimeByKey, mineCompareCellsByRowNumber, mineMergedRanges, mineRowEntryByRowNumber, renderBands, renderedColumnNumbers, renderColumns, scrollRef, selectionLookup, sheetName, sizes.line, sizes.ui, T, totalHeight, viewportWidth]);
+  }, [baseMergedRanges, columnLayoutByColumn, columnPartition, compareMode, contentWidth, dragPreviewActive, freezeColumnCount, groupRuntimeByKey, mineMergedRanges, renderBands, renderedColumnNumbers, renderColumns, scrollRef, selectionLookup, sheetName, sizes.line, sizes.ui, T, totalHeight, viewportWidth]);
 
   useEffect(() => {
     const scroller = scrollRef.current;
@@ -1047,7 +1069,7 @@ const WorkbookStackedCanvasStrip = memo(({
 
         const column = hitEntry.column;
         const mergedRanges = side === 'base' ? baseMergedRanges : mineMergedRanges;
-        const rowEntryByRowNumber = side === 'base' ? baseRowEntryByRowNumber : mineRowEntryByRowNumber;
+        const rowEntryByRowNumber = groupRuntime.entryBySideRowNumber[side];
         const mergeRange = findWorkbookMergeRange(mergedRanges, entry.rowNumber, column);
         const anchorRowNumber = mergeRange?.startRow ?? entry.rowNumber;
         const anchorColumn = mergeRange?.startCol ?? column;
@@ -1072,9 +1094,8 @@ const WorkbookStackedCanvasStrip = memo(({
           frozenWidth,
           frozen: hitEntry.position < freezeColumnCount,
         });
-        const compareCellsByRowNumber = side === 'base' ? baseCompareCellsByRowNumber : mineCompareCellsByRowNumber;
+        const compareCellsByRowNumber = groupRuntime.compareCellsBySideRowNumber[side];
         const anchorCompareCells = compareCellsByRowNumber.get(anchorRowNumber)
-          ?? groupRuntime.compareCellsBySideRowNumber[side].get(anchorRowNumber)
           ?? rowFrame.rowDelta.cellDeltas;
         const compareCell = mergeRange
           ? getWorkbookMergedCompareCellFromRows(compareCellsByRowNumber, mergeRange) ?? getWorkbookMergedCompareCell(anchorCompareCells, mergeRange)

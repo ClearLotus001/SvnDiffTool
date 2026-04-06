@@ -91,7 +91,7 @@ test('workbook diff regions expose region-level labels and selection lookup', ()
   );
 });
 
-test('buildWorkbookDiffRegions keeps diagonal workbook cells as separate regions', () => {
+test('buildWorkbookDiffRegions merges corner-touching workbook cells into one visual region', () => {
   const base = buildWorkbook([
     ['ID', 'Name', 'Type'],
     ['10001', 'Sword', 'Weapon'],
@@ -113,15 +113,47 @@ test('buildWorkbookDiffRegions keeps diagonal workbook cells as separate regions
     'MINE',
   );
 
+  assert.equal(regions.length, 1);
+  assert.equal(regions[0]?.startCol, 1);
+  assert.equal(regions[0]?.endCol, 2);
+  assert.equal(regions[0]?.rowNumberStart, 2);
+  assert.equal(regions[0]?.rowNumberEnd, 3);
+  assert.equal(regions[0]?.patches.length, 2);
+});
+
+test('buildWorkbookDiffRegions keeps workbook cells with a true gap as separate regions', () => {
+  const base = buildWorkbook([
+    ['ID', 'Name', 'Type', 'Slot'],
+    ['10001', 'Sword', 'Weapon', 'L'],
+    ['10002', 'Potion', 'Consumable', 'R'],
+    ['10003', 'Shield', 'Armor', 'M'],
+  ]);
+  const mine = buildWorkbook([
+    ['ID', 'Name', 'Type', 'Slot'],
+    ['10001', 'Long Sword', 'Weapon', 'L'],
+    ['10002', 'Potion', 'Consumable', 'R'],
+    ['10003', 'Shield', 'Armor', 'Heavy'],
+  ]);
+
+  const diffLines = computeWorkbookDiff(base, mine);
+  const sections = getWorkbookSections(diffLines);
+  const rowIndex = buildWorkbookSectionRowIndex(diffLines, sections);
+  const regions = buildWorkbookDiffRegions(
+    sections,
+    rowIndex,
+    'BASE',
+    'MINE',
+  );
+
   assert.equal(regions.length, 2);
   assert.equal(regions[0]?.startCol, 1);
   assert.equal(regions[0]?.endCol, 1);
   assert.equal(regions[0]?.rowNumberStart, 2);
   assert.equal(regions[0]?.rowNumberEnd, 2);
-  assert.equal(regions[1]?.startCol, 2);
-  assert.equal(regions[1]?.endCol, 2);
-  assert.equal(regions[1]?.rowNumberStart, 3);
-  assert.equal(regions[1]?.rowNumberEnd, 3);
+  assert.equal(regions[1]?.startCol, 3);
+  assert.equal(regions[1]?.endCol, 3);
+  assert.equal(regions[1]?.rowNumberStart, 4);
+  assert.equal(regions[1]?.rowNumberEnd, 4);
 });
 
 test('buildWorkbookDiffRegions merges edge-connected workbook cells into one visual region', () => {

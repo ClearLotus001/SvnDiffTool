@@ -75,7 +75,7 @@ export interface WorkbookCanvasLayerViewports {
   frozenBoundaryX: number;
 }
 
-const workbookMergeRangeRowIndexCache = new WeakMap<WorkbookMergeRange[], Map<number, WorkbookMergeRange[]>>();
+const workbookMergeRangeRowIndexCache = new WeakMap<ReadonlyArray<WorkbookMergeRange>, Map<number, WorkbookMergeRange[]>>();
 
 export function clipWorkbookCanvasToViewport(
   ctx: CanvasRenderingContext2D,
@@ -136,7 +136,7 @@ function getCompactHalfWidth(entry: HorizontalVirtualColumnEntry): number {
 }
 
 export function findWorkbookMergeRange(
-  mergedRanges: WorkbookMergeRange[],
+  mergedRanges: ReadonlyArray<WorkbookMergeRange>,
   rowNumber: number,
   column: number,
 ): WorkbookMergeRange | null {
@@ -164,7 +164,7 @@ export function findWorkbookMergeRange(
 }
 
 function getWorkbookMergeRangesForRow(
-  mergedRanges: WorkbookMergeRange[],
+  mergedRanges: ReadonlyArray<WorkbookMergeRange>,
   rowNumber: number,
 ): WorkbookMergeRange[] | null {
   let cachedRowIndex = workbookMergeRangeRowIndexCache.get(mergedRanges);
@@ -195,7 +195,7 @@ function getWorkbookMergeRangesForRow(
 function getWorkbookSelectionColumnSpan(
   rowNumber: number,
   column: number,
-  mergedRanges: WorkbookMergeRange[],
+  mergedRanges: ReadonlyArray<WorkbookMergeRange>,
 ): WorkbookSelectionColumnSpan {
   const range = findWorkbookMergeRange(mergedRanges, rowNumber, column);
   return range
@@ -205,7 +205,7 @@ function getWorkbookSelectionColumnSpan(
 
 export function getWorkbookSelectionSpanForSelection(
   selection: WorkbookSelectedCell,
-  mergedRanges: WorkbookMergeRange[],
+  mergedRanges: ReadonlyArray<WorkbookMergeRange>,
 ): WorkbookSelectionColumnSpan {
   if (selection.kind !== 'cell') {
     return { startCol: selection.colIndex, endCol: selection.colIndex };
@@ -625,7 +625,7 @@ export function getWorkbookMergeDrawInfo(params: {
   renderedRowNumbers: number[];
   rowLayoutByRowNumber?: Map<number, { top: number; height: number }>;
   renderedColumns?: number[];
-  mergedRanges: WorkbookMergeRange[];
+  mergedRanges: ReadonlyArray<WorkbookMergeRange>;
   columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
   contentLeft: number;
   currentScrollLeft: number;

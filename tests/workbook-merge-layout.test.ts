@@ -31,18 +31,18 @@ const mergeRanges = [
 
 function buildSingleColumnLayout(): Map<number, HorizontalVirtualColumnEntry> {
   return new Map([
-    [0, { column: 0, position: 0, width: 120, displayWidth: 120, offset: 0 }],
-    [1, { column: 1, position: 1, width: 120, displayWidth: 120, offset: 120 }],
-    [2, { column: 2, position: 2, width: 120, displayWidth: 120, offset: 240 }],
-    [3, { column: 3, position: 3, width: 120, displayWidth: 120, offset: 360 }],
+    [0, { column: 0, position: 0, width: 120, displayWidth: 120, offset: 0, absoluteOffset: 0 }],
+    [1, { column: 1, position: 1, width: 120, displayWidth: 120, offset: 120, absoluteOffset: 120 }],
+    [2, { column: 2, position: 2, width: 120, displayWidth: 120, offset: 240, absoluteOffset: 240 }],
+    [3, { column: 3, position: 3, width: 120, displayWidth: 120, offset: 360, absoluteOffset: 360 }],
   ]);
 }
 
 function buildPairedColumnLayout(): Map<number, HorizontalVirtualColumnEntry> {
   return new Map([
-    [0, { column: 0, position: 0, width: 120, displayWidth: 240, offset: 0 }],
-    [1, { column: 1, position: 1, width: 120, displayWidth: 240, offset: 240 }],
-    [2, { column: 2, position: 2, width: 120, displayWidth: 240, offset: 480 }],
+    [0, { column: 0, position: 0, width: 120, displayWidth: 240, offset: 0, absoluteOffset: 0 }],
+    [1, { column: 1, position: 1, width: 120, displayWidth: 240, offset: 240, absoluteOffset: 240 }],
+    [2, { column: 2, position: 2, width: 120, displayWidth: 240, offset: 480, absoluteOffset: 480 }],
   ]);
 }
 

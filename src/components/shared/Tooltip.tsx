@@ -103,12 +103,14 @@ const Tooltip = memo(({
   useEffect(() => {
     if (!open) return;
     updateRect();
-    const onFrame = () => updateRect();
-    window.addEventListener('resize', onFrame);
-    window.addEventListener('scroll', onFrame, true);
+    const handleViewportChange = () => {
+      setOpen(false);
+    };
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('scroll', handleViewportChange, true);
     return () => {
-      window.removeEventListener('resize', onFrame);
-      window.removeEventListener('scroll', onFrame, true);
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('scroll', handleViewportChange, true);
     };
   }, [open]);
 

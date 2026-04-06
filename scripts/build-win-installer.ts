@@ -20,6 +20,10 @@ interface PackageJsonShape {
   version?: string;
 }
 
+interface ElectronPackageJsonShape {
+  version?: string;
+}
+
 function readPackageVersion(): string {
   const raw = fs.readFileSync(path.join(rootDir, 'package.json'), 'utf-8');
   const parsed = JSON.parse(raw) as PackageJsonShape;
@@ -28,6 +32,42 @@ function readPackageVersion(): string {
     throw new Error('Unable to resolve package version from package.json.');
   }
   return version;
+}
+
+function readInstalledElectronVersion(): string {
+  const raw = fs.readFileSync(path.join(rootDir, 'node_modules', 'electron', 'package.json'), 'utf-8');
+  const parsed = JSON.parse(raw) as ElectronPackageJsonShape;
+  const version = parsed.version?.trim();
+  if (!version) {
+    throw new Error('Unable to resolve installed Electron version from node_modules/electron/package.json.');
+  }
+  return version;
+}
+
+function findLocalElectronDistZip(): string | null {
+  const localAppData = process.env.LOCALAPPDATA;
+  if (!localAppData) return null;
+
+  const electronVersion = readInstalledElectronVersion();
+  const zipFileName = `electron-v${electronVersion}-win32-x64.zip`;
+  const cacheRoot = path.join(localAppData, 'electron', 'Cache');
+  const directPath = path.join(cacheRoot, zipFileName);
+
+  if (fs.existsSync(directPath)) {
+    return directPath;
+  }
+
+  if (!fs.existsSync(cacheRoot)) return null;
+
+  for (const entry of fs.readdirSync(cacheRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const candidate = path.join(cacheRoot, entry.name, zipFileName);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
 
 function parsePublishMode(): PublishMode {
@@ -88,6 +128,7 @@ async function buildInstallerArtifacts(
   publishMode: PublishMode,
 ): Promise<{ tempOutputDir: string; artifactsOutputDir: string }> {
   let lastError: unknown = null;
+  const localElectronDistZip = findLocalElectronDistZip();
 
   for (let attempt = 1; attempt <= 4; attempt += 1) {
     const tempOutputDir = path.join(workspaceDir, `installer-run-${Date.now()}-${attempt}`);
@@ -96,8 +137,11 @@ async function buildInstallerArtifacts(
     await removeDirectoryWithRetries(tempOutputDir).catch(() => {});
 
     try {
+      const electronDistArg = localElectronDistZip
+        ? ` --config.electronDist=${JSON.stringify(localElectronDistZip)}`
+        : '';
       const result = await runBuildCommand(
-        `npx electron-builder --win nsis --publish=${publishMode} --config.directories.output=${tempOutputDirName}`,
+        `npx electron-builder --win nsis --publish=${publishMode} --config.directories.output=${tempOutputDirName}${electronDistArg}`,
         rootDir,
       );
       if (result.suppressedCount > 0) {

@@ -59,13 +59,6 @@ export function findMatchesInSearchableLines(
   return results;
 }
 
-export function findMatches(
-  diffLines: DiffLine[],
-  pattern: RegExp | null,
-): SearchMatch[] {
-  return findMatchesInSearchableLines(diffLines.map(getSearchableLineContent), pattern);
-}
-
 export function navigateSearch(
   current: number,
   total: number,

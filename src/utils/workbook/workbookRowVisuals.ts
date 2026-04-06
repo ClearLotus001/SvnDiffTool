@@ -1,74 +1,22 @@
 import type { WorkbookRowDeltaTone } from '@/types';
 import type { ThemeTokens } from '@/theme/tokens';
 import type { LineNumberTone } from '@/utils/diff/lineNumberTone';
+import {
+  resolveDiffMiniMapPaint,
+} from '@/utils/diff/minimapColors';
 
 type WorkbookRowSideAccent = 'base' | 'mine' | null;
 export type WorkbookRowSemanticTone = WorkbookRowDeltaTone | 'neutral';
+export type WorkbookMiniMapSemanticTone = WorkbookRowSemanticTone | 'modify' | 'strict-only';
 
-interface ParsedColor {
-  red: number;
-  green: number;
-  blue: number;
-  alpha: number;
+export interface WorkbookMiniMapPaint {
+  kind: 'solid' | 'gradient';
+  color?: string;
+  stops?: Array<{ offset: number; color: string }>;
 }
 
 function normalizeWorkbookRowTone(tone: WorkbookRowSemanticTone): WorkbookRowDeltaTone {
   return tone === 'neutral' ? 'equal' : tone;
-}
-
-function parseHexColor(color: string): ParsedColor | null {
-  const hex = color.trim();
-  if (!hex.startsWith('#')) return null;
-
-  const raw = hex.slice(1);
-  if (raw.length === 3 || raw.length === 4) {
-    const [r = '', g = '', b = '', a = 'f'] = raw.split('');
-    return {
-      red: Number.parseInt(`${r}${r}`, 16),
-      green: Number.parseInt(`${g}${g}`, 16),
-      blue: Number.parseInt(`${b}${b}`, 16),
-      alpha: Number.parseInt(`${a}${a}`, 16) / 255,
-    };
-  }
-
-  if (raw.length === 6 || raw.length === 8) {
-    return {
-      red: Number.parseInt(raw.slice(0, 2), 16),
-      green: Number.parseInt(raw.slice(2, 4), 16),
-      blue: Number.parseInt(raw.slice(4, 6), 16),
-      alpha: raw.length === 8 ? Number.parseInt(raw.slice(6, 8), 16) / 255 : 1,
-    };
-  }
-
-  return null;
-}
-
-function parseRgbColor(color: string): ParsedColor | null {
-  const match = color.trim().match(
-    /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+))?\s*\)/i,
-  );
-  if (!match) return null;
-
-  return {
-    red: Number(match[1]),
-    green: Number(match[2]),
-    blue: Number(match[3]),
-    alpha: match[4] !== undefined ? Number(match[4]) : 1,
-  };
-}
-
-function mixCanvasColors(primary: string, secondary: string, primaryWeight = 0.62): string {
-  const first = parseHexColor(primary) ?? parseRgbColor(primary);
-  const second = parseHexColor(secondary) ?? parseRgbColor(secondary);
-  if (!first || !second) return primary;
-
-  const weight = Math.max(0, Math.min(1, primaryWeight));
-  const inverseWeight = 1 - weight;
-  const red = Math.round((first.red * weight) + (second.red * inverseWeight));
-  const green = Math.round((first.green * weight) + (second.green * inverseWeight));
-  const blue = Math.round((first.blue * weight) + (second.blue * inverseWeight));
-  const alpha = (first.alpha * weight) + (second.alpha * inverseWeight);
-  return `rgba(${red}, ${green}, ${blue}, ${alpha.toFixed(3)})`;
 }
 
 function getWorkbookSideAccent(theme: ThemeTokens, sideAccent: Exclude<WorkbookRowSideAccent, null>): string {
@@ -118,7 +66,7 @@ export function resolveWorkbookRowSurfaceBackground(params: {
 
   if (isGuided) return `${theme.acc2}08`;
   if (isActiveSearch) return theme.searchActiveBg;
-  if (isSearchMatch) return `${theme.searchHl}28`;
+  if (isSearchMatch) return `${theme.searchHl}24`;
   return theme.bg0;
 }
 
@@ -268,33 +216,43 @@ export function resolveWorkbookRowLineNumberColor(params: {
   return active ? theme.acc2 : theme.lnTx;
 }
 
+export function resolveWorkbookMiniMapPaint(
+  theme: ThemeTokens,
+  tone: WorkbookMiniMapSemanticTone,
+): WorkbookMiniMapPaint {
+  if (tone === 'strict-only') {
+    return {
+      kind: 'solid',
+      color: theme.acc2,
+    };
+  }
+
+  if (tone === 'modify') {
+    return resolveDiffMiniMapPaint(theme, 'modify');
+  }
+
+  const semanticTone = normalizeWorkbookRowTone(tone);
+  if (semanticTone === 'mixed') {
+    return resolveDiffMiniMapPaint(theme, 'modify');
+  }
+
+  if (semanticTone !== 'equal') {
+    return resolveDiffMiniMapPaint(theme, semanticTone);
+  }
+
+  return {
+    kind: 'solid',
+    color: theme.bg2,
+  };
+}
+
 export function resolveWorkbookMiniMapColor(
   theme: ThemeTokens,
-  tone: WorkbookRowSemanticTone,
+  tone: WorkbookMiniMapSemanticTone,
 ): string {
-  const semanticTone = normalizeWorkbookRowTone(tone);
-  if (semanticTone === 'add') {
-    return mixCanvasColors(
-      mixCanvasColors(theme.addBg, theme.addHl, 0.52),
-      theme.addTx,
-      0.74,
-    );
-  }
-  if (semanticTone === 'delete') {
-    return mixCanvasColors(
-      mixCanvasColors(theme.delBg, theme.delHl, 0.52),
-      theme.delTx,
-      0.74,
-    );
-  }
-  if (semanticTone === 'mixed') {
-    return mixCanvasColors(
-      mixCanvasColors(theme.chgBg, theme.chgHl, 0.48),
-      theme.chgTx,
-      0.72,
-    );
-  }
-  return theme.bg2;
+  const paint = resolveWorkbookMiniMapPaint(theme, tone);
+  if (paint.kind === 'solid') return paint.color ?? theme.bg2;
+  return paint.stops?.[1]?.color ?? resolveDiffMiniMapPaint(theme, 'modify').color ?? theme.chgTx;
 }
 
 export function resolveWorkbookOverlayPalette(

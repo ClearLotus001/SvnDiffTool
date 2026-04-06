@@ -30,7 +30,7 @@ function isLocale(value: unknown): value is StartupLocale {
   return value === 'zh-CN' || value === 'en-US';
 }
 
-export function getDefaultStartupAppearance(): StartupAppearance {
+function getDefaultStartupAppearance(): StartupAppearance {
   return {
     themeKey: nativeTheme.shouldUseDarkColors ? 'dark' : 'light',
     locale: app.getLocale().toLowerCase().startsWith('en') ? 'en-US' : 'zh-CN',

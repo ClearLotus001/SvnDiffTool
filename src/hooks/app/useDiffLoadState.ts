@@ -30,14 +30,21 @@ function diffLoadReducer(state: DiffLoadState, action: DiffLoadAction): DiffLoad
   }
 }
 
-export default function useDiffLoadState() {
-  const [state, dispatch] = useReducer(diffLoadReducer, {
+function createInitialDiffLoadState(): DiffLoadState {
+  const isElectronBootstrap = typeof window !== 'undefined'
+    && typeof window.svnDiff?.getLaunchState === 'function';
+
+  return {
     isLoadingDiff: false,
     hasLoadedDiff: false,
-    loadPhase: 'idle' as DiffLoadState['loadPhase'],
+    loadPhase: isElectronBootstrap ? 'bootstrapping' : 'idle',
     loadError: '',
     loadPerfMetrics: null,
-  });
+  };
+}
+
+export default function useDiffLoadState() {
+  const [state, dispatch] = useReducer(diffLoadReducer, undefined, () => createInitialDiffLoadState());
 
   const setLoading = useCallback((value: SetStateAction<boolean>) => {
     dispatch({ type: 'setIsLoadingDiff', value });

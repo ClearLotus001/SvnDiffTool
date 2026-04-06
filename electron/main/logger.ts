@@ -6,9 +6,11 @@ export function logDebugTiming(message: string, payload?: unknown): void {
   if (process.env.SVN_DIFF_DEBUG_TIMING !== '1') return;
   if (payload === undefined) {
     console.log(`[debug-timing] ${message}`);
+    writeExternalDiffDebugLog(message);
     return;
   }
   console.log(`[debug-timing] ${message}`, payload);
+  writeExternalDiffDebugLog(message, payload);
 }
 
 export function logRustDebugStderr(label: string, stderr: string): void {
@@ -16,6 +18,7 @@ export function logRustDebugStderr(label: string, stderr: string): void {
   const normalized = stderr.trim();
   if (!normalized) return;
   console.log(`[${label}] ${normalized}`);
+  writeExternalDiffDebugLog(label, { stderr: normalized });
 }
 
 function toSerializableDebugValue(value: unknown): unknown {

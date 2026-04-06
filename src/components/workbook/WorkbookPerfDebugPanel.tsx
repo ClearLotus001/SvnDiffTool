@@ -1,6 +1,8 @@
 import { memo } from 'react';
 import { useI18n } from '@/context/i18n';
 import { cssVar } from '@/theme/cssUtils';
+import { copyText } from '@/utils/app/clipboard';
+import { clearWorkbookDebugLogs, getWorkbookDebugLogSnapshot } from '@/utils/workbook/workbookDebug';
 
 export interface WorkbookPerfDebugStats {
   panel: 'stacked' | 'columns' | 'horizontal';
@@ -28,6 +30,13 @@ export interface WorkbookPerfDebugStats {
   miniMapClickMs: number;
   miniMapClickCount: number;
   scrollSyncCount: number;
+  frozenRowsViewport: number;
+  frozenRowsTotalSize: number;
+  frozenRowsOverflow: boolean;
+  frozenColumnsViewport: number;
+  frozenColumnsTotalSize: number;
+  frozenColumnsOverflow: boolean;
+  frozenColumnsScrollLeft: number;
 }
 
 interface WorkbookPerfDebugPanelProps {
@@ -65,9 +74,34 @@ const WorkbookPerfDebugPanel = memo(({ stats }: WorkbookPerfDebugPanelProps) => 
       {chip(t('perfUiMiniMapClick'), `${formatMs(stats.miniMapClickMs)} · ${stats.miniMapClickCount}`, cssVar('acc'))}
       {chip(t('perfUiRowWindow'), `${formatMs(stats.rowWindowMs)} · ${stats.rowWindowUpdates}`, cssVar('acc'))}
       {chip(t('perfUiRowViewport'), `${stats.rowViewport}px · ${stats.rowOverscan}`, cssVar('acc2'))}
+      {chip('FrozenRows', `${stats.frozenRowsOverflow ? 'overflow' : 'fit'} · ${stats.frozenRowsViewport}px/${stats.frozenRowsTotalSize}px`, cssVar('acc'))}
       {chip(t('perfUiColWindow'), `${formatMs(stats.columnWindowMs)} · ${stats.columnWindowUpdates}`, cssVar('acc'))}
       {chip(t('perfUiColViewport'), `${stats.columnViewport}px · ${stats.columnOverscan}`, cssVar('acc2'))}
+      {chip('FrozenCols', `${stats.frozenColumnsOverflow ? 'overflow' : 'fit'} · ${stats.frozenColumnsViewport}px/${stats.frozenColumnsTotalSize}px`, cssVar('acc2'))}
+      {chip('FrozenColScroll', `${stats.frozenColumnsScrollLeft}px`, cssVar('acc'))}
       {chip(t('perfUiScrollSync'), String(stats.scrollSyncCount), cssVar('acc'))}
+      <button
+        type="button"
+        onClick={() => { void copyText(getWorkbookDebugLogSnapshot()); }}
+        className="rounded-full py-1 px-2.5 font-ui text-[11px] font-bold cursor-pointer shrink-0 transition-all duration-150 hover:-translate-y-px"
+        style={{
+          border: `1px solid ${cssVar('border')}`,
+          background: cssVar('bg2'),
+          color: cssVar('t0'),
+        }}>
+        复制Workbook日志
+      </button>
+      <button
+        type="button"
+        onClick={() => clearWorkbookDebugLogs()}
+        className="rounded-full py-1 px-2.5 font-ui text-[11px] font-bold cursor-pointer shrink-0 transition-all duration-150 hover:-translate-y-px"
+        style={{
+          border: `1px solid ${cssVar('border')}`,
+          background: cssVar('bg2'),
+          color: cssVar('t0'),
+        }}>
+        清空Workbook日志
+      </button>
     </div>
   );
 });

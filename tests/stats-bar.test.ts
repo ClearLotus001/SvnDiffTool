@@ -36,7 +36,16 @@ function renderStatsBar(
   showArtifactOnlyDiff: boolean,
   diffLines: DiffLine[] = [],
   workbookSections: WorkbookSection[] = [],
+  options: {
+    isWorkbookMode?: boolean;
+    fileName?: string;
+  } = {},
 ): string {
+  const {
+    isWorkbookMode = true,
+    fileName = '[1]新物品表.xlsm',
+  } = options;
+
   return renderToStaticMarkup(
     React.createElement(
       ThemeContext.Provider,
@@ -50,11 +59,11 @@ function renderStatsBar(
           mineName: 'Local',
           baseTitle: 'Compare Version',
           mineTitle: 'Working Copy',
-          fileName: '[1]新物品表.xlsm',
+          fileName,
           totalLines: 0,
           baseVersionLabel: 'r1825384',
           mineVersionLabel: 'r1825385',
-          isWorkbookMode: true,
+          isWorkbookMode,
           workbookCompareMode: 'strict',
           workbookSections,
           workbookArtifactDiff: showArtifactOnlyDiff
@@ -122,4 +131,15 @@ test('StatsBar renders workbook sheet change counts without double-counting rena
   assert.match(html, /\+1/);
   assert.match(html, /-1/);
   assert.match(html, /↦1/);
+});
+
+test('StatsBar uses generic file label for text diffs', () => {
+  const html = renderStatsBar(false, [], [], {
+    isWorkbookMode: false,
+    fileName: 'openai_register3.py',
+  });
+
+  assert.match(html, /文件/);
+  assert.doesNotMatch(html, /表格文件/);
+  assert.match(html, /openai_register3\.py/);
 });

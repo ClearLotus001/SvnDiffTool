@@ -1,5 +1,5 @@
 export function findNextCollapseIndex<T>(
-  items: T[],
+  items: readonly T[],
   afterIndex: number,
   isCollapseItem: (item: T) => boolean,
 ): number {
@@ -10,7 +10,7 @@ export function findNextCollapseIndex<T>(
 }
 
 export function findPreviousCollapseIndex<T>(
-  items: T[],
+  items: readonly T[],
   beforeIndex: number,
   isCollapseItem: (item: T) => boolean,
 ): number {
@@ -21,7 +21,7 @@ export function findPreviousCollapseIndex<T>(
 }
 
 export function findNextCollapseIndexWithWrap<T>(
-  items: T[],
+  items: readonly T[],
   afterIndex: number,
   isCollapseItem: (item: T) => boolean,
 ): number {
@@ -36,7 +36,7 @@ export function findNextCollapseIndexWithWrap<T>(
 }
 
 export function findPreviousCollapseIndexWithWrap<T>(
-  items: T[],
+  items: readonly T[],
   beforeIndex: number,
   isCollapseItem: (item: T) => boolean,
 ): number {
@@ -51,7 +51,7 @@ export function findPreviousCollapseIndexWithWrap<T>(
 }
 
 export function countRemainingCollapses<T>(
-  items: T[],
+  items: readonly T[],
   afterIndex: number,
   isCollapseItem: (item: T) => boolean,
 ): number {
@@ -63,7 +63,7 @@ export function countRemainingCollapses<T>(
 }
 
 export function getCollapseIndexes<T>(
-  items: T[],
+  items: readonly T[],
   isCollapseItem: (item: T) => boolean,
 ): number[] {
   const indexes: number[] = [];

@@ -47,10 +47,6 @@ test('buildWorkbookStackedMergeCoverageWindows expands a base-side vertical merg
       { row: buildSplitRow({ lineIdx: 2, mineRowNumber: 99 }), renderMode: 'single-mine', height: 24 },
       { row: buildSplitRow({ lineIdx: 3, baseRowNumber: 29 }), renderMode: 'single-base', height: 24 },
     ],
-    sheetName: 'Sheet1',
-    baseVersion: 'BASE',
-    mineVersion: 'MINE',
-    visibleColumns: [0],
   });
 
   const windows = buildWorkbookStackedMergeCoverageWindows({
@@ -101,10 +97,6 @@ test('buildWorkbookStackedVisualGroups splits plain rows around merge coverage w
       { row: buildSplitRow({ lineIdx: 4, baseRowNumber: 29 }), renderMode: 'single-base', height: 24 },
       { row: buildSplitRow({ lineIdx: 5, baseRowNumber: 30 }), renderMode: 'single-base', height: 24 },
     ],
-    sheetName: 'Sheet1',
-    baseVersion: 'BASE',
-    mineVersion: 'MINE',
-    visibleColumns: [0],
   });
 
   const groups = buildWorkbookStackedVisualGroups({
@@ -125,4 +117,30 @@ test('buildWorkbookStackedVisualGroups splits plain rows around merge coverage w
   ]);
   assert.equal(groups[1]?.baseTrack.length, 2);
   assert.equal(groups[1]?.mineTrack.length, 1);
+});
+
+test('buildWorkbookStackedVisualGroups chunks large plain row runs to keep stacked virtualization granular', () => {
+  const layoutRows = buildWorkbookStackedLayoutRows({
+    rows: Array.from({ length: 600 }, (_, index) => ({
+      row: buildSplitRow({ lineIdx: index + 1, baseRowNumber: index + 1 }),
+      renderMode: 'single-base' as const,
+      height: 24,
+    })),
+  });
+
+  const groups = buildWorkbookStackedVisualGroups({
+    rows: layoutRows,
+    baseMergeRanges: [],
+    mineMergeRanges: [],
+  });
+
+  assert.deepEqual(groups.map((group) => ({
+    reason: group.reason,
+    startIndex: group.startIndex,
+    endIndex: group.endIndex,
+  })), [
+    { reason: 'plain', startIndex: 0, endIndex: 255 },
+    { reason: 'plain', startIndex: 256, endIndex: 511 },
+    { reason: 'plain', startIndex: 512, endIndex: 599 },
+  ]);
 });

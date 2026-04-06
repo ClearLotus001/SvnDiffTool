@@ -2,8 +2,8 @@
 // src/hooks/useVirtual.ts  —  Virtual scroll hook  [v3 fixed]
 //
 // AUDIT FIXES (round 3):
-//  1. scrollRef was typed as RefObject<HTMLDivElement> but the hook was called
-//     with `scrollRef as RefObject<HTMLDivElement>` casts everywhere because
+//  1. scrollRef was typed as RefObject<HTMLDivElement | null> but the hook was called
+//     with `scrollRef as RefObject<HTMLDivElement | null>` casts everywhere because
 //     useRef<HTMLDivElement>(null) returns MutableRefObject. The cast is safe
 //     but unnecessary noise. Kept as-is (React 18 useRef typing quirk).
 //  2. useEffect for ResizeObserver had `[scrollRef]` dependency — this is a
@@ -27,8 +27,9 @@ import type { VirtualState } from '@/types';
 /**
  * Row height in pixels. MUST match the `height: ROW_H` in every row component.
  * If you change this, update all inline `style={{ height: ROW_H }}` usages too.
+ * 24px keeps the max 20px zoom readable without workbook cell glyphs touching borders.
  */
-export const ROW_H = 21;
+export const ROW_H = 24;
 const DEFAULT_OVERSCAN_MIN = 80;
 const DEFAULT_OVERSCAN_FACTOR = 3;
 
@@ -86,7 +87,7 @@ export function computeVirtualWindow(
 
 export function useVirtual(
   count: number,
-  scrollRef: RefObject<HTMLDivElement>,
+  scrollRef: RefObject<HTMLDivElement | null>,
   rowHeight: number = ROW_H,
   options: UseVirtualOptions = {},
 ): UseVirtualReturn {

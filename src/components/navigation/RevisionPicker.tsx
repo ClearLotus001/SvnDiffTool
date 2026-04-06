@@ -5,7 +5,7 @@ import { ChevronUp } from 'lucide-react';
 import type { SvnRevisionInfo } from '@/types';
 import { useI18n } from '@/context/i18n';
 import { useTheme } from '@/context/theme';
-import { cssAlphaRaw, cssVar } from '@/theme/cssUtils';
+import { cssAlpha, cssAlphaRaw, cssVar } from '@/theme/cssUtils';
 import {
   RP_UI,
   buildQueryDateTime,
@@ -70,12 +70,12 @@ const RevisionPicker = memo(({
   const panelAlignStyle = align === 'left' ? { left: 0 } : { right: 0 };
   const controlColorScheme: CSSProperties['colorScheme'] = themeKey === 'light' ? 'light' : 'dark';
   const highlightStyle: CSSProperties = {
-    background: cssVar('searchHl'),
+    background: cssAlpha('searchHl', '5c'),
     color: 'var(--text-title)',
     fontWeight: 700,
     borderRadius: 5,
     padding: '0 2px',
-    boxShadow: `inset 0 0 0 1px ${cssAlphaRaw(accent, '33')}`,
+    boxShadow: `inset 0 0 0 1px ${cssAlpha('searchHl', '88')}`,
   };
   const hasActiveTimeFilter = Boolean(queryDateTime || draftDate);
   const hasActiveFilter = Boolean(searchQuery.trim() || hasActiveTimeFilter);

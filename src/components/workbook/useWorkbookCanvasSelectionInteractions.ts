@@ -49,11 +49,11 @@ function canDragMergeSelection(
 }
 
 interface UseWorkbookCanvasSelectionInteractionsArgs {
-  canvasRef: RefObject<HTMLCanvasElement>;
+  canvasRef: RefObject<HTMLCanvasElement | null>;
   resolveHit: (x: number, y: number, canvasRect: DOMRect) => CanvasSelectionHit | null;
   onSelectionRequest: (request: WorkbookSelectionRequest) => void;
   clearHover: () => void;
-  scrollRef: RefObject<HTMLDivElement>;
+  scrollRef: RefObject<HTMLDivElement | null>;
   onDragSelectingChange?: ((active: boolean) => void) | undefined;
 }
 
