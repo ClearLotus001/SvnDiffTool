@@ -35,6 +35,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Build Rust parser
+        run: npm run build:rust
+
       - name: Workbook regression tests
         run: npm run test:workbook
 
