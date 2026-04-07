@@ -53,13 +53,3 @@ export function injectWorkbookSparseGapItems<TItem>(
   return next;
 }
 
-export function isWorkbookSparseGapItem(
-  value: unknown,
-): value is WorkbookSparseGapItem {
-  return Boolean(
-    value
-    && typeof value === 'object'
-    && 'kind' in value
-    && (value as { kind?: unknown }).kind === 'sparse-gap',
-  );
-}
