@@ -1,15 +1,24 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { getRuntimePathState } from '../runtimePaths.js';
+import { logMain, logMainDebug } from '../logging.js';
+
+function isEnvFlagEnabled(name: string): boolean {
+  return process.env[name]?.trim() === '1';
+}
+
+function isExternalDiffDebugLogEnabled(): boolean {
+  return isEnvFlagEnabled('SVN_DIFF_DEBUG_LOG') || isEnvFlagEnabled('SVN_DIFF_DEBUG_TIMING');
+}
 
 export function logDebugTiming(message: string, payload?: unknown): void {
   if (process.env.SVN_DIFF_DEBUG_TIMING !== '1') return;
   if (payload === undefined) {
-    console.log(`[debug-timing] ${message}`);
+    logMain('debug-timing', message);
     writeExternalDiffDebugLog(message);
     return;
   }
-  console.log(`[debug-timing] ${message}`, payload);
+  logMain('debug-timing', message, payload);
   writeExternalDiffDebugLog(message, payload);
 }
 
@@ -17,7 +26,7 @@ export function logRustDebugStderr(label: string, stderr: string): void {
   if (process.env.SVN_DIFF_DEBUG_TIMING !== '1') return;
   const normalized = stderr.trim();
   if (!normalized) return;
-  console.log(`[${label}] ${normalized}`);
+  logMain(label, normalized);
   writeExternalDiffDebugLog(label, { stderr: normalized });
 }
 
@@ -46,20 +55,27 @@ function toSerializableDebugValue(value: unknown): unknown {
   return String(value);
 }
 
-function getExternalDiffDebugLogPaths(): string[] {
+function resolveExternalDiffDebugLogPath(): string | null {
   const runtimePaths = getRuntimePathState();
-  const candidateRoots = [
-    process.env.APPDATA ? path.join(process.env.APPDATA, 'svn-diff-tool', 'logs') : '',
-    runtimePaths.logsPath ?? '',
-    runtimePaths.userDataPath ? path.join(runtimePaths.userDataPath, 'logs') : '',
-    process.execPath ? path.dirname(process.execPath) : '',
+  const logRoot = [
+    runtimePaths.logsPath,
+    runtimePaths.userDataPath ? path.join(runtimePaths.userDataPath, 'logs') : null,
+    process.env.APPDATA?.trim()
+      ? path.join(process.env.APPDATA.trim(), 'svn-diff-tool', 'logs')
+      : null,
     path.join(process.cwd(), 'logs'),
-  ].filter(Boolean);
+  ].find((candidateRoot): candidateRoot is string => Boolean(candidateRoot?.trim()));
 
-  return Array.from(new Set(candidateRoots)).map(rootPath => path.join(rootPath, 'external-diff-debug.log'));
+  if (!logRoot) return null;
+  return path.join(logRoot, 'external-diff-debug.log');
 }
 
 export function writeExternalDiffDebugLog(event: string, payload?: unknown): void {
+  if (!isExternalDiffDebugLogEnabled()) return;
+
+  const targetPath = resolveExternalDiffDebugLogPath();
+  if (!targetPath) return;
+
   const entry = {
     timestamp: new Date().toISOString(),
     pid: process.pid,
@@ -67,16 +83,15 @@ export function writeExternalDiffDebugLog(event: string, payload?: unknown): voi
     payload: payload === undefined ? null : toSerializableDebugValue(payload),
   };
 
-  getExternalDiffDebugLogPaths().forEach((targetPath) => {
-    try {
-      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-      fs.appendFileSync(targetPath, `${JSON.stringify(entry)}\n`, 'utf-8');
-    } catch (error) {
-      console.debug(
-        '[debug-log] write skipped:',
-        targetPath,
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-  });
+  try {
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.appendFileSync(targetPath, `${JSON.stringify(entry)}\n`, 'utf-8');
+  } catch (error) {
+    logMainDebug(
+      'debug-log',
+      'write skipped:',
+      targetPath,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
 }

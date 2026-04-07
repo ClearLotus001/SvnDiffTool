@@ -1,11 +1,12 @@
 import { app, BrowserWindow } from 'electron';
 import { EMPTY_CLI_ARGS, type CliArgs } from './cliArgs';
+import { logMainError, logMainWarn } from './logging.js';
 import { resolveLaunchCliArgsFromArgv } from './externalDiffRequest';
 import { readInstallerBootstrapSync } from './installerBootstrap';
 import { getMaintenanceModeFromArgv, runMaintenance } from './maintenance';
 import {
+  cleanupManagedTempFilesOnExitSync,
   cleanupStaleManagedTempFilesSync,
-  cleanupTrackedManagedTempFilesSync,
   configureRuntimePaths,
   getRuntimePathState,
 } from './runtimePaths';
@@ -56,16 +57,31 @@ writeExternalDiffDebugLog('process-start', {
   logsPath: getRuntimePathState().logsPath,
 });
 
+let hasCleanedManagedTempOnExit = false;
+
+function cleanupManagedTempOnExit(reason: string) {
+  if (hasCleanedManagedTempOnExit) return;
+  hasCleanedManagedTempOnExit = true;
+
+  writeExternalDiffDebugLog('managed-temp:cleanup-on-exit', {
+    reason,
+    tempRootPath: getRuntimePathState().tempRootPath,
+  });
+  cleanupManagedTempFilesOnExitSync();
+}
+
 app.on('before-quit', (_event) => {
   writeExternalDiffDebugLog('app:before-quit', {
     windowCount: BrowserWindow.getAllWindows().length,
   });
+  cleanupManagedTempOnExit('app:before-quit');
 });
 
 app.on('will-quit', (_event) => {
   writeExternalDiffDebugLog('app:will-quit', {
     windowCount: BrowserWindow.getAllWindows().length,
   });
+  cleanupManagedTempOnExit('app:will-quit');
 });
 
 app.on('window-all-closed', () => {
@@ -92,12 +108,12 @@ if (maintenanceMode) {
       await runMaintenance(app, maintenanceMode, process.argv);
       app.quit();
     } catch (error) {
-      console.error('[maintenance] failed', error);
+      logMainError('maintenance', 'failed', error);
       app.quit();
     }
   });
 } else if (!gotSingleInstanceLock) {
-  console.warn('[electron] single-instance lock denied; another SvnDiffTool instance is already running');
+  logMainWarn('electron', 'single-instance lock denied; another SvnDiffTool instance is already running');
   writeExternalDiffDebugLog('single-instance-lock-denied', {
     argv: process.argv,
     parsedStartupCliArgs,
@@ -134,8 +150,8 @@ if (maintenanceMode) {
   });
 }
 
-app.on('before-quit', () => {
-  cleanupTrackedManagedTempFilesSync();
+process.once('exit', () => {
+  cleanupManagedTempOnExit('process:exit');
 });
 
 app.on('activate', () => {

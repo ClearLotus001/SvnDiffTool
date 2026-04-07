@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { detectWorkbookArtifactOnlyDiff } from '../electron/workbookArtifactDiff';
+import {
+  detectWorkbookArtifactOnlyDiff,
+  detectWorkbookArtifactOnlyDiffFromEqualityState,
+} from '../electron/workbookArtifactDiff';
 
 function bytes(values: number[]): Uint8Array {
   return new Uint8Array(values);
@@ -79,4 +82,33 @@ test('detectWorkbookArtifactOnlyDiff returns null when workbook bytes are identi
 
   assert.equal(sameBytes, null);
   assert.equal(nonWorkbook, null);
+});
+
+test('detectWorkbookArtifactOnlyDiffFromEqualityState detects artifact-only diff without inline bytes', () => {
+  const result = detectWorkbookArtifactOnlyDiffFromEqualityState({
+    isWorkbook: true,
+    baseByteLength: 1024,
+    mineByteLength: 1024,
+    contentsEqual: false,
+    diffLines: [{ type: 'equal' }],
+  });
+
+  assert.deepEqual(result, {
+    hasArtifactOnlyDiff: true,
+    kind: 'binary-only',
+    baseBytes: 1024,
+    mineBytes: 1024,
+  });
+});
+
+test('detectWorkbookArtifactOnlyDiffFromEqualityState returns null when equality is unknown', () => {
+  const result = detectWorkbookArtifactOnlyDiffFromEqualityState({
+    isWorkbook: true,
+    baseByteLength: 1024,
+    mineByteLength: 1024,
+    contentsEqual: null,
+    diffLines: [{ type: 'equal' }],
+  });
+
+  assert.equal(result, null);
 });

@@ -14,6 +14,5 @@ export async function copyText(text: string): Promise<boolean> {
     return true;
   }
 
-  console.warn('Clipboard write failed: no browser or Electron clipboard API available.');
   return false;
 }

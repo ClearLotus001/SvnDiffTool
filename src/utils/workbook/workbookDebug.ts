@@ -4,6 +4,8 @@ interface WorkbookDebugEntry {
   payload: unknown;
 }
 
+const MAX_WORKBOOK_DEBUG_LOG_ENTRIES = 200;
+
 type WorkbookDebugGlobal = typeof globalThis & {
   __SVN_DIFF_WORKBOOK_DEBUG__?: boolean;
   __SVN_DIFF_WORKBOOK_DEBUG_LOGS__?: WorkbookDebugEntry[];
@@ -50,12 +52,10 @@ export function workbookDebugLog(scope: string, payload: unknown) {
 
   const current = globalRef.__SVN_DIFF_WORKBOOK_DEBUG_LOGS__ ?? [];
   current.push(entry);
-  if (current.length > 200) {
-    current.splice(0, current.length - 200);
+  if (current.length > MAX_WORKBOOK_DEBUG_LOG_ENTRIES) {
+    current.splice(0, current.length - MAX_WORKBOOK_DEBUG_LOG_ENTRIES);
   }
   globalRef.__SVN_DIFF_WORKBOOK_DEBUG_LOGS__ = current;
-
-  console.log(`[workbook-debug] ${scope}`, payload);
 }
 
 export function getWorkbookDebugLogSnapshot(): string {

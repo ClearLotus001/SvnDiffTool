@@ -13,6 +13,11 @@ import type {
 import { parseWorkbookDisplayLine } from '@/utils/workbook/workbookDisplay';
 import { hasWorkbookCellContent } from '@/utils/workbook/workbookCellContract';
 import { buildWorkbookHiddenColumnSegments } from '@/utils/workbook/workbookManualVisibility';
+import {
+  normalizeWorkbookColumnRange,
+  parseWorkbookColumnIndexFromCellRef,
+  parseWorkbookRowNumberFromCellRef,
+} from '@/utils/workbook/workbookLimits';
 
 const ZIP_WORKBOOK_EXTENSIONS = new Set(['.xlsx', '.xlsm', '.xltx', '.xltm']);
 const xmlParser = new XMLParser({
@@ -98,20 +103,6 @@ function normalizeWorksheetPath(target: string): string {
   return `xl/${trimmed}`;
 }
 
-function getColumnIndex(cellRef: string): number {
-  const letters = cellRef.toUpperCase().match(/[A-Z]+/)?.[0] ?? '';
-  let value = 0;
-  for (let i = 0; i < letters.length; i += 1) {
-    value = (value * 26) + (letters.charCodeAt(i) - 64);
-  }
-  return Math.max(0, value - 1);
-}
-
-function getRowNumber(cellRef: string): number {
-  const digits = cellRef.match(/\d+/)?.[0] ?? '1';
-  return Math.max(1, Number(digits) || 1);
-}
-
 function isTruthyFlag(value: unknown): boolean {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'number') return value !== 0;
@@ -152,11 +143,18 @@ function parseMergeRange(ref: string): WorkbookMergeRange | null {
   const [startRef, endRef] = ref.split(':');
   if (!startRef) return null;
   const resolvedEndRef = endRef || startRef;
+  const startRow = parseWorkbookRowNumberFromCellRef(startRef);
+  const endRow = parseWorkbookRowNumberFromCellRef(resolvedEndRef);
+  const startCol = parseWorkbookColumnIndexFromCellRef(startRef);
+  const endCol = parseWorkbookColumnIndexFromCellRef(resolvedEndRef);
+  if (startRow == null || endRow == null || startCol == null || endCol == null) return null;
+  if (endRow < startRow || endCol < startCol) return null;
+
   return {
-    startRow: getRowNumber(startRef),
-    endRow: getRowNumber(resolvedEndRef),
-    startCol: getColumnIndex(startRef),
-    endCol: getColumnIndex(resolvedEndRef),
+    startRow,
+    endRow,
+    startCol,
+    endCol,
   };
 }
 
@@ -173,9 +171,9 @@ function parseSheetMetadata(
     .flatMap(cols => asXmlNodeArray(cols.col))
     .forEach(col => {
       if (!isTruthyFlag(col.hidden)) return;
-      const min = Math.max(1, Number(col.min) || 1);
-      const max = Math.max(min, Number(col.max) || min);
-      for (let colIndex = min - 1; colIndex <= max - 1; colIndex += 1) {
+      const range = normalizeWorkbookColumnRange(col.min, col.max);
+      if (!range) return;
+      for (let colIndex = range.min - 1; colIndex <= range.max - 1; colIndex += 1) {
         hiddenColumns.add(colIndex);
       }
     });

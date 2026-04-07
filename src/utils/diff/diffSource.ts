@@ -1,8 +1,11 @@
 import { XMLParser } from 'fast-xml-parser';
 import { strFromU8, unzipSync } from 'fflate';
-import type { DiffData } from '@/types';
 import type { WorkbookCellDisplay } from '@/utils/workbook/workbookDisplay';
 import { createWorkbookRowLine, createWorkbookSheetLine } from '@/utils/workbook/workbookDisplay';
+import {
+  normalizeWorkbookRowNumber,
+  parseWorkbookColumnIndexFromCellRef,
+} from '@/utils/workbook/workbookLimits';
 
 const WORKBOOK_EXTENSIONS = new Set(['.xlsx', '.xlsm', '.xltx', '.xltm', '.xlsb', '.xls']);
 const ZIP_WORKBOOK_EXTENSIONS = new Set(['.xlsx', '.xlsm', '.xltx', '.xltm']);
@@ -90,15 +93,6 @@ function normalizeWorksheetPath(target: string): string {
   if (trimmed.startsWith('/')) return trimmed.slice(1);
   if (trimmed.startsWith('xl/')) return trimmed;
   return `xl/${trimmed}`;
-}
-
-function getColumnIndex(cellRef: string): number {
-  const letters = cellRef.toUpperCase().match(/[A-Z]+/)?.[0] ?? '';
-  let value = 0;
-  for (let i = 0; i < letters.length; i += 1) {
-    value = (value * 26) + (letters.charCodeAt(i) - 64);
-  }
-  return value;
 }
 
 function normalizeCellValue(value: string): string {
@@ -204,20 +198,32 @@ function serializeWorkbookSheet(
   }
 
   rows.forEach((row, index) => {
-    const rowNumber = Number(row.r) || index + 1;
+    const rowNumber = normalizeWorkbookRowNumber(row.r, index + 1);
+    let fallbackColumnIndex = 0;
     const cells = asXmlNodeArray(row.c)
-      .map(cell => {
+      .map((cell) => {
         const ref = getXmlString(cell, 'r');
-        const value = parseCellValue(cell, sharedStrings);
-        return { ref, col: ref ? getColumnIndex(ref) : 0, value };
-      })
-      .filter(cell => cell.value.value !== '' || cell.value.formula !== '')
-      .sort((left, right) => left.col - right.col);
+        const colIndex = ref
+          ? parseWorkbookColumnIndexFromCellRef(ref)
+          : fallbackColumnIndex;
+        if (colIndex == null) return null;
 
-    const maxCol = cells[cells.length - 1]?.col ?? 0;
-    const rowValues: WorkbookCellDisplay[] = Array.from({ length: maxCol }, () => ({ value: '', formula: '' }));
+        fallbackColumnIndex = colIndex + 1;
+        const value = parseCellValue(cell, sharedStrings);
+        return { colIndex, value };
+      })
+      .filter((cell): cell is { colIndex: number; value: WorkbookCellDisplay } => (
+        cell != null && (cell.value.value !== '' || cell.value.formula !== '')
+      ))
+      .sort((left, right) => left.colIndex - right.colIndex);
+
+    const maxCol = (cells[cells.length - 1]?.colIndex ?? -1) + 1;
+    const rowValues: WorkbookCellDisplay[] = Array.from(
+      { length: Math.max(0, maxCol) },
+      () => ({ value: '', formula: '' }),
+    );
     cells.forEach(cell => {
-      if (cell.col > 0) rowValues[cell.col - 1] = cell.value;
+      rowValues[cell.colIndex] = cell.value;
     });
     output.push(createWorkbookRowLine(rowNumber, rowValues));
   });
@@ -254,6 +260,16 @@ export function workbookBytesToText(bytes: Uint8Array, fileName: string): string
   }
 }
 
+export interface DiffTextSourceInput {
+  baseName: string;
+  mineName: string;
+  fileName: string;
+  baseContent: string | null;
+  mineContent: string | null;
+  baseBytes: Uint8Array | null;
+  mineBytes: Uint8Array | null;
+}
+
 function normalizeSideText(
   name: string,
   fallbackName: string,
@@ -273,7 +289,7 @@ function normalizeSideText(
   return content ?? '';
 }
 
-export function resolveDiffTexts(data: DiffData): { baseText: string; mineText: string } {
+export function resolveDiffTexts(data: DiffTextSourceInput): { baseText: string; mineText: string } {
   return {
     baseText: normalizeSideText(
       data.baseName,

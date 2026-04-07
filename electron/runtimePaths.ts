@@ -1,6 +1,7 @@
 import type { App } from 'electron';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { logMainDebug } from './logging.js';
 
 import {
   getDefaultInstallerCacheRoot,
@@ -55,7 +56,7 @@ function tryPrepareCacheRoot(cacheRoot: string) {
     ensureDirectorySync(nextPaths.tempRootPath);
     return nextPaths;
   } catch (error) {
-    console.debug('[runtime-paths] failed to prepare cache root:', cacheRoot, error instanceof Error ? error.message : String(error));
+    logMainDebug('runtime-paths', 'failed to prepare cache root:', cacheRoot, error instanceof Error ? error.message : String(error));
     return null;
   }
 }
@@ -78,7 +79,7 @@ function cleanupEmptyDirectoriesSync(targetPath: string, stopAtPath: string) {
       if (entries.length > 0) break;
       fs.rmdirSync(currentPath);
     } catch (error) {
-      console.debug('[runtime-paths] cleanup-empty-dir skipped:', currentPath, error instanceof Error ? error.message : String(error));
+      logMainDebug('runtime-paths', 'cleanup-empty-dir skipped:', currentPath, error instanceof Error ? error.message : String(error));
       break;
     }
 
@@ -99,7 +100,7 @@ function collectFileEntriesSync(rootPath: string): FileEntryInfo[] {
     try {
       currentEntries = fs.readdirSync(currentPath, { withFileTypes: true });
     } catch (error) {
-      console.debug('[runtime-paths] readdir skipped:', currentPath, error instanceof Error ? error.message : String(error));
+      logMainDebug('runtime-paths', 'readdir skipped:', currentPath, error instanceof Error ? error.message : String(error));
       return;
     }
 
@@ -114,7 +115,7 @@ function collectFileEntriesSync(rootPath: string): FileEntryInfo[] {
       try {
         stat = fs.statSync(entryPath);
       } catch (error) {
-        console.debug('[runtime-paths] stat skipped:', entryPath, error instanceof Error ? error.message : String(error));
+        logMainDebug('runtime-paths', 'stat skipped:', entryPath, error instanceof Error ? error.message : String(error));
         return;
       }
 
@@ -134,7 +135,7 @@ function removeFileEntrySync(filePath: string, stopAtPath: string) {
   try {
     fs.rmSync(filePath, { force: true });
   } catch (error) {
-    console.debug('[runtime-paths] remove-file skipped:', filePath, error instanceof Error ? error.message : String(error));
+    logMainDebug('runtime-paths', 'remove-file skipped:', filePath, error instanceof Error ? error.message : String(error));
     return false;
   }
 
@@ -278,20 +279,30 @@ export async function removeManagedTempFile(tempFilePath: string) {
   }
 }
 
-export function cleanupTrackedManagedTempFilesSync() {
+export function cleanupManagedTempFilesOnExitSync() {
   const tempRootPath = runtimePathState.tempRootPath;
-  trackedTempPaths.forEach((tempFilePath) => {
-    try {
-      fs.rmSync(tempFilePath, { force: true });
-    } catch (error) {
-      console.debug('[runtime-paths] cleanup tracked temp skipped:', tempFilePath, error instanceof Error ? error.message : String(error));
-    }
+  if (!tempRootPath || !fs.existsSync(tempRootPath)) {
+    trackedTempPaths.clear();
+    return;
+  }
 
-    if (tempRootPath) {
-      cleanupEmptyDirectoriesSync(path.dirname(tempFilePath), tempRootPath);
-    }
-  });
-  trackedTempPaths.clear();
+  try {
+    fs.rmSync(tempRootPath, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 50,
+    });
+  } catch (error) {
+    logMainDebug(
+      'runtime-paths',
+      'cleanup managed temp root skipped:',
+      tempRootPath,
+      error instanceof Error ? error.message : String(error),
+    );
+  } finally {
+    trackedTempPaths.clear();
+  }
 }
 
 export function removeControlledDirectorySync(targetPath: string | null | undefined): boolean {
@@ -302,7 +313,7 @@ export function removeControlledDirectorySync(targetPath: string | null | undefi
     fs.rmSync(normalized, { recursive: true, force: true });
     return true;
   } catch (error) {
-    console.debug('[runtime-paths] remove-controlled-dir skipped:', normalized, error instanceof Error ? error.message : String(error));
+    logMainDebug('runtime-paths', 'remove-controlled-dir skipped:', normalized, error instanceof Error ? error.message : String(error));
     return false;
   }
 }

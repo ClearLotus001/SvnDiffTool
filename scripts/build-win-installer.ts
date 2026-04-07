@@ -137,11 +137,20 @@ async function buildInstallerArtifacts(
     await removeDirectoryWithRetries(tempOutputDir).catch(() => {});
 
     try {
-      const electronDistArg = localElectronDistZip
-        ? ` --config.electronDist=${JSON.stringify(localElectronDistZip)}`
-        : '';
+      const builderCommand = process.execPath;
+      const builderArgs = [
+        path.join(rootDir, 'node_modules', 'electron-builder', 'cli.js'),
+        '--win',
+        'nsis',
+        `--publish=${publishMode}`,
+        `--config.directories.output=${tempOutputDirName}`,
+      ];
+      if (localElectronDistZip) {
+        builderArgs.push(`--config.electronDist=${localElectronDistZip}`);
+      }
       const result = await runBuildCommand(
-        `npx electron-builder --win nsis --publish=${publishMode} --config.directories.output=${tempOutputDirName}${electronDistArg}`,
+        builderCommand,
+        builderArgs,
         rootDir,
       );
       if (result.suppressedCount > 0) {

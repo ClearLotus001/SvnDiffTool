@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type MutableRefObject,
   type ReactNode,
 } from 'react';
@@ -14,8 +15,12 @@ import { ChevronUp } from 'lucide-react';
 import type { SearchResultItem } from '@/types';
 import { useI18n } from '@/context/i18n';
 import { cssAlpha, cssVar } from '@/theme/cssUtils';
-
-const SEARCH_RESULT_ROW_H = 54;
+import {
+  getVirtualizedSearchResultsWindow,
+  SEARCH_RESULT_ITEM_H,
+  SEARCH_RESULT_ROW_H,
+  SEARCH_RESULTS_VIEWPORT_H,
+} from '@/utils/diff/searchResultItems';
 
 function getResultsGridTemplateColumns(isWorkbookMode: boolean) {
   return isWorkbookMode
@@ -25,7 +30,8 @@ function getResultsGridTemplateColumns(isWorkbookMode: boolean) {
 
 interface SearchResultsPopoverProps {
   isWorkbookMode: boolean;
-  results: SearchResultItem[];
+  resultCount: number;
+  resolveResult: (index: number) => SearchResultItem | null;
   activeIdx: number;
   query: string;
   isRegex: boolean;
@@ -113,7 +119,8 @@ function renderBadge(
 
 const SearchResultsPopover = memo(({
   isWorkbookMode,
-  results,
+  resultCount,
+  resolveResult,
   activeIdx,
   query,
   isRegex,
@@ -128,17 +135,31 @@ const SearchResultsPopover = memo(({
   const { t } = useI18n();
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const rowRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
   const dragFrameRef = useRef(0);
   const currentPositionRef = useRef<{ left: number; top: number }>({
     left: position?.left ?? 24,
     top: position?.top ?? 88,
   });
+  const [scrollTop, setScrollTop] = useState(0);
   const highlightPattern = useMemo(
     () => buildHighlightPattern(query, isRegex, isCaseSensitive),
     [isCaseSensitive, isRegex, query],
   );
+  const visibleWindow = useMemo(
+    () => getVirtualizedSearchResultsWindow(resultCount, scrollTop, SEARCH_RESULTS_VIEWPORT_H),
+    [resultCount, scrollTop],
+  );
+  const visibleItems = useMemo(() => {
+    const items: Array<{ index: number; item: SearchResultItem }> = [];
+    for (let index = visibleWindow.startIndex; index < visibleWindow.endIndex; index += 1) {
+      const item = resolveResult(index);
+      if (item) {
+        items.push({ index, item });
+      }
+    }
+    return items;
+  }, [resolveResult, visibleWindow.endIndex, visibleWindow.startIndex]);
 
   const applyPanelPosition = useCallback((nextPosition: { left: number; top: number }) => {
     currentPositionRef.current = nextPosition;
@@ -149,13 +170,23 @@ const SearchResultsPopover = memo(({
   }, []);
 
   const ensureActiveResultVisible = useCallback(() => {
-    if (activeIdx < 0 || activeIdx >= results.length) return;
-    rowRefs.current.get(activeIdx)?.scrollIntoView({
-      block: 'nearest',
-      inline: 'nearest',
-      behavior: 'auto',
-    });
-  }, [activeIdx, results.length]);
+    const scrollElement = scrollRef.current;
+    if (!scrollElement) return;
+    if (activeIdx < 0 || activeIdx >= resultCount) return;
+
+    const itemTop = activeIdx * SEARCH_RESULT_ITEM_H;
+    const itemBottom = itemTop + SEARCH_RESULT_ITEM_H;
+    const viewportTop = scrollElement.scrollTop;
+    const viewportBottom = viewportTop + scrollElement.clientHeight;
+
+    if (itemTop < viewportTop) {
+      scrollElement.scrollTo({ top: itemTop, behavior: 'auto' });
+      return;
+    }
+    if (itemBottom > viewportBottom) {
+      scrollElement.scrollTo({ top: itemBottom - scrollElement.clientHeight, behavior: 'auto' });
+    }
+  }, [activeIdx, resultCount]);
 
   useEffect(() => {
     ensureActiveResultVisible();
@@ -167,6 +198,10 @@ const SearchResultsPopover = memo(({
       top: position?.top ?? 88,
     });
   }, [applyPanelPosition, position?.left, position?.top]);
+
+  useEffect(() => {
+    setScrollTop(scrollRef.current?.scrollTop ?? 0);
+  }, [resultCount]);
 
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
@@ -239,7 +274,7 @@ const SearchResultsPopover = memo(({
         <div className="min-w-0">
           <div className="text-[12px] font-bold text-text-title">{t('searchResultsTitle')}</div>
           <div className="text-[11px] text-text-secondary">
-            {t('searchResultsSummary', { count: results.length })}
+            {t('searchResultsSummary', { count: resultCount })}
           </div>
         </div>
         <div className="flex items-center gap-2 text-[11px] text-text-secondary">
@@ -281,108 +316,103 @@ const SearchResultsPopover = memo(({
         )}
       </div>
 
-      {results.length === 0 ? (
+      {resultCount === 0 ? (
         <div className="px-5 py-12 text-center text-[13px] text-text-secondary">
           {t('searchResultsEmpty')}
         </div>
       ) : (
-        <div ref={scrollRef} className="relative h-[360px] overflow-y-auto overflow-x-hidden px-2 py-2">
-          <div className="grid gap-1.5">
-            {results.map((item) => {
-              const isActive = item.index === activeIdx;
-              return (
-                <button
-                  key={`${item.scopeKey}:${item.index}`}
-                  ref={(node) => {
-                    if (!node) {
-                      rowRefs.current.delete(item.index);
-                      return;
-                    }
-                    rowRefs.current.set(item.index, node);
-                  }}
-                  type="button"
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    onRequestFocusInput?.();
-                  }}
-                  onClick={() => onJump(item.index)}
-                  className="group relative block w-full rounded-[12px] border px-3 py-2 text-left transition-all duration-150"
-                  style={{
-                    minHeight: SEARCH_RESULT_ROW_H,
-                    borderColor: isActive ? cssAlpha('searchHl', '52') : cssAlpha('border2', '54'),
-                    background: isActive
-                      ? `linear-gradient(180deg, ${cssVar('searchActiveBg')} 0%, ${cssAlpha('searchHl', '12')} 100%)`
-                      : cssAlpha('bg1', 'b8'),
-                    boxShadow: isActive
-                      ? `0 10px 22px -20px ${cssAlpha('searchHl', '6e')}, inset 0 0 0 1px ${cssAlpha('searchHl', '6e')}`
-                      : `0 6px 14px -18px ${cssAlpha('border2', '78')}`,
-                    contentVisibility: 'auto',
-                    containIntrinsicSize: `${SEARCH_RESULT_ROW_H}px`,
-                  }}>
-                  {isActive && (
-                    <span
-                      aria-hidden="true"
-                      className="pointer-events-none absolute left-1.5 top-1.5 bottom-1.5 w-1 rounded-full"
-                      style={{ background: cssVar('searchHl') }}
-                    />
-                  )}
-                  <div
-                    className="grid items-center gap-2.5"
+        <div
+          ref={scrollRef}
+          onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+          className="relative h-[360px] overflow-y-auto overflow-x-hidden px-2 py-2">
+          <div style={{ height: visibleWindow.totalHeight }}>
+            <div
+              className="grid gap-1.5"
+              style={{
+                transform: `translateY(${visibleWindow.offsetTop}px)`,
+                willChange: 'transform',
+              }}>
+              {visibleItems.map(({ index, item }) => {
+                const isActive = index === activeIdx;
+                return (
+                  <button
+                    key={`${item.scopeKey}:${index}`}
+                    type="button"
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      onRequestFocusInput?.();
+                    }}
+                    onClick={() => onJump(index)}
+                    className="group relative block w-full rounded-[12px] border px-3 py-2 text-left transition-all duration-150"
                     style={{
-                      gridTemplateColumns: getResultsGridTemplateColumns(isWorkbookMode),
-                      paddingLeft: isActive ? 8 : 0,
+                      height: SEARCH_RESULT_ROW_H,
+                      borderColor: isActive ? cssAlpha('searchHl', '52') : cssAlpha('border2', '54'),
+                      background: isActive
+                        ? `linear-gradient(180deg, ${cssVar('searchActiveBg')} 0%, ${cssAlpha('searchHl', '12')} 100%)`
+                        : cssAlpha('bg1', 'b8'),
+                      boxShadow: isActive
+                        ? `0 10px 22px -20px ${cssAlpha('searchHl', '6e')}, inset 0 0 0 1px ${cssAlpha('searchHl', '6e')}`
+                        : `0 6px 14px -18px ${cssAlpha('border2', '78')}`,
+                      contentVisibility: 'auto',
+                      containIntrinsicSize: `${SEARCH_RESULT_ROW_H}px`,
                     }}>
-                    {isWorkbookMode ? (
-                      <>
-                        <div className="min-w-0 overflow-hidden">
-                          <div className="flex flex-wrap items-center gap-1">
-                            {item.sheetName ? renderBadge(item.sheetName, isActive ? 'accent' : 'muted') : renderBadge('—')}
-                            {item.sideLabel ? renderBadge(item.sideLabel, isActive ? 'accent' : 'muted') : null}
+                    <div
+                      className="grid items-center gap-2.5"
+                      style={{
+                        gridTemplateColumns: getResultsGridTemplateColumns(isWorkbookMode),
+                      }}>
+                      {isWorkbookMode ? (
+                        <>
+                          <div className="min-w-0 overflow-hidden">
+                            <div className="flex flex-wrap items-center gap-1">
+                              {item.sheetName ? renderBadge(item.sheetName, isActive ? 'accent' : 'muted') : renderBadge('-')}
+                              {item.sideLabel ? renderBadge(item.sideLabel, isActive ? 'accent' : 'muted') : null}
+                            </div>
                           </div>
-                        </div>
-                        <div className="min-w-0 overflow-hidden">
-                          <div className="flex flex-wrap items-center gap-1">
-                            {renderBadge(item.address || item.locationLabel, isActive ? 'accent' : 'muted')}
-                            {item.rowNumber != null ? renderBadge(`R${item.rowNumber}`) : null}
-                            {item.colIndex != null ? renderBadge(`C${item.colIndex + 1}`) : null}
+                          <div className="min-w-0 overflow-hidden">
+                            <div className="flex flex-wrap items-center gap-1">
+                              {renderBadge(item.address || item.locationLabel, isActive ? 'accent' : 'muted')}
+                              {item.rowNumber != null ? renderBadge(`R${item.rowNumber}`) : null}
+                              {item.colIndex != null ? renderBadge(`C${item.colIndex + 1}`) : null}
+                            </div>
                           </div>
-                        </div>
-                        <div
-                          className="min-w-0 text-[12px] leading-[1.4] text-text-title"
-                          style={{
-                            display: '-webkit-box',
-                            WebkitLineClamp: 2,
-                            WebkitBoxOrient: 'vertical',
-                            overflow: 'hidden',
-                            overflowWrap: 'anywhere',
-                            wordBreak: 'break-word',
-                          }}>
-                          {renderHighlightedText(item.preview || ' ', highlightPattern, isActive)}
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className={`min-w-0 truncate font-code text-[12px] ${isActive ? 'text-accent' : 'text-text-title'}`}>
-                          {item.locationLabel}
-                        </div>
-                        <div
-                          className="min-w-0 text-[12px] leading-[1.4] text-text-title"
-                          style={{
-                            display: '-webkit-box',
-                            WebkitLineClamp: 2,
-                            WebkitBoxOrient: 'vertical',
-                            overflow: 'hidden',
-                            overflowWrap: 'anywhere',
-                            wordBreak: 'break-word',
-                          }}>
-                          {renderHighlightedText(item.preview || ' ', highlightPattern, isActive)}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
+                          <div
+                            className="min-w-0 text-[12px] leading-[1.4] text-text-title"
+                            style={{
+                              display: '-webkit-box',
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden',
+                              overflowWrap: 'anywhere',
+                              wordBreak: 'break-word',
+                            }}>
+                            {renderHighlightedText(item.preview || ' ', highlightPattern, isActive)}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className={`min-w-0 truncate font-code text-[12px] ${isActive ? 'text-accent' : 'text-text-title'}`}>
+                            {item.locationLabel}
+                          </div>
+                          <div
+                            className="min-w-0 text-[12px] leading-[1.4] text-text-title"
+                            style={{
+                              display: '-webkit-box',
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden',
+                              overflowWrap: 'anywhere',
+                              wordBreak: 'break-word',
+                            }}>
+                            {renderHighlightedText(item.preview || ' ', highlightPattern, isActive)}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

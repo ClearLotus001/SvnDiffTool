@@ -12,6 +12,7 @@ import {
   WORKBOOK_EXTENSIONS,
   XML,
 } from './constants.js';
+import { logMainWarn } from '../logging.js';
 import { getActiveCliArgs } from './state.js';
 import type {
   CliArgs,
@@ -662,7 +663,7 @@ export function parseLogEntries(xmlText: string): SvnRevisionInfo[] {
 
     return mapped.filter((entry): entry is SvnRevisionInfo => entry != null);
   } catch (error) {
-    console.warn('[svn-log-parse]', error instanceof Error ? error.message : String(error));
+    logMainWarn('svn-log-parse', error instanceof Error ? error.message : String(error));
     return [];
   }
 }

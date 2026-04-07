@@ -2,10 +2,11 @@ import * as fs from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import {
   FILE_EQUALITY_CACHE_LIMIT,
-  FILE_EQUALITY_MAX_BYTES,
+  FILE_EQUALITY_CHUNK_BYTES,
   REVISION_OPTION_PAGES_CACHE_LIMIT,
 } from './constants.js';
 import { rememberFileEquality, rememberLimitedEntry } from './cache.js';
+import { logMainDebug, logMainWarn } from '../logging.js';
 import { logDebugTiming, writeExternalDiffDebugLog } from './logger.js';
 import { runSvnUtf8 } from './rustBridge.js';
 import {
@@ -271,7 +272,7 @@ export async function queryRevisionOptions(
 
   const result = await runSvnUtf8(svnArgs);
   if (!result.ok) {
-    if (result.stderr.trim()) console.warn('[svn-log]', result.stderr.trim());
+    if (result.stderr.trim()) logMainWarn('svn-log', result.stderr.trim());
     const payload: RevisionOptionsPayload = {
       items: specials,
       hasMore: false,
@@ -325,6 +326,65 @@ export async function getRevisionOptions(): Promise<SvnRevisionInfo[]> {
 // File equality checks
 // ---------------------------------------------------------------------------
 
+async function compareOpenFiles(
+  leftHandle: fs.promises.FileHandle,
+  rightHandle: fs.promises.FileHandle,
+  size: number,
+): Promise<boolean> {
+  const leftChunk = Buffer.allocUnsafe(FILE_EQUALITY_CHUNK_BYTES);
+  const rightChunk = Buffer.allocUnsafe(FILE_EQUALITY_CHUNK_BYTES);
+  let position = 0;
+
+  while (position < size) {
+    const expectedBytes = Math.min(FILE_EQUALITY_CHUNK_BYTES, size - position);
+    const [{ bytesRead: leftBytesRead }, { bytesRead: rightBytesRead }] = await Promise.all([
+      leftHandle.read(leftChunk, 0, expectedBytes, position),
+      rightHandle.read(rightChunk, 0, expectedBytes, position),
+    ]);
+    if (leftBytesRead !== expectedBytes || rightBytesRead !== expectedBytes) {
+      return false;
+    }
+    if (!leftChunk.subarray(0, leftBytesRead).equals(rightChunk.subarray(0, rightBytesRead))) {
+      return false;
+    }
+    position += expectedBytes;
+  }
+
+  return true;
+}
+
+async function compareFileWithBytes(
+  filePath: string,
+  expectedBytes: Uint8Array,
+  fileSize: number,
+): Promise<boolean> {
+  const handle = await fs.promises.open(filePath, 'r');
+  const chunk = Buffer.allocUnsafe(FILE_EQUALITY_CHUNK_BYTES);
+  let position = 0;
+
+  try {
+    while (position < fileSize) {
+      const expectedLength = Math.min(FILE_EQUALITY_CHUNK_BYTES, fileSize - position);
+      const { bytesRead } = await handle.read(chunk, 0, expectedLength, position);
+      if (bytesRead !== expectedLength) {
+        return false;
+      }
+
+      for (let index = 0; index < bytesRead; index += 1) {
+        if (chunk[index] !== expectedBytes[position + index]) {
+          return false;
+        }
+      }
+
+      position += bytesRead;
+    }
+
+    return true;
+  } finally {
+    await handle.close();
+  }
+}
+
 export async function haveSameLocalFileContents(
   leftPath: string,
   rightPath: string,
@@ -337,9 +397,8 @@ export async function haveSameLocalFileContents(
     const [leftStat, rightStat] = await Promise.all([
       fs.promises.stat(leftPath),
       fs.promises.stat(rightPath),
-    ]);
+    ]);    
     if (leftStat.size !== rightStat.size) return false;
-    if (leftStat.size > FILE_EQUALITY_MAX_BYTES) return false;
 
     const cacheKey = buildFileEqualityCacheKey(leftPath, rightPath);
     const cached = fileEqualityCache.get(cacheKey);
@@ -355,11 +414,20 @@ export async function haveSameLocalFileContents(
       return cached.equal;
     }
 
-    const [leftBuffer, rightBuffer] = await Promise.all([
-      fs.promises.readFile(leftPath),
-      fs.promises.readFile(rightPath),
+    const [leftHandle, rightHandle] = await Promise.all([
+      fs.promises.open(leftPath, 'r'),
+      fs.promises.open(rightPath, 'r'),
     ]);
-    const equal = leftBuffer.equals(rightBuffer);
+    let equal = false;
+    try {
+      equal = await compareOpenFiles(leftHandle, rightHandle, leftStat.size);
+    } finally {
+      await Promise.allSettled([
+        leftHandle.close(),
+        rightHandle.close(),
+      ]);
+    }
+
     rememberFileEquality(fileEqualityCache, cacheKey, {
       leftPath,
       rightPath,
@@ -370,6 +438,25 @@ export async function haveSameLocalFileContents(
       equal,
     }, FILE_EQUALITY_CACHE_LIMIT);
     return equal;
+  } catch {
+    return false;
+  }
+}
+
+export async function haveSameLocalFileAndBytes(
+  filePath: string,
+  expectedBytes: Uint8Array | null,
+): Promise<boolean> {
+  if (!filePath || !expectedBytes) return false;
+  if (!fs.existsSync(filePath)) return false;
+
+  try {
+    const stat = await fs.promises.stat(filePath);
+    if (stat.size !== expectedBytes.byteLength) {
+      return false;
+    }
+
+    return compareFileWithBytes(filePath, expectedBytes, stat.size);
   } catch {
     return false;
   }
@@ -398,8 +485,9 @@ export async function getLocalWorkbookPairCacheContext(
       rightSize: rightStat.size,
     };
   } catch (error) {
-    console.debug(
-      '[cache-context] stat skipped:',
+    logMainDebug(
+      'cache-context',
+      'stat skipped:',
       leftPath,
       rightPath,
       error instanceof Error ? error.message : String(error),

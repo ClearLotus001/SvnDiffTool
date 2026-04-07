@@ -1,6 +1,7 @@
 import { app } from 'electron';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { logMainWarn } from './logging.js';
 
 interface MigrationMarker {
   migratedAt: string;
@@ -55,6 +56,6 @@ export function ensureLegacyUserDataMigration() {
     };
     fs.writeFileSync(markerPath, JSON.stringify(marker, null, 2), 'utf-8');
   } catch (error) {
-    console.warn('[user-data-migration]', error);
+    logMainWarn('user-data-migration', error);
   }
 }

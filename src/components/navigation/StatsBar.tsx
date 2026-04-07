@@ -91,10 +91,16 @@ const StatsBar = memo(({
     tooltip?: ReactNode,
   ) => {
     const node = (
-      <div className="inline-flex items-center gap-1.5 shrink-0 leading-none">
+      <div
+        className="inline-flex items-center gap-1.5 min-w-0 py-0.5 px-2 rounded-full border shrink-0 leading-none"
+        style={{
+          background: palette.background,
+          borderColor: palette.accent,
+          boxShadow: `0 10px 18px -20px ${palette.shadow}`,
+        }}>
         <Dot color={palette.accent} />
         <span className="font-code text-[13px]" style={{ color: palette.text }}>{value}</span>
-        <span className="text-text-secondary font-ui text-[13px]">{label}</span>
+        <span className="font-ui text-[13px]" style={{ color: palette.text }}>{label}</span>
       </div>
     );
     return tooltip ? <Tooltip content={tooltip} maxWidth={320}>{node}</Tooltip> : node;

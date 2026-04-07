@@ -3,7 +3,6 @@ import type { TranslationFn } from '@/context/i18n';
 
 import type {
   SearchMatch,
-  SearchResultItem,
   TextDiffStats,
   WorkbookDiffRegion,
 } from '@/types';
@@ -12,6 +11,7 @@ import { summarizeDiffChanges } from '@/engine/text/textChangeAlignment';
 import { buildSearchPattern, getSearchableLineContent, navigateSearch } from '@/engine/text/search';
 import { computeSearchMatchesAsync } from '@/utils/diff/computeSearchMatchesAsync';
 import { resolveDisplayFileName, resolveVersionLabel } from '@/utils/diff/diffMeta';
+import { createSearchResultItemResolver } from '@/utils/diff/searchResultItems';
 import {
   buildWorkbookSectionRowIndex,
   buildWorkbookSectionRowIndexFromPrecomputedDelta,
@@ -21,14 +21,13 @@ import {
   getWorkbookSheetMaxRowNumber,
   resolveWorkbookGotoTarget,
 } from '@/utils/workbook/workbookGoto';
-import { parseWorkbookDisplayLine } from '@/utils/workbook/workbookDisplay';
 import {
   buildWorkbookDiffRegions,
   buildWorkbookNavigationRegions,
   formatWorkbookDiffRegionSummary,
 } from '@/utils/workbook/workbookDiffRegion';
 import { getWorkbookSharedExpandedBlocks } from '@/utils/workbook/workbookLayoutState';
-import { buildWorkbookLineSheetContexts, getWorkbookColumnLabel, getWorkbookSections } from '@/utils/workbook/workbookSections';
+import { buildWorkbookLineSheetContexts, getWorkbookSections } from '@/utils/workbook/workbookSections';
 import { resolveWorkbookSearchMatchTarget } from '@/utils/workbook/workbookNavigation';
 import { getCompareContextLabels } from '@/hooks/app/helpers';
 import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
@@ -48,39 +47,6 @@ const EMPTY_SEARCHABLE_LINES: string[] = [];
 
 function isWorkbookFileCandidate(name: string): boolean {
   return WORKBOOK_FILE_EXTENSION_RE.test(name.trim());
-}
-
-function buildSearchKey(match: SearchMatch | null | undefined): string {
-  if (!match) return '';
-  return [
-    match.lineIdx,
-    match.start,
-    match.end,
-    match.workbookTarget?.sheetName ?? '',
-    match.workbookTarget?.side ?? '',
-    match.workbookTarget?.rowNumber ?? '',
-    match.workbookTarget?.colIndex ?? '',
-  ].join(':');
-}
-
-function normalizeSearchPreview(value: string): string {
-  return value
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .replace(/\t/g, '    ')
-    .replace(/\n+/g, ' / ')
-    .trim();
-}
-
-function buildSearchSnippet(content: string, start: number, end: number): string {
-  if (!content) return '';
-  const normalized = normalizeSearchPreview(content);
-  if (normalized.length <= 96) return normalized;
-  const snippetStart = Math.max(0, start - 28);
-  const snippetEnd = Math.min(content.length, end + 44);
-  const rawSnippet = content.slice(snippetStart, snippetEnd);
-  const snippet = normalizeSearchPreview(rawSnippet);
-  return `${snippetStart > 0 ? '…' : ''}${snippet}${snippetEnd < content.length ? '…' : ''}`;
 }
 
 export default function useAppViewModel({
@@ -241,6 +207,8 @@ export default function useAppViewModel({
       return;
     }
 
+    setAllSearchMatches(EMPTY_SEARCH_MATCHES);
+
     void computeSearchMatchesAsync(searchableLines, {
       query: searchQ,
       isRegex: searchRx,
@@ -365,57 +333,12 @@ export default function useAppViewModel({
     });
     return max;
   }, [activeWorkbookSheetName, diffLines, isWorkbookMode, workbookLineSheetContexts]);
-  const searchResultItems = useMemo<SearchResultItem[]>(() => searchMatches.map((match, index) => {
-    const line = diffLines[match.lineIdx] ?? null;
-    const workbookTarget = match.workbookTarget;
-    const side = workbookTarget?.side ?? null;
-    const sideLabel = side === 'base'
-      ? baseRoleTitle
-      : side === 'mine'
-        ? mineRoleTitle
-        : '';
-    const workbookContent = line
-      ? (line.type === 'delete' ? (line.base ?? line.mine ?? '') : (line.mine ?? line.base ?? ''))
-      : '';
-    const parsedWorkbookLine = workbookContent ? parseWorkbookDisplayLine(workbookContent) : null;
-    const address = workbookTarget?.rowNumber != null
-      ? workbookTarget.colIndex != null
-        ? `${getWorkbookColumnLabel(workbookTarget.colIndex)}${workbookTarget.rowNumber}`
-        : String(workbookTarget.rowNumber)
-      : '';
-    const workbookPreview = parsedWorkbookLine?.kind === 'row' && workbookTarget?.colIndex != null
-      ? normalizeSearchPreview(
-        parsedWorkbookLine.cells[workbookTarget.colIndex]?.value
-        || parsedWorkbookLine.cells[workbookTarget.colIndex]?.formula
-        || '',
-      )
-      : '';
-    const preview = workbookPreview || buildSearchSnippet(workbookContent || '', match.start, match.end);
-    const detail = workbookTarget?.sheetName
-      ? [
-        workbookTarget.sheetName,
-        sideLabel,
-      ].filter(Boolean).join(' · ')
-      : sideLabel;
-    const locationLabel = workbookTarget?.sheetName
-      ? [workbookTarget.sheetName, address].filter(Boolean).join('!')
-      : `#${match.lineIdx + 1}`;
-
-    return {
-      index,
-      lineIdx: match.lineIdx,
-      workbookTarget,
-      scopeKey: buildSearchKey(match),
-      sheetName: workbookTarget?.sheetName ?? null,
-      side,
-      sideLabel,
-      rowNumber: workbookTarget?.rowNumber ?? null,
-      colIndex: workbookTarget?.colIndex ?? null,
-      address,
-      locationLabel,
-      preview: preview || t('searchNoResults'),
-      detail,
-    };
+  const searchResultItemResolver = useMemo(() => createSearchResultItemResolver({
+    diffLines,
+    searchMatches,
+    baseRoleTitle,
+    mineRoleTitle,
+    noResultsLabel: t('searchNoResults'),
   }), [baseRoleTitle, diffLines, mineRoleTitle, searchMatches, t]);
 
   const canLaunchUninstaller = isElectron && !isDevMode && typeof window.svnDiff?.launchUninstaller === 'function';
@@ -565,7 +488,7 @@ export default function useAppViewModel({
     hunkPositions,
     searchJumpNonce,
     searchMatches,
-    searchResultItems,
+    searchResultItemResolver,
     workbookSections,
     workbookSectionRowIndex,
     isWorkbookMode,

@@ -31,6 +31,7 @@ import {
 import type {
   CachedDiffResult,
 } from '@/hooks/app/types';
+import { buildCachedDiffResult, rememberCachedDiffResult } from '@/hooks/app/diffResultCache';
 import type { DialogController, DiffLoadController, RevisionQueryController, WorkbookUiController } from '@/hooks/app/contracts';
 import { useAppStore } from '@/store/appStore';
 
@@ -314,11 +315,11 @@ export default function useDiffLoader({
           setMineWorkbookMetadata(metadataResult.result.mine);
           const cachedEntry = diffResultCacheRef.current.get(cacheKey);
           if (cachedEntry) {
-            diffResultCacheRef.current.set(cacheKey, {
+            rememberCachedDiffResult(diffResultCacheRef.current, cacheKey, buildCachedDiffResult({
               ...cachedEntry,
               baseWorkbookMetadata: metadataResult.result.base,
               mineWorkbookMetadata: metadataResult.result.mine,
-            });
+            }));
           }
           diffLoadActions.setMetrics((prev) => (prev ? {
             ...prev,
@@ -333,8 +334,8 @@ export default function useDiffLoader({
       };
 
       if (cachedResult) {
-        diffResultCacheRef.current.delete(cacheKey);
-        diffResultCacheRef.current.set(cacheKey, cachedResult);
+      diffResultCacheRef.current.delete(cacheKey);
+      diffResultCacheRef.current.set(cacheKey, cachedResult);
         applyCommonState(data);
         setPrecomputedWorkbookDelta(cachedResult.workbookDelta);
         setBaseWorkbookMetadata(cachedResult.baseWorkbookMetadata ?? data.baseWorkbookMetadata ?? null);
@@ -367,14 +368,35 @@ export default function useDiffLoader({
         nextDiffLines = precomputedDiffLines!;
         diffDuration = data.perf?.rustDiffMs ?? data.perf?.diffMs ?? 0;
       } else {
-        const textStart = getNow();
-        const { baseText, mineText } = resolveDiffTexts(data);
-        textResolveMs = getNow() - textStart;
-        const diffStart = getNow();
-        nextDiffLines = isWorkbookTextPair(baseText, mineText)
-          ? await computeWorkbookDiffAsync(baseText, mineText, compareMode)
-          : await computeTextDiffAsync(baseText, mineText);
-        diffDuration = getNow() - diffStart;
+        const shouldUseWorkbookDiff = isWorkbookFileName(data.fileName || data.baseName || data.mineName)
+          || (
+            typeof data.baseContent === 'string'
+            && typeof data.mineContent === 'string'
+            && isWorkbookTextPair(data.baseContent, data.mineContent)
+          );
+
+        if (shouldUseWorkbookDiff) {
+          const workbookDiffResult = await computeWorkbookDiffAsync({
+            baseName: data.baseName,
+            mineName: data.mineName,
+            fileName: data.fileName,
+            baseContent: data.baseContent,
+            mineContent: data.mineContent,
+            baseBytes: data.baseBytes,
+            mineBytes: data.mineBytes,
+            compareMode,
+          });
+          nextDiffLines = workbookDiffResult.diffLines;
+          textResolveMs = workbookDiffResult.textResolveMs;
+          diffDuration = workbookDiffResult.diffMs;
+        } else {
+          const textStart = getNow();
+          const { baseText, mineText } = resolveDiffTexts(data);
+          textResolveMs = getNow() - textStart;
+          const diffStart = getNow();
+          nextDiffLines = await computeTextDiffAsync(baseText, mineText);
+          diffDuration = getNow() - diffStart;
+        }
       }
       if (seq !== loadSeqRef.current) return;
       const totalAppMs = getNow() - applyStart;
@@ -402,16 +424,12 @@ export default function useDiffLoader({
         totalAppMs: Number(totalAppMs.toFixed(1)),
         source: data.perf?.source ?? 'local-dev',
       });
-      diffResultCacheRef.current.set(cacheKey, {
+      rememberCachedDiffResult(diffResultCacheRef.current, cacheKey, buildCachedDiffResult({
         diffLines: nextDiffLines,
         workbookDelta: selectedPrecomputedWorkbookDelta,
         baseWorkbookMetadata: data.baseWorkbookMetadata ?? null,
         mineWorkbookMetadata: data.mineWorkbookMetadata ?? null,
-      });
-      if (diffResultCacheRef.current.size > 8) {
-        const oldestKey = diffResultCacheRef.current.keys().next().value;
-        if (oldestKey) diffResultCacheRef.current.delete(oldestKey);
-      }
+      }));
       scheduleMetadataTask();
     } catch (error) {
       if (seq !== loadSeqRef.current) return;

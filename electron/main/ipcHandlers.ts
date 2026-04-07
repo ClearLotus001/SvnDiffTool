@@ -1,6 +1,7 @@
 import { clipboard, dialog, ipcMain, nativeTheme, shell } from 'electron';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { logMainError } from '../logging.js';
 import { AUTO_EXIT_AFTER_LOAD_MS, USE_NATIVE_WINDOW_CONTROLS } from './constants.js';
 import { logDebugTiming } from './logger.js';
 import { getAppUpdater, getMainWindow } from './state.js';
@@ -44,7 +45,7 @@ function safeHandle(
       return await handler(event, ...args);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(`[ipc:${channel}] handler error:`, message);
+      logMainError(`ipc:${channel}`, 'handler error:', message);
       throw new Error(message, { cause: error });
     }
   });

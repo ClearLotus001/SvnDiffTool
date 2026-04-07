@@ -1,7 +1,16 @@
 import * as path from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { REMOTE_HEAD_ID, SPECIAL_MINE_ID, WORKBOOK_METADATA_CACHE_LIMIT } from './constants.js';
-import { rememberLimitedEntry } from './cache.js';
+import {
+  REMOTE_HEAD_ID,
+  SPECIAL_BASE_ID,
+  SPECIAL_MINE_ID,
+  WORKBOOK_METADATA_CACHE_LIMIT,
+  WORKBOOK_METADATA_CACHE_MAX_BYTES,
+} from './constants.js';
+import {
+  estimateWorkbookMetadataPayloadMemoryBytes,
+  rememberCacheEntry,
+} from './cache.js';
 import { logDebugTiming, writeExternalDiffDebugLog } from './logger.js';
 import { createWorkbookDeltaByMode, createWorkbookDiffLinesByMode } from './rustBridge.js';
 import {
@@ -30,6 +39,7 @@ import {
 } from './state.js';
 import {
   detectLocalSvnVersioningStatus,
+  haveSameLocalFileAndBytes,
   getLocalWorkbookPairCacheContext,
   getRevisionOptions,
   haveSameLocalFileContents,
@@ -42,16 +52,123 @@ import {
   readRevisionPayload,
   resolveWorkbookCompareModePayload,
 } from './filePayload.js';
-import { detectWorkbookArtifactOnlyDiff } from '../workbookArtifactDiff.js';
+import { detectWorkbookArtifactOnlyDiffFromEqualityState } from '../workbookArtifactDiff.js';
 import type {
   BuildDiffDataOptions,
   CliArgs,
   DiffData,
+  FilePayload,
   ReadFilePayloadOptions,
   WorkbookCompareMode,
   WorkbookCompareModePayload,
   WorkbookMetadataPayload,
 } from './types.js';
+function createWorkbookPayloadOptions(
+  isWorkbook: boolean,
+  includeWorkbookBytes: boolean,
+): ReadFilePayloadOptions {
+  return isWorkbook
+    ? {
+        includeWorkbookText: false,
+        includeWorkbookBytes,
+        includeWorkbookMetadata: false,
+      }
+    : {};
+}
+
+function resolveLocalWorkbookSourcePath(
+  side: 'base' | 'mine',
+  revisionId: string | undefined,
+  args: CliArgs,
+  workingCopyPath: string,
+): string {
+  if (!revisionId) {
+    return side === 'base' ? args.basePath : args.minePath;
+  }
+  if (revisionId === SPECIAL_BASE_ID) {
+    return args.basePath;
+  }
+  if (revisionId === SPECIAL_MINE_ID) {
+    return workingCopyPath || args.minePath;
+  }
+  return '';
+}
+
+function haveInlineWorkbookPayload(payload: FilePayload): boolean {
+  return payload.content != null || payload.bytes != null;
+}
+
+async function ensureWorkbookFallbackPayload(
+  payload: FilePayload,
+  revisionId: string | undefined,
+  revisionInfo: ReturnType<typeof createRequestedRevisionInfo>,
+  target: string,
+  fileName: string,
+  localPath: string,
+): Promise<FilePayload> {
+  if (haveInlineWorkbookPayload(payload)) {
+    return payload;
+  }
+
+  const fallbackOptions = createWorkbookPayloadOptions(true, true);
+  return revisionId
+    ? readRevisionPayload(revisionInfo, target, fileName, fallbackOptions)
+    : readFilePayload(localPath, fallbackOptions);
+}
+
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+async function resolveWorkbookContentsEqual(
+  left: { path: string; bytes: Uint8Array | null; byteLength: number },
+  right: { path: string; bytes: Uint8Array | null; byteLength: number },
+): Promise<boolean | null> {
+  if (left.byteLength !== right.byteLength) {
+    return false;
+  }
+  if (left.path && right.path) {
+    return haveSameLocalFileContents(left.path, right.path);
+  }
+  if (left.path && right.bytes) {
+    return haveSameLocalFileAndBytes(left.path, right.bytes);
+  }
+  if (right.path && left.bytes) {
+    return haveSameLocalFileAndBytes(right.path, left.bytes);
+  }
+  if (left.bytes && right.bytes) {
+    return bytesEqual(left.bytes, right.bytes);
+  }
+  return null;
+}
+
+async function detectWorkbookArtifactDiff(
+  isWorkbook: boolean,
+  diffLines: WorkbookCompareModePayload['diffLines'],
+  workbookDelta: WorkbookCompareModePayload['workbookDelta'],
+  baseSource: { path: string; bytes: Uint8Array | null; byteLength: number },
+  mineSource: { path: string; bytes: Uint8Array | null; byteLength: number },
+) {
+  if (!isWorkbook || !diffLines) {
+    return null;
+  }
+
+  const contentsEqual = await resolveWorkbookContentsEqual(baseSource, mineSource);
+  return detectWorkbookArtifactOnlyDiffFromEqualityState({
+    isWorkbook,
+    baseByteLength: baseSource.byteLength,
+    mineByteLength: mineSource.byteLength,
+    contentsEqual,
+    diffLines,
+    workbookDelta,
+  });
+}
 
 // ---------------------------------------------------------------------------
 // buildDiffData — main entry point for producing DiffData
@@ -97,9 +214,6 @@ export async function buildDiffData(options: BuildDiffDataOptions = {}): Promise
   const initialPair = buildInitialPairFromCli(compareContext);
   const resetPair = buildResetPair(compareContext, initialPair, workingCopyAvailable);
   const isWorkbook = isWorkbookFile(resolvedFileName);
-  const payloadOptions: ReadFilePayloadOptions = isWorkbook
-    ? { includeWorkbookText: false, includeWorkbookBytes: true, includeWorkbookMetadata: false }
-    : {};
 
   const pairInfo = createCurrentPairInfo({
     compareContext,
@@ -109,6 +223,16 @@ export async function buildDiffData(options: BuildDiffDataOptions = {}): Promise
   });
   const baseRevisionInfo = pairInfo.base;
   const mineRevisionInfo = pairInfo.mine;
+  const basePayloadOptions = createWorkbookPayloadOptions(
+    isWorkbook,
+    !usesLocalInputSource(resolvedBaseRevisionId),
+  );
+  const minePayloadOptions = createWorkbookPayloadOptions(
+    isWorkbook,
+    !usesLocalInputSource(resolvedMineRevisionId),
+  );
+  const baseLocalPath = resolveLocalWorkbookSourcePath('base', resolvedBaseRevisionId, args, workingCopyPath);
+  const mineLocalPath = resolveLocalWorkbookSourcePath('mine', resolvedMineRevisionId, args, workingCopyPath);
   const sameSource = isSameWorkbookSource(args, resolvedBaseRevisionId, resolvedMineRevisionId);
   const sourceIdentity = buildSourceIdentity({
     kind: resolvedBaseRevisionId || resolvedMineRevisionId ? 'revision-switch' : 'cli',
@@ -161,32 +285,75 @@ export async function buildDiffData(options: BuildDiffDataOptions = {}): Promise
   const resolvedMinePayloadInfo = mineRevisionInfo ?? createRequestedRevisionInfo('mine', resolvedMineRevisionId);
 
   const basePayloadPromise = resolvedBaseRevisionId
-    ? readRevisionPayload(resolvedBasePayloadInfo, target, resolvedFileName, payloadOptions)
-    : readFilePayload(args.basePath, payloadOptions);
-  const [basePayload, minePayload] = sameSource
+    ? readRevisionPayload(resolvedBasePayloadInfo, target, resolvedFileName, basePayloadOptions)
+    : readFilePayload(baseLocalPath, basePayloadOptions);
+  const [initialBasePayload, initialMinePayload] = sameSource
     ? await Promise.all([basePayloadPromise, basePayloadPromise])
     : await Promise.all([
         basePayloadPromise,
         resolvedMineRevisionId
-          ? readRevisionPayload(resolvedMinePayloadInfo, target, resolvedFileName, payloadOptions)
-          : readFilePayload(args.minePath, payloadOptions),
+          ? readRevisionPayload(resolvedMinePayloadInfo, target, resolvedFileName, minePayloadOptions)
+          : readFilePayload(mineLocalPath, minePayloadOptions),
       ]);
   const workbookComparePayload = await resolveWorkbookCompareModePayload(
-    resolvedBaseRevisionId ? '' : args.basePath,
-    basePayload.bytes,
-    resolvedMineRevisionId ? '' : args.minePath,
-    minePayload.bytes,
+    baseLocalPath,
+    initialBasePayload.bytes,
+    mineLocalPath,
+    initialMinePayload.bytes,
     resolvedFileName,
     workbookCompareMode,
   );
   const hasPrecomputedWorkbookDiff = Boolean(workbookComparePayload?.diffLines);
-  const workbookArtifactDiff = detectWorkbookArtifactOnlyDiff({
+  const [basePayload, minePayload] = hasPrecomputedWorkbookDiff || !isWorkbook
+    ? [initialBasePayload, initialMinePayload]
+    : sameSource
+      ? await (() => {
+          const baseFallbackPayloadPromise = ensureWorkbookFallbackPayload(
+            initialBasePayload,
+            resolvedBaseRevisionId,
+            resolvedBasePayloadInfo,
+            target,
+            resolvedFileName,
+            baseLocalPath,
+          );
+          return Promise.all([
+            baseFallbackPayloadPromise,
+            baseFallbackPayloadPromise,
+          ]);
+        })()
+      : await Promise.all([
+          ensureWorkbookFallbackPayload(
+            initialBasePayload,
+            resolvedBaseRevisionId,
+            resolvedBasePayloadInfo,
+            target,
+            resolvedFileName,
+            baseLocalPath,
+          ),
+          ensureWorkbookFallbackPayload(
+            initialMinePayload,
+            resolvedMineRevisionId,
+            resolvedMinePayloadInfo,
+            target,
+            resolvedFileName,
+            mineLocalPath,
+          ),
+        ]);
+  const workbookArtifactDiff = await detectWorkbookArtifactDiff(
     isWorkbook,
-    baseBytes: basePayload.bytes,
-    mineBytes: minePayload.bytes,
-    diffLines: workbookComparePayload?.diffLines ?? null,
-    workbookDelta: workbookComparePayload?.workbookDelta ?? null,
-  });
+    workbookComparePayload?.diffLines ?? null,
+    workbookComparePayload?.workbookDelta ?? null,
+    {
+      path: baseLocalPath,
+      bytes: hasPrecomputedWorkbookDiff ? initialBasePayload.bytes : basePayload.bytes,
+      byteLength: basePayload.perf.byteLength,
+    },
+    {
+      path: mineLocalPath,
+      bytes: hasPrecomputedWorkbookDiff ? initialMinePayload.bytes : minePayload.bytes,
+      byteLength: minePayload.perf.byteLength,
+    },
+  );
 
   logDebugTiming('build-diff-data:done', {
     compareMode: workbookCompareMode,
@@ -290,6 +457,25 @@ function buildDevWorkingCopyCliArgs(filePath: string): CliArgs {
   };
 }
 
+function buildLocalDiffCliArgs(basePath: string, minePath: string): CliArgs {
+  const resolvedBasePath = basePath.trim();
+  const resolvedMinePath = minePath.trim();
+  const fileName = path.basename(resolvedMinePath || resolvedBasePath || 'local-diff');
+
+  return {
+    basePath: resolvedBasePath,
+    minePath: resolvedMinePath,
+    baseName: path.basename(resolvedBasePath || fileName),
+    mineName: path.basename(resolvedMinePath || fileName),
+    baseUrl: '',
+    mineUrl: '',
+    baseRevision: '',
+    mineRevision: '',
+    pegRevision: '',
+    fileName,
+  };
+}
+
 export async function buildDevWorkingCopyDiffData(
   filePath: string,
   workbookCompareMode: WorkbookCompareMode = 'strict',
@@ -324,31 +510,58 @@ export async function buildLocalDiffData(
   const buildStart = performance.now();
   const resolvedBasePath = basePath.trim();
   const resolvedMinePath = minePath.trim();
+  setActiveCliArgs(buildLocalDiffCliArgs(resolvedBasePath, resolvedMinePath));
   const resolvedFileName = path.basename(resolvedMinePath || resolvedBasePath || 'local-diff');
   const isWorkbook = isWorkbookFile(resolvedFileName);
-  const payloadOptions: ReadFilePayloadOptions = isWorkbook
-    ? { includeWorkbookText: false, includeWorkbookBytes: true, includeWorkbookMetadata: false }
-    : {};
-  const [basePayload, minePayload] = await Promise.all([
+  const payloadOptions = createWorkbookPayloadOptions(isWorkbook, false);
+  const [initialBasePayload, initialMinePayload] = await Promise.all([
     readFilePayload(resolvedBasePath, payloadOptions),
     readFilePayload(resolvedMinePath, payloadOptions),
   ]);
   const workbookComparePayload = await resolveWorkbookCompareModePayload(
     resolvedBasePath,
-    basePayload.bytes,
+    initialBasePayload.bytes,
     resolvedMinePath,
-    minePayload.bytes,
+    initialMinePayload.bytes,
     resolvedFileName,
     workbookCompareMode,
   );
   const hasPrecomputedWorkbookDiff = Boolean(workbookComparePayload?.diffLines);
-  const workbookArtifactDiff = detectWorkbookArtifactOnlyDiff({
+  const [basePayload, minePayload] = hasPrecomputedWorkbookDiff || !isWorkbook
+    ? [initialBasePayload, initialMinePayload]
+    : await Promise.all([
+        ensureWorkbookFallbackPayload(
+          initialBasePayload,
+          undefined,
+          createRequestedRevisionInfo('base', undefined),
+          '',
+          resolvedFileName,
+          resolvedBasePath,
+        ),
+        ensureWorkbookFallbackPayload(
+          initialMinePayload,
+          undefined,
+          createRequestedRevisionInfo('mine', undefined),
+          '',
+          resolvedFileName,
+          resolvedMinePath,
+        ),
+      ]);
+  const workbookArtifactDiff = await detectWorkbookArtifactDiff(
     isWorkbook,
-    baseBytes: basePayload.bytes,
-    mineBytes: minePayload.bytes,
-    diffLines: workbookComparePayload?.diffLines ?? null,
-    workbookDelta: workbookComparePayload?.workbookDelta ?? null,
-  });
+    workbookComparePayload?.diffLines ?? null,
+    workbookComparePayload?.workbookDelta ?? null,
+    {
+      path: resolvedBasePath,
+      bytes: hasPrecomputedWorkbookDiff ? initialBasePayload.bytes : basePayload.bytes,
+      byteLength: basePayload.perf.byteLength,
+    },
+    {
+      path: resolvedMinePath,
+      bytes: hasPrecomputedWorkbookDiff ? initialMinePayload.bytes : minePayload.bytes,
+      byteLength: minePayload.perf.byteLength,
+    },
+  );
 
   return {
     svnUrl: '',
@@ -423,27 +636,35 @@ export async function loadWorkbookCompareModeData(
 
   const baseRevisionInfo = createRequestedRevisionInfo('base', baseRevisionId);
   const mineRevisionInfo = createRequestedRevisionInfo('mine', mineRevisionId);
-  const payloadOptions: ReadFilePayloadOptions = {
-    includeWorkbookText: false,
-    includeWorkbookBytes: true,
-    includeWorkbookMetadata: false,
-  };
+  const workingCopyPath = baseRevisionId === SPECIAL_MINE_ID || mineRevisionId === SPECIAL_MINE_ID
+    ? await resolveWorkingCopyPathForTarget(args, target)
+    : '';
+  const basePayloadOptions = createWorkbookPayloadOptions(
+    true,
+    !usesLocalInputSource(baseRevisionId),
+  );
+  const minePayloadOptions = createWorkbookPayloadOptions(
+    true,
+    !usesLocalInputSource(mineRevisionId),
+  );
+  const baseLocalPath = resolveLocalWorkbookSourcePath('base', baseRevisionId, args, workingCopyPath);
+  const mineLocalPath = resolveLocalWorkbookSourcePath('mine', mineRevisionId, args, workingCopyPath);
   const sameSource = isSameWorkbookSource(args, baseRevisionId, mineRevisionId);
   const basePayloadPromise = baseRevisionId
-    ? readRevisionPayload(baseRevisionInfo, target, resolvedFileName, payloadOptions)
-    : readFilePayload(args.basePath, payloadOptions);
+    ? readRevisionPayload(baseRevisionInfo, target, resolvedFileName, basePayloadOptions)
+    : readFilePayload(baseLocalPath, basePayloadOptions);
   const [basePayload, minePayload] = sameSource
     ? await Promise.all([basePayloadPromise, basePayloadPromise])
     : await Promise.all([
         basePayloadPromise,
         mineRevisionId
-          ? readRevisionPayload(mineRevisionInfo, target, resolvedFileName, payloadOptions)
-          : readFilePayload(args.minePath, payloadOptions),
+          ? readRevisionPayload(mineRevisionInfo, target, resolvedFileName, minePayloadOptions)
+          : readFilePayload(mineLocalPath, minePayloadOptions),
       ]);
   const workbookComparePayload = await resolveWorkbookCompareModePayload(
-    baseRevisionId ? '' : args.basePath,
+    baseLocalPath,
     basePayload.bytes,
-    mineRevisionId ? '' : args.minePath,
+    mineLocalPath,
     minePayload.bytes,
     resolvedFileName,
     compareMode,
@@ -484,13 +705,18 @@ export async function loadWorkbookMetadataData(
   };
   const baseRevisionInfo = createRequestedRevisionInfo('base', baseRevisionId);
   const mineRevisionInfo = createRequestedRevisionInfo('mine', mineRevisionId);
+  const workingCopyPath = baseRevisionId === SPECIAL_MINE_ID || mineRevisionId === SPECIAL_MINE_ID
+    ? await resolveWorkingCopyPathForTarget(args, target)
+    : '';
+  const baseLocalPath = resolveLocalWorkbookSourcePath('base', baseRevisionId, args, workingCopyPath);
+  const mineLocalPath = resolveLocalWorkbookSourcePath('mine', mineRevisionId, args, workingCopyPath);
   const sameSource = isSameWorkbookSource(args, baseRevisionId, mineRevisionId);
   const sameLocalContent = !sameSource
     && usesLocalInputSource(baseRevisionId)
     && usesLocalInputSource(mineRevisionId)
-    && await haveSameLocalFileContents(args.basePath, args.minePath);
+    && await haveSameLocalFileContents(baseLocalPath, mineLocalPath);
   const cacheContext = sameSource || sameLocalContent
-    ? await getLocalWorkbookPairCacheContext(args.basePath, args.minePath, 'metadata')
+    ? await getLocalWorkbookPairCacheContext(baseLocalPath, mineLocalPath, 'metadata')
     : null;
   if (cacheContext) {
     const cached = workbookMetadataCache.get(cacheContext.key);
@@ -515,14 +741,14 @@ export async function loadWorkbookMetadataData(
   const resolver = (async (): Promise<WorkbookMetadataPayload> => {
     const basePayloadPromise = baseRevisionId
       ? readRevisionPayload(baseRevisionInfo, target, resolvedFileName, payloadOptions)
-      : readFilePayload(args.basePath, payloadOptions);
+      : readFilePayload(baseLocalPath, payloadOptions);
     const [basePayload, minePayload] = (sameSource || sameLocalContent)
       ? await Promise.all([basePayloadPromise, basePayloadPromise])
       : await Promise.all([
           basePayloadPromise,
           mineRevisionId
             ? readRevisionPayload(mineRevisionInfo, target, resolvedFileName, payloadOptions)
-            : readFilePayload(args.minePath, payloadOptions),
+            : readFilePayload(mineLocalPath, payloadOptions),
         ]);
     const metadataMs = (basePayload.perf.metadataMs ?? 0) + (minePayload.perf.metadataMs ?? 0);
 
@@ -540,13 +766,14 @@ export async function loadWorkbookMetadataData(
       perf: { metadataMs },
     };
     if (cacheContext) {
-      rememberLimitedEntry(workbookMetadataCache, cacheContext.key, {
+      rememberCacheEntry(workbookMetadataCache, cacheContext.key, {
         leftMtimeMs: cacheContext.leftMtimeMs,
         rightMtimeMs: cacheContext.rightMtimeMs,
         leftSize: cacheContext.leftSize,
         rightSize: cacheContext.rightSize,
         payload,
-      }, WORKBOOK_METADATA_CACHE_LIMIT);
+        memoryBytes: estimateWorkbookMetadataPayloadMemoryBytes(payload),
+      }, WORKBOOK_METADATA_CACHE_LIMIT, WORKBOOK_METADATA_CACHE_MAX_BYTES);
     }
     return payload;
   })();

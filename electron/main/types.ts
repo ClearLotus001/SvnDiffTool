@@ -274,12 +274,27 @@ export interface FileEqualityCacheEntry {
   equal: boolean;
 }
 
+export interface InlineWorkbookCompareCachePayload {
+  kind: 'inline';
+  value: WorkbookCompareModePayload;
+}
+
+export interface CompressedWorkbookCompareCachePayload {
+  kind: 'gzip-json-v1';
+  bytes: Buffer;
+}
+
+export type StoredWorkbookCompareCachePayload =
+  | InlineWorkbookCompareCachePayload
+  | CompressedWorkbookCompareCachePayload;
+
 export interface WorkbookCompareCacheEntry {
   leftMtimeMs: number;
   rightMtimeMs: number;
   leftSize: number;
   rightSize: number;
-  payload: WorkbookCompareModePayload;
+  payload: StoredWorkbookCompareCachePayload;
+  memoryBytes: number;
 }
 
 export interface WorkbookMetadataCacheEntry {
@@ -288,6 +303,7 @@ export interface WorkbookMetadataCacheEntry {
   leftSize: number;
   rightSize: number;
   payload: WorkbookMetadataPayload;
+  memoryBytes: number;
 }
 
 export { type WorkbookArtifactDiffSummary } from '../workbookArtifactDiff.js';

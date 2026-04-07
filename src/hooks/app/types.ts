@@ -16,6 +16,7 @@ export interface CachedDiffResult {
   workbookDelta: WorkbookPrecomputedDeltaPayload | null;
   baseWorkbookMetadata: WorkbookMetadataMap | null;
   mineWorkbookMetadata: WorkbookMetadataMap | null;
+  memoryBytes: number;
 }
 
 export interface WorkbookContextMenuState {

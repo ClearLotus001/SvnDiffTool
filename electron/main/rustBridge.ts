@@ -5,6 +5,7 @@ import { performance } from 'node:perf_hooks';
 import { promisify } from 'node:util';
 import { APP_ROOT, RUST_MAX_BUFFER, RUST_PARSER_NAME, SVN_BINARY_MAX_BUFFER, SVN_TEXT_MAX_BUFFER } from './constants.js';
 import { logRustDebugStderr } from './logger.js';
+import { logMainWarn } from '../logging.js';
 import type {
   DiffLine,
   RustDiffLinePayload,
@@ -129,12 +130,12 @@ export async function tryParseWorkbookWithRust(
     }
 
     if (result.stderr.trim()) {
-      console.warn('[rust-parser]', result.stderr.trim());
+      logMainWarn('rust-parser', result.stderr.trim());
     }
     return { content: null, parseMs };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.warn('[rust-parser]', message);
+    logMainWarn('rust-parser', message);
     return { content: null, parseMs: performance.now() - parseStart };
   }
 }
@@ -212,7 +213,7 @@ export async function tryResolveWorkbookMetadataWithRust(
 
     if (!result.ok || !result.stdout.trim()) {
       if (result.stderr.trim()) {
-        console.warn('[rust-parser-metadata]', result.stderr.trim());
+        logMainWarn('rust-parser-metadata', result.stderr.trim());
       }
       return { metadata: null, parseMs };
     }
@@ -224,7 +225,7 @@ export async function tryResolveWorkbookMetadataWithRust(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.warn('[rust-parser-metadata]', message);
+    logMainWarn('rust-parser-metadata', message);
     return { metadata: null, parseMs: performance.now() - parseStart };
   }
 }
@@ -512,7 +513,7 @@ export async function tryResolveWorkbookDiffWithRust(
     const parseMs = performance.now() - parseStart;
     logRustDebugStderr('rust-parser-diff', result.stderr);
     if (!result.ok || !result.stdout.trim()) {
-      if (result.stderr.trim()) console.warn('[rust-parser-diff]', result.stderr.trim());
+      if (result.stderr.trim()) logMainWarn('rust-parser-diff', result.stderr.trim());
       return { diffLines: null, workbookDelta: null, parseMs };
     }
 
@@ -525,7 +526,7 @@ export async function tryResolveWorkbookDiffWithRust(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.warn('[rust-parser-diff]', message);
+    logMainWarn('rust-parser-diff', message);
     return { diffLines: null, workbookDelta: null, parseMs: performance.now() - parseStart };
   }
 }

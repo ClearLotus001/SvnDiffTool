@@ -1,8 +1,24 @@
+import { constants as zlibConstants, gunzip, gzip } from 'node:zlib';
+import { promisify } from 'node:util';
+import { WORKBOOK_COMPARE_CACHE_COMPRESS_MIN_BYTES } from './constants.js';
 import type {
+  CompressedWorkbookCompareCachePayload,
+  DiffLine,
   FilePayload,
+  InlineWorkbookCompareCachePayload,
   ReadFilePayloadOptions,
+  StoredWorkbookCompareCachePayload,
+  WorkbookCellDeltaPayload,
+  WorkbookCompareModePayload,
+  WorkbookMetadataMap,
+  WorkbookMetadataPayload,
   WorkbookPayloadCoverage,
+  WorkbookPrecomputedDeltaPayload,
+  WorkbookSectionDeltaPayload,
 } from './types.js';
+
+const gzipAsync = promisify(gzip);
+const gunzipAsync = promisify(gunzip);
 
 // ---------------------------------------------------------------------------
 // Generic cache helpers
@@ -11,10 +27,142 @@ import type {
 export function estimatePayloadMemoryBytes(payload: FilePayload): number {
   const contentBytes = payload.content ? Buffer.byteLength(payload.content, 'utf-8') : 0;
   const rawBytes = payload.bytes?.byteLength ?? 0;
-  const metadataBytes = payload.metadata
-    ? Buffer.byteLength(JSON.stringify(payload.metadata), 'utf-8')
-    : 0;
+  const metadataBytes = estimateWorkbookMetadataMapMemoryBytes(payload.metadata);
   return contentBytes + rawBytes + metadataBytes;
+}
+
+function estimateStringBytes(value: string | null | undefined): number {
+  return value ? Buffer.byteLength(value, 'utf-8') : 0;
+}
+
+function estimateDiffLineBytes(line: DiffLine): number {
+  return estimateStringBytes(line.base)
+    + estimateStringBytes(line.mine)
+    + 64;
+}
+
+function estimateWorkbookCellDeltaBytes(cellDelta: WorkbookCellDeltaPayload): number {
+  return estimateStringBytes(cellDelta.baseCell.value)
+    + estimateStringBytes(cellDelta.baseCell.formula)
+    + estimateStringBytes(cellDelta.mineCell.value)
+    + estimateStringBytes(cellDelta.mineCell.formula)
+    + 96;
+}
+
+function estimateWorkbookSectionDeltaBytes(section: WorkbookSectionDeltaPayload): number {
+  return estimateStringBytes(section.name)
+    + section.rows.reduce((total, row) => (
+      total
+      + (row.lineIdxs.length * 8)
+      + (row.changedColumns.length * 8)
+      + (row.strictOnlyColumns.length * 8)
+      + row.cellDeltas.reduce((cellTotal, cellDelta) => (
+          cellTotal + estimateWorkbookCellDeltaBytes(cellDelta)
+        ), 0)
+      + 96
+    ), 0)
+    + 48;
+}
+
+function estimateWorkbookDeltaMemoryBytes(
+  workbookDelta: WorkbookPrecomputedDeltaPayload | null,
+): number {
+  if (!workbookDelta) return 0;
+
+  return estimateStringBytes(workbookDelta.compareMode)
+    + workbookDelta.sections.reduce((total, section) => (
+        total + estimateWorkbookSectionDeltaBytes(section)
+      ), 0)
+    + 64;
+}
+
+export function estimateWorkbookComparePayloadMemoryBytes(
+  payload: WorkbookCompareModePayload,
+): number {
+  const diffLinesBytes = payload.diffLines?.reduce((total, line) => (
+    total + estimateDiffLineBytes(line)
+  ), 0) ?? 0;
+  const workbookDeltaBytes = estimateWorkbookDeltaMemoryBytes(payload.workbookDelta);
+  return diffLinesBytes + workbookDeltaBytes + 128;
+}
+
+function createInlineWorkbookCompareCachePayload(
+  payload: WorkbookCompareModePayload,
+): InlineWorkbookCompareCachePayload {
+  return {
+    kind: 'inline',
+    value: payload,
+  };
+}
+
+function createCompressedWorkbookCompareCachePayload(
+  bytes: Buffer,
+): CompressedWorkbookCompareCachePayload {
+  return {
+    kind: 'gzip-json-v1',
+    bytes,
+  };
+}
+
+export async function storeWorkbookCompareCachePayload(
+  payload: WorkbookCompareModePayload,
+): Promise<{ payload: StoredWorkbookCompareCachePayload; memoryBytes: number }> {
+  const estimatedMemoryBytes = estimateWorkbookComparePayloadMemoryBytes(payload);
+  if (estimatedMemoryBytes < WORKBOOK_COMPARE_CACHE_COMPRESS_MIN_BYTES) {
+    return {
+      payload: createInlineWorkbookCompareCachePayload(payload),
+      memoryBytes: estimatedMemoryBytes,
+    };
+  }
+
+  const compressedBytes = await gzipAsync(
+    Buffer.from(JSON.stringify(payload), 'utf-8'),
+    { level: zlibConstants.Z_BEST_SPEED },
+  );
+  return {
+    payload: createCompressedWorkbookCompareCachePayload(compressedBytes),
+    memoryBytes: compressedBytes.byteLength,
+  };
+}
+
+export async function readWorkbookCompareCachePayload(
+  payload: StoredWorkbookCompareCachePayload,
+): Promise<WorkbookCompareModePayload> {
+  if (payload.kind === 'inline') {
+    return payload.value;
+  }
+
+  const jsonBytes = await gunzipAsync(payload.bytes);
+  return JSON.parse(jsonBytes.toString('utf-8')) as WorkbookCompareModePayload;
+}
+
+function estimateWorkbookSheetMetadataMemoryBytes(
+  sheetName: string,
+  metadata: WorkbookMetadataMap['sheets'][string],
+): number {
+  return estimateStringBytes(sheetName)
+    + estimateStringBytes(metadata.name)
+    + (metadata.hiddenColumns.length * 8)
+    + (metadata.mergeRanges.length * 32)
+    + 64;
+}
+
+function estimateWorkbookMetadataMapMemoryBytes(
+  metadata: WorkbookMetadataMap | null,
+): number {
+  if (!metadata) return 0;
+
+  return Object.entries(metadata.sheets).reduce((total, [sheetName, sheetMetadata]) => (
+    total + estimateWorkbookSheetMetadataMemoryBytes(sheetName, sheetMetadata)
+  ), 32);
+}
+
+export function estimateWorkbookMetadataPayloadMemoryBytes(
+  payload: WorkbookMetadataPayload,
+): number {
+  return estimateWorkbookMetadataMapMemoryBytes(payload.base)
+    + estimateWorkbookMetadataMapMemoryBytes(payload.mine)
+    + 96;
 }
 
 export function trimCacheByBudget<T extends { memoryBytes: number }>(

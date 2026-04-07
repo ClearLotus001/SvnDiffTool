@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { isControlledCacheRoot, type InstallerBootstrapConfig } from './installerBootstrap';
+import { logMainWarn } from './logging.js';
 import { removeControlledDirectorySync } from './runtimePaths';
 
 const CACHE_SUBDIRECTORIES_TO_MIGRATE = ['session-data', 'disk-cache'] as const;
@@ -59,7 +60,7 @@ export function migratePreviousCacheRoot(
         errorOnExist: false,
       });
     } catch (error) {
-      console.warn(`[maintenance] failed to migrate ${directoryName}`, error);
+      logMainWarn('maintenance', `failed to migrate ${directoryName}`, error);
     }
   });
 }

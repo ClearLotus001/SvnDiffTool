@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { DEFAULT_LAUNCH_MAXIMIZED, DEV_SERVER_URL, PRELOAD_PATH, RENDERER_DIST, USE_NATIVE_WINDOW_CONTROLS } from './constants.js';
 import { writeExternalDiffDebugLog } from './logger.js';
+import { logMainError } from '../logging.js';
 import { getStartupPalette, readStartupAppearance } from './startupAppearance.js';
 import { getMainWindow, setMainWindow } from './state.js';
 import { resolveIconPath } from './svnHelpers.js';
@@ -340,7 +341,7 @@ export function createWindow(): void {
   });
 
   win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
-    console.error('[electron] failed to load window', {
+    logMainError('electron', 'failed to load window', {
       errorCode,
       errorDescription,
       validatedURL,

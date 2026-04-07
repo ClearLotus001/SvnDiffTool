@@ -4,6 +4,7 @@
 
 export { default as useAppChromeEffects } from '@/hooks/app/useAppChromeEffects';
 export { default as useAppKeyboardShortcuts } from '@/hooks/app/useAppKeyboardShortcuts';
+export { default as useAppRuntimeEffects } from '@/hooks/app/useAppRuntimeEffects';
 export { default as useAppUpdateActions } from '@/hooks/app/useAppUpdateActions';
 export { default as useAppViewModel } from '@/hooks/app/useAppViewModel';
 export { default as useDialogState } from '@/hooks/app/useDialogState';

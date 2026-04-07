@@ -6,6 +6,7 @@ import {
   REVISION_PAYLOAD_CACHE_LIMIT,
   REVISION_PAYLOAD_CACHE_MAX_BYTES,
   WORKBOOK_COMPARE_CACHE_LIMIT,
+  WORKBOOK_COMPARE_CACHE_MAX_BYTES,
 } from './constants.js';
 import {
   canSatisfyWorkbookPayloadRequest,
@@ -14,9 +15,11 @@ import {
   mergeWorkbookPayload,
   mergeWorkbookPayloadCoverage,
   projectWorkbookPayloadForOptions,
+  readWorkbookCompareCachePayload,
   rememberCacheEntry,
-  rememberLimitedEntry,
+  storeWorkbookCompareCachePayload,
 } from './cache.js';
+import { logMainWarn } from '../logging.js';
 import { logDebugTiming, writeExternalDiffDebugLog } from './logger.js';
 import {
   tryParseWorkbookWithRust,
@@ -340,10 +343,21 @@ export async function readRevisionPayload(
         bytes: false,
         metadata: false,
       };
+  const cachePayload = isWorkbookFile(fileName)
+    ? {
+        ...mergedPayload,
+        bytes: null,
+      }
+    : mergedPayload;
   rememberCacheEntry(revisionPayloadCache, revisionCacheKey, {
-    payload: mergedPayload,
-    memoryBytes: estimatePayloadMemoryBytes(mergedPayload),
-    coverage: mergedCoverage,
+    payload: cachePayload,
+    memoryBytes: estimatePayloadMemoryBytes(cachePayload),
+    coverage: isWorkbookFile(fileName)
+      ? {
+          ...mergedCoverage,
+          bytes: false,
+        }
+      : mergedCoverage,
   }, REVISION_PAYLOAD_CACHE_LIMIT, REVISION_PAYLOAD_CACHE_MAX_BYTES);
   return isWorkbookFile(fileName)
     ? projectWorkbookPayloadForOptions(mergedPayload, options)
@@ -435,7 +449,16 @@ export async function resolveWorkbookCompareModePayload(
         compareMode,
         fileName,
       });
-      return cached.payload;
+      try {
+        return await readWorkbookCompareCachePayload(cached.payload);
+      } catch (error) {
+        workbookCompareCache.delete(cacheContext.key);
+        logMainWarn(
+          'workbook-compare-cache',
+          'decode failed:',
+          error instanceof Error ? error.message : String(error),
+        );
+      }
     }
     const inFlight = workbookCompareInFlight.get(cacheContext.key);
     if (inFlight) {
@@ -467,13 +490,15 @@ export async function resolveWorkbookCompareModePayload(
     };
 
     if (cacheContext) {
-      rememberLimitedEntry(workbookCompareCache, cacheContext.key, {
+      const storedPayload = await storeWorkbookCompareCachePayload(payload);
+      rememberCacheEntry(workbookCompareCache, cacheContext.key, {
         leftMtimeMs: cacheContext.leftMtimeMs,
         rightMtimeMs: cacheContext.rightMtimeMs,
         leftSize: cacheContext.leftSize,
         rightSize: cacheContext.rightSize,
-        payload,
-      }, WORKBOOK_COMPARE_CACHE_LIMIT);
+        payload: storedPayload.payload,
+        memoryBytes: storedPayload.memoryBytes,
+      }, WORKBOOK_COMPARE_CACHE_LIMIT, WORKBOOK_COMPARE_CACHE_MAX_BYTES);
     }
 
     return payload;

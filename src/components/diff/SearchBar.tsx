@@ -6,6 +6,8 @@ import { useI18n } from '@/context/i18n';
 import Tooltip from '@/components/shared/Tooltip';
 import SearchResultsPopover from '@/components/diff/SearchResultsPopover';
 
+const AUTO_OPEN_SEARCH_RESULTS_LIMIT = 200;
+
 interface SearchBarProps {
   query: string;
   isRegex: boolean;
@@ -15,7 +17,7 @@ interface SearchBarProps {
   activeSheetName: string | null;
   matchCount: number;
   activeIdx: number;
-  results: SearchResultItem[];
+  resolveResult: (index: number) => SearchResultItem | null;
   onSearch: (q: string, regex: boolean, cs: boolean, workbookScope: 'all' | 'sheet') => void;
   onPreviewNav: (dir: 1 | -1) => void;
   onNav: (dir: 1 | -1) => void;
@@ -32,7 +34,7 @@ const SearchBar = memo(({
   activeSheetName,
   matchCount,
   activeIdx,
-  results,
+  resolveResult,
   onSearch,
   onPreviewNav,
   onNav,
@@ -46,10 +48,12 @@ const SearchBar = memo(({
   const rootRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const collapsedResultsKeyRef = useRef<string | null>(null);
+  const manuallyOpenedResultsKeyRef = useRef<string | null>(null);
   const resolvedScope = isWorkbookMode ? workbookSearchScope : 'all';
   const resultsVisibilityKey = `${query}::${isRegex ? '1' : '0'}::${isCaseSensitive ? '1' : '0'}::${resolvedScope}`;
   const closeResults = useCallback(() => {
     collapsedResultsKeyRef.current = resultsVisibilityKey;
+    manuallyOpenedResultsKeyRef.current = null;
     setShowResults(false);
   }, [resultsVisibilityKey]);
   const focusInput = useCallback(() => {
@@ -76,13 +80,29 @@ const SearchBar = memo(({
   useEffect(() => {
     if (!query) {
       collapsedResultsKeyRef.current = null;
+      manuallyOpenedResultsKeyRef.current = null;
       setShowResults(false);
       return;
     }
-    if (collapsedResultsKeyRef.current !== resultsVisibilityKey) {
+    if (manuallyOpenedResultsKeyRef.current === resultsVisibilityKey) {
       setShowResults(true);
+      return;
     }
-  }, [query, resultsVisibilityKey]);
+    if (collapsedResultsKeyRef.current === resultsVisibilityKey) {
+      setShowResults(false);
+      return;
+    }
+    if (matchCount <= 0) {
+      setShowResults(false);
+      return;
+    }
+    if (matchCount > AUTO_OPEN_SEARCH_RESULTS_LIMIT) {
+      collapsedResultsKeyRef.current = resultsVisibilityKey;
+      setShowResults(false);
+      return;
+    }
+    setShowResults(true);
+  }, [matchCount, query, resultsVisibilityKey]);
   useEffect(() => {
     if (!showResults) return;
     const handlePointerDown = (event: MouseEvent) => {
@@ -276,7 +296,13 @@ const SearchBar = memo(({
         if (!query) return;
         setShowResults((value) => {
           const nextValue = !value;
-          collapsedResultsKeyRef.current = nextValue ? null : resultsVisibilityKey;
+          if (nextValue) {
+            collapsedResultsKeyRef.current = null;
+            manuallyOpenedResultsKeyRef.current = resultsVisibilityKey;
+          } else {
+            collapsedResultsKeyRef.current = resultsVisibilityKey;
+            manuallyOpenedResultsKeyRef.current = null;
+          }
           return nextValue;
         });
       }, showResults)}
@@ -290,7 +316,8 @@ const SearchBar = memo(({
       {showResults && query && (
         <SearchResultsPopover
           isWorkbookMode={isWorkbookMode}
-          results={results}
+          resultCount={matchCount}
+          resolveResult={resolveResult}
           activeIdx={activeIdx}
           query={query}
           isRegex={isRegex}

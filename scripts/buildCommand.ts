@@ -53,13 +53,27 @@ function attachFilteredOutput(
   });
 }
 
-export async function runBuildCommand(command: string, cwd: string): Promise<{ suppressedCount: number }> {
+function formatBuildCommand(command: string, args: string[]): string {
+  return [command, ...args]
+    .map((part) => (
+      /\s/.test(part)
+        ? JSON.stringify(part)
+        : part
+    ))
+    .join(' ');
+}
+
+export async function runBuildCommand(
+  command: string,
+  args: string[],
+  cwd: string,
+): Promise<{ suppressedCount: number }> {
   return await new Promise<{ suppressedCount: number }>((resolve, reject) => {
     const outputState = { suppressedCount: 0 };
-    const child = spawn(command, {
+    const child = spawn(command, args, {
       cwd,
       windowsHide: true,
-      shell: true,
+      shell: false,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -72,7 +86,7 @@ export async function runBuildCommand(command: string, cwd: string): Promise<{ s
         resolve(outputState);
         return;
       }
-      reject(new Error(`Command failed with exit code ${code ?? 'unknown'}: ${command}`));
+      reject(new Error(`Command failed with exit code ${code ?? 'unknown'}: ${formatBuildCommand(command, args)}`));
     });
   });
 }

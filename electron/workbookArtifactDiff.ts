@@ -27,6 +27,15 @@ interface DetectWorkbookArtifactDiffOptions {
   workbookDelta?: WorkbookArtifactDeltaLike | null;
 }
 
+interface DetectWorkbookArtifactDiffFromEqualityStateOptions {
+  isWorkbook: boolean;
+  baseByteLength: number;
+  mineByteLength: number;
+  contentsEqual: boolean | null;
+  diffLines: WorkbookArtifactDiffLine[] | null;
+  workbookDelta?: WorkbookArtifactDeltaLike | null;
+}
+
 function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
   if (left.byteLength !== right.byteLength) return false;
   for (let index = 0; index < left.byteLength; index += 1) {
@@ -62,15 +71,33 @@ export function detectWorkbookArtifactOnlyDiff({
   diffLines,
   workbookDelta = null,
 }: DetectWorkbookArtifactDiffOptions): WorkbookArtifactDiffSummary | null {
-  if (!isWorkbook || !baseBytes || !mineBytes || !diffLines) return null;
+  return detectWorkbookArtifactOnlyDiffFromEqualityState({
+    isWorkbook,
+    baseByteLength: baseBytes?.byteLength ?? 0,
+    mineByteLength: mineBytes?.byteLength ?? 0,
+    contentsEqual: baseBytes && mineBytes ? bytesEqual(baseBytes, mineBytes) : null,
+    diffLines,
+    workbookDelta,
+  });
+}
+
+export function detectWorkbookArtifactOnlyDiffFromEqualityState({
+  isWorkbook,
+  baseByteLength,
+  mineByteLength,
+  contentsEqual,
+  diffLines,
+  workbookDelta = null,
+}: DetectWorkbookArtifactDiffFromEqualityStateOptions): WorkbookArtifactDiffSummary | null {
+  if (!isWorkbook || !diffLines) return null;
   if (hasNonEqualWorkbookDiffLines(diffLines)) return null;
   if (hasWorkbookDeltaChanges(workbookDelta)) return null;
-  if (bytesEqual(baseBytes, mineBytes)) return null;
+  if (contentsEqual !== false) return null;
 
   return {
     hasArtifactOnlyDiff: true,
     kind: 'binary-only',
-    baseBytes: baseBytes.byteLength,
-    mineBytes: mineBytes.byteLength,
+    baseBytes: baseByteLength,
+    mineBytes: mineByteLength,
   };
 }
