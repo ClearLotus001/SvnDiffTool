@@ -11,6 +11,7 @@ import {
 
 const DISK_CACHE_MAX_BYTES = 256 * 1024 * 1024;
 const STALE_TEMP_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const STALE_TEMP_CLEANUP_MIN_INTERVAL_MS = 60 * 1000;
 const TEMP_BUDGET_HARD_LIMIT_BYTES = 1024 * 1024 * 1024;
 const TEMP_BUDGET_TARGET_BYTES = 512 * 1024 * 1024;
 
@@ -33,6 +34,7 @@ let runtimePathState: RuntimePathState = {
   logsPath: null,
   userDataPath: null,
 };
+let lastManagedTempCleanupAt = Number.NEGATIVE_INFINITY;
 
 function ensureDirectorySync(targetPath: string) {
   fs.mkdirSync(targetPath, { recursive: true });
@@ -161,9 +163,21 @@ function enforceTempBudgetSync() {
   }
 }
 
-export function cleanupStaleManagedTempFilesSync(now = Date.now()) {
+export function cleanupStaleManagedTempFilesSync(
+  now = Date.now(),
+  options: { force?: boolean } = {},
+) {
   const tempRootPath = runtimePathState.tempRootPath;
   if (!tempRootPath || !fs.existsSync(tempRootPath)) return;
+  if (
+    !options.force
+    && Number.isFinite(lastManagedTempCleanupAt)
+    && (now - lastManagedTempCleanupAt) < STALE_TEMP_CLEANUP_MIN_INTERVAL_MS
+  ) {
+    return;
+  }
+
+  lastManagedTempCleanupAt = now;
 
   collectFileEntriesSync(tempRootPath).forEach((entry) => {
     if (trackedTempPaths.has(entry.filePath)) return;
@@ -179,6 +193,8 @@ export function configureRuntimePaths(
   devProfileRoot: string,
   installerBootstrap: InstallerBootstrapConfig | null,
 ): RuntimePathState {
+  lastManagedTempCleanupAt = Number.NEGATIVE_INFINITY;
+
   if (devProfileRoot) {
     const userDataPath = path.join(devProfileRoot, 'user-data');
     const sessionDataPath = path.join(devProfileRoot, 'session-data');

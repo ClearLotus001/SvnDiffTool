@@ -11,6 +11,12 @@ interface MigrationMarker {
 const LEGACY_USER_DATA_NAMES = ['SvnExcelDiffTool', 'svn-diff-tool'];
 const MIGRATION_MARKER_NAME = '.legacy-user-data-migrated.json';
 
+export interface PendingLegacyUserDataMigration {
+  currentUserDataPath: string;
+  legacyUserDataPath: string;
+  markerPath: string;
+}
+
 function directoryHasEntries(targetPath: string): boolean {
   if (!fs.existsSync(targetPath)) return false;
   try {
@@ -20,7 +26,7 @@ function directoryHasEntries(targetPath: string): boolean {
   }
 }
 
-function findLegacyUserDataPath(currentUserDataPath: string): string | null {
+export function resolveLegacyUserDataPath(currentUserDataPath: string = app.getPath('userData')): string | null {
   const appDataPath = app.getPath('appData');
   for (const legacyName of LEGACY_USER_DATA_NAMES) {
     const candidate = path.join(appDataPath, legacyName);
@@ -30,21 +36,29 @@ function findLegacyUserDataPath(currentUserDataPath: string): string | null {
   return null;
 }
 
-export function ensureLegacyUserDataMigration() {
-  if (!app.isPackaged) return;
+export function resolvePendingLegacyUserDataMigration(): PendingLegacyUserDataMigration | null {
+  if (!app.isPackaged) return null;
 
   const currentUserDataPath = app.getPath('userData');
   const markerPath = path.join(currentUserDataPath, MIGRATION_MARKER_NAME);
 
-  if (fs.existsSync(markerPath)) return;
-  if (directoryHasEntries(currentUserDataPath)) return;
+  if (fs.existsSync(markerPath)) return null;
+  if (directoryHasEntries(currentUserDataPath)) return null;
 
-  const legacyUserDataPath = findLegacyUserDataPath(currentUserDataPath);
-  if (!legacyUserDataPath) return;
+  const legacyUserDataPath = resolveLegacyUserDataPath(currentUserDataPath);
+  if (!legacyUserDataPath) return null;
 
+  return {
+    currentUserDataPath,
+    legacyUserDataPath,
+    markerPath,
+  };
+}
+
+export function performLegacyUserDataMigration(pendingMigration: PendingLegacyUserDataMigration): boolean {
   try {
-    fs.mkdirSync(currentUserDataPath, { recursive: true });
-    fs.cpSync(legacyUserDataPath, currentUserDataPath, {
+    fs.mkdirSync(pendingMigration.currentUserDataPath, { recursive: true });
+    fs.cpSync(pendingMigration.legacyUserDataPath, pendingMigration.currentUserDataPath, {
       recursive: true,
       force: false,
       errorOnExist: false,
@@ -52,10 +66,18 @@ export function ensureLegacyUserDataMigration() {
 
     const marker: MigrationMarker = {
       migratedAt: new Date().toISOString(),
-      sourcePath: legacyUserDataPath,
+      sourcePath: pendingMigration.legacyUserDataPath,
     };
-    fs.writeFileSync(markerPath, JSON.stringify(marker, null, 2), 'utf-8');
+    fs.writeFileSync(pendingMigration.markerPath, JSON.stringify(marker, null, 2), 'utf-8');
+    return true;
   } catch (error) {
     logMainWarn('user-data-migration', error);
+    return false;
   }
+}
+
+export function ensureLegacyUserDataMigration() {
+  const pendingMigration = resolvePendingLegacyUserDataMigration();
+  if (!pendingMigration) return;
+  performLegacyUserDataMigration(pendingMigration);
 }

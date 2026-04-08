@@ -18,6 +18,7 @@ export interface WorkbookSection {
   startLineIdx: number;
   endLineIdx: number;
   maxColumns: number;
+  rowCount: number;
   firstDataLineIdx: number | null;
   firstDataRowNumber: number | null;
 }
@@ -95,6 +96,7 @@ function ensureWorkbookSection(
     startLineIdx: lineIdx,
     endLineIdx: lineIdx,
     maxColumns: 0,
+    rowCount: 0,
     firstDataLineIdx: null,
     firstDataRowNumber: null,
   };
@@ -112,6 +114,7 @@ function applyWorkbookRowToSection(
 ) {
   section.endLineIdx = Math.max(section.endLineIdx, lineIdx);
   section.maxColumns = Math.max(section.maxColumns, row.cells.length);
+  section.rowCount = Math.max(section.rowCount, row.rowNumber);
   const signature = buildWorkbookRowSignature(row, compareMode);
   stats.exactFingerprintParts.push(`${row.rowNumber}:${signature}`);
   if (signature.length > 0) {

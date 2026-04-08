@@ -5,6 +5,7 @@
 
 !define INSTALLER_BOOTSTRAP_FILE "installer-bootstrap.properties"
 !define INSTALLER_BOOTSTRAP_PREVIOUS_FILE "installer-bootstrap.previous.properties"
+!define INSTALLER_MAINTENANCE_PENDING_FILE "installer-maintenance.pending"
 !define COLOR_BG "F2EFE6"
 !define COLOR_PANEL "FAF9F5"
 !define COLOR_PANEL_ALT "EBE7DC"
@@ -330,6 +331,10 @@ FunctionEnd
   ${EndIf}
 
   Call WriteInstallerBootstrap
+
+  Delete "$INSTDIR\${INSTALLER_MAINTENANCE_PENDING_FILE}"
+  FileOpen $0 "$INSTDIR\${INSTALLER_MAINTENANCE_PENDING_FILE}" w
+  FileClose $0
 
   IfFileExists "$INSTDIR\${APP_EXECUTABLE_FILENAME}" 0 done
     DetailPrint "Starting post-install maintenance in the background..."

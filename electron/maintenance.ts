@@ -2,10 +2,12 @@ import type { App } from 'electron';
 import * as fs from 'node:fs';
 
 import {
+  clearInstallerMaintenancePendingSync,
   type InstallerBootstrapConfig,
   type InstallerDiffViewerMode,
   getInstallerBootstrapPath,
   getPreviousInstallerBootstrapPath,
+  hasInstallerMaintenancePendingSync,
   readInstallerBootstrapSync,
   readPreviousInstallerBootstrapSync,
 } from './installerBootstrap';
@@ -80,6 +82,37 @@ async function applyDesiredDiffViewerMode(config: InstallerBootstrapConfig | nul
 function clearBootstrapArtifacts(app: App) {
   deleteFileSync(getInstallerBootstrapPath(app.getPath('exe')));
   deleteFileSync(getPreviousInstallerBootstrapPath(app.getPath('exe')));
+  clearInstallerMaintenancePendingSync(app.getPath('exe'));
+}
+
+async function runPostInstallMaintenance(
+  app: App,
+  installerBootstrap: InstallerBootstrapConfig | null,
+  previousInstallerBootstrap: InstallerBootstrapConfig | null,
+) {
+  cleanupStaleManagedTempFilesSync(Date.now(), { force: true });
+  migratePreviousCacheRoot(previousInstallerBootstrap, installerBootstrap);
+  cleanupPreviousCacheRoot(previousInstallerBootstrap, installerBootstrap);
+  await applyDesiredDiffViewerMode(installerBootstrap);
+  deleteFileSync(getPreviousInstallerBootstrapPath(app.getPath('exe')));
+  clearInstallerMaintenancePendingSync(app.getPath('exe'));
+}
+
+export function hasPendingPostInstallMaintenance(execPath: string = process.execPath): boolean {
+  return hasInstallerMaintenancePendingSync(execPath)
+    || fs.existsSync(getPreviousInstallerBootstrapPath(execPath));
+}
+
+export async function runPendingPostInstallMaintenance(app: App): Promise<boolean> {
+  const execPath = app.getPath('exe');
+  if (!hasPendingPostInstallMaintenance(execPath)) {
+    return false;
+  }
+
+  const installerBootstrap = readInstallerBootstrapSync(execPath);
+  const previousInstallerBootstrap = readPreviousInstallerBootstrapSync(execPath);
+  await runPostInstallMaintenance(app, installerBootstrap, previousInstallerBootstrap);
+  return true;
 }
 
 export async function runMaintenance(app: App, mode: MaintenanceMode, argv: string[] = process.argv): Promise<void> {
@@ -88,11 +121,7 @@ export async function runMaintenance(app: App, mode: MaintenanceMode, argv: stri
   const shouldDeleteAppData = shouldDeleteAppDataFromArgv(argv);
 
   if (mode === 'post-install') {
-    cleanupStaleManagedTempFilesSync();
-    migratePreviousCacheRoot(previousInstallerBootstrap, installerBootstrap);
-    cleanupPreviousCacheRoot(previousInstallerBootstrap, installerBootstrap);
-    await applyDesiredDiffViewerMode(installerBootstrap);
-    deleteFileSync(getPreviousInstallerBootstrapPath(app.getPath('exe')));
+    await runPostInstallMaintenance(app, installerBootstrap, previousInstallerBootstrap);
     return;
   }
 

@@ -2,6 +2,7 @@ import type { BrowserWindow } from 'electron';
 import { EMPTY_CLI_ARGS } from '../cliArgs.js';
 import { createPlatformUpdater } from '../updater/index.js';
 import { writeExternalDiffDebugLog } from './logger.js';
+import { clearSvnProbeCaches } from './svnProbeCache.js';
 import type {
   CliArgs,
   FileEqualityCacheEntry,
@@ -57,6 +58,7 @@ export function setActiveCliArgs(nextArgs: CliArgs): void {
   _cachedSvnTarget = undefined;
   _cachedTimelineTarget = undefined;
   cachedRevisionOptionPages.clear();
+  clearSvnProbeCaches();
   writeExternalDiffDebugLog('active-cli-args-updated', _activeCliArgs);
 }
 

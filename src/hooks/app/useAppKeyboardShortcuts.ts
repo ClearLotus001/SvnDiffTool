@@ -1,7 +1,6 @@
 import { startTransition, useEffect, useRef, type MutableRefObject } from 'react';
 
 import type { WorkbookMoveDirection, WorkbookSelectedCell } from '@/types';
-import { cycleHunkIndex } from '@/hooks/app/helpers';
 import type { DialogController } from '@/hooks/app/contracts';
 import { useAppStore } from '@/store/appStore';
 
@@ -9,7 +8,7 @@ interface UseAppKeyboardShortcutsArgs {
   dialogs: DialogController;
   isWorkbookMode: boolean;
   selectedCell: WorkbookSelectedCell | null;
-  navigationCount: number;
+  handleNavigationStep: (direction: -1 | 1) => void;
   handleSearchPreviewNav: (dir: 1 | -1) => void;
   handleSearchNav: (dir: 1 | -1) => void;
   workbookMoveRef: MutableRefObject<((direction: WorkbookMoveDirection) => void) | null>;
@@ -26,14 +25,13 @@ export default function useAppKeyboardShortcuts({
   dialogs,
   isWorkbookMode,
   selectedCell,
-  navigationCount,
+  handleNavigationStep,
   handleSearchPreviewNav,
   handleSearchNav,
   workbookMoveRef,
   collapseNavigationRef,
 }: UseAppKeyboardShortcutsArgs) {
   // ── Read setters directly from Zustand store ──────────────────────────
-  const setHunkIdx = useAppStore((s) => s.setHunkIdx);
   const setShowWhitespace = useAppStore((s) => s.setShowWhitespace);
   const setFontSize = useAppStore((s) => s.setFontSize);
   const setWorkbookContextMenu = useAppStore((s) => s.setWorkbookContextMenu);
@@ -95,9 +93,7 @@ export default function useAppKeyboardShortcuts({
       }
       if (e.key === 'F7') {
         e.preventDefault();
-        startTransition(() => {
-          setHunkIdx((i) => cycleHunkIndex(i, navigationCount, e.shiftKey ? -1 : 1));
-        });
+        startTransition(() => handleNavigationStep(e.shiftKey ? -1 : 1));
         return;
       }
       if (e.key === 'f' && (e.ctrlKey || e.metaKey)) {
@@ -143,14 +139,13 @@ export default function useAppKeyboardShortcuts({
     return () => window.removeEventListener('keydown', handler);
   }, [
     collapseNavigationRef,
+    handleNavigationStep,
     handleSearchPreviewNav,
     handleSearchNav,
     isWorkbookMode,
-    navigationCount,
     selectedCell,
     dialogActions,
     setFontSize,
-    setHunkIdx,
     setShowWhitespace,
     setWorkbookContextMenu,
     showGoto,

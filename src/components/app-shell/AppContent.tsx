@@ -133,9 +133,10 @@ function InitialVisualReadySignal({
   return null;
 }
 
-function renderLoadingState(loadingLabel: string) {
+function renderLoadingState(loadingLabel: string, onReady?: () => void) {
   return (
     <div className="flex-1 w-full min-w-0 min-h-0 flex items-center justify-center p-6">
+      <InitialVisualReadySignal onReady={onReady} />
       <div className="grid gap-2.5 justify-items-center text-text-primary">
         <div
           aria-hidden="true"
@@ -150,7 +151,7 @@ function renderLoadingState(loadingLabel: string) {
 
 function renderLazyPanel(content: ReactNode, loadingLabel: string, onReady?: () => void) {
   return (
-    <Suspense fallback={renderLoadingState(loadingLabel)}>
+    <Suspense fallback={renderLoadingState(loadingLabel, onReady)}>
       <>
         <InitialVisualReadySignal onReady={onReady} />
         {content}
@@ -190,12 +191,8 @@ export default function AppContent({
     onCloseWorkbookContextMenu();
   };
 
-  if (!hasLoadedDiff && loadPhase === 'loading') {
-    return renderLoadingState(loadingLabel);
-  }
-
-  if (!hasLoadedDiff && loadPhase === 'bootstrapping') {
-    return <div className="flex-1 w-full min-w-0 min-h-0" />;
+  if (!hasLoadedDiff && (loadPhase === 'loading' || loadPhase === 'bootstrapping')) {
+    return renderLoadingState(loadingLabel, onInitialVisualReady);
   }
 
   if (!hasLoadedDiff) {

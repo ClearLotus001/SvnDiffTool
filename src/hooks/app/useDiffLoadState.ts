@@ -32,7 +32,10 @@ function diffLoadReducer(state: DiffLoadState, action: DiffLoadAction): DiffLoad
 
 function createInitialDiffLoadState(): DiffLoadState {
   const isElectronBootstrap = typeof window !== 'undefined'
-    && typeof window.svnDiff?.getLaunchState === 'function';
+    && (
+      typeof window.svnDiff?.getLaunchContext === 'function'
+      || typeof window.svnDiff?.getLaunchState === 'function'
+    );
 
   return {
     isLoadingDiff: false,

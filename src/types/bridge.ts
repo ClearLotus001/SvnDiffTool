@@ -20,17 +20,21 @@ import type {
 import type { AppUpdateState } from '@/types/update';
 import type { ThemeKey } from '@/types/theme';
 
-export interface LaunchStatePayload {
-  diffData: DiffData;
+export interface LaunchContextPayload {
   isDevMode: boolean;
   usesNativeWindowControls: boolean;
   windowFrameState: WindowFrameState;
   updateState: AppUpdateState;
 }
 
+export interface LaunchStatePayload extends LaunchContextPayload {
+  diffData: DiffData;
+}
+
 export interface SvnDiffBridge {
   notifyRendererReady?(): void;
   saveStartupAppearance?(appearance: { themeKey?: ThemeKey; locale?: 'zh-CN' | 'en-US' }): void;
+  getLaunchContext(): Promise<LaunchContextPayload>;
   getLaunchState(compareMode?: WorkbookCompareMode): Promise<LaunchStatePayload>;
   getDiffData(compareMode?: WorkbookCompareMode): Promise<DiffData>;
   loadRevisionDiff(baseRevisionId: string, mineRevisionId: string, compareMode?: WorkbookCompareMode): Promise<DiffData>;

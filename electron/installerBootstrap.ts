@@ -13,6 +13,7 @@ export interface InstallerBootstrapConfig {
 const INSTALLER_BOOTSTRAP_VERSION = 1;
 const INSTALLER_BOOTSTRAP_FILE_NAME = 'installer-bootstrap.properties';
 const INSTALLER_BOOTSTRAP_PREVIOUS_FILE_NAME = 'installer-bootstrap.previous.properties';
+const INSTALLER_MAINTENANCE_PENDING_FILE_NAME = 'installer-maintenance.pending';
 export const CACHE_CONTAINER_DIR_NAME = 'SvnDiffTool';
 export const CACHE_LEAF_DIR_NAME = 'Cache';
 
@@ -36,6 +37,10 @@ export function getInstallerBootstrapPath(execPath: string = process.execPath): 
 
 export function getPreviousInstallerBootstrapPath(execPath: string = process.execPath): string {
   return path.join(getInstallerDirectory(execPath), INSTALLER_BOOTSTRAP_PREVIOUS_FILE_NAME);
+}
+
+export function getInstallerMaintenancePendingPath(execPath: string = process.execPath): string {
+  return path.join(getInstallerDirectory(execPath), INSTALLER_MAINTENANCE_PENDING_FILE_NAME);
 }
 
 function isInstallerDiffViewerMode(value: string): value is InstallerDiffViewerMode {
@@ -117,6 +122,18 @@ export function readInstallerBootstrapSync(execPath: string = process.execPath):
 
 export function readPreviousInstallerBootstrapSync(execPath: string = process.execPath): InstallerBootstrapConfig | null {
   return readBootstrapFileSync(getPreviousInstallerBootstrapPath(execPath));
+}
+
+export function hasInstallerMaintenancePendingSync(execPath: string = process.execPath): boolean {
+  return fs.existsSync(getInstallerMaintenancePendingPath(execPath));
+}
+
+export function clearInstallerMaintenancePendingSync(execPath: string = process.execPath) {
+  try {
+    fs.rmSync(getInstallerMaintenancePendingPath(execPath), { force: true });
+  } catch {
+    // Ignore best-effort cleanup failures.
+  }
 }
 
 export function toInstallerBootstrapContent(config: InstallerBootstrapConfig): string {

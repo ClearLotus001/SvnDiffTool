@@ -29,12 +29,59 @@ import {
   setCachedSvnTarget,
   setCachedTimelineTarget,
 } from './state.js';
+import {
+  localSvnUrlCache,
+  localVersioningStatusCache,
+} from './svnProbeCache.js';
 import type {
   LocalWorkbookPairCacheContext,
   RevisionOptionsPayload,
   RevisionOptionsQuery,
   SvnRevisionInfo,
 } from './types.js';
+
+function rememberProbePromise<T>(
+  cache: Map<string, Promise<T>>,
+  key: string,
+  factory: () => Promise<T>,
+): Promise<T> {
+  const cached = cache.get(key);
+  if (cached) {
+    return cached;
+  }
+
+  const pending = (async () => {
+    try {
+      return await factory();
+    } catch (error) {
+      cache.delete(key);
+      throw error;
+    }
+  })();
+  cache.set(key, pending);
+  return pending;
+}
+
+function getCandidateLocalPaths(args: { basePath: string; minePath: string }): string[] {
+  return Array.from(
+    new Set([args.minePath, args.basePath].map(value => value.trim()).filter(Boolean)),
+  );
+}
+
+async function resolveLocalSvnUrl(filePath: string): Promise<string> {
+  const candidate = filePath.trim();
+  if (!candidate) return '';
+
+  const resolved = await rememberProbePromise(localSvnUrlCache, candidate, async () => {
+    const result = await runSvnUtf8(['info', '--show-item', 'url', candidate]);
+    return result.ok ? result.stdout.trim() : '';
+  });
+
+  if (resolved) {
+    localVersioningStatusCache.set(candidate, Promise.resolve('versioned'));
+  }
+  return resolved;
+}
 
 // ---------------------------------------------------------------------------
 // SVN target resolution
@@ -49,6 +96,7 @@ export async function resolveSvnTarget(): Promise<string> {
   if (explicitBase && explicitMine) {
     if (haveSameExplicitSvnUrl(args)) {
       setCachedSvnTarget(explicitMine);
+      setCachedTimelineTarget(explicitMine);
       writeExternalDiffDebugLog('resolve-svn-target', {
         mode: 'explicit-both',
         result: explicitMine,
@@ -56,6 +104,7 @@ export async function resolveSvnTarget(): Promise<string> {
       return explicitMine;
     }
     setCachedSvnTarget(null);
+    setCachedTimelineTarget(null);
     writeExternalDiffDebugLog('resolve-svn-target', {
       mode: 'explicit-conflict',
       baseUrl: explicitBase,
@@ -68,6 +117,7 @@ export async function resolveSvnTarget(): Promise<string> {
   const explicit = explicitMine || explicitBase;
   if (explicit) {
     setCachedSvnTarget(explicit);
+    setCachedTimelineTarget(explicit);
     writeExternalDiffDebugLog('resolve-svn-target', {
       mode: explicitMine ? 'explicit-mine' : 'explicit-base',
       result: explicit,
@@ -75,11 +125,10 @@ export async function resolveSvnTarget(): Promise<string> {
     return explicit;
   }
 
-  const candidatePaths = Array.from(
-    new Set([args.minePath, args.basePath].map(value => value.trim()).filter(Boolean)),
-  );
+  const candidatePaths = getCandidateLocalPaths(args);
   if (candidatePaths.length === 0) {
     setCachedSvnTarget(null);
+    setCachedTimelineTarget(null);
     writeExternalDiffDebugLog('resolve-svn-target', {
       mode: 'no-candidates',
       result: '',
@@ -88,10 +137,7 @@ export async function resolveSvnTarget(): Promise<string> {
   }
 
   const resolvedTargets = Array.from(new Set((await Promise.all(
-    candidatePaths.map(async (candidatePath) => {
-      const result = await runSvnUtf8(['info', '--show-item', 'url', candidatePath]);
-      return result.ok ? result.stdout.trim() : '';
-    }),
+    candidatePaths.map(candidatePath => resolveLocalSvnUrl(candidatePath)),
   )).filter(Boolean)));
 
   if (resolvedTargets.length !== 1) {
@@ -107,6 +153,9 @@ export async function resolveSvnTarget(): Promise<string> {
 
   const target = resolvedTargets[0] ?? '';
   setCachedSvnTarget(target || null);
+  if (target) {
+    setCachedTimelineTarget(target);
+  }
   writeExternalDiffDebugLog('resolve-svn-target', {
     mode: 'path-probe',
     candidatePaths,
@@ -119,18 +168,17 @@ export async function resolveSvnTarget(): Promise<string> {
 export async function resolveTimelineTargetUrl(): Promise<string> {
   if (getCachedTimelineTarget() !== undefined) return getCachedTimelineTarget() ?? '';
 
+  const cachedSvnTarget = getCachedSvnTarget();
+  if (cachedSvnTarget) {
+    setCachedTimelineTarget(cachedSvnTarget);
+    return cachedSvnTarget;
+  }
+
   const args = getActiveCliArgs();
-  const candidatePaths = [args.minePath, args.basePath]
-    .map(value => value.trim())
-    .filter(Boolean);
+  const candidatePaths = getCandidateLocalPaths(args);
 
   for (const candidatePath of candidatePaths) {
-    const versioningStatus = await detectLocalSvnVersioningStatus(candidatePath);
-    if (versioningStatus !== 'versioned') continue;
-
-    const result = await runSvnUtf8(['info', '--show-item', 'url', candidatePath]);
-    if (!result.ok) continue;
-    const resolved = result.stdout.trim();
+    const resolved = await resolveLocalSvnUrl(candidatePath);
     if (!resolved) continue;
 
     setCachedTimelineTarget(resolved);
@@ -170,17 +218,32 @@ export async function detectLocalSvnVersioningStatus(
   const candidate = filePath.trim();
   if (!candidate) return 'unknown';
 
-  const result = await runSvnUtf8(['status', candidate]);
-  if (!result.ok) return 'unknown';
+  const cached = localVersioningStatusCache.get(candidate);
+  if (cached) {
+    return cached;
+  }
 
-  const firstLine = result.stdout
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .find(Boolean);
+  return rememberProbePromise(localVersioningStatusCache, candidate, async () => {
+    const cachedUrl = localSvnUrlCache.get(candidate);
+    if (cachedUrl) {
+      const resolvedUrl = await cachedUrl;
+      if (resolvedUrl) {
+        return 'versioned';
+      }
+    }
 
-  if (!firstLine) return 'versioned';
-  if (firstLine.startsWith('?') || firstLine.startsWith('I')) return 'unversioned';
-  return 'versioned';
+    const result = await runSvnUtf8(['status', candidate]);
+    if (!result.ok) return 'unknown';
+
+    const firstLine = result.stdout
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .find(Boolean);
+
+    if (!firstLine) return 'versioned';
+    if (firstLine.startsWith('?') || firstLine.startsWith('I')) return 'unversioned';
+    return 'versioned';
+  });
 }
 
 export async function resolveWorkingCopyPathForTarget(
@@ -190,17 +253,12 @@ export async function resolveWorkingCopyPathForTarget(
   const normalizedTarget = normalizeSvnUrlForCompare(target);
   if (!normalizedTarget) return '';
 
-  const candidates = [args.minePath, args.basePath]
-    .map(value => value.trim())
-    .filter(Boolean);
+  const candidates = getCandidateLocalPaths(args);
 
   for (const candidatePath of candidates) {
-    const versioningStatus = await detectLocalSvnVersioningStatus(candidatePath);
-    if (versioningStatus !== 'versioned') continue;
-
-    const result = await runSvnUtf8(['info', '--show-item', 'url', candidatePath]);
-    if (!result.ok) continue;
-    if (normalizeSvnUrlForCompare(result.stdout) === normalizedTarget) {
+    const resolved = await resolveLocalSvnUrl(candidatePath);
+    if (!resolved) continue;
+    if (normalizeSvnUrlForCompare(resolved) === normalizedTarget) {
       return candidatePath;
     }
   }

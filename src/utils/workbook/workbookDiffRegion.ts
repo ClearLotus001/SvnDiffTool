@@ -412,48 +412,145 @@ export function buildWorkbookDiffRegions(
   });
 }
 
-function workbookDiffRegionIntersectsHunk(region: WorkbookDiffRegion, hunk: Hunk): boolean {
-  return region.lineEndIdx >= hunk.startIdx && region.lineStartIdx <= hunk.endIdx;
+function resolveWorkbookDiffRegionRowStart(region: WorkbookDiffRegion): number {
+  return region.rowNumberStart > 0 ? region.rowNumberStart : region.startRowIndex;
 }
 
-function compareWorkbookDiffRegions(left: WorkbookDiffRegion, right: WorkbookDiffRegion): number {
-  return left.lineStartIdx - right.lineStartIdx
-    || left.startRowIndex - right.startRowIndex
+function resolveWorkbookDiffRegionRowEnd(region: WorkbookDiffRegion): number {
+  return region.rowNumberEnd > 0 ? region.rowNumberEnd : region.endRowIndex;
+}
+
+function buildWorkbookNavigationSheetOrder(
+  regions: WorkbookDiffRegion[],
+  sheetOrder: string[],
+): string[] {
+  const nextSheetOrder: string[] = [];
+  const seenSheetNames = new Set<string>();
+
+  sheetOrder.forEach((sheetName) => {
+    if (seenSheetNames.has(sheetName)) return;
+    seenSheetNames.add(sheetName);
+    nextSheetOrder.push(sheetName);
+  });
+
+  regions.forEach((region) => {
+    if (seenSheetNames.has(region.sheetName)) return;
+    seenSheetNames.add(region.sheetName);
+    nextSheetOrder.push(region.sheetName);
+  });
+
+  return nextSheetOrder;
+}
+
+function compareWorkbookDiffRegions(
+  left: WorkbookDiffRegion,
+  right: WorkbookDiffRegion,
+  sheetOrderIndexByName: Map<string, number>,
+): number {
+  const leftSheetOrder = sheetOrderIndexByName.get(left.sheetName);
+  const rightSheetOrder = sheetOrderIndexByName.get(right.sheetName);
+  if (leftSheetOrder != null && rightSheetOrder != null && leftSheetOrder !== rightSheetOrder) {
+    return leftSheetOrder - rightSheetOrder;
+  }
+  if (leftSheetOrder != null && rightSheetOrder == null) return -1;
+  if (leftSheetOrder == null && rightSheetOrder != null) return 1;
+
+  return left.sheetName.localeCompare(right.sheetName)
+    || resolveWorkbookDiffRegionRowStart(left) - resolveWorkbookDiffRegionRowStart(right)
     || left.startCol - right.startCol
-    || left.endRowIndex - right.endRowIndex
+    || resolveWorkbookDiffRegionRowEnd(left) - resolveWorkbookDiffRegionRowEnd(right)
     || left.endCol - right.endCol;
 }
 
 export function buildWorkbookNavigationRegions(
   regions: WorkbookDiffRegion[],
-  hunks: Hunk[],
+  _hunks: Hunk[],
+  sheetOrder: string[] = [],
 ): WorkbookDiffRegion[] {
   if (regions.length === 0) return [];
-  if (hunks.length === 0) return regions.slice().sort(compareWorkbookDiffRegions);
 
-  const navigationRegions: WorkbookDiffRegion[] = [];
-  const usedRegionIds = new Set<string>();
+  const navigationSheetOrder = buildWorkbookNavigationSheetOrder(regions, sheetOrder);
+  const sheetOrderIndexByName = new Map(
+    navigationSheetOrder.map((sheetName, index) => [sheetName, index]),
+  );
 
-  hunks.forEach((hunk) => {
-    const matchingRegions = regions
-      .filter((region) => workbookDiffRegionIntersectsHunk(region, hunk))
-      .sort(compareWorkbookDiffRegions);
+  return regions
+    .slice()
+    .sort((left, right) => compareWorkbookDiffRegions(left, right, sheetOrderIndexByName));
+}
 
-    matchingRegions.forEach((region) => {
-      if (usedRegionIds.has(region.id)) return;
-      usedRegionIds.add(region.id);
-      navigationRegions.push(region);
-    });
-  });
+function buildWorkbookDirectionalSheetTraversalOrder(
+  orderedSheetNames: string[],
+  activeSheetName: string,
+  direction: -1 | 1,
+): string[] {
+  const activeSheetIndex = orderedSheetNames.indexOf(activeSheetName);
+  if (activeSheetIndex < 0) {
+    return direction === 1 ? orderedSheetNames : orderedSheetNames.slice().reverse();
+  }
 
-  regions
-    .filter((region) => !usedRegionIds.has(region.id))
-    .sort(compareWorkbookDiffRegions)
-    .forEach((region) => {
-      navigationRegions.push(region);
-    });
+  if (direction === 1) {
+    return [
+      ...orderedSheetNames.slice(activeSheetIndex),
+      ...orderedSheetNames.slice(0, activeSheetIndex),
+    ];
+  }
 
-  return navigationRegions.sort(compareWorkbookDiffRegions);
+  return [
+    ...orderedSheetNames.slice(0, activeSheetIndex + 1).reverse(),
+    ...orderedSheetNames.slice(activeSheetIndex + 1).reverse(),
+  ];
+}
+
+export function findWorkbookDiffRegionNavigationIndex(params: {
+  regions: WorkbookDiffRegion[];
+  currentIndex: number;
+  direction: -1 | 1;
+  activeSheetName: string | null;
+  sheetOrder?: string[] | undefined;
+}): number {
+  const {
+    regions,
+    currentIndex,
+    direction,
+    activeSheetName,
+    sheetOrder = [],
+  } = params;
+
+  if (regions.length === 0) return 0;
+
+  const hasValidCurrentIndex = currentIndex >= 0 && currentIndex < regions.length;
+  const activeRegion = hasValidCurrentIndex ? (regions[currentIndex] ?? null) : null;
+
+  if (!activeSheetName || activeRegion?.sheetName === activeSheetName) {
+    if (!hasValidCurrentIndex) {
+      return direction === 1 ? 0 : regions.length - 1;
+    }
+    return (currentIndex + direction + regions.length) % regions.length;
+  }
+
+  const orderedSheetNames = buildWorkbookDirectionalSheetTraversalOrder(
+    buildWorkbookNavigationSheetOrder(regions, sheetOrder),
+    activeSheetName,
+    direction,
+  );
+
+  for (const sheetName of orderedSheetNames) {
+    if (direction === 1) {
+      const nextIndex = regions.findIndex((region) => region.sheetName === sheetName);
+      if (nextIndex >= 0) return nextIndex;
+      continue;
+    }
+
+    for (let index = regions.length - 1; index >= 0; index -= 1) {
+      if (regions[index]?.sheetName === sheetName) return index;
+    }
+  }
+
+  if (!hasValidCurrentIndex) {
+    return direction === 1 ? 0 : regions.length - 1;
+  }
+  return (currentIndex + direction + regions.length) % regions.length;
 }
 
 export function formatWorkbookDiffRegionLabel(

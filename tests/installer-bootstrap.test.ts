@@ -1,16 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 import {
   CACHE_CONTAINER_DIR_NAME,
   CACHE_LEAF_DIR_NAME,
+  clearInstallerMaintenancePendingSync,
   getDefaultInstallerCacheRoot,
+  getInstallerMaintenancePendingPath,
+  getPreviousInstallerBootstrapPath,
+  hasInstallerMaintenancePendingSync,
   isControlledCacheRoot,
   normalizeInstallerBootstrapConfig,
   toInstallerBootstrapContent,
 } from '../electron/installerBootstrap';
 import {
   getMaintenanceModeFromArgv,
+  hasPendingPostInstallMaintenance,
   shouldDeleteAppDataFromArgv,
 } from '../electron/maintenance';
 
@@ -73,4 +81,28 @@ test('shouldDeleteAppDataFromArgv only enables explicit personal-data cleanup', 
     shouldDeleteAppDataFromArgv(['Uninstall SvnDiffTool.exe', '/S']),
     false,
   );
+});
+
+test('post-install maintenance markers are detected and can be cleared', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'svn-diff-tool-installer-'));
+  const execPath = path.join(tempDir, 'SvnDiffTool.exe');
+  const markerPath = getInstallerMaintenancePendingPath(execPath);
+  const previousBootstrapPath = getPreviousInstallerBootstrapPath(execPath);
+
+  try {
+    fs.mkdirSync(path.dirname(markerPath), { recursive: true });
+    fs.writeFileSync(markerPath, '', 'utf-8');
+
+    assert.equal(hasInstallerMaintenancePendingSync(execPath), true);
+    assert.equal(hasPendingPostInstallMaintenance(execPath), true);
+
+    clearInstallerMaintenancePendingSync(execPath);
+    assert.equal(hasInstallerMaintenancePendingSync(execPath), false);
+    assert.equal(hasPendingPostInstallMaintenance(execPath), false);
+
+    fs.writeFileSync(previousBootstrapPath, 'version=1\n', 'utf-8');
+    assert.equal(hasPendingPostInstallMaintenance(execPath), true);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 });

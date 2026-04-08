@@ -521,6 +521,9 @@ export function useWorkbookCompareDerivedState({
     });
     const value = injectWorkbookSparseGapItems(visibleItems, {
       firstExpectedRowNumber: freezeRowNumber + 1,
+      ...(activeWorkbookSection?.rowCount != null
+        ? { lastExpectedRowNumber: activeWorkbookSection.rowCount }
+        : {}),
       resolveRowRange: resolveWorkbookCompareItemRowRange,
     });
     const nextResult = {
@@ -534,6 +537,7 @@ export function useWorkbookCompareDerivedState({
     collapseCtx,
     expandedBlocksSignature,
     freezeRowNumber,
+    activeWorkbookSection?.rowCount,
     hiddenRowsSignature,
     renderItemsMeasured.value,
     sectionRows,

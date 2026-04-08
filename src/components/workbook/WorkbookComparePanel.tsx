@@ -1445,6 +1445,7 @@ const WorkbookComparePanel = memo(({
     columnsBodySegments,
     scrollRef: scrollRef as RefObject<HTMLDivElement | null>,
     viewportWidth: virtualColumns.debug.viewportWidth,
+    viewportHeight: rowVirtualDebug.viewportHeight,
     activeDiffRegion,
     activeSheetName: activeWorkbookSection?.name ?? null,
     columnLayoutByColumn: virtualColumns.columnLayoutByColumn,

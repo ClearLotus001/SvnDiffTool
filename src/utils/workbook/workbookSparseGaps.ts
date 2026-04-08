@@ -27,6 +27,7 @@ export function injectWorkbookSparseGapItems<TItem>(
   items: TItem[],
   options: {
     firstExpectedRowNumber: number;
+    lastExpectedRowNumber?: number;
     resolveRowRange: (item: TItem) => WorkbookSparseRowRange | null;
   },
 ): Array<TItem | WorkbookSparseGapItem> {
@@ -49,6 +50,18 @@ export function injectWorkbookSparseGapItems<TItem>(
       previousRowNumberEnd = Math.max(previousRowNumberEnd, range.rowNumberEnd);
     }
   });
+
+  if (
+    typeof options.lastExpectedRowNumber === 'number'
+    && Number.isFinite(options.lastExpectedRowNumber)
+    && options.lastExpectedRowNumber > previousRowNumberEnd
+  ) {
+    const trailingGap = createWorkbookSparseGapItem(
+      previousRowNumberEnd + 1,
+      options.lastExpectedRowNumber,
+    );
+    if (trailingGap) next.push(trailingGap);
+  }
 
   return next;
 }

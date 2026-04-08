@@ -30,6 +30,7 @@ interface UseWorkbookHorizontalPaneRenderPropsParams {
   activeDiffRegion: WorkbookDiffRegion | null;
   freezeColumnCount: number;
   singleGridWidth: number;
+  viewportHeight: number;
   stickyHeaderHeight: number;
   activeRegionOverlayVisibleRowFrames: Map<number, { top: number; height: number }>;
   guidedPulseNonce: number;
@@ -59,6 +60,7 @@ export function useWorkbookHorizontalPaneRenderProps({
   activeDiffRegion,
   freezeColumnCount,
   singleGridWidth,
+  viewportHeight,
   stickyHeaderHeight,
   activeRegionOverlayVisibleRowFrames,
   guidedPulseNonce,
@@ -117,6 +119,7 @@ export function useWorkbookHorizontalPaneRenderProps({
         overlayProps: {
           scrollRef,
           viewportWidth: paneViewportWidth,
+          viewportHeight,
           stickyHeaderHeight,
           activeDiffRegion,
           activeSheetName: activeSheetName || null,
@@ -127,6 +130,7 @@ export function useWorkbookHorizontalPaneRenderProps({
           freezeColumnCount,
           resolvePatchBoundsModes: () => [...boundsModes],
           fallbackBoundsModes: [...boundsModes],
+          resolveFocusPatchBoundsModes: () => [...boundsModes],
           filterPatch,
           pulseNonce: guidedPulseNonce,
           ...(side === 'left' ? { label: overlayLabel } : {}),
@@ -163,6 +167,7 @@ export function useWorkbookHorizontalPaneRenderProps({
     rightScrollRef,
     selection,
     singleGridWidth,
+    viewportHeight,
     stickyHeaderHeight,
     visibleColumns,
   ]);

@@ -94,12 +94,15 @@ export interface WindowFrameState {
   isMaximized: boolean;
 }
 
-export interface LaunchStatePayload {
-  diffData: DiffData;
+export interface LaunchContextPayload {
   isDevMode: boolean;
   usesNativeWindowControls: boolean;
   windowFrameState: WindowFrameState;
   updateState: AppUpdateState;
+}
+
+export interface LaunchStatePayload extends LaunchContextPayload {
+  diffData: DiffData;
 }
 
 export interface BuildDiffDataOptions {

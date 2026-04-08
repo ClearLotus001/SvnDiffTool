@@ -8,6 +8,7 @@ import * as path from 'node:path';
 import { writeExternalDiffDebugLog } from '../electron/main/logger';
 import {
   cleanupManagedTempFilesOnExitSync,
+  cleanupStaleManagedTempFilesSync,
   configureRuntimePaths,
   writeManagedTempFile,
 } from '../electron/runtimePaths';
@@ -111,5 +112,36 @@ test('cleanupManagedTempFilesOnExitSync removes tracked and orphaned managed tem
     assert.equal(fs.existsSync(trackedTempPath), false);
     assert.equal(fs.existsSync(orphanTempPath), false);
     assert.equal(fs.existsSync(runtimePaths.tempRootPath), false);
+  });
+});
+
+test('cleanupStaleManagedTempFilesSync throttles repeated scans unless forced', async () => {
+  await withSandbox('svn-diff-temp-throttle-', async (sandboxDir) => {
+    const runtimePaths = configureRuntimePaths(createMockApp(sandboxDir), sandboxDir, null);
+    const tempRootPath = runtimePaths.tempRootPath;
+    assert.ok(tempRootPath);
+
+    const markStaleFile = async (relativePath: string, now: number) => {
+      const targetPath = path.join(tempRootPath, relativePath);
+      await fsp.mkdir(path.dirname(targetPath), { recursive: true });
+      await fsp.writeFile(targetPath, 'stale', 'utf8');
+      const staleAt = new Date(now - (48 * 60 * 60 * 1000));
+      await fsp.utimes(targetPath, staleAt, staleAt);
+      return targetPath;
+    };
+
+    const t0 = Date.now();
+    const staleFileA = await markStaleFile(path.join('first', 'stale-a.bin'), t0);
+
+    cleanupStaleManagedTempFilesSync(t0);
+    assert.equal(fs.existsSync(staleFileA), false);
+
+    const staleFileB = await markStaleFile(path.join('second', 'stale-b.bin'), t0 + 1_000);
+
+    cleanupStaleManagedTempFilesSync(t0 + 1_000);
+    assert.equal(fs.existsSync(staleFileB), true);
+
+    cleanupStaleManagedTempFilesSync(t0 + 1_000, { force: true });
+    assert.equal(fs.existsSync(staleFileB), false);
   });
 });

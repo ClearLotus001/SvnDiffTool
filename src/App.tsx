@@ -66,6 +66,7 @@ import Toolbar from '@/components/navigation/Toolbar';
 import SplitHeader from '@/components/navigation/SplitHeader';
 import StatsBar from '@/components/navigation/StatsBar';
 import { copyText } from '@/utils/app/clipboard';
+import { findWorkbookDiffRegionNavigationIndex } from '@/utils/workbook/workbookDiffRegion';
 
 // ═════════════════════════════════════════════════════════════════════════════
 // ROOT APP
@@ -512,12 +513,34 @@ export default function App() {
     handleScrollerReady, handleCollapseNavigationReady,
   ]);
 
-  const handleHunkPrev = useCallback(() => startTransition(() => {
-    setHunkIdx((i: number) => cycleHunkIndex(i, navigationCount, -1));
-  }), [navigationCount, setHunkIdx]);
-  const handleHunkNext = useCallback(() => startTransition(() => {
-    setHunkIdx((i: number) => cycleHunkIndex(i, navigationCount, 1));
-  }), [navigationCount, setHunkIdx]);
+  const handleNavigationStep = useCallback((direction: -1 | 1) => startTransition(() => {
+    setHunkIdx((currentIndex: number) => {
+      if (!isWorkbookMode) {
+        return cycleHunkIndex(currentIndex, navigationCount, direction);
+      }
+
+      return findWorkbookDiffRegionNavigationIndex({
+        regions: workbookDiffRegions,
+        currentIndex,
+        direction,
+        activeSheetName: activeWorkbookSheetName,
+        sheetOrder: workbookSections.map((section) => section.name),
+      });
+    });
+  }), [
+    activeWorkbookSheetName,
+    isWorkbookMode,
+    navigationCount,
+    setHunkIdx,
+    workbookDiffRegions,
+    workbookSections,
+  ]);
+  const handleHunkPrev = useCallback(() => {
+    handleNavigationStep(-1);
+  }, [handleNavigationStep]);
+  const handleHunkNext = useCallback(() => {
+    handleNavigationStep(1);
+  }, [handleNavigationStep]);
   const handleCopyBaseVersion = useCallback(async () => (
     copyText(buildVersionCopyText(diffLines, 'base'))
   ), [diffLines]);
@@ -541,7 +564,7 @@ export default function App() {
     dialogs,
     isWorkbookMode,
     selectedCell,
-    navigationCount,
+    handleNavigationStep,
     handleSearchPreviewNav,
     handleSearchNav,
     workbookMoveRef,

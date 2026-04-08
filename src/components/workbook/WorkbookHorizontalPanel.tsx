@@ -590,13 +590,16 @@ const WorkbookHorizontalPanel = memo(({
     });
     const value = injectWorkbookSparseGapItems(visibleItems, {
       firstExpectedRowNumber: freezeRowNumber + 1,
+      ...(activeWorkbookSection?.rowCount != null
+        ? { lastExpectedRowNumber: activeWorkbookSection.rowCount }
+        : {}),
       resolveRowRange: resolveWorkbookHorizontalItemRowRange,
     });
     return {
       value,
       duration: getNow() - start,
     };
-  }, [freezeRowNumber, renderItemsMeasured.value]);
+  }, [activeWorkbookSection?.rowCount, freezeRowNumber, renderItemsMeasured.value]);
   const items = itemsMeasured.value;
   const itemHeights = useMemo(
     () => items.map((item) => item.kind === 'sparse-gap' ? item.count * ROW_H : ROW_H),
@@ -1512,6 +1515,7 @@ const WorkbookHorizontalPanel = memo(({
     activeDiffRegion,
     freezeColumnCount,
     singleGridWidth,
+    viewportHeight: rowVirtualDebug.viewportHeight,
     stickyHeaderHeight,
     activeRegionOverlayVisibleRowFrames,
     guidedPulseNonce,

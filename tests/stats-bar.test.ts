@@ -27,6 +27,7 @@ function makeWorkbookSection(
     startLineIdx: 0,
     endLineIdx: 0,
     maxColumns: 0,
+    rowCount: 0,
     firstDataLineIdx: null,
     firstDataRowNumber: null,
   };

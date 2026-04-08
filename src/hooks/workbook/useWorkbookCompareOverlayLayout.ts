@@ -28,6 +28,7 @@ interface UseWorkbookCompareOverlayLayoutParams {
   columnsBodySegments: WorkbookCompareColumnsBodySegment[] | null;
   scrollRef: RefObject<HTMLDivElement | null>;
   viewportWidth: number;
+  viewportHeight: number;
   activeDiffRegion: WorkbookDiffRegion | null;
   activeSheetName: string | null;
   columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
@@ -50,6 +51,7 @@ export function useWorkbookCompareOverlayLayout({
   columnsBodySegments,
   scrollRef,
   viewportWidth,
+  viewportHeight,
   activeDiffRegion,
   activeSheetName,
   columnLayoutByColumn,
@@ -156,9 +158,18 @@ export function useWorkbookCompareOverlayLayout({
     return ['paired-shared'];
   }, [activeDiffRegion?.hasBaseSide, activeDiffRegion?.hasMineSide, mode]);
 
+  const resolveFocusPatchBoundsModes = useCallback((
+    patch: WorkbookDiffRegion['patches'][number],
+  ): WorkbookRegionOverlayBoundsMode[] => {
+    if (mode === 'stacked') return ['single'];
+    if (patch.hasBaseSide || patch.hasMineSide) return ['paired-shared'];
+    return [];
+  }, [mode]);
+
   return useMemo(() => ({
     scrollRef,
     viewportWidth,
+    viewportHeight,
     stickyHeaderHeight,
     activeDiffRegion,
     activeSheetName,
@@ -169,6 +180,7 @@ export function useWorkbookCompareOverlayLayout({
     freezeColumnCount,
     resolvePatchBoundsModes,
     fallbackBoundsModes,
+    resolveFocusPatchBoundsModes,
     pulseNonce,
     label,
   }), [
@@ -181,9 +193,11 @@ export function useWorkbookCompareOverlayLayout({
     frozenWidth,
     label,
     pulseNonce,
+    resolveFocusPatchBoundsModes,
     resolvePatchBoundsModes,
     scrollRef,
     stickyHeaderHeight,
+    viewportHeight,
     viewportWidth,
     visibleRowFrames,
   ]);

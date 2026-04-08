@@ -6,6 +6,7 @@ import { computeHunks } from '../src/engine/text/diff';
 import {
   buildWorkbookDiffRegions,
   buildWorkbookNavigationRegions,
+  findWorkbookDiffRegionNavigationIndex,
   findWorkbookDiffRegionIndexForSelection,
   formatWorkbookDiffRegionLabel,
   formatWorkbookDiffRegionSummary,
@@ -23,6 +24,27 @@ function buildWorkbook(rows: Array<Array<string>>, sheetName = 'Thing') {
     createWorkbookSheetLine(sheetName),
     ...rows.map((cells, index) => createWorkbookRowLine(index + 1, cells)),
   ].join('\n');
+}
+
+function buildRegion(overrides: Partial<Parameters<typeof buildWorkbookNavigationRegions>[0][number]> = {}) {
+  return {
+    id: 'Thing:0:0:0',
+    sheetName: 'Thing',
+    startRowIndex: 0,
+    endRowIndex: 0,
+    startCol: 0,
+    endCol: 0,
+    rowNumberStart: 1,
+    rowNumberEnd: 1,
+    lineStartIdx: 0,
+    lineEndIdx: 0,
+    anchorLineIdx: 0,
+    hasBaseSide: true,
+    hasMineSide: true,
+    anchorSelection: null,
+    patches: [],
+    ...overrides,
+  };
 }
 
 test('buildWorkbookDiffRegions splits disjoint workbook change islands into separate regions', () => {
@@ -235,6 +257,157 @@ test('buildWorkbookNavigationRegions keeps disjoint cell islands within the same
     ),
     1,
   );
+});
+
+test('buildWorkbookNavigationRegions sorts workbook regions by sheet order, then row, then column', () => {
+  const navigationRegions = buildWorkbookNavigationRegions([
+    buildRegion({
+      id: 'SheetB-r3-c1',
+      sheetName: 'SheetB',
+      rowNumberStart: 3,
+      rowNumberEnd: 3,
+      startRowIndex: 2,
+      endRowIndex: 2,
+      startCol: 1,
+      endCol: 1,
+      lineStartIdx: 10,
+    }),
+    buildRegion({
+      id: 'SheetA-r2-c4',
+      sheetName: 'SheetA',
+      rowNumberStart: 2,
+      rowNumberEnd: 2,
+      startRowIndex: 1,
+      endRowIndex: 1,
+      startCol: 4,
+      endCol: 4,
+      lineStartIdx: 50,
+    }),
+    buildRegion({
+      id: 'SheetB-r1-c2',
+      sheetName: 'SheetB',
+      rowNumberStart: 1,
+      rowNumberEnd: 1,
+      startRowIndex: 0,
+      endRowIndex: 0,
+      startCol: 2,
+      endCol: 2,
+      lineStartIdx: 5,
+    }),
+    buildRegion({
+      id: 'SheetA-r2-c1',
+      sheetName: 'SheetA',
+      rowNumberStart: 2,
+      rowNumberEnd: 2,
+      startRowIndex: 1,
+      endRowIndex: 1,
+      startCol: 1,
+      endCol: 1,
+      lineStartIdx: 100,
+    }),
+  ], [], ['SheetA', 'SheetB']);
+
+  assert.deepEqual(
+    navigationRegions.map((region) => region.id),
+    ['SheetA-r2-c1', 'SheetA-r2-c4', 'SheetB-r1-c2', 'SheetB-r3-c1'],
+  );
+});
+
+test('buildWorkbookNavigationRegions preserves first-seen sheet order when no sheet order is provided', () => {
+  const navigationRegions = buildWorkbookNavigationRegions([
+    buildRegion({
+      id: 'SheetB-r3-c1',
+      sheetName: 'SheetB',
+      rowNumberStart: 3,
+      rowNumberEnd: 3,
+      startRowIndex: 2,
+      endRowIndex: 2,
+      startCol: 1,
+      endCol: 1,
+    }),
+    buildRegion({
+      id: 'SheetA-r2-c4',
+      sheetName: 'SheetA',
+      rowNumberStart: 2,
+      rowNumberEnd: 2,
+      startRowIndex: 1,
+      endRowIndex: 1,
+      startCol: 4,
+      endCol: 4,
+    }),
+    buildRegion({
+      id: 'SheetB-r1-c2',
+      sheetName: 'SheetB',
+      rowNumberStart: 1,
+      rowNumberEnd: 1,
+      startRowIndex: 0,
+      endRowIndex: 0,
+      startCol: 2,
+      endCol: 2,
+    }),
+    buildRegion({
+      id: 'SheetA-r2-c1',
+      sheetName: 'SheetA',
+      rowNumberStart: 2,
+      rowNumberEnd: 2,
+      startRowIndex: 1,
+      endRowIndex: 1,
+      startCol: 1,
+      endCol: 1,
+    }),
+  ], []);
+
+  assert.deepEqual(
+    navigationRegions.map((region) => region.id),
+    ['SheetB-r1-c2', 'SheetB-r3-c1', 'SheetA-r2-c1', 'SheetA-r2-c4'],
+  );
+});
+
+test('findWorkbookDiffRegionNavigationIndex starts from the current sheet when the visible sheet differs from the active diff region', () => {
+  const navigationRegions = buildWorkbookNavigationRegions([
+    buildRegion({ id: 'SheetA-r2-c1', sheetName: 'SheetA', rowNumberStart: 2, rowNumberEnd: 2, startRowIndex: 1, endRowIndex: 1, startCol: 1, endCol: 1 }),
+    buildRegion({ id: 'SheetA-r4-c1', sheetName: 'SheetA', rowNumberStart: 4, rowNumberEnd: 4, startRowIndex: 3, endRowIndex: 3, startCol: 1, endCol: 1 }),
+    buildRegion({ id: 'SheetB-r3-c2', sheetName: 'SheetB', rowNumberStart: 3, rowNumberEnd: 3, startRowIndex: 2, endRowIndex: 2, startCol: 2, endCol: 2 }),
+    buildRegion({ id: 'SheetB-r5-c1', sheetName: 'SheetB', rowNumberStart: 5, rowNumberEnd: 5, startRowIndex: 4, endRowIndex: 4, startCol: 1, endCol: 1 }),
+    buildRegion({ id: 'SheetC-r1-c1', sheetName: 'SheetC', rowNumberStart: 1, rowNumberEnd: 1, startRowIndex: 0, endRowIndex: 0, startCol: 1, endCol: 1 }),
+  ], [], ['SheetA', 'SheetB', 'SheetC']);
+
+  assert.equal(findWorkbookDiffRegionNavigationIndex({
+    regions: navigationRegions,
+    currentIndex: 0,
+    direction: 1,
+    activeSheetName: 'SheetB',
+    sheetOrder: ['SheetA', 'SheetB', 'SheetC'],
+  }), 2);
+  assert.equal(findWorkbookDiffRegionNavigationIndex({
+    regions: navigationRegions,
+    currentIndex: 0,
+    direction: -1,
+    activeSheetName: 'SheetB',
+    sheetOrder: ['SheetA', 'SheetB', 'SheetC'],
+  }), 3);
+});
+
+test('findWorkbookDiffRegionNavigationIndex falls through to later sheets when the current sheet has no diffs', () => {
+  const navigationRegions = buildWorkbookNavigationRegions([
+    buildRegion({ id: 'SheetA-r2-c1', sheetName: 'SheetA', rowNumberStart: 2, rowNumberEnd: 2, startRowIndex: 1, endRowIndex: 1, startCol: 1, endCol: 1 }),
+    buildRegion({ id: 'SheetC-r1-c1', sheetName: 'SheetC', rowNumberStart: 1, rowNumberEnd: 1, startRowIndex: 0, endRowIndex: 0, startCol: 1, endCol: 1 }),
+  ], [], ['SheetA', 'SheetB', 'SheetC']);
+
+  assert.equal(findWorkbookDiffRegionNavigationIndex({
+    regions: navigationRegions,
+    currentIndex: 0,
+    direction: 1,
+    activeSheetName: 'SheetB',
+    sheetOrder: ['SheetA', 'SheetB', 'SheetC'],
+  }), 1);
+  assert.equal(findWorkbookDiffRegionNavigationIndex({
+    regions: navigationRegions,
+    currentIndex: 1,
+    direction: -1,
+    activeSheetName: 'SheetB',
+    sheetOrder: ['SheetA', 'SheetB', 'SheetC'],
+  }), 0);
 });
 
 test('buildWorkbookDiffRegions honors precomputed merge-aware deltas in content mode', () => {

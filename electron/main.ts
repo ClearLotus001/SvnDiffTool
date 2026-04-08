@@ -3,18 +3,27 @@ import { EMPTY_CLI_ARGS, type CliArgs } from './cliArgs';
 import { logMainError, logMainWarn } from './logging.js';
 import { resolveLaunchCliArgsFromArgv } from './externalDiffRequest';
 import { readInstallerBootstrapSync } from './installerBootstrap';
-import { getMaintenanceModeFromArgv, runMaintenance } from './maintenance';
+import {
+  getMaintenanceModeFromArgv,
+  hasPendingPostInstallMaintenance,
+  runMaintenance,
+  runPendingPostInstallMaintenance,
+} from './maintenance';
 import {
   cleanupManagedTempFilesOnExitSync,
   cleanupStaleManagedTempFilesSync,
   configureRuntimePaths,
   getRuntimePathState,
 } from './runtimePaths';
-import { ensureLegacyUserDataMigration } from './userDataMigration';
+import {
+  ensureLegacyUserDataMigration,
+  performLegacyUserDataMigration,
+  resolvePendingLegacyUserDataMigration,
+} from './userDataMigration';
 import { DEV_PROFILE_ROOT } from './main/constants';
 import { registerIpcHandlers } from './main/ipcHandlers';
 import { writeExternalDiffDebugLog } from './main/logger';
-import { initAppUpdater, setActiveCliArgs } from './main/state';
+import { getMainWindow, initAppUpdater, setActiveCliArgs } from './main/state';
 import {
   createWindow,
   focusMainWindow,
@@ -22,12 +31,18 @@ import {
   notifyCliArgsUpdated,
 } from './main/windowManager';
 
+const POST_INSTALL_MAINTENANCE_DELAY_MS = 5000;
+const DEFERRED_STARTUP_HOUSEKEEPING_DELAY_MS = 2000;
+
 // ---------------------------------------------------------------------------
 // Early startup — executed at module load time
 // ---------------------------------------------------------------------------
 
 const maintenanceMode = getMaintenanceModeFromArgv(process.argv);
 const installerBootstrap = readInstallerBootstrapSync(process.execPath);
+const pendingLegacyUserDataMigration = maintenanceMode
+  ? null
+  : resolvePendingLegacyUserDataMigration();
 
 configureRuntimePaths(app, DEV_PROFILE_ROOT, installerBootstrap);
 
@@ -58,6 +73,9 @@ writeExternalDiffDebugLog('process-start', {
 });
 
 let hasCleanedManagedTempOnExit = false;
+let pendingPostInstallMaintenanceTimer: NodeJS.Timeout | null = null;
+let deferredStartupHousekeepingTimer: NodeJS.Timeout | null = null;
+let deferredStartupHousekeepingScheduled = false;
 
 function cleanupManagedTempOnExit(reason: string) {
   if (hasCleanedManagedTempOnExit) return;
@@ -70,10 +88,70 @@ function cleanupManagedTempOnExit(reason: string) {
   cleanupManagedTempFilesOnExitSync();
 }
 
+function clearPendingPostInstallMaintenanceTimer() {
+  if (!pendingPostInstallMaintenanceTimer) return;
+  clearTimeout(pendingPostInstallMaintenanceTimer);
+  pendingPostInstallMaintenanceTimer = null;
+}
+
+function clearDeferredStartupHousekeepingTimer() {
+  if (!deferredStartupHousekeepingTimer) return;
+  clearTimeout(deferredStartupHousekeepingTimer);
+  deferredStartupHousekeepingTimer = null;
+}
+
+function schedulePendingPostInstallMaintenance() {
+  if (maintenanceMode || pendingPostInstallMaintenanceTimer || !app.isPackaged) return;
+  if (!hasPendingPostInstallMaintenance(process.execPath)) return;
+
+  pendingPostInstallMaintenanceTimer = setTimeout(() => {
+    pendingPostInstallMaintenanceTimer = null;
+    void runPendingPostInstallMaintenance(app).catch((error) => {
+      logMainWarn('maintenance', 'deferred post-install maintenance failed', error);
+    });
+  }, POST_INSTALL_MAINTENANCE_DELAY_MS);
+}
+
+function runDeferredStartupHousekeeping() {
+  clearDeferredStartupHousekeepingTimer();
+
+  if (pendingLegacyUserDataMigration) {
+    performLegacyUserDataMigration(pendingLegacyUserDataMigration);
+  }
+  cleanupStaleManagedTempFilesSync(Date.now(), { force: true });
+}
+
+function scheduleDeferredStartupHousekeeping() {
+  if (maintenanceMode || deferredStartupHousekeepingScheduled) return;
+  deferredStartupHousekeepingScheduled = true;
+
+  const startTimer = () => {
+    if (deferredStartupHousekeepingTimer) return;
+    deferredStartupHousekeepingTimer = setTimeout(() => {
+      runDeferredStartupHousekeeping();
+    }, DEFERRED_STARTUP_HOUSEKEEPING_DELAY_MS);
+  };
+
+  const win = getMainWindow();
+  if (!win || win.isDestroyed()) {
+    startTimer();
+    return;
+  }
+
+  if (win.isVisible()) {
+    startTimer();
+    return;
+  }
+
+  win.once('show', startTimer);
+}
+
 app.on('before-quit', (_event) => {
   writeExternalDiffDebugLog('app:before-quit', {
     windowCount: BrowserWindow.getAllWindows().length,
   });
+  clearPendingPostInstallMaintenanceTimer();
+  clearDeferredStartupHousekeepingTimer();
   cleanupManagedTempOnExit('app:before-quit');
 });
 
@@ -81,6 +159,8 @@ app.on('will-quit', (_event) => {
   writeExternalDiffDebugLog('app:will-quit', {
     windowCount: BrowserWindow.getAllWindows().length,
   });
+  clearPendingPostInstallMaintenanceTimer();
+  clearDeferredStartupHousekeepingTimer();
   cleanupManagedTempOnExit('app:will-quit');
 });
 
@@ -133,9 +213,6 @@ if (maintenanceMode) {
     focusMainWindow();
   });
 
-  ensureLegacyUserDataMigration();
-  cleanupStaleManagedTempFilesSync();
-
   void app.whenReady().then(() => {
     writeExternalDiffDebugLog('app-ready', {
       logsPath: getRuntimePathState().logsPath,
@@ -147,6 +224,8 @@ if (maintenanceMode) {
     });
     updater.initialize();
     createWindow();
+    schedulePendingPostInstallMaintenance();
+    scheduleDeferredStartupHousekeeping();
   });
 }
 

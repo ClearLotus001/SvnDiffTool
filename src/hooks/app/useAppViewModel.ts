@@ -288,8 +288,12 @@ export default function useAppViewModel({
     ],
   );
   const workbookDiffRegions = useMemo<WorkbookDiffRegion[]>(
-    () => buildWorkbookNavigationRegions(workbookCellRegions, hunks),
-    [hunks, workbookCellRegions],
+    () => buildWorkbookNavigationRegions(
+      workbookCellRegions,
+      hunks,
+      workbookSections.map((section) => section.name),
+    ),
+    [hunks, workbookCellRegions, workbookSections],
   );
   const activeWorkbookDiffRegion = isWorkbookMode
     ? (workbookDiffRegions[hunkIdx] ?? null)

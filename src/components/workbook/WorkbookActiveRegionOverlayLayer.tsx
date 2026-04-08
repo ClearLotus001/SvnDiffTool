@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import type { HorizontalVirtualColumnEntry } from '@/hooks/virtualization/useHorizontalVirtualColumns';
 import type { WorkbookDiffRegion } from '@/types';
 import {
@@ -14,6 +14,7 @@ import WorkbookDiffRegionOverlay, {
 interface WorkbookActiveRegionOverlayLayerProps {
   scrollRef: RefObject<HTMLDivElement | null>;
   viewportWidth: number;
+  viewportHeight: number;
   stickyHeaderHeight: number;
   activeDiffRegion: WorkbookDiffRegion | null;
   activeSheetName: string | null;
@@ -24,6 +25,7 @@ interface WorkbookActiveRegionOverlayLayerProps {
   freezeColumnCount: number;
   resolvePatchBoundsModes: (patch: WorkbookDiffRegion['patches'][number]) => WorkbookRegionOverlayBoundsMode[];
   fallbackBoundsModes: WorkbookRegionOverlayBoundsMode[];
+  resolveFocusPatchBoundsModes: (patch: WorkbookDiffRegion['patches'][number]) => WorkbookRegionOverlayBoundsMode[];
   filterPatch?: ((patch: WorkbookDiffRegion['patches'][number]) => boolean) | undefined;
   pulseNonce?: number;
   label?: string;
@@ -57,9 +59,108 @@ function computeCanvasAnchor(
   return { anchorTop, canvasHeight };
 }
 
+export interface WorkbookActiveRegionOverlayBoxSet {
+  fillBoxes: ReturnType<typeof mergeWorkbookDiffRegionOverlayBoxes>;
+  outlineBoxes: ReturnType<typeof mergeWorkbookDiffRegionOverlayBoxes>;
+  focusOutlineBoxes: ReturnType<typeof mergeWorkbookDiffRegionOverlayBoxes>;
+}
+
+interface BuildWorkbookActiveRegionOverlayBoxSetParams {
+  activeDiffRegion: WorkbookDiffRegion | null;
+  activeSheetName: string | null;
+  visibleRows: Array<[number, { top: number; height: number }]>;
+  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
+  contentLeft: number;
+  scrollLeft: number;
+  frozenWidth: number;
+  freezeColumnCount: number;
+  viewportWidth: number;
+  resolvePatchBoundsModes: (patch: WorkbookDiffRegion['patches'][number]) => WorkbookRegionOverlayBoundsMode[];
+  fallbackBoundsModes: WorkbookRegionOverlayBoundsMode[];
+  resolveFocusPatchBoundsModes: (patch: WorkbookDiffRegion['patches'][number]) => WorkbookRegionOverlayBoundsMode[];
+  filterPatch?: ((patch: WorkbookDiffRegion['patches'][number]) => boolean) | undefined;
+}
+
+function filterRenderableOverlayBoxes(boxes: ReturnType<typeof mergeWorkbookDiffRegionOverlayBoxes>) {
+  return boxes.filter((box) => box.width > MIN_OVERLAY_BOX_SIZE && box.height > MIN_OVERLAY_BOX_SIZE);
+}
+
+export function buildWorkbookActiveRegionOverlayBoxSet({
+  activeDiffRegion,
+  activeSheetName,
+  visibleRows,
+  columnLayoutByColumn,
+  contentLeft,
+  scrollLeft,
+  frozenWidth,
+  freezeColumnCount,
+  viewportWidth,
+  resolvePatchBoundsModes,
+  fallbackBoundsModes,
+  resolveFocusPatchBoundsModes,
+  filterPatch,
+}: BuildWorkbookActiveRegionOverlayBoxSetParams): WorkbookActiveRegionOverlayBoxSet {
+  if (
+    !activeDiffRegion
+    || activeDiffRegion.sheetName !== activeSheetName
+    || visibleRows.length === 0
+    || viewportWidth <= 0
+  ) {
+    return { fillBoxes: [], outlineBoxes: [], focusOutlineBoxes: [] };
+  }
+
+  const fillBoxes = filterRenderableOverlayBoxes(mergeWorkbookDiffRegionOverlayBoxes(buildWorkbookPatchOverlayBoxes({
+    region: activeDiffRegion,
+    visibleRows,
+    columnLayoutByColumn,
+    contentLeft,
+    scrollLeft,
+    frozenWidth,
+    freezeColumnCount,
+    resolvePatchBoundsModes,
+    ...(filterPatch ? { filterPatch } : {}),
+    keyPrefix: `${activeDiffRegion.id}:patch`,
+  })));
+
+  const outlineBoxes = fillBoxes.length > 0
+    ? fillBoxes
+    : filterRenderableOverlayBoxes(mergeWorkbookDiffRegionOverlayBoxes(buildWorkbookRegionOutlineOverlayBoxes({
+      region: activeDiffRegion,
+      visibleRows,
+      columnLayoutByColumn,
+      contentLeft,
+      scrollLeft,
+      frozenWidth,
+      freezeColumnCount,
+      resolvePatchBoundsModes,
+      fallbackBoundsModes,
+      ...(filterPatch ? { filterPatch } : {}),
+      keyPrefix: `${activeDiffRegion.id}:outline`,
+    })));
+
+  const focusOutlineBoxes = filterRenderableOverlayBoxes(mergeWorkbookDiffRegionOverlayBoxes(buildWorkbookPatchOverlayBoxes({
+    region: activeDiffRegion,
+    visibleRows,
+    columnLayoutByColumn,
+    contentLeft,
+    scrollLeft,
+    frozenWidth,
+    freezeColumnCount,
+    resolvePatchBoundsModes: resolveFocusPatchBoundsModes,
+    keyPrefix: `${activeDiffRegion.id}:focus`,
+  })));
+
+  return {
+    fillBoxes,
+    outlineBoxes,
+    focusOutlineBoxes,
+  };
+}
+
 const WorkbookActiveRegionOverlayLayer = memo(({
   scrollRef,
   viewportWidth,
+  viewportHeight,
   stickyHeaderHeight,
   activeDiffRegion,
   activeSheetName,
@@ -70,39 +171,21 @@ const WorkbookActiveRegionOverlayLayer = memo(({
   freezeColumnCount,
   resolvePatchBoundsModes,
   fallbackBoundsModes,
+  resolveFocusPatchBoundsModes,
   filterPatch,
   pulseNonce = 0,
   label,
 }: WorkbookActiveRegionOverlayLayerProps) => {
-  const [viewportHeight, setViewportHeight] = useState(0);
   const [canvasAnchorTop, setCanvasAnchorTop] = useState(0);
   const [canvasHeight, setCanvasHeight] = useState(0);
   const lastDebugLogAtRef = useRef(0);
 
-  useLayoutEffect(() => {
-    const scroller = scrollRef.current;
-    if (!scroller) return;
-
-    const applyViewportHeight = () => {
-      const nextViewportHeight = Math.max(0, scroller.clientHeight);
-      setViewportHeight((current) => (
-        current === nextViewportHeight ? current : nextViewportHeight
-      ));
-      const anchor = computeCanvasAnchor(
-        Math.max(0, scroller.scrollTop),
-        nextViewportHeight,
-      );
-      setCanvasAnchorTop(anchor.anchorTop);
-      setCanvasHeight(anchor.canvasHeight);
-    };
-
-    const resizeObserver = new ResizeObserver(() => applyViewportHeight());
-    resizeObserver.observe(scroller);
-    applyViewportHeight();
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, [scrollRef]);
+  useEffect(() => {
+    const scrollTop = Math.max(0, scrollRef.current?.scrollTop ?? 0);
+    const anchor = computeCanvasAnchor(scrollTop, viewportHeight);
+    setCanvasAnchorTop(anchor.anchorTop);
+    setCanvasHeight(anchor.canvasHeight);
+  }, [scrollRef, viewportHeight]);
 
   const sortedVisibleRows = useMemo(
     () => Array.from(visibleRowFrames.entries()).sort((left, right) => left[0] - right[0]),
@@ -110,50 +193,21 @@ const WorkbookActiveRegionOverlayLayer = memo(({
   );
 
   const resolveBoxSet = useCallback((scrollLeft: number) => {
-    if (
-      !activeDiffRegion
-      || activeDiffRegion.sheetName !== activeSheetName
-      || visibleRowFrames.size === 0
-      || viewportWidth <= 0
-    ) {
-      return { fillBoxes: [], outlineBoxes: [] };
-    }
-
-    const fillBoxes = mergeWorkbookDiffRegionOverlayBoxes(buildWorkbookPatchOverlayBoxes({
-      region: activeDiffRegion,
+    return buildWorkbookActiveRegionOverlayBoxSet({
+      activeDiffRegion,
+      activeSheetName,
       visibleRows: sortedVisibleRows,
       columnLayoutByColumn,
       contentLeft,
       scrollLeft,
       frozenWidth,
       freezeColumnCount,
+      viewportWidth,
       resolvePatchBoundsModes,
+      fallbackBoundsModes,
+      resolveFocusPatchBoundsModes,
       ...(filterPatch ? { filterPatch } : {}),
-      keyPrefix: `${activeDiffRegion.id}:patch`,
-    }))
-      .filter((box) => box.width > MIN_OVERLAY_BOX_SIZE && box.height > MIN_OVERLAY_BOX_SIZE);
-
-    const outlineBoxes = fillBoxes.length > 0
-      ? fillBoxes
-      : mergeWorkbookDiffRegionOverlayBoxes(buildWorkbookRegionOutlineOverlayBoxes({
-        region: activeDiffRegion,
-        visibleRows: sortedVisibleRows,
-        columnLayoutByColumn,
-        contentLeft,
-        scrollLeft,
-        frozenWidth,
-        freezeColumnCount,
-        resolvePatchBoundsModes,
-        fallbackBoundsModes,
-        ...(filterPatch ? { filterPatch } : {}),
-        keyPrefix: `${activeDiffRegion.id}:outline`,
-      }))
-        .filter((box) => box.width > MIN_OVERLAY_BOX_SIZE && box.height > MIN_OVERLAY_BOX_SIZE);
-
-    return {
-      fillBoxes,
-      outlineBoxes,
-    };
+    });
   }, [
     activeDiffRegion,
     activeSheetName,
@@ -163,10 +217,10 @@ const WorkbookActiveRegionOverlayLayer = memo(({
     filterPatch,
     freezeColumnCount,
     frozenWidth,
+    resolveFocusPatchBoundsModes,
     resolvePatchBoundsModes,
     sortedVisibleRows,
     viewportWidth,
-    visibleRowFrames,
   ]);
 
   const handleRepositionNeeded = useCallback((scrollTop: number) => {
@@ -238,6 +292,8 @@ const WorkbookActiveRegionOverlayLayer = memo(({
       fillBoxes: summarizeOverlayBoxes(resolvedBoxSet.fillBoxes),
       outlineBoxCount: resolvedBoxSet.outlineBoxes.length,
       outlineBoxes: summarizeOverlayBoxes(resolvedBoxSet.outlineBoxes),
+      focusOutlineBoxCount: resolvedBoxSet.focusOutlineBoxes.length,
+      focusOutlineBoxes: summarizeOverlayBoxes(resolvedBoxSet.focusOutlineBoxes),
       label: label ?? null,
       pulseNonce,
     });

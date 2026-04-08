@@ -1,4 +1,4 @@
-import { clipboard, dialog, ipcMain, nativeTheme, shell } from 'electron';
+import { app, clipboard, dialog, ipcMain, nativeTheme, shell } from 'electron';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { logMainError } from '../logging.js';
@@ -23,8 +23,8 @@ import {
   launchInstalledUninstaller,
   showMainWindow,
 } from './windowManager.js';
-import { app } from 'electron';
 import type {
+  LaunchContextPayload,
   LaunchStatePayload,
   RevisionOptionsQuery,
   SvnDiffViewerScope,
@@ -61,6 +61,15 @@ function getWindowFrameStateSnapshot() {
   };
 }
 
+function buildLaunchContextPayload(): LaunchContextPayload {
+  return {
+    isDevMode: process.env.NODE_ENV === 'development',
+    usesNativeWindowControls: USE_NATIVE_WINDOW_CONTROLS,
+    windowFrameState: getWindowFrameStateSnapshot(),
+    updateState: getAppUpdater().getState(),
+  };
+}
+
 function buildDiagnosticReportFileName(defaultFileName?: string): string {
   const fallbackName = `svndiff-renderer-error-${new Date().toISOString().replaceAll(':', '-').replace(/\.\d{3}Z$/, 'Z')}.log`;
   const rawName = typeof defaultFileName === 'string' && defaultFileName.trim()
@@ -75,6 +84,10 @@ function buildDiagnosticReportFileName(defaultFileName?: string): string {
 // ---------------------------------------------------------------------------
 
 export function registerIpcHandlers(): void {
+  safeHandle('get-launch-context', async (): Promise<LaunchContextPayload> => (
+    buildLaunchContextPayload()
+  ));
+
   safeHandle('get-launch-state', async (_, ...args: unknown[]) => {
     const payload = args[0] as { compareMode?: WorkbookCompareMode } | undefined;
     const compareMode = payload?.compareMode ?? 'strict';
@@ -84,13 +97,10 @@ export function registerIpcHandlers(): void {
     }
 
     const promise = (async (): Promise<LaunchStatePayload> => ({
+      ...buildLaunchContextPayload(),
       diffData: await buildDiffData({
         workbookCompareMode: compareMode,
       }),
-      isDevMode: process.env.NODE_ENV === 'development',
-      usesNativeWindowControls: USE_NATIVE_WINDOW_CONTROLS,
-      windowFrameState: getWindowFrameStateSnapshot(),
-      updateState: getAppUpdater().getState(),
     }))();
 
     launchStateInFlight = {

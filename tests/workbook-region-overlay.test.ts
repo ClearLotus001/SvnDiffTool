@@ -14,6 +14,7 @@ import {
   buildWorkbookDiffRegionOverlayOutlineSegments,
   mergeWorkbookDiffRegionOverlayBoxes,
 } from '../src/components/workbook/WorkbookDiffRegionOverlay';
+import { buildWorkbookActiveRegionOverlayBoxSet } from '../src/components/workbook/WorkbookActiveRegionOverlayLayer';
 
 function buildRegion(overrides: Partial<WorkbookDiffRegion> = {}): WorkbookDiffRegion {
   return {
@@ -34,6 +35,26 @@ function buildRegion(overrides: Partial<WorkbookDiffRegion> = {}): WorkbookDiffR
     patches: [],
     ...overrides,
   };
+}
+
+function normalizeBoxes(boxes: Array<{
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  tone?: string;
+  openTop?: boolean;
+  openBottom?: boolean;
+}>) {
+  return boxes.map((box) => ({
+    left: box.left,
+    top: box.top,
+    width: box.width,
+    height: box.height,
+    tone: box.tone,
+    openTop: box.openTop,
+    openBottom: box.openBottom,
+  }));
 }
 
 const visibleRowFrames = new Map<number, { top: number; height: number }>([
@@ -352,6 +373,134 @@ test('buildWorkbookRegionOutlineOverlayBoxes wraps the full visible region span 
       width: 400,
       height: 60,
       tone: 'mixed',
+      openTop: false,
+      openBottom: false,
+    },
+  ]);
+});
+
+test('buildWorkbookActiveRegionOverlayBoxSet keeps fills side-local while expanding focus outlines across both compare columns', () => {
+  const region = buildRegion({
+    id: 'Thing:0:1:0',
+    startCol: 1,
+    endCol: 1,
+    hasMineSide: false,
+    patches: [
+      {
+        startRowIndex: 0,
+        endRowIndex: 1,
+        startCol: 1,
+        endCol: 1,
+        baseRowStart: 2,
+        baseRowEnd: 3,
+        mineRowStart: null,
+        mineRowEnd: null,
+        hasBaseSide: true,
+        hasMineSide: false,
+      },
+    ],
+  });
+
+  const boxSet = buildWorkbookActiveRegionOverlayBoxSet({
+    activeDiffRegion: region,
+    activeSheetName: 'Thing',
+    visibleRows: sortedVisibleRows,
+    columnLayoutByColumn: new Map([
+      [1, { column: 1, position: 1, width: 100, displayWidth: 200, offset: 100, absoluteOffset: 100 }],
+    ]),
+    contentLeft: 40,
+    scrollLeft: 0,
+    frozenWidth: 0,
+    freezeColumnCount: 0,
+    viewportWidth: 640,
+    resolvePatchBoundsModes: () => ['paired-base'],
+    fallbackBoundsModes: ['paired-base'],
+    resolveFocusPatchBoundsModes: () => ['paired-shared'],
+  });
+
+  assert.deepEqual(normalizeBoxes(boxSet.fillBoxes), [
+    {
+      left: 140,
+      top: 24,
+      width: 100,
+      height: 40,
+      tone: 'delete',
+      openTop: false,
+      openBottom: false,
+    },
+  ]);
+  assert.deepEqual(normalizeBoxes(boxSet.outlineBoxes), [
+    {
+      left: 140,
+      top: 24,
+      width: 100,
+      height: 40,
+      tone: 'delete',
+      openTop: false,
+      openBottom: false,
+    },
+  ]);
+  assert.deepEqual(normalizeBoxes(boxSet.focusOutlineBoxes), [
+    {
+      left: 140,
+      top: 24,
+      width: 200,
+      height: 40,
+      tone: 'delete',
+      openTop: false,
+      openBottom: false,
+    },
+  ]);
+});
+
+test('buildWorkbookActiveRegionOverlayBoxSet keeps horizontal focus outlines visible even when pane fills are side-filtered', () => {
+  const region = buildRegion({
+    id: 'Thing:0:3:0',
+    startCol: 3,
+    endCol: 3,
+    hasBaseSide: true,
+    hasMineSide: false,
+    patches: [
+      {
+        startRowIndex: 0,
+        endRowIndex: 1,
+        startCol: 3,
+        endCol: 3,
+        baseRowStart: 2,
+        baseRowEnd: 3,
+        mineRowStart: null,
+        mineRowEnd: null,
+        hasBaseSide: true,
+        hasMineSide: false,
+      },
+    ],
+  });
+
+  const boxSet = buildWorkbookActiveRegionOverlayBoxSet({
+    activeDiffRegion: region,
+    activeSheetName: 'Thing',
+    visibleRows: sortedVisibleRows,
+    columnLayoutByColumn: wideColumnLayoutByColumn,
+    contentLeft: 40,
+    scrollLeft: 0,
+    frozenWidth: 0,
+    freezeColumnCount: 0,
+    viewportWidth: 640,
+    resolvePatchBoundsModes: () => ['single'],
+    fallbackBoundsModes: ['single'],
+    resolveFocusPatchBoundsModes: () => ['single'],
+    filterPatch: (patch) => patch.hasMineSide,
+  });
+
+  assert.deepEqual(normalizeBoxes(boxSet.fillBoxes), []);
+  assert.deepEqual(normalizeBoxes(boxSet.outlineBoxes), []);
+  assert.deepEqual(normalizeBoxes(boxSet.focusOutlineBoxes), [
+    {
+      left: 340,
+      top: 24,
+      width: 100,
+      height: 40,
+      tone: 'delete',
       openTop: false,
       openBottom: false,
     },

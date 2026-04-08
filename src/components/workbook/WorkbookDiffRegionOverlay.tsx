@@ -24,6 +24,9 @@ const CONTINUATION_HEIGHT = 4;
 const OUTLINE_MERGE_EPSILON = 0.5;
 const PULSE_DURATION_MS = 560;
 const OVERLAY_DRAW_DEBUG_THROTTLE_MS = 120;
+const FOCUS_OUTLINE_ALPHA = 0.98;
+const FOCUS_OUTLINE_PULSE_SHADOW_ALPHA = 0.18;
+const FOCUS_OUTLINE_PULSE_SHADOW_BLUR = 4;
 
 function clampAlpha(alpha: number): number {
   if (!Number.isFinite(alpha)) return 1;
@@ -376,6 +379,7 @@ interface WorkbookDiffRegionOverlayProps {
   resolveBoxSet: (scrollLeft: number) => {
     fillBoxes: WorkbookDiffRegionOverlayBox[];
     outlineBoxes: WorkbookDiffRegionOverlayBox[];
+    focusOutlineBoxes: WorkbookDiffRegionOverlayBox[];
   };
   viewportWidth: number;
   viewportHeight: number;
@@ -520,9 +524,8 @@ const WorkbookDiffRegionOverlay = memo(({
         ));
       const resolvedBoxSet = resolveBoxSet(scrollLeft);
       const fillBoxes = mapBoxesToCanvasSpace(resolvedBoxSet.fillBoxes);
-      const outlineBoxes = mapBoxesToCanvasSpace(
-        resolvedBoxSet.outlineBoxes.length > 0 ? resolvedBoxSet.outlineBoxes : resolvedBoxSet.fillBoxes,
-      );
+      const outlineBoxes = mapBoxesToCanvasSpace(resolvedBoxSet.outlineBoxes);
+      const focusOutlineBoxes = mapBoxesToCanvasSpace(resolvedBoxSet.focusOutlineBoxes);
 
       const dpr = getWorkbookCanvasDevicePixelRatio();
       syncWorkbookCanvasSurface(canvas, viewportWidth, effectiveCanvasHeight, dpr);
@@ -533,12 +536,13 @@ const WorkbookDiffRegionOverlay = memo(({
       ctx.save();
       ctx.scale(dpr, dpr);
       ctx.clearRect(0, 0, viewportWidth, effectiveCanvasHeight);
-      if (fillBoxes.length === 0 && outlineBoxes.length === 0) {
+      if (fillBoxes.length === 0 && outlineBoxes.length === 0 && focusOutlineBoxes.length === 0) {
         ctx.restore();
         return;
       }
 
       const outlineSegments = buildWorkbookDiffRegionOverlayOutlineSegments(outlineBoxes);
+      const focusOutlineSegments = buildWorkbookDiffRegionOverlayOutlineSegments(focusOutlineBoxes);
       const pulseStrength = pulseNonce > 0 && pulseProgress < 1
         ? Math.sin(pulseProgress * Math.PI)
         : 0;
@@ -595,6 +599,26 @@ const WorkbookDiffRegionOverlay = memo(({
               height: segment.height,
               tone: segment.tone ?? null,
             })),
+            focusOutlineBoxCount: focusOutlineBoxes.length,
+            focusOutlineBoxes: focusOutlineBoxes.slice(0, 8).map((box) => ({
+              key: box.key,
+              left: box.left,
+              top: box.top,
+              width: box.width,
+              height: box.height,
+              tone: box.tone ?? null,
+              openTop: Boolean(box.openTop),
+              openBottom: Boolean(box.openBottom),
+            })),
+            focusOutlineSegmentCount: focusOutlineSegments.length,
+            focusOutlineSegments: focusOutlineSegments.slice(0, 12).map((segment) => ({
+              key: segment.key,
+              left: segment.left,
+              top: segment.top,
+              width: segment.width,
+              height: segment.height,
+              tone: segment.tone ?? null,
+            })),
             label: label ?? null,
           });
         }
@@ -633,20 +657,32 @@ const WorkbookDiffRegionOverlay = memo(({
         }
       });
 
-      outlineSegments.forEach((segment) => {
+      const activeOutlineSegments = focusOutlineSegments.length > 0
+        ? focusOutlineSegments
+        : outlineSegments;
+
+      activeOutlineSegments.forEach((segment) => {
         const palette = resolveWorkbookOverlayPalette(T, segment.tone ?? 'mixed');
         ctx.save();
         if (pulseStrength > 0) {
-          ctx.shadowColor = applyOverlayAlpha(palette.mid, 0.28 + (pulseStrength * 0.26));
-          ctx.shadowBlur = 6 + (pulseStrength * 8);
+          ctx.shadowColor = applyOverlayAlpha(
+            palette.shine,
+            FOCUS_OUTLINE_PULSE_SHADOW_ALPHA + (pulseStrength * 0.24),
+          );
+          ctx.shadowBlur = FOCUS_OUTLINE_PULSE_SHADOW_BLUR + (pulseStrength * 8);
         }
-        ctx.fillStyle = palette.mid;
+        ctx.fillStyle = applyOverlayAlpha(palette.mid, FOCUS_OUTLINE_ALPHA);
         ctx.fillRect(segment.left, segment.top, segment.width, segment.height);
         ctx.restore();
       });
 
       if (label) {
-        const labelAnchor = outlineBoxes.reduce<WorkbookDiffRegionOverlayBox | null>((best, box) => {
+        const labelBoxes = focusOutlineBoxes.length > 0
+          ? focusOutlineBoxes
+          : outlineBoxes.length > 0
+            ? outlineBoxes
+            : fillBoxes;
+        const labelAnchor = labelBoxes.reduce<WorkbookDiffRegionOverlayBox | null>((best, box) => {
           if (!best) return box;
           if (box.top < best.top) return box;
           if (box.top === best.top && box.left < best.left) return box;
