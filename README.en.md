@@ -151,7 +151,7 @@ Recommended setup notes:
 The installed app also includes a built-in setup panel:
 
 - Open it from the home screen via `Connect to TortoiseSVN`
-- Switch between `All-file mode` and `Excel-only mode`
+- Switch between `All-file mode`, `Text-only mode`, and `Workbook-only mode`
 - Use `Restore default diff` to hand control back to TortoiseSVN's default diff behavior
 
 During uninstall, the app automatically restores TortoiseSVN's default diff settings before removing SvnDiffTool, so SVN diff commands are not left pointing at a missing executable.

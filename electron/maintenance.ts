@@ -64,7 +64,7 @@ function deleteFileSync(targetPath: string) {
 }
 
 function getDesiredDiffViewerScope(diffViewerMode: InstallerDiffViewerMode) {
-  if (diffViewerMode === 'excel-only' || diffViewerMode === 'all-files') {
+  if (diffViewerMode === 'workbook-only' || diffViewerMode === 'text-only' || diffViewerMode === 'all-files') {
     return diffViewerMode;
   }
   return null;

@@ -28,7 +28,7 @@ contextBridge.exposeInMainWorld('svnDiff', {
   loadDevWorkingCopyDiff: (filePath: string, compareMode?: 'strict' | 'content') => ipcRenderer.invoke('load-dev-working-copy-diff', { filePath, compareMode }),
   loadLocalDiff: (basePath: string, minePath: string, compareMode?: 'strict' | 'content') => ipcRenderer.invoke('load-local-diff', { basePath, minePath, compareMode }),
   getSvnDiffViewerStatus: () => ipcRenderer.invoke('get-svn-diff-viewer-status'),
-  configureSvnDiffViewer: (scope: 'all-files' | 'excel-only') => ipcRenderer.invoke('configure-svn-diff-viewer', { scope }),
+  configureSvnDiffViewer: (scope: 'all-files' | 'text-only' | 'workbook-only') => ipcRenderer.invoke('configure-svn-diff-viewer', { scope }),
   restoreSvnDefaultDiffViewerConfiguration: () => ipcRenderer.invoke('restore-svn-default-diff-viewer-configuration'),
   getTheme: () => ipcRenderer.invoke('get-theme'),
   usesNativeWindowControls: () => ipcRenderer.invoke('uses-native-window-controls'),

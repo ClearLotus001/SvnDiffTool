@@ -24,15 +24,16 @@ Var ExistingDiffViewerMode
 Var ExistingCacheRoot
 Var ExistingInstallDir
 Var InstallOptionsDiffKeepRadio
-Var InstallOptionsDiffExcelRadio
+Var InstallOptionsDiffTextRadio
+Var InstallOptionsDiffWorkbookRadio
 Var InstallOptionsDiffAllRadio
 Var InstallOptionsCacheParentText
 Var InstallOptionsDesktopShortcutCheckbox
 
 LangString INSTALL_WELCOME_TITLE 1033 "Workbook-aware SVN diff viewer"
 LangString INSTALL_WELCOME_TITLE 2052 "面向工作簿差异的 SVN 对比工具"
-LangString INSTALL_WELCOME_DESC 1033 "SvnDiffTool is optimized for text, Excel, and workbook compare workflows."
-LangString INSTALL_WELCOME_DESC 2052 "SvnDiffTool 专注于文本、Excel 与工作簿差异查看。"
+LangString INSTALL_WELCOME_DESC 1033 "SvnDiffTool is optimized for text and workbook compare workflows."
+LangString INSTALL_WELCOME_DESC 2052 "SvnDiffTool 专注于文本与工作簿差异查看。"
 LangString INSTALL_WELCOME_POINT1 1033 "• Review text and workbook diffs with one app"
 LangString INSTALL_WELCOME_POINT1 2052 "• 一个应用同时处理文本与工作簿差异"
 LangString INSTALL_WELCOME_POINT2 1033 "• Optionally connect TortoiseSVN Diff Viewer during install"
@@ -46,8 +47,10 @@ LangString INSTALL_OPTIONS_TITLE 1033 "Choose how SvnDiffTool should integrate a
 LangString INSTALL_OPTIONS_TITLE 2052 "选择安装完成后的 SvnDiffTool 默认集成方式。"
 LangString INSTALL_OPTIONS_DIFF_KEEP 1033 "Keep the current TortoiseSVN Diff Viewer configuration"
 LangString INSTALL_OPTIONS_DIFF_KEEP 2052 "保持当前 TortoiseSVN Diff Viewer 配置"
-LangString INSTALL_OPTIONS_DIFF_EXCEL 1033 "Use SvnDiffTool only for Excel and workbook diffs"
-LangString INSTALL_OPTIONS_DIFF_EXCEL 2052 "仅让 Excel / 工作簿差异使用 SvnDiffTool"
+LangString INSTALL_OPTIONS_DIFF_TEXT 1033 "Use SvnDiffTool only for text diffs"
+LangString INSTALL_OPTIONS_DIFF_TEXT 2052 "仅让文本差异使用 SvnDiffTool"
+LangString INSTALL_OPTIONS_DIFF_WORKBOOK 1033 "Use SvnDiffTool only for workbook diffs"
+LangString INSTALL_OPTIONS_DIFF_WORKBOOK 2052 "仅让工作簿 / 表格差异使用 SvnDiffTool"
 LangString INSTALL_OPTIONS_DIFF_ALL 1033 "Use SvnDiffTool for all file diffs"
 LangString INSTALL_OPTIONS_DIFF_ALL 2052 "让全部文件差异使用 SvnDiffTool"
 LangString INSTALL_OPTIONS_CACHE_PARENT 1033 "Parent folder for managed session/cache data"
@@ -159,8 +162,10 @@ Function ApplyInstallerArgumentOverrides
   ${IfNot} ${Errors}
     ${If} $1 == "all-files"
       StrCpy $SelectedDiffViewerMode "all-files"
-    ${ElseIf} $1 == "excel-only"
-      StrCpy $SelectedDiffViewerMode "excel-only"
+    ${ElseIf} $1 == "text-only"
+      StrCpy $SelectedDiffViewerMode "text-only"
+    ${ElseIf} $1 == "workbook-only"
+      StrCpy $SelectedDiffViewerMode "workbook-only"
     ${Else}
       StrCpy $SelectedDiffViewerMode "keep"
     ${EndIf}
@@ -246,28 +251,32 @@ Function InstallerOptionsPageCreate
 
   ${NSD_CreateRadioButton} 0 24u 100% 12u "$(INSTALL_OPTIONS_DIFF_KEEP)"
   Pop $InstallOptionsDiffKeepRadio
-  ${NSD_CreateRadioButton} 0 42u 100% 12u "$(INSTALL_OPTIONS_DIFF_EXCEL)"
-  Pop $InstallOptionsDiffExcelRadio
-  ${NSD_CreateRadioButton} 0 60u 100% 12u "$(INSTALL_OPTIONS_DIFF_ALL)"
+  ${NSD_CreateRadioButton} 0 42u 100% 12u "$(INSTALL_OPTIONS_DIFF_TEXT)"
+  Pop $InstallOptionsDiffTextRadio
+  ${NSD_CreateRadioButton} 0 60u 100% 12u "$(INSTALL_OPTIONS_DIFF_WORKBOOK)"
+  Pop $InstallOptionsDiffWorkbookRadio
+  ${NSD_CreateRadioButton} 0 78u 100% 12u "$(INSTALL_OPTIONS_DIFF_ALL)"
   Pop $InstallOptionsDiffAllRadio
 
-  ${If} $SelectedDiffViewerMode == "excel-only"
-    ${NSD_SetState} $InstallOptionsDiffExcelRadio ${BST_CHECKED}
+  ${If} $SelectedDiffViewerMode == "text-only"
+    ${NSD_SetState} $InstallOptionsDiffTextRadio ${BST_CHECKED}
+  ${ElseIf} $SelectedDiffViewerMode == "workbook-only"
+    ${NSD_SetState} $InstallOptionsDiffWorkbookRadio ${BST_CHECKED}
   ${ElseIf} $SelectedDiffViewerMode == "all-files"
     ${NSD_SetState} $InstallOptionsDiffAllRadio ${BST_CHECKED}
   ${Else}
     ${NSD_SetState} $InstallOptionsDiffKeepRadio ${BST_CHECKED}
   ${EndIf}
 
-  ${NSD_CreateLabel} 0 90u 100% 12u "$(INSTALL_OPTIONS_CACHE_PARENT)"
+  ${NSD_CreateLabel} 0 108u 100% 12u "$(INSTALL_OPTIONS_CACHE_PARENT)"
   Pop $0
-  ${NSD_CreateText} 0 104u 78% 12u "$SelectedCacheParent"
+  ${NSD_CreateText} 0 122u 78% 12u "$SelectedCacheParent"
   Pop $InstallOptionsCacheParentText
-  ${NSD_CreateButton} 82% 103u 18% 14u "$(INSTALL_OPTIONS_CACHE_BROWSE)"
+  ${NSD_CreateButton} 82% 121u 18% 14u "$(INSTALL_OPTIONS_CACHE_BROWSE)"
   Pop $1
   ${NSD_OnClick} $1 InstallerOptionsBrowseCacheParent
 
-  ${NSD_CreateCheckbox} 0 130u 100% 12u "$(INSTALL_OPTIONS_DESKTOP_SHORTCUT)"
+  ${NSD_CreateCheckbox} 0 148u 100% 12u "$(INSTALL_OPTIONS_DESKTOP_SHORTCUT)"
   Pop $InstallOptionsDesktopShortcutCheckbox
   ${If} $ShouldCreateDesktopShortcut == "0"
     ${NSD_SetState} $InstallOptionsDesktopShortcutCheckbox ${BST_UNCHECKED}
@@ -285,15 +294,20 @@ Function InstallerOptionsPageLeave
     Abort
   ${EndIf}
 
-  ${NSD_GetState} $InstallOptionsDiffExcelRadio $0
+  ${NSD_GetState} $InstallOptionsDiffTextRadio $0
   ${If} $0 == ${BST_CHECKED}
-    StrCpy $SelectedDiffViewerMode "excel-only"
+    StrCpy $SelectedDiffViewerMode "text-only"
   ${Else}
-    ${NSD_GetState} $InstallOptionsDiffAllRadio $0
+    ${NSD_GetState} $InstallOptionsDiffWorkbookRadio $0
     ${If} $0 == ${BST_CHECKED}
-      StrCpy $SelectedDiffViewerMode "all-files"
+      StrCpy $SelectedDiffViewerMode "workbook-only"
     ${Else}
-      StrCpy $SelectedDiffViewerMode "keep"
+      ${NSD_GetState} $InstallOptionsDiffAllRadio $0
+      ${If} $0 == ${BST_CHECKED}
+        StrCpy $SelectedDiffViewerMode "all-files"
+      ${Else}
+        StrCpy $SelectedDiffViewerMode "keep"
+      ${EndIf}
     ${EndIf}
   ${EndIf}
 

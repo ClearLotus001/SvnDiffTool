@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-export type InstallerDiffViewerMode = 'keep' | 'excel-only' | 'all-files';
+export type InstallerDiffViewerMode = 'keep' | 'workbook-only' | 'text-only' | 'all-files';
 
 export interface InstallerBootstrapConfig {
   version: number;
@@ -43,8 +43,17 @@ export function getInstallerMaintenancePendingPath(execPath: string = process.ex
   return path.join(getInstallerDirectory(execPath), INSTALLER_MAINTENANCE_PENDING_FILE_NAME);
 }
 
-function isInstallerDiffViewerMode(value: string): value is InstallerDiffViewerMode {
-  return value === 'keep' || value === 'excel-only' || value === 'all-files';
+function normalizeInstallerDiffViewerMode(value: string | null | undefined): InstallerDiffViewerMode | null {
+  switch (value) {
+    case 'workbook-only':
+      return 'workbook-only';
+    case 'keep':
+    case 'text-only':
+    case 'all-files':
+      return value;
+    default:
+      return null;
+  }
 }
 
 export function isControlledCacheRoot(cacheRoot: string): boolean {
@@ -62,10 +71,7 @@ function normalizeCacheRoot(value: string | null | undefined): string {
 export function normalizeInstallerBootstrapConfig(
   value: Partial<InstallerBootstrapConfig> | null | undefined,
 ): InstallerBootstrapConfig {
-  const rawDiffViewerMode = value?.diffViewerMode ?? '';
-  const diffViewerMode: InstallerDiffViewerMode = isInstallerDiffViewerMode(rawDiffViewerMode)
-    ? rawDiffViewerMode
-    : 'keep';
+  const diffViewerMode = normalizeInstallerDiffViewerMode(value?.diffViewerMode) ?? 'keep';
 
   return {
     version: Number.isFinite(value?.version) ? Number(value?.version) : INSTALLER_BOOTSTRAP_VERSION,
@@ -92,8 +98,11 @@ function parseBootstrapContent(raw: string): Partial<InstallerBootstrapConfig> {
         parsed.version = Number(value);
         break;
       case 'diffViewerMode':
-        if (isInstallerDiffViewerMode(value)) {
-          parsed.diffViewerMode = value;
+        {
+          const normalizedMode = normalizeInstallerDiffViewerMode(value);
+          if (normalizedMode) {
+            parsed.diffViewerMode = normalizedMode;
+          }
         }
         break;
       case 'cacheRoot':

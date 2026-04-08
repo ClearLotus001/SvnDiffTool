@@ -17,6 +17,7 @@ import { getRevisionOptions, queryRevisionOptions } from './svnOperations.js';
 import {
   configureSvnDiffViewer,
   getSvnDiffViewerStatus,
+  normalizeSvnDiffViewerScope,
   restoreSvnDefaultDiffViewerConfiguration,
 } from '../svnDiffViewerConfig.js';
 import {
@@ -27,7 +28,6 @@ import type {
   LaunchContextPayload,
   LaunchStatePayload,
   RevisionOptionsQuery,
-  SvnDiffViewerScope,
   TitleBarOverlayPayload,
   WorkbookCompareMode,
 } from './types.js';
@@ -206,8 +206,8 @@ export function registerIpcHandlers(): void {
   safeHandle('get-svn-diff-viewer-status', async () => getSvnDiffViewerStatus());
 
   safeHandle('configure-svn-diff-viewer', async (_, ...args: unknown[]) => {
-    const payload = args[0] as { scope?: SvnDiffViewerScope } | undefined;
-    return configureSvnDiffViewer(payload?.scope ?? 'excel-only');
+    const payload = args[0] as { scope?: string } | undefined;
+    return configureSvnDiffViewer(normalizeSvnDiffViewerScope(payload?.scope) ?? 'workbook-only');
   });
 
   safeHandle('restore-svn-default-diff-viewer-configuration', async () => (

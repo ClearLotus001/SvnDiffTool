@@ -85,7 +85,7 @@ export interface LocalDiffFilePickResult {
   name: string;
 }
 
-export type SvnDiffViewerScope = 'all-files' | 'excel-only';
+export type SvnDiffViewerScope = 'all-files' | 'text-only' | 'workbook-only';
 export type SvnDiffViewerMode = SvnDiffViewerScope | 'mixed' | 'unconfigured' | 'unsupported';
 export type SvnDiffViewerAvailabilityReason = 'ready' | 'windows-only' | 'packaged-only';
 

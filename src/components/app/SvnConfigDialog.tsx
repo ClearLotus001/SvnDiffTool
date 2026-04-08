@@ -44,7 +44,8 @@ const SvnConfigDialog = memo(({
   const currentModeLabel = (() => {
     switch (status?.currentMode) {
       case 'all-files': return t('svnConfigModeAllFiles');
-      case 'excel-only': return t('svnConfigModeExcelOnly');
+      case 'text-only': return t('svnConfigModeTextOnly');
+      case 'workbook-only': return t('svnConfigModeWorkbookOnly');
       case 'mixed': return t('svnConfigModeMixed');
       case 'unsupported': return t('svnConfigModeUnsupported');
       case 'unconfigured': default: return t('svnConfigModeUnconfigured');
@@ -77,6 +78,13 @@ const SvnConfigDialog = memo(({
     const current = status?.currentMode === scope;
     const busy = applyingScope === scope;
     const isDisabled = !status?.available || loading || isBusy;
+
+    const applyLabel = (() => {
+      if (busy) return t('svnConfigApplying');
+      if (scope === 'all-files') return t('svnConfigApplyAllFiles');
+      if (scope === 'text-only') return t('svnConfigApplyTextOnly');
+      return t('svnConfigApplyWorkbookOnly');
+    })();
 
     return (
       <div
@@ -120,7 +128,7 @@ const SvnConfigDialog = memo(({
             background: `linear-gradient(135deg, var(${accent}) 0%, ${cssAlphaRaw(accent, 'dd')} 100%)`,
             boxShadow: `0 18px 34px -26px var(${accent})`,
           }}>
-          {busy ? t('svnConfigApplying') : scope === 'all-files' ? t('svnConfigApplyAllFiles') : t('svnConfigApplyExcelOnly')}
+          {applyLabel}
         </button>
       </div>
     );
@@ -129,7 +137,7 @@ const SvnConfigDialog = memo(({
   return (
     <DialogFrame
       animationState={animationState}
-      className="w-[840px] max-w-[calc(100vw-32px)] max-h-[calc(100vh-72px)] overflow-hidden bg-bg-surface-solid border border-border-strong rounded-[28px] p-[24px_24px_20px] shadow-2xl font-ui box-border">
+      className="w-[1040px] max-w-[calc(100vw-32px)] max-h-[calc(100vh-72px)] overflow-hidden bg-bg-surface-solid border border-border-strong rounded-[28px] p-[24px_24px_20px] shadow-2xl font-ui box-border">
       <button
         type="button"
         onClick={onClose}
@@ -186,9 +194,10 @@ const SvnConfigDialog = memo(({
           </div>
         )}
 
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(360px,1fr))] gap-4">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-4">
           <ScopeCard scope="all-files" accent="--accent" title={t('svnConfigAllFilesTitle')} body={t('svnConfigAllFilesBody')} />
-          <ScopeCard scope="excel-only" accent="--acc2" title={t('svnConfigExcelOnlyTitle')} body={t('svnConfigExcelOnlyBody')} />
+          <ScopeCard scope="text-only" accent="--accent-hover" title={t('svnConfigTextOnlyTitle')} body={t('svnConfigTextOnlyBody')} />
+          <ScopeCard scope="workbook-only" accent="--acc2" title={t('svnConfigWorkbookOnlyTitle')} body={t('svnConfigWorkbookOnlyBody')} />
         </div>
 
         <section

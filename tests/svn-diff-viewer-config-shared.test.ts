@@ -5,9 +5,11 @@ import {
   canRestoreSvnDefaultDiffViewer,
   getOwnedSvnDiffRegistryEntries,
   normalizeSvnDiffViewerCommand,
+  resolveSvnDiffViewerMode,
 } from '../electron/svnDiffViewerConfigShared';
 
 const OUR_COMMAND = String.raw`"C:\Program Files\SvnDiffTool\svn_diff_launcher.exe" %base %mine %bname %yname %burl %yurl %brev %yrev %peg %fname`;
+const WORKBOOK_EXTENSIONS = ['.xls', '.xlsx', '.xlsm', '.xlsb', '.xltx', '.xltm'] as const;
 
 test('normalizeSvnDiffViewerCommand ignores repeated whitespace and case', () => {
   assert.equal(
@@ -59,5 +61,47 @@ test('canRestoreSvnDefaultDiffViewer only enables restore when SvnDiffTool owns 
       },
     }),
     false,
+  );
+});
+
+test('resolveSvnDiffViewerMode distinguishes all-file, text-only, and workbook-only setups', () => {
+  assert.equal(
+    resolveSvnDiffViewerMode(OUR_COMMAND, {
+      globalDiffCommand: OUR_COMMAND,
+      diffToolCommands: {
+        '.xls': OUR_COMMAND,
+        '.xlsx': OUR_COMMAND,
+        '.xlsm': OUR_COMMAND,
+        '.xlsb': OUR_COMMAND,
+        '.xltx': OUR_COMMAND,
+        '.xltm': OUR_COMMAND,
+      },
+    }, WORKBOOK_EXTENSIONS),
+    'all-files',
+  );
+
+  assert.equal(
+    resolveSvnDiffViewerMode(OUR_COMMAND, {
+      globalDiffCommand: OUR_COMMAND,
+      diffToolCommands: {
+        '.xlsx': '"C:\\Tools\\OtherWorkbookDiff.exe" %base %mine',
+      },
+    }, WORKBOOK_EXTENSIONS),
+    'text-only',
+  );
+
+  assert.equal(
+    resolveSvnDiffViewerMode(OUR_COMMAND, {
+      globalDiffCommand: null,
+      diffToolCommands: {
+        '.xls': OUR_COMMAND,
+        '.xlsx': OUR_COMMAND,
+        '.xlsm': OUR_COMMAND,
+        '.xlsb': OUR_COMMAND,
+        '.xltx': OUR_COMMAND,
+        '.xltm': OUR_COMMAND,
+      },
+    }, WORKBOOK_EXTENSIONS),
+    'workbook-only',
   );
 });

@@ -151,7 +151,7 @@ release/<package-name>-<version>-x64.nsis.7z
 安装版应用也内置了一个图形化接入面板：
 
 - 可以在首页点击“接入 TortoiseSVN”
-- 支持一键切换“全部文件模式”或“仅 Excel 模式”
+- 支持一键切换“全部文件模式”“仅文本模式”或“仅工作簿模式”
 - 支持“恢复默认 Diff”，把 TortoiseSVN 切回默认对比行为
 
 卸载时，程序会先自动恢复 TortoiseSVN 默认 Diff，再继续执行卸载，避免 SVN diff 仍然指向已删除的程序路径。

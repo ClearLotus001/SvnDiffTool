@@ -7,9 +7,10 @@ import {
   canRestoreSvnDefaultDiffViewer,
   getOwnedSvnDiffRegistryEntries,
   normalizeSvnDiffViewerCommand,
+  resolveSvnDiffViewerMode,
 } from './svnDiffViewerConfigShared';
 
-export type SvnDiffViewerScope = 'all-files' | 'excel-only';
+export type SvnDiffViewerScope = 'all-files' | 'text-only' | 'workbook-only';
 export type SvnDiffViewerMode = SvnDiffViewerScope | 'mixed' | 'unconfigured' | 'unsupported';
 export type SvnDiffViewerAvailabilityReason = 'ready' | 'windows-only' | 'packaged-only';
 
@@ -37,6 +38,18 @@ const TORTOISE_DIFF_TOOLS_REG_PATH = `${TORTOISE_REG_PATH}\\DiffTools`;
 const WORKBOOK_EXTENSIONS = ['.xls', '.xlsx', '.xlsm', '.xlsb', '.xltx', '.xltm'] as const;
 const WORKBOOK_EXTENSION_SET = new Set<string>(WORKBOOK_EXTENSIONS);
 const DIFF_COMMAND_ARGUMENTS = ['%base', '%mine', '%bname', '%yname', '%burl', '%yurl', '%brev', '%yrev', '%peg', '%fname'];
+
+export function normalizeSvnDiffViewerScope(value: string | null | undefined): SvnDiffViewerScope | null {
+  switch (value) {
+    case 'workbook-only':
+      return 'workbook-only';
+    case 'all-files':
+    case 'text-only':
+      return value;
+    default:
+      return null;
+  }
+}
 
 function getBackupFilePath() {
   return path.join(app.getPath('userData'), 'svn-diff-viewer-backup.json');
@@ -249,45 +262,6 @@ function createWorkbookDiffCommandMap(
   );
 }
 
-function resolveCurrentMode(
-  ourCommand: string | null,
-  globalDiffCommand: string | null,
-  currentDiffToolCommands: Record<string, string>,
-): SvnDiffViewerMode {
-  if (!ourCommand) return 'unsupported';
-
-  const normalizedOurCommand = normalizeCommand(ourCommand);
-  const globalIsOurs = normalizeCommand(globalDiffCommand) === normalizedOurCommand;
-  const workbookExplicitConflicts = WORKBOOK_EXTENSIONS.some((extension) => {
-    const currentValue = currentDiffToolCommands[extension];
-    return currentValue != null && normalizeCommand(currentValue) !== normalizedOurCommand;
-  });
-  const workbookAllExplicitlyOurs = WORKBOOK_EXTENSIONS.every((extension) => (
-    normalizeCommand(currentDiffToolCommands[extension] ?? null) === normalizedOurCommand
-  ));
-  const nonWorkbookKeys = Object.keys(currentDiffToolCommands).filter((key) => !isWorkbookKey(key));
-  const nonWorkbookOwnKeys = nonWorkbookKeys.filter((key) => (
-    normalizeCommand(currentDiffToolCommands[key]) === normalizedOurCommand
-  ));
-  const nonWorkbookConflicts = nonWorkbookKeys.filter((key) => (
-    normalizeCommand(currentDiffToolCommands[key]) !== normalizedOurCommand
-  ));
-
-  if (globalIsOurs && !workbookExplicitConflicts && nonWorkbookConflicts.length === 0) {
-    return 'all-files';
-  }
-
-  if (!globalIsOurs && workbookAllExplicitlyOurs && nonWorkbookOwnKeys.length === 0) {
-    return 'excel-only';
-  }
-
-  if (!globalIsOurs && !workbookAllExplicitlyOurs && nonWorkbookOwnKeys.length === 0) {
-    return 'unconfigured';
-  }
-
-  return 'mixed';
-}
-
 async function getCurrentRegistryState() {
   const [rootValues, diffToolValues] = await Promise.all([
     readRegistryStringMap(TORTOISE_REG_PATH),
@@ -315,6 +289,23 @@ async function restoreOrDeleteRegistryValue(key: string, valueName: string, valu
   await writeRegistryStringValue(key, valueName, value);
 }
 
+async function restoreOwnedDiffToolCommands(
+  currentDiffToolCommands: Record<string, string>,
+  backup: SvnDiffViewerBackup,
+  ourCommand: string,
+  predicate?: (key: string) => boolean,
+) {
+  const normalizedOurCommand = normalizeCommand(ourCommand);
+
+  for (const key of Object.keys(currentDiffToolCommands)) {
+    if (predicate && !predicate(key)) continue;
+    if (normalizeCommand(currentDiffToolCommands[key]) !== normalizedOurCommand) continue;
+
+    const previousValue = backup.diffToolCommands?.[normalizeKeyName(key)];
+    await restoreOrDeleteRegistryValue(TORTOISE_DIFF_TOOLS_REG_PATH, key, previousValue);
+  }
+}
+
 export async function getSvnDiffViewerStatus(): Promise<SvnDiffViewerStatus> {
   const reason = getAvailabilityReason();
   const command = buildDiffCommand();
@@ -325,7 +316,7 @@ export async function getSvnDiffViewerStatus(): Promise<SvnDiffViewerStatus> {
     reason,
     executablePath: getDiffLauncherPath(),
     command,
-    currentMode: resolveCurrentMode(command, registryState.globalDiffCommand, registryState.diffToolCommands),
+    currentMode: resolveSvnDiffViewerMode(command, registryState, WORKBOOK_EXTENSIONS) as SvnDiffViewerMode,
     canRestoreDefault: canRestoreSvnDefaultDiffViewer(command, registryState),
     globalDiffCommand: registryState.globalDiffCommand,
     workbookDiffCommands: createWorkbookDiffCommandMap(registryState.diffToolCommands),
@@ -340,10 +331,10 @@ export async function configureSvnDiffViewer(scope: SvnDiffViewerScope): Promise
   }
 
   const { globalDiffCommand, diffToolCommands } = await getCurrentRegistryState();
+  const keysToRemember = getAllFilesScopeKeys(diffToolCommands);
+  const backup = await rememberBackupIfNeeded(globalDiffCommand, diffToolCommands, keysToRemember, command);
 
   if (scope === 'all-files') {
-    const keysToRemember = getAllFilesScopeKeys(diffToolCommands);
-    await rememberBackupIfNeeded(globalDiffCommand, diffToolCommands, keysToRemember, command);
     await writeRegistryStringValue(TORTOISE_REG_PATH, 'Diff', command);
     for (const key of keysToRemember) {
       await writeRegistryStringValue(TORTOISE_DIFF_TOOLS_REG_PATH, key, command);
@@ -351,8 +342,13 @@ export async function configureSvnDiffViewer(scope: SvnDiffViewerScope): Promise
     return getSvnDiffViewerStatus();
   }
 
-  const backup = await rememberBackupIfNeeded(globalDiffCommand, diffToolCommands, [...WORKBOOK_EXTENSIONS], command);
   const normalizedOurCommand = normalizeCommand(command);
+
+  if (scope === 'text-only') {
+    await writeRegistryStringValue(TORTOISE_REG_PATH, 'Diff', command);
+    await restoreOwnedDiffToolCommands(diffToolCommands, backup, command);
+    return getSvnDiffViewerStatus();
+  }
 
   if (normalizeCommand(globalDiffCommand) === normalizedOurCommand) {
     await restoreOrDeleteRegistryValue(TORTOISE_REG_PATH, 'Diff', backup.globalDiffCommand);
@@ -362,13 +358,7 @@ export async function configureSvnDiffViewer(scope: SvnDiffViewerScope): Promise
     await writeRegistryStringValue(TORTOISE_DIFF_TOOLS_REG_PATH, extension, command);
   }
 
-  for (const key of Object.keys(diffToolCommands)) {
-    if (isWorkbookKey(key)) continue;
-    if (normalizeCommand(diffToolCommands[key]) !== normalizedOurCommand) continue;
-
-    const previousValue = backup.diffToolCommands?.[key];
-    await restoreOrDeleteRegistryValue(TORTOISE_DIFF_TOOLS_REG_PATH, key, previousValue);
-  }
+  await restoreOwnedDiffToolCommands(diffToolCommands, backup, command, (key) => !isWorkbookKey(key));
 
   return getSvnDiffViewerStatus();
 }

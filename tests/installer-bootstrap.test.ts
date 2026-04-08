@@ -33,6 +33,16 @@ test('normalizeInstallerBootstrapConfig falls back to safe defaults', () => {
   assert.equal(normalized.cacheRoot, getDefaultInstallerCacheRoot());
 });
 
+test('normalizeInstallerBootstrapConfig preserves the text-only diff mode', () => {
+  const normalized = normalizeInstallerBootstrapConfig({
+    version: 1,
+    diffViewerMode: 'text-only',
+    cacheRoot: String.raw`D:\TempRoot\SvnDiffTool\Cache`,
+  });
+
+  assert.equal(normalized.diffViewerMode, 'text-only');
+});
+
 test('controlled cache root requires the managed SvnDiffTool cache suffix', () => {
   assert.equal(
     isControlledCacheRoot(String.raw`C:\Users\me\AppData\Local\SvnDiffTool\Cache`),
@@ -47,12 +57,12 @@ test('controlled cache root requires the managed SvnDiffTool cache suffix', () =
 test('installer bootstrap content keeps the expected key-value structure', () => {
   const content = toInstallerBootstrapContent({
     version: 1,
-    diffViewerMode: 'excel-only',
+    diffViewerMode: 'workbook-only',
     cacheRoot: String.raw`D:\TempRoot\SvnDiffTool\Cache`,
   });
 
   assert.match(content, /^version=1/m);
-  assert.match(content, /^diffViewerMode=excel-only/m);
+  assert.match(content, /^diffViewerMode=workbook-only/m);
   assert.match(content, /^cacheRoot=D:\\TempRoot\\SvnDiffTool\\Cache/m);
   assert.equal(content.includes(`${CACHE_CONTAINER_DIR_NAME}\\${CACHE_LEAF_DIR_NAME}`), true);
 });
