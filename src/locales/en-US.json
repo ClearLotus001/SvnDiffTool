@@ -214,6 +214,8 @@
   "workbookHeaderMineCompact": "L",
   "workbookSheetTabTooltipSheetTitle": "Current worksheet",
   "workbookSheetTabTooltipSheetHint": "This worksheet exists in both the base and current versions.",
+  "workbookSheetTabTooltipChangedTitle": "Worksheet contains changes",
+  "workbookSheetTabTooltipChangedHint": "This worksheet exists in both versions and contains cell-level differences.",
   "workbookSheetTabTooltipAddedTitle": "Worksheet added in the current version",
   "workbookSheetTabTooltipAddedHint": "This worksheet only exists in the current version and marks a newly added worksheet.",
   "workbookSheetTabTooltipDeletedTitle": "Worksheet deleted from the current version",

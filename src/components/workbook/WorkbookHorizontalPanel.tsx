@@ -109,6 +109,7 @@ import {
 import { resolveWorkbookFrozenPaneViewport } from '@/utils/workbook/workbookFrozenPane';
 import {
   getWorkbookCollapsibleSheetView,
+  isWorkbookSectionEffectivelyEqual,
 } from '@/utils/workbook/workbookSheetViewCache';
 import { buildWorkbookCacheSignature } from '@/utils/workbook/workbookSharedCache';
 import { resolveWorkbookAuxBarPalette } from '@/utils/workbook/workbookRowVisuals';
@@ -397,6 +398,15 @@ const WorkbookHorizontalPanel = memo(({
     () => (activeWorkbookSection ? (workbookSectionRowIndex.get(activeWorkbookSection.name)?.rows ?? []) : []),
     [activeWorkbookSection, workbookSectionRowIndex],
   );
+  const modifiedSheetNames = useMemo(() => new Set(
+    workbookSections
+      .filter((section) => {
+        if (section.changeType !== 'equal') return false;
+        const rows = workbookSectionRowIndex.get(section.name)?.rows ?? [];
+        return rows.length > 0 && !isWorkbookSectionEffectivelyEqual(rows);
+      })
+      .map((section) => section.name),
+  ), [workbookSectionRowIndex, workbookSections]);
   const activeFreezeState = useMemo(() => {
     if (!activeWorkbookSection) return null;
     return freezeStateBySheet[activeWorkbookSection.name] ?? null;
@@ -1629,6 +1639,7 @@ const WorkbookHorizontalPanel = memo(({
           activeIndex={resolvedActiveWorkbookSectionIdx}
           onSelect={handleSelectSheet}
           fontSize={fontSize}
+          modifiedSheetNames={modifiedSheetNames}
         />
       )}
     />

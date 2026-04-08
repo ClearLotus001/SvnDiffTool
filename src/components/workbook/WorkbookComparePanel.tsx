@@ -89,6 +89,7 @@ import {
 import {
   findCollapsedRowTarget,
 } from '@/utils/collapse/collapsibleRows';
+import { isWorkbookSectionEffectivelyEqual } from '@/utils/workbook/workbookSheetViewCache';
 import {
 } from '@/utils/workbook/workbookRowBehavior';
 import { resolveWorkbookAuxBarPalette } from '@/utils/workbook/workbookRowVisuals';
@@ -287,6 +288,15 @@ const WorkbookComparePanel = memo(({
     () => (activeWorkbookSection ? (workbookSectionRowIndex.get(activeWorkbookSection.name)?.rows ?? []) : []),
     [activeWorkbookSection, workbookSectionRowIndex],
   );
+  const modifiedSheetNames = useMemo(() => new Set(
+    workbookSections
+      .filter((section) => {
+        if (section.changeType !== 'equal') return false;
+        const rows = workbookSectionRowIndex.get(section.name)?.rows ?? [];
+        return rows.length > 0 && !isWorkbookSectionEffectivelyEqual(rows);
+      })
+      .map((section) => section.name),
+  ), [workbookSectionRowIndex, workbookSections]);
   const protectedLineIdxSet = useMemo(() => {
     const next = new Set<number>();
     if (!activeWorkbookSection) return next;
@@ -1594,6 +1604,7 @@ const WorkbookComparePanel = memo(({
           activeIndex={resolvedActiveWorkbookSectionIdx}
           onSelect={handleSelectSheet}
           fontSize={fontSize}
+          modifiedSheetNames={modifiedSheetNames}
         />
       )}
     />

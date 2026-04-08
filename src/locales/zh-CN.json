@@ -214,6 +214,8 @@
   "workbookHeaderMineCompact": "本",
   "workbookSheetTabTooltipSheetTitle": "当前工作表",
   "workbookSheetTabTooltipSheetHint": "该工作表在基线与当前版本中都存在。",
+  "workbookSheetTabTooltipChangedTitle": "当前工作表存在差异",
+  "workbookSheetTabTooltipChangedHint": "该工作表在两个版本中都存在，并且包含单元格内容差异。",
   "workbookSheetTabTooltipAddedTitle": "当前版本新增的工作表",
   "workbookSheetTabTooltipAddedHint": "该工作表只存在于当前版本，用于提示新加的工作表。",
   "workbookSheetTabTooltipDeletedTitle": "基线中的工作表已被删除",
