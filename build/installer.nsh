@@ -23,6 +23,7 @@ Var SelectedCacheParent
 Var ExistingDiffViewerMode
 Var ExistingCacheRoot
 Var ExistingInstallDir
+Var IsUpgradeInstall
 Var InstallOptionsDiffKeepRadio
 Var InstallOptionsDiffTextRadio
 Var InstallOptionsDiffWorkbookRadio
@@ -110,9 +111,18 @@ Function ResolveExistingInstallDir
 FunctionEnd
 
 Function CapturePreviousInstallerBootstrap
+  StrCpy $IsUpgradeInstall "0"
   Call ResolveExistingInstallDir
 
   ${If} $ExistingInstallDir != ""
+    IfFileExists "$ExistingInstallDir\${APP_FILENAME}.exe" mark_upgrade 0
+    IfFileExists "$ExistingInstallDir\${INSTALLER_BOOTSTRAP_FILE}" mark_upgrade 0
+    Goto capture_previous_bootstrap
+
+  mark_upgrade:
+    StrCpy $IsUpgradeInstall "1"
+
+  capture_previous_bootstrap:
     IfFileExists "$ExistingInstallDir\${INSTALLER_BOOTSTRAP_FILE}" 0 +3
       CopyFiles /SILENT "$ExistingInstallDir\${INSTALLER_BOOTSTRAP_FILE}" "$PLUGINSDIR\${INSTALLER_BOOTSTRAP_PREVIOUS_FILE}"
       Return
@@ -212,6 +222,10 @@ Function InstallerOptionsBrowseCacheParent
 FunctionEnd
 
 Function InstallerWelcomePageCreate
+  ${If} $IsUpgradeInstall == "1"
+    Abort
+  ${EndIf}
+
   nsDialogs::Create 1018
   Pop $0
 
@@ -239,6 +253,10 @@ Function InstallerWelcomePageCreate
 FunctionEnd
 
 Function InstallerOptionsPageCreate
+  ${If} $IsUpgradeInstall == "1"
+    Abort
+  ${EndIf}
+
   nsDialogs::Create 1018
   Pop $0
 
@@ -358,11 +376,13 @@ FunctionEnd
 
 !macro customFinishPage
   Function StartApp
-    ${if} ${isUpdated}
+    ${If} $IsUpgradeInstall == "1"
+      StrCpy $1 "--updated"
+    ${ElseIf} ${isUpdated}
       StrCpy $1 "--updated"
     ${Else}
       StrCpy $1 ""
-    ${endif}
+    ${EndIf}
     ${StdUtils.ExecShellAsUser} $0 "$launchLink" "open" "$1"
   FunctionEnd
 
