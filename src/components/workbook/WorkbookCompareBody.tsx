@@ -28,7 +28,7 @@ interface WorkbookCompareBodyProps {
   stackedCanvasProps: WorkbookCompareStackedCanvasProps;
   columnsCanvasProps: WorkbookCompareColumnsCanvasProps;
   overlayProps: WorkbookCompareOverlayProps;
-  renderPinnedCollapseBar: (count: number, expandCount: number, onExpand: () => void, onExpandAll: () => void) => ReactNode;
+  renderPinnedCollapseBar: (count: number, expandCount: number, onExpand: () => void, onExpandAll: () => void, sourceItemIndex: number) => ReactNode;
   onExpandCollapseBlock: (
     blockId: string,
     hiddenStart: number,
@@ -115,6 +115,7 @@ export default function WorkbookCompareBody({
                         segment.item.count,
                         'full',
                       ),
+                      segment.sourceItemIndex,
                     )}
                   </div>
                 );
@@ -197,6 +198,7 @@ export default function WorkbookCompareBody({
                       segment.item.count,
                       'full',
                     ),
+                    segment.sourceItemIndex,
                   )}
                 </div>
               );

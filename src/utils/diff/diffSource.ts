@@ -1,5 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import { strFromU8, unzipSync } from 'fflate';
+import { getRuntimeLocale, translate, type Locale } from '@/i18n/core';
 import type { WorkbookCellDisplay } from '@/utils/workbook/workbookDisplay';
 import { createWorkbookRowLine, createWorkbookSheetLine } from '@/utils/workbook/workbookDisplay';
 import {
@@ -103,21 +104,22 @@ function normalizeCellValue(value: string): string {
     .replace(/\t/g, '    ');
 }
 
-function buildUnsupportedWorkbookMessage(fileName: string): string {
-  const ext = getFileExtension(fileName) || 'unknown';
+function buildUnsupportedWorkbookMessage(fileName: string, locale: Locale): string {
+  const ext = getFileExtension(fileName) || translate(locale, 'commonUnknown');
   return [
-    '[Excel Parser]',
-    `[不支持的工作簿格式 / Unsupported workbook format: ${ext}]`,
-    '当前内置解析器支持 .xlsx / .xlsm / .xltx / .xltm。',
-    '如需 .xls / .xlsb 支持，下一步可以切到 Rust 解析器。',
+    `[${translate(locale, 'workbookParserHeader')}]`,
+    translate(locale, 'workbookParserUnsupportedFormat', { ext }),
+    translate(locale, 'workbookParserSupportedFormatsHint'),
+    translate(locale, 'workbookParserRustHint'),
   ].join('\n');
 }
 
-function buildWorkbookErrorMessage(fileName: string, error: unknown): string {
+function buildWorkbookErrorMessage(fileName: string, error: unknown, locale: Locale): string {
   const message = error instanceof Error ? error.message : String(error);
+  const resolvedFileName = fileName || translate(locale, 'commonUnknown');
   return [
-    '[Excel Parser]',
-    `[解析工作簿失败 / Failed to parse workbook: ${fileName || 'unknown'}]`,
+    `[${translate(locale, 'workbookParserHeader')}]`,
+    translate(locale, 'workbookParserFailed', { fileName: resolvedFileName }),
     message,
   ].join('\n');
 }
@@ -231,9 +233,9 @@ function serializeWorkbookSheet(
   return output;
 }
 
-export function workbookBytesToText(bytes: Uint8Array, fileName: string): string {
+export function workbookBytesToText(bytes: Uint8Array, fileName: string, locale: Locale = getRuntimeLocale()): string {
   if (!isZipWorkbookFileName(fileName)) {
-    return buildUnsupportedWorkbookMessage(fileName);
+    return buildUnsupportedWorkbookMessage(fileName, locale);
   }
 
   try {
@@ -243,8 +245,10 @@ export function workbookBytesToText(bytes: Uint8Array, fileName: string): string
 
     if (sheets.length === 0) {
       return [
-        '[Excel Parser]',
-        `[未找到工作表 / No worksheets found: ${fileName || 'unknown'}]`,
+        `[${translate(locale, 'workbookParserHeader')}]`,
+        translate(locale, 'workbookParserNoWorksheets', {
+          fileName: fileName || translate(locale, 'commonUnknown'),
+        }),
       ].join('\n');
     }
 
@@ -256,7 +260,7 @@ export function workbookBytesToText(bytes: Uint8Array, fileName: string): string
       })
       .join('\n');
   } catch (error) {
-    return buildWorkbookErrorMessage(fileName, error);
+    return buildWorkbookErrorMessage(fileName, error, locale);
   }
 }
 
@@ -275,6 +279,7 @@ function normalizeSideText(
   fallbackName: string,
   content: string | null,
   bytes: Uint8Array | null,
+  locale: Locale,
 ): string {
   if (content != null && content !== '') {
     return content;
@@ -282,26 +287,28 @@ function normalizeSideText(
   if (bytes && bytes.byteLength > 0) {
     const workbookName = [name, fallbackName].find(isWorkbookFileName) ?? (name || fallbackName);
     if (workbookName && isWorkbookFileName(workbookName)) {
-      return workbookBytesToText(bytes, workbookName);
+      return workbookBytesToText(bytes, workbookName, locale);
     }
     return decodeUtf8(bytes);
   }
   return content ?? '';
 }
 
-export function resolveDiffTexts(data: DiffTextSourceInput): { baseText: string; mineText: string } {
+export function resolveDiffTexts(data: DiffTextSourceInput, locale: Locale = getRuntimeLocale()): { baseText: string; mineText: string } {
   return {
     baseText: normalizeSideText(
       data.baseName,
       data.fileName,
       data.baseContent,
       data.baseBytes,
+      locale,
     ),
     mineText: normalizeSideText(
       data.mineName,
       data.fileName,
       data.mineContent,
       data.mineBytes,
+      locale,
     ),
   };
 }

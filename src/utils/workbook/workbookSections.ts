@@ -1,34 +1,26 @@
 import type {
   DiffLine,
   WorkbookCompareMode,
-  WorkbookSectionChangeType,
+  WorkbookSection,
 } from '@/types';
 import { hasWorkbookCellContent } from '@/utils/workbook/workbookCellContract';
 import { parseWorkbookDisplayLine } from '@/utils/workbook/workbookDisplay';
 import { buildWorkbookRowSignature } from '@/utils/workbook/workbookAlignment';
 
-export interface WorkbookSection {
-  name: string;
-  displayName: string;
-  changeType: WorkbookSectionChangeType;
-  hasBaseSide: boolean;
-  hasMineSide: boolean;
-  renamePeerName: string | null;
-  renameRole: 'source' | 'target' | null;
-  startLineIdx: number;
-  endLineIdx: number;
-  maxColumns: number;
-  rowCount: number;
-  firstDataLineIdx: number | null;
-  firstDataRowNumber: number | null;
-}
+export type { WorkbookSection };
 
 export interface WorkbookLineSheetContext {
   baseSheetName: string | null;
   mineSheetName: string | null;
 }
 
+export interface WorkbookLineSheetContextLookup {
+  get(lineIdx: number): WorkbookLineSheetContext | null;
+  materialize(): WorkbookLineSheetContext[];
+}
+
 const workbookLineSheetContextsCache = new WeakMap<DiffLine[], WorkbookLineSheetContext[]>();
+const workbookLineSheetContextLookupCache = new WeakMap<DiffLine[], WorkbookLineSheetContextLookup>();
 const workbookSectionsCache = new WeakMap<DiffLine[], Map<WorkbookCompareMode, WorkbookSection[]>>();
 
 export function resolveWorkbookSheetNameForLineContext(params: {
@@ -296,25 +288,59 @@ export function buildWorkbookLineSheetContexts(
   const cached = workbookLineSheetContextsCache.get(diffLines);
   if (cached) return cached;
 
+  const lookup = buildWorkbookLineSheetContextLookup(diffLines);
+  const contexts = lookup.materialize();
+  workbookLineSheetContextsCache.set(diffLines, contexts);
+  return contexts;
+}
+
+export function buildWorkbookLineSheetContextLookup(
+  diffLines: DiffLine[],
+): WorkbookLineSheetContextLookup {
+  const cached = workbookLineSheetContextLookupCache.get(diffLines);
+  if (cached) return cached;
+
   const contexts: WorkbookLineSheetContext[] = [];
   let currentBaseSheetName: string | null = null;
   let currentMineSheetName: string | null = null;
+  let builtThroughIndex = -1;
 
-  diffLines.forEach((line) => {
-    const parsedBase = line.base ? parseWorkbookDisplayLine(line.base) : null;
-    const parsedMine = line.mine ? parseWorkbookDisplayLine(line.mine) : null;
+  const ensureBuiltThrough = (lineIdx: number) => {
+    const targetIndex = Math.min(lineIdx, diffLines.length - 1);
+    if (targetIndex <= builtThroughIndex) return;
 
-    if (parsedBase?.kind === 'sheet') currentBaseSheetName = parsedBase.sheetName;
-    if (parsedMine?.kind === 'sheet') currentMineSheetName = parsedMine.sheetName;
+    for (let index = builtThroughIndex + 1; index <= targetIndex; index += 1) {
+      const line = diffLines[index];
+      const parsedBase = line?.base ? parseWorkbookDisplayLine(line.base) : null;
+      const parsedMine = line?.mine ? parseWorkbookDisplayLine(line.mine) : null;
 
-    contexts.push({
-      baseSheetName: currentBaseSheetName,
-      mineSheetName: currentMineSheetName,
-    });
-  });
+      if (parsedBase?.kind === 'sheet') currentBaseSheetName = parsedBase.sheetName;
+      if (parsedMine?.kind === 'sheet') currentMineSheetName = parsedMine.sheetName;
 
-  workbookLineSheetContextsCache.set(diffLines, contexts);
-  return contexts;
+      contexts[index] = {
+        baseSheetName: currentBaseSheetName,
+        mineSheetName: currentMineSheetName,
+      };
+    }
+
+    builtThroughIndex = targetIndex;
+  };
+
+  const lookup: WorkbookLineSheetContextLookup = {
+    get(lineIdx) {
+      if (lineIdx < 0 || lineIdx >= diffLines.length) return null;
+      ensureBuiltThrough(lineIdx);
+      return contexts[lineIdx] ?? null;
+    },
+    materialize() {
+      ensureBuiltThrough(diffLines.length - 1);
+      workbookLineSheetContextsCache.set(diffLines, contexts);
+      return contexts;
+    },
+  };
+
+  workbookLineSheetContextLookupCache.set(diffLines, lookup);
+  return lookup;
 }
 
 export function getWorkbookSections(

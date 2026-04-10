@@ -4,17 +4,13 @@ import type { HorizontalVirtualColumnEntry } from '@/hooks/virtualization/useHor
 import { ROW_H } from '@/hooks/virtualization/useVirtual';
 import type { WorkbookDiffRegion, SplitRow } from '@/types';
 import type { CompareMode } from '@/hooks/workbook/useWorkbookCompareDerivedState';
-import type { FrozenStackedCanvasRun } from '@/hooks/workbook/useWorkbookFrozenPaneState';
-import type {
-  WorkbookCompareColumnsBodySegment,
-  WorkbookCompareStackedBodySegment,
-} from '@/hooks/workbook/useWorkbookCompareBodyLayout';
-import type { WorkbookColumnsCanvasRow } from '@/components/workbook/WorkbookColumnsCanvasStrip';
 import WorkbookActiveRegionOverlayLayer from '@/components/workbook/WorkbookActiveRegionOverlayLayer';
-import {
-  getWorkbookRowKey as getWorkbookCompareRowKey,
-} from '@/utils/workbook/workbookPanelHelpers';
 import type { WorkbookRegionOverlayBoundsMode } from '@/utils/workbook/workbookRegionOverlay';
+import type { WorkbookRowFrame } from '@/utils/workbook/workbookVisibleRowFrames';
+import {
+  buildWorkbookSectionRowIndexByKey,
+  projectWorkbookVisibleRowFrames,
+} from '@/utils/workbook/workbookVisibleRowFrames';
 
 interface UseWorkbookCompareOverlayLayoutParams {
   sectionRows: SplitRow[];
@@ -22,10 +18,8 @@ interface UseWorkbookCompareOverlayLayoutParams {
   mode: CompareMode;
   stickyHeaderHeight: number;
   rowWindowOffsetTop: number;
-  visibleFrozenStackedCanvasRuns: FrozenStackedCanvasRun[];
-  visibleFrozenColumnsCanvasRows: WorkbookColumnsCanvasRow[];
-  bodySegments: WorkbookCompareStackedBodySegment[];
-  columnsBodySegments: WorkbookCompareColumnsBodySegment[] | null;
+  frozenRowFramesByKey: ReadonlyMap<string, WorkbookRowFrame>;
+  bodyRowFramesByKey: ReadonlyMap<string, WorkbookRowFrame>;
   scrollRef: RefObject<HTMLDivElement | null>;
   viewportWidth: number;
   viewportHeight: number;
@@ -35,7 +29,7 @@ interface UseWorkbookCompareOverlayLayoutParams {
   contentLeft: number;
   frozenWidth: number;
   freezeColumnCount: number;
-  pulseNonce: number;
+  pulseTriggerKey: string | null;
   label: string;
 }
 
@@ -45,10 +39,8 @@ export function useWorkbookCompareOverlayLayout({
   mode,
   stickyHeaderHeight,
   rowWindowOffsetTop,
-  visibleFrozenStackedCanvasRuns,
-  visibleFrozenColumnsCanvasRows,
-  bodySegments,
-  columnsBodySegments,
+  frozenRowFramesByKey,
+  bodyRowFramesByKey,
   scrollRef,
   viewportWidth,
   viewportHeight,
@@ -58,86 +50,32 @@ export function useWorkbookCompareOverlayLayout({
   contentLeft,
   frozenWidth,
   freezeColumnCount,
-  pulseNonce,
+  pulseTriggerKey,
   label,
 }: UseWorkbookCompareOverlayLayoutParams): ComponentProps<typeof WorkbookActiveRegionOverlayLayer> {
   const sectionRowIndexByKey = useMemo(
-    () => new Map(sectionRows.map((row, index) => [getWorkbookCompareRowKey(row), index])),
+    () => buildWorkbookSectionRowIndexByKey(sectionRows),
     [sectionRows],
   );
 
   const visibleRowFrames = useMemo(() => {
-    const next = new Map<number, { top: number; height: number }>();
-    let frozenCursorTop = showColumnHeader ? ROW_H : 0;
-
-    if (mode === 'stacked') {
-      visibleFrozenStackedCanvasRuns.forEach((run) => {
-        let cursorTop = frozenCursorTop + run.top;
-        run.groups.forEach((group) => {
-          group.rows.forEach((renderRow) => {
-            const rowIndex = sectionRowIndexByKey.get(getWorkbookCompareRowKey(renderRow.row));
-            if (rowIndex == null) {
-              cursorTop += renderRow.height;
-              return;
-            }
-            next.set(rowIndex, { top: cursorTop, height: renderRow.height });
-            cursorTop += renderRow.height;
-          });
-        });
-      });
-    } else {
-      visibleFrozenColumnsCanvasRows.forEach((renderRow) => {
-        const rowIndex = sectionRowIndexByKey.get(getWorkbookCompareRowKey(renderRow.row));
-        if (rowIndex == null) {
-          frozenCursorTop += ROW_H;
-          return;
-        }
-        next.set(rowIndex, { top: frozenCursorTop, height: ROW_H });
-        frozenCursorTop += ROW_H;
-      });
-    }
-
-    if (mode === 'stacked') {
-      bodySegments.forEach((segment) => {
-        if (segment.kind !== 'rows') return;
-        let cursorTop = stickyHeaderHeight + rowWindowOffsetTop + segment.top;
-        segment.group.rows.forEach((renderRow) => {
-          const rowIndex = sectionRowIndexByKey.get(getWorkbookCompareRowKey(renderRow.row));
-          if (rowIndex == null) {
-            cursorTop += renderRow.height;
-            return;
-          }
-          next.set(rowIndex, { top: cursorTop, height: renderRow.height });
-          cursorTop += renderRow.height;
-        });
-      });
-    } else {
-      (columnsBodySegments ?? []).forEach((segment) => {
-        if (segment.kind !== 'rows') return;
-        let cursorTop = stickyHeaderHeight + rowWindowOffsetTop + segment.top;
-        segment.rows.forEach((renderRow) => {
-          const rowIndex = sectionRowIndexByKey.get(getWorkbookCompareRowKey(renderRow.row));
-          if (rowIndex == null) {
-            cursorTop += ROW_H;
-            return;
-          }
-          next.set(rowIndex, { top: cursorTop, height: ROW_H });
-          cursorTop += ROW_H;
-        });
-      });
-    }
-
-    return next;
+    return projectWorkbookVisibleRowFrames(sectionRowIndexByKey, [
+      {
+        framesByKey: frozenRowFramesByKey,
+        topOffset: showColumnHeader ? ROW_H : 0,
+      },
+      {
+        framesByKey: bodyRowFramesByKey,
+        topOffset: stickyHeaderHeight + rowWindowOffsetTop,
+      },
+    ]);
   }, [
-    bodySegments,
-    columnsBodySegments,
-    mode,
+    bodyRowFramesByKey,
+    frozenRowFramesByKey,
     rowWindowOffsetTop,
     sectionRowIndexByKey,
     showColumnHeader,
     stickyHeaderHeight,
-    visibleFrozenColumnsCanvasRows,
-    visibleFrozenStackedCanvasRuns,
   ]);
 
   const resolvePatchBoundsModes = useCallback((
@@ -181,7 +119,7 @@ export function useWorkbookCompareOverlayLayout({
     resolvePatchBoundsModes,
     fallbackBoundsModes,
     resolveFocusPatchBoundsModes,
-    pulseNonce,
+    pulseTriggerKey,
     label,
   }), [
     activeDiffRegion,
@@ -192,7 +130,7 @@ export function useWorkbookCompareOverlayLayout({
     freezeColumnCount,
     frozenWidth,
     label,
-    pulseNonce,
+    pulseTriggerKey,
     resolveFocusPatchBoundsModes,
     resolvePatchBoundsModes,
     scrollRef,

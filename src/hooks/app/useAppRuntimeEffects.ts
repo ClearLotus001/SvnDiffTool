@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useRef,
   type Dispatch,
   type MutableRefObject,
   type SetStateAction,
@@ -7,6 +8,7 @@ import {
 
 import type {
   DiffData,
+  DiffPerformanceMetrics,
   LayoutMode,
   SearchMatch,
   TextLineSelectionSummary,
@@ -17,8 +19,14 @@ import type {
 import type { LoadPhase } from '@/hooks/app/types';
 import { debugLog } from '@/hooks/app/helpers';
 import { buildE2EDiffData, shouldEnableE2EBridge } from '@/utils/app/e2eBridge';
+import {
+  clearPerfBridgeEvents,
+  getPerfBridgeEvents,
+  recordPerfBridgeEvent,
+  shouldEnablePerfBridge,
+} from '@/utils/app/perfBridge';
 import { parseWorkbookRowLine } from '@/utils/workbook/workbookCompare';
-import type { IndexedWorkbookSectionRows } from '@/utils/workbook/workbookSheetIndex';
+import type { WorkbookSectionRowIndex } from '@/utils/workbook/workbookSheetIndex';
 import type { WorkbookSection } from '@/utils/workbook/workbookSections';
 import {
   setWorkbookDebugEnabled,
@@ -35,6 +43,7 @@ interface UseAppRuntimeEffectsArgs {
   isWorkbookMode: boolean;
   layout: LayoutMode;
   loadPhase: LoadPhase;
+  loadPerfMetrics: DiffPerformanceMetrics | null;
   setCollapseCtx: Dispatch<SetStateAction<boolean>>;
   setLayout: Dispatch<SetStateAction<LayoutMode>>;
   activeSearchIdx: number;
@@ -46,7 +55,7 @@ interface UseAppRuntimeEffectsArgs {
   activeWorkbookSheetName: string | null;
   precomputedWorkbookDelta: WorkbookPrecomputedDeltaPayload | null;
   workbookCompareMode: WorkbookCompareMode;
-  workbookSectionRowIndex: Map<string, IndexedWorkbookSectionRows>;
+  workbookSectionRowIndex: WorkbookSectionRowIndex;
   workbookSections: WorkbookSection[];
 }
 
@@ -60,6 +69,7 @@ export default function useAppRuntimeEffects({
   isWorkbookMode,
   layout,
   loadPhase,
+  loadPerfMetrics,
   setCollapseCtx,
   setLayout,
   activeSearchIdx,
@@ -74,6 +84,9 @@ export default function useAppRuntimeEffects({
   workbookSectionRowIndex,
   workbookSections,
 }: UseAppRuntimeEffectsArgs) {
+  const perfViewReadyTokenRef = useRef(0);
+  const perfLastReadySignatureRef = useRef('');
+
   useEffect(() => {
     if (isWorkbookMode || !hasLoadedDiff) {
       setTextLineSelectionSummary(null);
@@ -112,6 +125,100 @@ export default function useAppRuntimeEffects({
       delete window.__SVN_DIFF_E2E__;
     };
   }, [applyDiffData, displayFileName, hasLoadedDiff, isWorkbookMode, layout, setCollapseCtx, setLayout]);
+
+  useEffect(() => {
+    if (!shouldEnablePerfBridge()) return undefined;
+
+    window.__SVN_DIFF_PERF__ = {
+      getSnapshot: () => ({
+        hasLoadedDiff,
+        isLoadingDiff,
+        loadPhase,
+        layout,
+        isWorkbookMode,
+        compareMode: workbookCompareMode,
+        fileName: displayFileName,
+        activeWorkbookSheetName,
+        viewReadyToken: perfViewReadyTokenRef.current,
+        loadPerfMetrics,
+      }),
+      getEvents: () => getPerfBridgeEvents(),
+      clearEvents: () => clearPerfBridgeEvents(),
+    };
+
+    return () => {
+      delete window.__SVN_DIFF_PERF__;
+    };
+  }, [
+    activeWorkbookSheetName,
+    displayFileName,
+    hasLoadedDiff,
+    isLoadingDiff,
+    isWorkbookMode,
+    layout,
+    loadPerfMetrics,
+    loadPhase,
+    workbookCompareMode,
+  ]);
+
+  useEffect(() => {
+    if (!shouldEnablePerfBridge()) return undefined;
+    if (!hasLoadedDiff || isLoadingDiff || loadPhase !== 'ready') return undefined;
+
+    const readySignature = JSON.stringify({
+      fileName: displayFileName,
+      layout,
+      isWorkbookMode,
+      compareMode: workbookCompareMode,
+      activeWorkbookSheetName,
+    });
+    if (perfLastReadySignatureRef.current === readySignature) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    const firstFrameId = requestAnimationFrame(() => {
+      const secondFrameId = requestAnimationFrame(() => {
+        if (cancelled) return;
+        perfLastReadySignatureRef.current = readySignature;
+        perfViewReadyTokenRef.current += 1;
+        debugLog('view-ready', {
+          fileName: displayFileName,
+          layout,
+          isWorkbookMode,
+          compareMode: workbookCompareMode,
+          activeWorkbookSheetName,
+          viewReadyToken: perfViewReadyTokenRef.current,
+        });
+        recordPerfBridgeEvent('view-ready', {
+          fileName: displayFileName,
+          layout,
+          isWorkbookMode,
+          compareMode: workbookCompareMode,
+          activeWorkbookSheetName,
+          viewReadyToken: perfViewReadyTokenRef.current,
+        });
+      });
+
+      if (cancelled) {
+        cancelAnimationFrame(secondFrameId);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(firstFrameId);
+    };
+  }, [
+    activeWorkbookSheetName,
+    displayFileName,
+    hasLoadedDiff,
+    isLoadingDiff,
+    isWorkbookMode,
+    layout,
+    loadPhase,
+    workbookCompareMode,
+  ]);
 
   useEffect(() => {
     if (isWorkbookMode) return;

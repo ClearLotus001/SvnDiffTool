@@ -1,6 +1,8 @@
 import type { RefObject } from 'react';
 
 import { FONT_UI } from '@/constants/typography';
+import { useI18n } from '@/context/i18n';
+import { cssVar } from '@/theme/cssUtils';
 import type { HorizontalVirtualColumnEntry } from '@/hooks/virtualization/useHorizontalVirtualColumns';
 import type { FrozenStackedCanvasRun } from '@/hooks/workbook/useWorkbookFrozenPaneState';
 import type { CompareMode } from '@/hooks/workbook/useWorkbookCompareDerivedState';
@@ -92,6 +94,7 @@ export default function WorkbookCompareFrozenRowsPane({
   compareCellsByRowNumber,
   compareMode,
 }: WorkbookCompareFrozenRowsPaneProps) {
+  const { t } = useI18n();
   if (frozenRowsViewportHeight <= 0) return null;
   const showStatusBadge = frozenRowsViewportIsOverflowing;
 
@@ -106,11 +109,11 @@ export default function WorkbookCompareFrozenRowsPane({
         overflowY: frozenRowsViewportIsOverflowing ? 'auto' : 'hidden',
         overflowX: 'hidden',
         overflowAnchor: 'none',
-        background: 'var(--bg1)',
+        background: cssVar('bg1'),
         borderRadius: 12,
         boxShadow: isHovered
-          ? 'inset 0 0 0 1px var(--acc), 0 0 0 1px color-mix(in srgb, var(--acc) 13%, transparent)'
-          : 'inset 0 0 0 1px var(--border)',
+          ? `inset 0 0 0 1px ${cssVar('acc')}, 0 0 0 1px color-mix(in srgb, ${cssVar('acc')} 13%, transparent)`
+          : `inset 0 0 0 1px ${cssVar('border')}`,
       }}>
       {showStatusBadge && (
         <div
@@ -130,19 +133,19 @@ export default function WorkbookCompareFrozenRowsPane({
               gap: 8,
               padding: '4px 8px',
               borderRadius: 999,
-              border: `1px solid ${isHovered ? 'var(--acc)' : 'var(--border)'}`,
-              background: isHovered ? 'var(--bg0)' : 'var(--bg2)',
-              color: isHovered ? 'var(--acc2)' : 'var(--t1)',
-              boxShadow: isHovered ? '0 6px 18px -16px var(--acc)' : undefined,
+              border: `1px solid ${isHovered ? cssVar('acc') : cssVar('border')}`,
+              background: isHovered ? cssVar('bg0') : cssVar('bg2'),
+              color: isHovered ? cssVar('acc2') : cssVar('t1'),
+              boxShadow: isHovered ? `0 6px 18px -16px ${cssVar('acc')}` : undefined,
               fontFamily: FONT_UI,
               fontSize: 11,
               lineHeight: 1.2,
               fontWeight: 700,
             }}>
-            <span>冻结行窗口</span>
+            <span>{t('workbookFrozenRowsWindowLabel')}</span>
             <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace' }}>{frozenRowsRangeLabel}</span>
             <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace', opacity: 0.82 }}>
-              {frozenRowsViewportIsOverflowing ? 'overflow' : 'fit'} · {frozenRowsViewportHeight}px/{frozenRowsHeight}px
+              {t(frozenRowsViewportIsOverflowing ? 'commonOverflow' : 'commonFit')} · {frozenRowsViewportHeight}px/{frozenRowsHeight}px
             </span>
           </div>
         </div>

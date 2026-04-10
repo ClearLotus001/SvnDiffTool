@@ -385,7 +385,7 @@ interface WorkbookDiffRegionOverlayProps {
   viewportHeight: number;
   stickyHeaderHeight: number;
   debugRegionId?: string;
-  pulseNonce?: number;
+  pulseTriggerKey?: string | null;
   label?: string;
   /**
    * When provided, the canvas is positioned in content-space at this Y offset
@@ -437,7 +437,7 @@ const WorkbookDiffRegionOverlay = memo(({
   viewportHeight,
   stickyHeaderHeight,
   debugRegionId,
-  pulseNonce = 0,
+  pulseTriggerKey = null,
   label,
   canvasAnchorTop,
   canvasHeight: canvasHeightProp,
@@ -449,6 +449,7 @@ const WorkbookDiffRegionOverlay = memo(({
   const lastDebugLogAtRef = useRef(0);
   const lastScrollLeftRef = useRef(0);
   const scrollRafRef = useRef(0);
+  const [pulseNonce, setPulseNonce] = useState(0);
   const [pulseProgress, setPulseProgress] = useState(1);
   const isContentSpaceMode = canvasAnchorTop != null;
   const effectiveCanvasHeight = isContentSpaceMode
@@ -456,7 +457,7 @@ const WorkbookDiffRegionOverlay = memo(({
     : viewportHeight;
 
   useEffect(() => {
-    if (pulseNonce <= 0) {
+    if (!pulseTriggerKey) {
       setPulseProgress(1);
       return;
     }
@@ -473,12 +474,13 @@ const WorkbookDiffRegionOverlay = memo(({
       }
     };
 
+    setPulseNonce((value) => value + 1);
     setPulseProgress(0);
     frame = requestAnimationFrame(tick);
     return () => {
       if (frame) cancelAnimationFrame(frame);
     };
-  }, [pulseNonce]);
+  }, [pulseTriggerKey]);
 
   useLayoutEffect(() => {
     drawRef.current = (reason = 'layout') => {

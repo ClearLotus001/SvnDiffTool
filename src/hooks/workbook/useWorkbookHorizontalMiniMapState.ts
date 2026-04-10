@@ -3,8 +3,10 @@ import { useMemo } from 'react';
 import type { WorkbookCompareMode, SplitRow } from '@/types';
 import type { WorkbookMiniMapSegment } from '@/components/workbook/WorkbookMiniMap';
 import {
-  buildWorkbookMiniMapState,
+  applyWorkbookMiniMapSearchState,
+  buildWorkbookMiniMapBaseCacheKey,
   getWorkbookMiniMapDescriptor,
+  resolveWorkbookMiniMapBaseState,
 } from '@/utils/workbook/workbookPanelHelpers';
 import type { WorkbookHorizontalRenderItem } from '@/hooks/workbook/useWorkbookHorizontalBodyLayout';
 import { ROW_H } from '@/hooks/virtualization/useVirtual';
@@ -30,15 +32,31 @@ export function useWorkbookHorizontalMiniMapState({
   searchMatchSet,
   visibleColumns,
 }: UseWorkbookHorizontalMiniMapStateParams): { value: WorkbookMiniMapSegment[]; duration: number } {
-  return useMemo(() => buildWorkbookMiniMapState({
+  const baseCacheKey = useMemo(() => buildWorkbookMiniMapBaseCacheKey({
+    scope: 'horizontal-minimap-base:v1',
     headerHeight: ROW_H,
-    activeSearchLineIdx,
+    compareMode,
+    visibleColumns,
+    frozenRows,
+    frozenRowsViewportIsOverflowing,
+    frozenRowsViewportHeight,
+  }), [
+    compareMode,
+    frozenRows,
+    frozenRowsViewportHeight,
+    frozenRowsViewportIsOverflowing,
+    visibleColumns,
+  ]);
+
+  const baseMeasured = useMemo(() => resolveWorkbookMiniMapBaseState({
+    cacheOwner: items,
+    cacheKey: baseCacheKey,
+    headerHeight: ROW_H,
     compareMode,
     frozenRows,
     frozenRowsViewportIsOverflowing,
     frozenRowsViewportHeight,
     items,
-    searchMatchSet,
     visibleColumns,
     resolveRowHeight: () => ROW_H,
     resolveItemEntry: (item) => {
@@ -77,13 +95,20 @@ export function useWorkbookHorizontalMiniMapState({
       };
     },
   }), [
-    activeSearchLineIdx,
+    baseCacheKey,
     compareMode,
     frozenRows,
     frozenRowsViewportHeight,
     frozenRowsViewportIsOverflowing,
     items,
-    searchMatchSet,
     visibleColumns,
   ]);
+
+  return useMemo(() => {
+    const start = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    return {
+      value: applyWorkbookMiniMapSearchState(baseMeasured.value, searchMatchSet, activeSearchLineIdx),
+      duration: baseMeasured.duration + ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - start),
+    };
+  }, [activeSearchLineIdx, baseMeasured.duration, baseMeasured.value, searchMatchSet]);
 }

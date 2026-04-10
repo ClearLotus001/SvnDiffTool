@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs';
+import { electronT } from '../i18n.js';
 import {
   APP_ROOT,
   DEFAULT_REVISION_QUERY_LIMIT,
@@ -300,7 +301,7 @@ export function createWorkingCopyRevisionInfo(): SvnRevisionInfo {
   return {
     id: SPECIAL_MINE_ID,
     revision: 'WC',
-    title: '本地工作副本',
+    title: electronT('revisionWorkingCopyTitle'),
     author: '',
     date: '',
     message: '',
@@ -318,7 +319,7 @@ export function createCliRevisionInfo(side: 'base' | 'mine'): SvnRevisionInfo | 
     return {
       id: side === 'base' ? SPECIAL_BASE_ID : SPECIAL_MINE_ID,
       revision: 'WC',
-      title: resolveSideName(sideName, filePath) || sideName || 'Working Copy',
+      title: resolveSideName(sideName, filePath) || sideName || electronT('revisionWorkingCopyTitle'),
       author: '',
       date: '',
       message: '',
@@ -329,7 +330,7 @@ export function createCliRevisionInfo(side: 'base' | 'mine'): SvnRevisionInfo | 
     return {
       id: SPECIAL_BASE_ID,
       revision: 'BASE',
-      title: resolveSideName(sideName, filePath) || sideName || 'Working Base',
+      title: resolveSideName(sideName, filePath) || sideName || electronT('revisionWorkingBaseTitle'),
       author: '',
       date: '',
       message: '',
@@ -370,7 +371,11 @@ export function makeFallbackRevisionInfo(side: 'base' | 'mine'): SvnRevisionInfo
   return {
     id: side === 'base' ? SPECIAL_BASE_ID : SPECIAL_MINE_ID,
     revision: extractedRevision || (side === 'base' ? 'BASE' : 'LOCAL'),
-    title: resolveSideName(sideName, filePath) || (side === 'base' ? 'Base' : 'Mine'),
+    title: resolveSideName(sideName, filePath) || (
+      side === 'base'
+        ? electronT('revisionBaseFallbackTitle')
+        : electronT('revisionMineFallbackTitle')
+    ),
     author: '',
     date: '',
     message: '',

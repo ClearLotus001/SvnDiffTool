@@ -1,0 +1,218 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import {
+  projectTransportDiffData,
+  projectTransportWorkbookCompareModePayload,
+} from '../electron/main/transportProjection.js';
+import type {
+  DiffAnalysisSnapshot,
+  DiffData,
+  DiffLine,
+  WorkbookCompareModePayload,
+  WorkbookMetadataMap,
+  WorkbookPrecomputedDeltaPayload,
+} from '../electron/main/types.js';
+
+function createDiffLine(type: DiffLine['type'], base: string | null, mine: string | null): DiffLine {
+  return {
+    type,
+    base,
+    mine,
+    baseLineNo: base != null ? 1 : null,
+    mineLineNo: mine != null ? 1 : null,
+    baseCharSpans: null,
+    mineCharSpans: null,
+  };
+}
+
+function createWorkbookMetadata(sheetName: string): WorkbookMetadataMap {
+  return {
+    sheets: {
+      [sheetName]: {
+        name: sheetName,
+        hiddenColumns: [],
+        mergeRanges: [],
+      },
+    },
+  };
+}
+
+function createWorkbookDelta(compareMode: 'strict' | 'content'): WorkbookPrecomputedDeltaPayload {
+  return {
+    compareMode,
+    sections: [
+      {
+        name: 'Sheet1',
+        rows: [],
+      },
+    ],
+  };
+}
+
+function createWorkbookSnapshot(
+  compareMode: 'strict' | 'content',
+  diffLines: DiffLine[],
+): DiffAnalysisSnapshot {
+  return {
+    compareMode,
+    textAnalysis: null,
+    workbookAnalysis: {
+      diffLinesByMode: {
+        [compareMode]: diffLines,
+      },
+      workbookDeltaByMode: {
+        [compareMode]: createWorkbookDelta(compareMode),
+      },
+      metadata: {
+        base: createWorkbookMetadata('Sheet1'),
+        mine: createWorkbookMetadata('Sheet1'),
+      },
+      artifactDiff: null,
+      perf: {
+        metadataMs: 1,
+        rustDiffMs: 2,
+      },
+    },
+  };
+}
+
+test('projectTransportDiffData drops redundant legacy diff payloads when snapshot projections exist', () => {
+  const strictDiffLines = [
+    createDiffLine('equal', '@@sheet\tSheet1', '@@sheet\tSheet1'),
+    createDiffLine('add', null, '@@row\t1\tBravo'),
+  ];
+  const data: DiffData = {
+    svnUrl: '',
+    fileName: 'demo.xlsx',
+    sourceIdentity: 'local-dev::demo.xlsx',
+    compareContext: 'literal_two_file_compare',
+    timelineTargetUrl: null,
+    workingCopyAvailable: false,
+    initialPair: null,
+    resetPair: null,
+    launchBaseName: 'base.xlsx',
+    launchMineName: 'mine.xlsx',
+    baseName: 'base.xlsx',
+    mineName: 'mine.xlsx',
+    baseContent: null,
+    mineContent: null,
+    baseBytes: null,
+    mineBytes: null,
+    precomputedDiffLines: strictDiffLines,
+    precomputedWorkbookDelta: createWorkbookDelta('strict'),
+    precomputedDiffLinesByMode: {
+      strict: strictDiffLines,
+    },
+    precomputedWorkbookDeltaByMode: {
+      strict: createWorkbookDelta('strict'),
+    },
+    analysisSnapshotsByMode: {
+      strict: createWorkbookSnapshot('strict', strictDiffLines),
+    },
+    baseWorkbookMetadata: createWorkbookMetadata('Sheet1'),
+    mineWorkbookMetadata: createWorkbookMetadata('Sheet1'),
+    revisionOptions: null,
+    baseRevisionInfo: null,
+    mineRevisionInfo: null,
+    canSwitchRevisions: false,
+    workbookArtifactDiff: null,
+    sourceNoticeCode: null,
+    perf: {
+      source: 'cli',
+    },
+  };
+
+  const projected = projectTransportDiffData(data);
+
+  assert.equal(projected.precomputedDiffLines, null);
+  assert.equal(projected.precomputedWorkbookDelta, null);
+  assert.equal(projected.precomputedDiffLinesByMode, null);
+  assert.equal(projected.precomputedWorkbookDeltaByMode, null);
+  assert.equal(projected.analysisSnapshotsByMode?.strict?.workbookAnalysis?.diffLinesByMode.strict, strictDiffLines);
+});
+
+test('projectTransportDiffData strips large raw text payloads when snapshot text analysis already covers first paint', () => {
+  const baseContent = `${'const value = 1;\n'.repeat(12_000)}`;
+  const mineContent = `${'const value = 1;\n'.repeat(12_000)}const tail = 2;\n`;
+  const diffLines = [
+    createDiffLine('equal', 'const value = 1;', 'const value = 1;'),
+    createDiffLine('add', null, 'const tail = 2;'),
+  ];
+  const data: DiffData = {
+    svnUrl: '',
+    fileName: 'demo.ts',
+    sourceIdentity: 'local-dev::demo.ts',
+    compareContext: 'literal_two_file_compare',
+    timelineTargetUrl: null,
+    workingCopyAvailable: false,
+    initialPair: null,
+    resetPair: null,
+    launchBaseName: 'base.ts',
+    launchMineName: 'mine.ts',
+    baseName: 'base.ts',
+    mineName: 'mine.ts',
+    baseContent,
+    mineContent,
+    baseBytes: null,
+    mineBytes: null,
+    precomputedDiffLines: diffLines,
+    precomputedWorkbookDelta: null,
+    precomputedDiffLinesByMode: {
+      strict: diffLines,
+    },
+    precomputedWorkbookDeltaByMode: null,
+    analysisSnapshotsByMode: {
+      strict: {
+        compareMode: 'strict',
+        textAnalysis: {
+          diffLines,
+          stats: { add: 1, del: 0, chg: 0 },
+          replacementPairs: [],
+          splitRowDescriptors: [],
+          perf: { diffMs: 1 },
+        },
+        workbookAnalysis: null,
+      },
+    },
+    baseWorkbookMetadata: null,
+    mineWorkbookMetadata: null,
+    revisionOptions: null,
+    baseRevisionInfo: null,
+    mineRevisionInfo: null,
+    canSwitchRevisions: false,
+    workbookArtifactDiff: null,
+    sourceNoticeCode: null,
+    perf: {
+      source: 'cli',
+    },
+  };
+
+  const projected = projectTransportDiffData(data);
+
+  assert.equal(projected.baseContent, null);
+  assert.equal(projected.mineContent, null);
+  assert.equal(projected.analysisSnapshotsByMode?.strict?.textAnalysis?.diffLines, diffLines);
+});
+
+test('projectTransportWorkbookCompareModePayload drops redundant legacy workbook compare payload arrays when snapshot projections exist', () => {
+  const contentDiffLines = [
+    createDiffLine('equal', '@@sheet\tSheet1', '@@sheet\tSheet1'),
+    createDiffLine('equal', '@@row\t1\tAlpha', '@@row\t1\tBravo'),
+  ];
+  const payload: WorkbookCompareModePayload = {
+    compareMode: 'content',
+    diffLines: contentDiffLines,
+    workbookDelta: createWorkbookDelta('content'),
+    analysisSnapshot: createWorkbookSnapshot('content', contentDiffLines),
+    perf: {
+      rustDiffMs: 3,
+    },
+  };
+
+  const projected = projectTransportWorkbookCompareModePayload(payload);
+
+  assert.equal(projected.diffLines, null);
+  assert.equal(projected.workbookDelta, null);
+  assert.equal(projected.analysisSnapshot?.workbookAnalysis?.diffLinesByMode.content, contentDiffLines);
+});

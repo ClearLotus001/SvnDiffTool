@@ -21,6 +21,7 @@
     "build:renderer": "vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
     "build:rust": "tsx scripts/build-rust.ts",
+    "benchmark:perf": "tsx scripts/benchmark-diff-performance.ts",
     "build:win:installer": "npm run build && tsx scripts/build-win-installer.ts",
     "build:win": "npm run build:win:installer",
     "build:win:release": "npm run build:win",

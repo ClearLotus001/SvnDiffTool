@@ -1,4 +1,5 @@
 import { memo, useState, type RefObject } from 'react';
+import { useI18n } from '@/context/i18n';
 import { useThemeTokens } from '@/context/theme';
 import { cssVar } from '@/theme/cssUtils';
 
@@ -8,7 +9,7 @@ interface WorkbookFrozenPaneOverflowBarProps {
   itemCount: number;
   totalSize: number;
   viewportSize: number;
-  itemLabel?: string;
+  itemLabel?: string | null;
   rangeLabel?: string | null;
   hint?: string | null;
 }
@@ -19,12 +20,15 @@ const WorkbookFrozenPaneOverflowBar = memo(({
   itemCount,
   totalSize,
   viewportSize,
-  itemLabel = '列',
+  itemLabel = null,
   rangeLabel = null,
-  hint = '拖动滚动条浏览冻结区域',
+  hint = null,
 }: WorkbookFrozenPaneOverflowBarProps) => {
+  const { t } = useI18n();
   const T = useThemeTokens();
   const [hovered, setHovered] = useState(false);
+  const resolvedItemLabel = itemLabel ?? t('workbookFrozenPaneItemColumns');
+  const resolvedHint = hint ?? t('workbookFrozenPaneHint');
 
   return (
     <div
@@ -48,7 +52,7 @@ const WorkbookFrozenPaneOverflowBar = memo(({
             style={{ background: hovered ? T.acc2 : T.acc }}
           />
           <span className="font-ui text-[11px] font-bold text-text-title truncate">{label}</span>
-          <span className="font-code text-[11px] text-text-secondary shrink-0">{itemCount} {itemLabel}</span>
+          <span className="font-code text-[11px] text-text-secondary shrink-0">{itemCount} {resolvedItemLabel}</span>
           {rangeLabel && (
             <span
               className="font-code text-[11px] font-bold shrink-0"
@@ -85,11 +89,11 @@ const WorkbookFrozenPaneOverflowBar = memo(({
           }}
         />
       </div>
-      {hint && (
+      {resolvedHint && (
         <div
           className="px-2 pt-1 font-ui text-[10px] transition-colors duration-150"
           style={{ color: hovered ? T.acc2 : T.t2 }}>
-          {hint}
+          {resolvedHint}
         </div>
       )}
     </div>

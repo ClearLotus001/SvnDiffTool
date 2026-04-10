@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronUp } from 'lucide-react';
+import { ChevronUp, Loader2 } from 'lucide-react';
 
 import type { SearchResultItem } from '@/types';
 import { useI18n } from '@/context/i18n';
@@ -33,6 +33,7 @@ interface SearchResultsPopoverProps {
   resultCount: number;
   resolveResult: (index: number) => SearchResultItem | null;
   activeIdx: number;
+  isSearching: boolean;
   query: string;
   isRegex: boolean;
   isCaseSensitive: boolean;
@@ -122,6 +123,7 @@ const SearchResultsPopover = memo(({
   resultCount,
   resolveResult,
   activeIdx,
+  isSearching,
   query,
   isRegex,
   isCaseSensitive,
@@ -141,6 +143,7 @@ const SearchResultsPopover = memo(({
     left: position?.left ?? 24,
     top: position?.top ?? 88,
   });
+  const [isDragging, setIsDragging] = useState(false);
   const [scrollTop, setScrollTop] = useState(0);
   const highlightPattern = useMemo(
     () => buildHighlightPattern(query, isRegex, isCaseSensitive),
@@ -219,6 +222,7 @@ const SearchResultsPopover = memo(({
     const stopDragging = () => {
       if (!dragOffsetRef.current) return;
       dragOffsetRef.current = null;
+      setIsDragging(false);
       if (dragFrameRef.current) {
         cancelAnimationFrame(dragFrameRef.current);
         dragFrameRef.current = 0;
@@ -237,6 +241,8 @@ const SearchResultsPopover = memo(({
         cancelAnimationFrame(dragFrameRef.current);
         dragFrameRef.current = 0;
       }
+      dragOffsetRef.current = null;
+      setIsDragging(false);
     };
   }, [applyPanelPosition, onPositionChange]);
 
@@ -266,10 +272,11 @@ const SearchResultsPopover = memo(({
             x: event.clientX - currentTarget.left,
             y: event.clientY - currentTarget.top,
           };
+          setIsDragging(true);
         }}
         style={{
           background: `linear-gradient(180deg, ${cssVar('bg1')} 0%, ${cssVar('bg0')} 100%)`,
-          cursor: 'move',
+          cursor: isDragging ? 'grabbing' : 'grab',
         }}>
         <div className="min-w-0">
           <div className="text-[12px] font-bold text-text-title">{t('searchResultsTitle')}</div>
@@ -318,7 +325,14 @@ const SearchResultsPopover = memo(({
 
       {resultCount === 0 ? (
         <div className="px-5 py-12 text-center text-[13px] text-text-secondary">
-          {t('searchResultsEmpty')}
+          {isSearching ? (
+            <div className="inline-flex items-center gap-2 rounded-full border border-[var(--accent)]/18 bg-[var(--accent)]/[0.06] px-3 py-1.5 text-accent">
+              <Loader2 size={14} className="animate-spin" />
+              <span>{t('searchLoading')}</span>
+            </div>
+          ) : (
+            t('searchResultsEmpty')
+          )}
         </div>
       ) : (
         <div

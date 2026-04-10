@@ -7,8 +7,10 @@ import type {
   DiffMeta,
   DiffPerformanceMetrics,
   DiffSourceNoticeCode,
+  PreparedTextAnalysis,
 } from '@/types/diff';
 import type {
+  PreparedWorkbookAnalysis,
   WorkbookArtifactDiff,
   WorkbookCompareMode,
   WorkbookMetadataMap,
@@ -52,6 +54,12 @@ export interface RevisionSelectionPair {
   mineRevisionId: string | null;
 }
 
+export interface DiffAnalysisSnapshot {
+  compareMode: WorkbookCompareMode;
+  textAnalysis: PreparedTextAnalysis | null;
+  workbookAnalysis: PreparedWorkbookAnalysis | null;
+}
+
 export interface DiffData extends DiffMeta {
   sourceIdentity?: string;
   compareContext?: CompareContext;
@@ -69,6 +77,7 @@ export interface DiffData extends DiffMeta {
   precomputedWorkbookDelta?: WorkbookPrecomputedDeltaPayload | null;
   precomputedDiffLinesByMode?: Partial<Record<WorkbookCompareMode, DiffLine[] | null>> | null;
   precomputedWorkbookDeltaByMode?: Partial<Record<WorkbookCompareMode, WorkbookPrecomputedDeltaPayload | null>> | null;
+  analysisSnapshotsByMode?: Partial<Record<WorkbookCompareMode, DiffAnalysisSnapshot | null>> | null;
   baseWorkbookMetadata?: WorkbookMetadataMap | null;
   mineWorkbookMetadata?: WorkbookMetadataMap | null;
   revisionOptions?: SvnRevisionInfo[] | null;

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import type { DiffLine, WorkbookPrecomputedDeltaPayload } from '../src/types';
 import { createWorkbookRowLine, createWorkbookSheetLine } from '../src/utils/workbook/workbookDisplay';
 import {
+  buildWorkbookLineSheetContextLookup,
   buildWorkbookLineSheetContexts,
   getWorkbookSections,
   resolveWorkbookSheetNameForLineContext,
@@ -238,6 +239,39 @@ test('resolveWorkbookSheetNameForLineContext chooses the correct sheet at cross-
     resolveWorkbookSheetNameForLineContext({
       line: diffLines[2],
       context: contexts[2],
+      preferredSheetName: 'ThingType',
+    }),
+    'ThingType',
+  );
+});
+
+test('buildWorkbookLineSheetContextLookup lazily resolves the same boundary contexts as the materialized array', () => {
+  const diffLines: DiffLine[] = [
+    buildDiffLine({
+      type: 'equal',
+      base: createWorkbookSheetLine('ThingType'),
+      mine: createWorkbookSheetLine('ThingType'),
+    }),
+    buildDiffLine({
+      type: 'add',
+      mine: createWorkbookSheetLine('类型描述'),
+    }),
+    buildDiffLine({
+      type: 'equal',
+      base: createWorkbookRowLine(4, ['3虚拟物品', '2', '数量型', '0', '']),
+      mine: createWorkbookRowLine(1, ['ID', '类型', '子类型', '类型描述']),
+    }),
+  ];
+
+  const contexts = buildWorkbookLineSheetContexts(diffLines);
+  const lookup = buildWorkbookLineSheetContextLookup(diffLines);
+
+  assert.deepEqual(lookup.get(1), contexts[1]);
+  assert.deepEqual(lookup.get(2), contexts[2]);
+  assert.equal(
+    resolveWorkbookSheetNameForLineContext({
+      line: diffLines[2],
+      context: lookup.get(2),
       preferredSheetName: 'ThingType',
     }),
     'ThingType',

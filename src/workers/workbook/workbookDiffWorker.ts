@@ -14,7 +14,7 @@ self.onmessage = (event: MessageEvent<WorkbookDiffWorkerRequest>) => {
 
   try {
     const textStart = getNow();
-    const { baseText, mineText } = resolveDiffTexts(event.data.source);
+    const { baseText, mineText } = resolveDiffTexts(event.data.source, event.data.locale);
     const textResolveMs = getNow() - textStart;
 
     const diffStart = getNow();

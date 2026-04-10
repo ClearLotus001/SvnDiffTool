@@ -38,8 +38,8 @@ test('useWorkbookHorizontalPaneRenderProps uses the shared workbook content-left
       viewportHeight: 360,
       stickyHeaderHeight: 48,
       activeRegionOverlayVisibleRowFrames: new Map(),
-      guidedPulseNonce: 1,
-      overlayLabel: 'A1:B2 · 2×2',
+      activeRegionPulseTriggerKey: 'Thing:0',
+      overlayLabel: 'A1:B2 路 2脳2',
       selection: {
         anchor: null,
         primary: null,
@@ -134,8 +134,8 @@ test('useWorkbookHorizontalPaneRenderProps keeps horizontal focus geometry on th
       viewportHeight: 360,
       stickyHeaderHeight: 48,
       activeRegionOverlayVisibleRowFrames: new Map(),
-      guidedPulseNonce: 1,
-      overlayLabel: 'B2:B3 · 2×1',
+      activeRegionPulseTriggerKey: 'Thing:0',
+      overlayLabel: 'B2:B3 路 2脳1',
       selection: {
         anchor: null,
         primary: null,

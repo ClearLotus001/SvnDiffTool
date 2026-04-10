@@ -1,5 +1,6 @@
 import { computeDiff } from '@/engine/text/diff';
 import { computeWorkbookDiff, isWorkbookTextPair } from '@/engine/workbook/workbookDiff';
+import { getRuntimeLocale, type Locale } from '@/i18n/core';
 import type { WorkbookCompareMode } from '@/types';
 import { createLatestWorkerClient } from '@/utils/async/latestWorkerClient';
 import { resolveDiffTexts } from '@/utils/diff/diffSource';
@@ -12,6 +13,7 @@ import type {
 
 interface NormalizedWorkbookDiffAsyncInput extends WorkbookDiffAsyncInput {
   compareMode: WorkbookCompareMode;
+  locale: Locale;
 }
 
 function getNow(): number {
@@ -26,6 +28,7 @@ function normalizeInput(input: WorkbookDiffAsyncInput): NormalizedWorkbookDiffAs
   return {
     ...input,
     compareMode: input.compareMode ?? 'strict',
+    locale: input.locale ?? getRuntimeLocale(),
   };
 }
 
@@ -43,7 +46,7 @@ function buildWorkerSource(input: NormalizedWorkbookDiffAsyncInput): WorkbookDif
 
 function computeDiffResultSync(input: NormalizedWorkbookDiffAsyncInput): WorkbookDiffAsyncResult {
   const textStart = getNow();
-  const { baseText, mineText } = resolveDiffTexts(buildWorkerSource(input));
+  const { baseText, mineText } = resolveDiffTexts(buildWorkerSource(input), input.locale);
   const textResolveMs = getNow() - textStart;
 
   const diffStart = getNow();
@@ -72,6 +75,7 @@ const workbookDiffWorkerClient = createLatestWorkerClient<
     requestId,
     source: buildWorkerSource(input),
     compareMode: input.compareMode,
+    locale: input.locale,
   }),
   parseResponse: (response) => (
     response.ok

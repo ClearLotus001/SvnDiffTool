@@ -11,14 +11,14 @@ import { summarizeDiffChanges } from '@/engine/text/textChangeAlignment';
 import { buildSearchPattern, getSearchableLineContent, navigateSearch } from '@/engine/text/search';
 import { computeSearchMatchesAsync } from '@/utils/diff/computeSearchMatchesAsync';
 import { resolveDisplayFileName, resolveVersionLabel } from '@/utils/diff/diffMeta';
+import { prepareTextDiffAnalysisFromDiffLines } from '@/utils/diff/preparedTextAnalysis';
 import { createSearchResultItemResolver } from '@/utils/diff/searchResultItems';
 import {
+  EMPTY_WORKBOOK_SECTION_ROW_INDEX,
   buildWorkbookSectionRowIndex,
   buildWorkbookSectionRowIndexFromPrecomputedDelta,
-  type IndexedWorkbookSectionRows,
 } from '@/utils/workbook/workbookSheetIndex';
 import {
-  getWorkbookSheetMaxRowNumber,
   resolveWorkbookGotoTarget,
 } from '@/utils/workbook/workbookGoto';
 import {
@@ -29,7 +29,13 @@ import {
 import { getWorkbookSharedExpandedBlocks } from '@/utils/workbook/workbookLayoutState';
 import { buildWorkbookLineSheetContexts, getWorkbookSections } from '@/utils/workbook/workbookSections';
 import { resolveWorkbookSearchMatchTarget } from '@/utils/workbook/workbookNavigation';
-import { getCompareContextLabels } from '@/hooks/app/helpers';
+import {
+  applyWorkbookRegionVersionLabels,
+  getCompareContextLabels,
+  getPreparedTextAnalysisForMode,
+  getPreparedWorkbookNavigationRegionsForMode,
+  getPreparedWorkbookSectionsForMode,
+} from '@/hooks/app/helpers';
 import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
 import { useAppStore } from '@/store/appStore';
 import { createWorkbookSelectionState } from '@/utils/workbook/workbookSelectionState';
@@ -39,11 +45,13 @@ interface UseAppViewModelArgs {
   t: TranslationFn;
   workbookSharedExpandedBlocksRef: MutableRefObject<Map<string, CollapseExpansionState>>;
   scrollToIndexRef: MutableRefObject<((idx: number, align?: 'start' | 'center') => void) | null>;
+  currentDiffData: import('@/types').DiffData | null;
 }
 
 const WORKBOOK_FILE_EXTENSION_RE = /\.(xlsx|xlsm|xltx|xltm|xlsb|xls)$/i;
 const EMPTY_SEARCH_MATCHES: SearchMatch[] = [];
 const EMPTY_SEARCHABLE_LINES: string[] = [];
+const EMPTY_MODIFIED_WORKBOOK_SHEET_NAMES = new Set<string>();
 
 function isWorkbookFileCandidate(name: string): boolean {
   return WORKBOOK_FILE_EXTENSION_RE.test(name.trim());
@@ -53,9 +61,11 @@ export default function useAppViewModel({
   t,
   workbookSharedExpandedBlocksRef,
   scrollToIndexRef,
+  currentDiffData,
 }: UseAppViewModelArgs) {
   const searchSeqRef = useRef(0);
   const [allSearchMatches, setAllSearchMatches] = useState<SearchMatch[]>(EMPTY_SEARCH_MATCHES);
+  const [isSearching, setIsSearching] = useState(false);
   // ── Read state directly from Zustand store ──────────────────────────
   const compareContext = useAppStore((s) => s.compareContext);
   const launchBaseName = useAppStore((s) => s.launchBaseName);
@@ -83,6 +93,23 @@ export default function useAppViewModel({
   const precomputedWorkbookDelta = useAppStore((s) => s.precomputedWorkbookDelta);
   const hunkIdx = useAppStore((s) => s.hunkIdx);
   const activeWorkbookSheetName = useAppStore((s) => s.activeWorkbookSheetName);
+  const isWorkbookCandidate = useMemo(
+    () => isWorkbookFileCandidate(fileName || baseName || mineName),
+    [baseName, fileName, mineName],
+  );
+  const preparedTextAnalysis = useMemo(
+    () => getPreparedTextAnalysisForMode(currentDiffData, workbookCompareMode)
+      ?? (!isWorkbookCandidate && diffLines.length > 0 ? prepareTextDiffAnalysisFromDiffLines(diffLines) : null),
+    [currentDiffData, diffLines, isWorkbookCandidate, workbookCompareMode],
+  );
+  const preparedWorkbookSections = useMemo(
+    () => getPreparedWorkbookSectionsForMode(currentDiffData, workbookCompareMode),
+    [currentDiffData, workbookCompareMode],
+  );
+  const preparedWorkbookNavigationRegions = useMemo(
+    () => getPreparedWorkbookNavigationRegionsForMode(currentDiffData, workbookCompareMode),
+    [currentDiffData, workbookCompareMode],
+  );
 
   // ── Read setters directly from store ──────────────────────────────────
   const setSearchQ = useAppStore((s) => s.setSearchQ);
@@ -174,10 +201,13 @@ export default function useAppViewModel({
   ]);
   const diffSourceNoticeKey = diffSourceNoticeCode ?? '';
 
-  const hunks = useMemo(() => computeHunks(diffLines), [diffLines]);
+  const hunks = useMemo(
+    () => (isWorkbookCandidate ? [] : computeHunks(diffLines)),
+    [diffLines, isWorkbookCandidate],
+  );
   const textDiffStats = useMemo<TextDiffStats>(
-    () => summarizeDiffChanges(diffLines),
-    [diffLines],
+    () => preparedTextAnalysis?.stats ?? summarizeDiffChanges(diffLines),
+    [diffLines, preparedTextAnalysis],
   );
   const hunkPositions = useMemo(() => hunks.map((h) => h.startIdx), [hunks]);
   const totalHunks = hunks.length;
@@ -187,26 +217,24 @@ export default function useAppViewModel({
     [searchQ, searchRx, searchCs],
   );
   const hasSearchQuery = searchQ.trim().length > 0;
-  const isWorkbookCandidate = useMemo(
-    () => isWorkbookFileCandidate(fileName || baseName || mineName),
-    [baseName, fileName, mineName],
-  );
   const shouldBuildWorkbookLineSheetContexts = Boolean(searchPattern) && isWorkbookCandidate;
   const searchableLines = useMemo(
     () => (hasSearchQuery ? diffLines.map(getSearchableLineContent) : EMPTY_SEARCHABLE_LINES),
     [diffLines, hasSearchQuery],
   );
   const workbookLineSheetContexts = useMemo(
-    () => ((shouldBuildWorkbookLineSheetContexts || isWorkbookCandidate) ? buildWorkbookLineSheetContexts(diffLines) : []),
-    [diffLines, isWorkbookCandidate, shouldBuildWorkbookLineSheetContexts],
+    () => (shouldBuildWorkbookLineSheetContexts ? buildWorkbookLineSheetContexts(diffLines) : []),
+    [diffLines, shouldBuildWorkbookLineSheetContexts],
   );
   useEffect(() => {
     const seq = ++searchSeqRef.current;
     if (!searchPattern || !hasSearchQuery) {
       setAllSearchMatches(EMPTY_SEARCH_MATCHES);
+      setIsSearching(false);
       return;
     }
 
+    setIsSearching(true);
     setAllSearchMatches(EMPTY_SEARCH_MATCHES);
 
     void computeSearchMatchesAsync(searchableLines, {
@@ -215,6 +243,7 @@ export default function useAppViewModel({
       isCaseSensitive: searchCs,
     }).then((matches) => {
       if (seq !== searchSeqRef.current) return;
+      setIsSearching(false);
       if (!isWorkbookCandidate || workbookLineSheetContexts.length === 0) {
         setAllSearchMatches(matches);
         return;
@@ -229,6 +258,7 @@ export default function useAppViewModel({
       })));
     }).catch(() => {
       if (seq !== searchSeqRef.current) return;
+      setIsSearching(false);
       setAllSearchMatches(EMPTY_SEARCH_MATCHES);
     });
   }, [
@@ -244,13 +274,24 @@ export default function useAppViewModel({
   ]);
 
   const workbookSections = useMemo(
-    () => (isWorkbookCandidate ? getWorkbookSections(diffLines, workbookCompareMode) : []),
-    [diffLines, isWorkbookCandidate, workbookCompareMode],
+    () => {
+      if (!isWorkbookCandidate) return [];
+      return preparedWorkbookSections ?? getWorkbookSections(diffLines, workbookCompareMode);
+    },
+    [diffLines, isWorkbookCandidate, preparedWorkbookSections, workbookCompareMode],
   );
   const isWorkbookMode = workbookSections.length > 0;
+  const activeWorkbookSection = useMemo(
+    () => (
+      activeWorkbookSheetName
+        ? (workbookSections.find((section) => section.name === activeWorkbookSheetName) ?? null)
+        : null
+    ),
+    [activeWorkbookSheetName, workbookSections],
+  );
   const workbookSectionRowIndex = useMemo(
     () => {
-      if (!isWorkbookMode) return new Map<string, IndexedWorkbookSectionRows>();
+      if (!isWorkbookMode) return EMPTY_WORKBOOK_SECTION_ROW_INDEX;
       return precomputedWorkbookDelta
         ? buildWorkbookSectionRowIndexFromPrecomputedDelta(diffLines, precomputedWorkbookDelta)
         : buildWorkbookSectionRowIndex(diffLines, workbookSections, workbookCompareMode);
@@ -263,10 +304,17 @@ export default function useAppViewModel({
     }
     return allSearchMatches.filter((match) => match.workbookTarget?.sheetName === activeWorkbookSheetName);
   }, [activeWorkbookSheetName, allSearchMatches, isWorkbookMode, searchWorkbookScope]);
-  const workbookCellRegions = useMemo<WorkbookDiffRegion[]>(
+  const workbookDiffRegions = useMemo<WorkbookDiffRegion[]>(
     () => {
       if (!isWorkbookMode) return [];
-      return buildWorkbookDiffRegions(
+      if (preparedWorkbookNavigationRegions) {
+        return applyWorkbookRegionVersionLabels(
+          preparedWorkbookNavigationRegions,
+          baseVersionLabel,
+          mineVersionLabel,
+        );
+      }
+      const workbookCellRegions = buildWorkbookDiffRegions(
         workbookSections,
         workbookSectionRowIndex,
         baseVersionLabel,
@@ -275,26 +323,44 @@ export default function useAppViewModel({
         baseWorkbookMetadata,
         mineWorkbookMetadata,
       );
+      return buildWorkbookNavigationRegions(
+        workbookCellRegions,
+        hunks,
+        workbookSections.map((section) => section.name),
+      );
     },
     [
       baseVersionLabel,
       baseWorkbookMetadata,
+      hunks,
       isWorkbookMode,
       mineVersionLabel,
       mineWorkbookMetadata,
+      preparedWorkbookNavigationRegions,
       workbookCompareMode,
       workbookSectionRowIndex,
       workbookSections,
     ],
   );
-  const workbookDiffRegions = useMemo<WorkbookDiffRegion[]>(
-    () => buildWorkbookNavigationRegions(
-      workbookCellRegions,
-      hunks,
-      workbookSections.map((section) => section.name),
-    ),
-    [hunks, workbookCellRegions, workbookSections],
-  );
+  const modifiedWorkbookSheetNames = useMemo<ReadonlySet<string>>(() => {
+    if (!isWorkbookMode) return EMPTY_MODIFIED_WORKBOOK_SHEET_NAMES;
+    if (preparedWorkbookNavigationRegions) {
+      return new Set(preparedWorkbookNavigationRegions.map((region) => region.sheetName));
+    }
+    if (precomputedWorkbookDelta) {
+      return new Set(
+        precomputedWorkbookDelta.sections
+          .filter((section) => section.rows.some((row) => row.hasChanges))
+          .map((section) => section.name),
+      );
+    }
+    return new Set(workbookDiffRegions.map((region) => region.sheetName));
+  }, [
+    isWorkbookMode,
+    precomputedWorkbookDelta,
+    preparedWorkbookNavigationRegions,
+    workbookDiffRegions,
+  ]);
   const activeWorkbookDiffRegion = isWorkbookMode
     ? (workbookDiffRegions[hunkIdx] ?? null)
     : null;
@@ -322,12 +388,14 @@ export default function useAppViewModel({
 
   const totalLines = useMemo(() => {
     if (isWorkbookMode) {
-      const activeSheetMaxRow = getWorkbookSheetMaxRowNumber(
-        diffLines,
-        workbookLineSheetContexts,
-        activeWorkbookSheetName,
-      );
+      const activeSheetMaxRow = activeWorkbookSection?.rowCount ?? 0;
       if (activeSheetMaxRow > 0) return activeSheetMaxRow;
+
+      const maxWorkbookRowCount = workbookSections.reduce(
+        (max, section) => Math.max(max, section.rowCount),
+        0,
+      );
+      if (maxWorkbookRowCount > 0) return maxWorkbookRowCount;
     }
 
     let max = 0;
@@ -336,7 +404,7 @@ export default function useAppViewModel({
       if (lineMax > max) max = lineMax;
     });
     return max;
-  }, [activeWorkbookSheetName, diffLines, isWorkbookMode, workbookLineSheetContexts]);
+  }, [activeWorkbookSection, diffLines, isWorkbookMode, workbookSections]);
   const searchResultItemResolver = useMemo(() => createSearchResultItemResolver({
     diffLines,
     searchMatches,
@@ -401,10 +469,11 @@ export default function useAppViewModel({
     if (!scrollToIndexRef.current) return;
 
     if (isWorkbookMode && activeWorkbookSheetName) {
+      const lineSheetContexts = buildWorkbookLineSheetContexts(diffLines);
       const resolvedGotoTarget = resolveWorkbookGotoTarget({
         lineNo,
         diffLines,
-        lineSheetContexts: workbookLineSheetContexts,
+        lineSheetContexts,
         sheetName: activeWorkbookSheetName,
         preferredSide: selectedCell?.sheetName === activeWorkbookSheetName
           ? selectedCell.side
@@ -469,7 +538,6 @@ export default function useAppViewModel({
     setWorkbookContextMenu,
     setWorkbookHiddenStateBySheet,
     setWorkbookSelection,
-    workbookLineSheetContexts,
   ]);
 
   return {
@@ -488,13 +556,16 @@ export default function useAppViewModel({
     artifactNoticeKey,
     diffSourceNoticeKey,
     hunks,
+    preparedTextAnalysis,
     textDiffStats,
     hunkPositions,
     searchJumpNonce,
+    isSearching,
     searchMatches,
     searchResultItemResolver,
     workbookSections,
     workbookSectionRowIndex,
+    modifiedWorkbookSheetNames,
     isWorkbookMode,
     workbookDiffRegions,
     activeWorkbookDiffRegion,

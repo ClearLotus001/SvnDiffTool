@@ -1,6 +1,7 @@
 import type { ReactNode, RefObject } from 'react';
 
 import { FONT_UI } from '@/constants/typography';
+import { useI18n } from '@/context/i18n';
 import { cssVar } from '@/theme/cssUtils';
 import type { WorkbookHorizontalBodySegment } from '@/hooks/workbook/useWorkbookHorizontalBodyLayout';
 import type {
@@ -39,7 +40,7 @@ interface WorkbookHorizontalRenderPaneProps {
   onFrozenRowsMouseEnter: () => void;
   onFrozenRowsMouseLeave: () => void;
   bodySegments: WorkbookHorizontalBodySegment[];
-  renderPinnedCollapseBar: (width: number | string, count: number, expandCount: number, onExpand: () => void, onExpandAll: () => void) => ReactNode;
+  renderPinnedCollapseBar: (width: number | string, count: number, expandCount: number, onExpand: () => void, onExpandAll: () => void, sourceItemIndex: number) => ReactNode;
   onExpandCollapseBlock: (
     blockId: string,
     hiddenStart: number,
@@ -75,6 +76,7 @@ export default function WorkbookHorizontalRenderPane({
   onExpandCollapseBlock,
   onRevealHiddenRows,
 }: WorkbookHorizontalRenderPaneProps) {
+  const { t } = useI18n();
   const {
     paneViewportWidth,
     pinnedCollapseWidth,
@@ -161,10 +163,10 @@ export default function WorkbookHorizontalRenderPane({
                         lineHeight: 1.2,
                         fontWeight: 700,
                       }}>
-                      <span>{side === 'left' ? '左侧冻结行窗口' : '右侧冻结行窗口'}</span>
+                      <span>{side === 'left' ? t('workbookFrozenRowsWindowLabelLeft') : t('workbookFrozenRowsWindowLabelRight')}</span>
                       <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace' }}>{frozenRowsRangeLabel}</span>
                       <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace', opacity: 0.82 }}>
-                        {frozenRowsViewportIsOverflowing ? 'overflow' : 'fit'} · {frozenRowsViewportHeight}px/{frozenRowsHeight}px
+                        {t(frozenRowsViewportIsOverflowing ? 'commonOverflow' : 'commonFit')} · {frozenRowsViewportHeight}px/{frozenRowsHeight}px
                       </span>
                     </div>
                   </div>
@@ -196,6 +198,10 @@ export default function WorkbookHorizontalRenderPane({
         <>
           {bodySegments.map((segment) => {
             if (segment.kind === 'collapse') {
+              const sourceItemIndex = 'sourceItemIndex' in segment && typeof segment.sourceItemIndex === 'number'
+                ? segment.sourceItemIndex
+                : -1;
+
               return (
                 <div key={`${side}-collapse-${segment.item.blockId}-${segment.item.hiddenStart}-${segment.item.hiddenEnd}`} style={{ position: 'absolute', top: segment.top, left: 0, minWidth: '100%' }}>
                   {renderPinnedCollapseBar(
@@ -215,6 +221,7 @@ export default function WorkbookHorizontalRenderPane({
                       segment.item.count,
                       'full',
                     ),
+                    sourceItemIndex,
                   )}
                 </div>
               );

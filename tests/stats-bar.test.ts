@@ -131,7 +131,7 @@ test('StatsBar renders workbook sheet change counts without double-counting rena
   assert.match(html, /重命名工作表/);
   assert.match(html, /\+1/);
   assert.match(html, /-1/);
-  assert.match(html, /↦1/);
+  assert.match(html, /\u21921/);
 });
 
 test('StatsBar uses generic file label for text diffs', () => {

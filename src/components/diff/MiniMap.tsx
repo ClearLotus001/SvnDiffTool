@@ -2,6 +2,7 @@
 import { memo, useEffect, useRef, useState, type RefObject } from 'react';
 import type { DiffLine, RenderItem, SplitRenderItem, SplitRow } from '@/types';
 import { useThemeTokens } from '@/context/theme';
+import { TEXT_DIFF_MINIMAP_WIDTH } from '@/constants/layout';
 import { ROW_H } from '@/hooks/virtualization/useVirtual';
 import {
   buildMiniMapOverlayMarkers,
@@ -35,7 +36,7 @@ export type MiniMapDiffMarker = MiniMapOverlayMarker<
   { searchHit: boolean; tones: MiniMapPaintTone[] }
 >;
 
-const WIDTH = 64;
+const WIDTH = TEXT_DIFF_MINIMAP_WIDTH;
 const SEARCH_MARKER_WIDTH = 8;
 const MIN_DIFF_MARKER_HEIGHT = DEFAULT_MINIMAP_OVERLAY_MARKER_HEIGHT;
 const TEXT_MINIMAP_TONE_ORDER: readonly MiniMapPaintTone[] = ['delete', 'modify', 'add'] as const;
@@ -358,8 +359,8 @@ const MiniMap = memo(({ segments, scrollRef, contentHeight }: MiniMapProps) => {
     <div
       ref={contRef}
       onClick={handleClick}
-      className="w-16 relative overflow-hidden cursor-pointer shrink-0 self-stretch border-l border-border-default"
-      style={{ background: T.bg1 }}>
+      className="relative overflow-hidden cursor-pointer shrink-0 self-stretch border-l border-border-default"
+      style={{ width: WIDTH, background: T.bg1 }}>
       <canvas
         ref={canvasRef}
         className="absolute top-0 left-0 w-full h-full"

@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { useWorkbookCompareOverlayLayout } from '../src/hooks/workbook/useWorkbookCompareOverlayLayout';
 import type { WorkbookDiffRegion } from '../src/types';
+import { createWorkbookRowLine } from '../src/utils/workbook/workbookDisplay';
 
 function buildRegion(overrides: Partial<WorkbookDiffRegion> = {}): WorkbookDiffRegion {
   return {
@@ -52,10 +53,8 @@ test('useWorkbookCompareOverlayLayout keeps column fills side-specific while exp
       mode: 'columns',
       stickyHeaderHeight: 48,
       rowWindowOffsetTop: 0,
-      visibleFrozenStackedCanvasRuns: [],
-      visibleFrozenColumnsCanvasRows: [],
-      bodySegments: [],
-      columnsBodySegments: null,
+      frozenRowFramesByKey: new Map(),
+      bodyRowFramesByKey: new Map(),
       scrollRef: { current: null },
       viewportWidth: 640,
       viewportHeight: 360,
@@ -65,7 +64,7 @@ test('useWorkbookCompareOverlayLayout keeps column fills side-specific while exp
       contentLeft: 40,
       frozenWidth: 0,
       freezeColumnCount: 0,
-      pulseNonce: 1,
+      pulseTriggerKey: 'Thing:0',
       label: 'B2:B3 · 2×1',
     });
 
@@ -110,10 +109,8 @@ test('useWorkbookCompareOverlayLayout keeps stacked focus outlines on the shared
       mode: 'stacked',
       stickyHeaderHeight: 48,
       rowWindowOffsetTop: 0,
-      visibleFrozenStackedCanvasRuns: [],
-      visibleFrozenColumnsCanvasRows: [],
-      bodySegments: [],
-      columnsBodySegments: null,
+      frozenRowFramesByKey: new Map(),
+      bodyRowFramesByKey: new Map(),
       scrollRef: { current: null },
       viewportWidth: 640,
       viewportHeight: 360,
@@ -123,7 +120,7 @@ test('useWorkbookCompareOverlayLayout keeps stacked focus outlines on the shared
       contentLeft: 40,
       frozenWidth: 0,
       freezeColumnCount: 0,
-      pulseNonce: 1,
+      pulseTriggerKey: 'Thing:0',
       label: 'B2:B3 · 2×1',
     });
 
@@ -138,4 +135,88 @@ test('useWorkbookCompareOverlayLayout keeps stacked focus outlines on the shared
   assert.deepEqual(captured.current.resolvePatchBoundsModes(patch), ['single']);
   assert.deepEqual(captured.current.fallbackBoundsModes, ['single']);
   assert.deepEqual(captured.current.resolveFocusPatchBoundsModes?.(patch), ['single']);
+});
+
+test('useWorkbookCompareOverlayLayout projects frozen and body row frames without rescanning render segments', () => {
+  const captured = { current: null as ReturnType<typeof useWorkbookCompareOverlayLayout> | null };
+  const rowA = {
+    left: {
+      type: 'equal' as const,
+      base: createWorkbookRowLine(2, ['A']),
+      mine: createWorkbookRowLine(2, ['A']),
+      baseLineNo: 2,
+      mineLineNo: 2,
+      baseCharSpans: null,
+      mineCharSpans: null,
+    },
+    right: {
+      type: 'equal' as const,
+      base: createWorkbookRowLine(2, ['A']),
+      mine: createWorkbookRowLine(2, ['A']),
+      baseLineNo: 2,
+      mineLineNo: 2,
+      baseCharSpans: null,
+      mineCharSpans: null,
+    },
+    lineIdx: 10,
+    lineIdxs: [10],
+  };
+  const rowB = {
+    left: {
+      type: 'equal' as const,
+      base: createWorkbookRowLine(3, ['B']),
+      mine: createWorkbookRowLine(3, ['B']),
+      baseLineNo: 3,
+      mineLineNo: 3,
+      baseCharSpans: null,
+      mineCharSpans: null,
+    },
+    right: {
+      type: 'equal' as const,
+      base: createWorkbookRowLine(3, ['B']),
+      mine: createWorkbookRowLine(3, ['B']),
+      baseLineNo: 3,
+      mineLineNo: 3,
+      baseCharSpans: null,
+      mineCharSpans: null,
+    },
+    lineIdx: 11,
+    lineIdxs: [11],
+  };
+
+  function Probe() {
+    captured.current = useWorkbookCompareOverlayLayout({
+      sectionRows: [rowA, rowB],
+      showColumnHeader: true,
+      mode: 'columns',
+      stickyHeaderHeight: 72,
+      rowWindowOffsetTop: 18,
+      frozenRowFramesByKey: new Map([
+        ['10', { top: 0, height: 24 }],
+      ]),
+      bodyRowFramesByKey: new Map([
+        ['11', { top: 24, height: 24 }],
+      ]),
+      scrollRef: { current: null },
+      viewportWidth: 640,
+      viewportHeight: 360,
+      activeDiffRegion: buildRegion(),
+      activeSheetName: 'Thing',
+      columnLayoutByColumn: new Map(),
+      contentLeft: 40,
+      frozenWidth: 0,
+      freezeColumnCount: 0,
+      pulseTriggerKey: 'Thing:0',
+      label: 'B2:B3',
+    });
+    return null;
+  }
+
+  renderToStaticMarkup(React.createElement(Probe));
+
+  if (!captured.current) throw new Error('expected captured overlay props');
+  assert.deepEqual([...captured.current.visibleRowFrames.entries()], [
+    [0, { top: 24, height: 24 }],
+    [1, { top: 114, height: 24 }],
+  ]);
 });

@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import type { DiffLine, SearchMatch, WorkbookDiffRegion } from '../src/types';
-import type { WorkbookLineSheetContext } from '../src/utils/workbook/workbookSections';
+import {
+  buildWorkbookLineSheetContextLookup,
+  type WorkbookLineSheetContext,
+} from '../src/utils/workbook/workbookSections';
 import {
   resolveWorkbookNavigationSheetSyncRequest,
   resolveWorkbookSearchSheetSyncRequest,
@@ -155,4 +158,50 @@ test('navigation sheet sync yields to active search navigation', () => {
   });
 
   assert.equal(request, null);
+});
+
+test('navigation sheet sync can resolve sheet names from lazy line-context lookup', () => {
+  const diffLines: DiffLine[] = [
+    {
+      type: 'equal',
+      base: '@@sheet\tThing',
+      mine: '@@sheet\tThing',
+      baseLineNo: null,
+      mineLineNo: null,
+      baseCharSpans: null,
+      mineCharSpans: null,
+    },
+    {
+      type: 'add',
+      base: null,
+      mine: '@@sheet\tPackage',
+      baseLineNo: null,
+      mineLineNo: null,
+      baseCharSpans: null,
+      mineCharSpans: null,
+    },
+    {
+      type: 'equal',
+      base: '@@row\t2\tLegacy',
+      mine: '@@row\t1\tModern',
+      baseLineNo: null,
+      mineLineNo: null,
+      baseCharSpans: null,
+      mineCharSpans: null,
+    },
+  ];
+
+  const request = resolveWorkbookNavigationSheetSyncRequest({
+    isWorkbookMode: true,
+    activeSearchIdx: -1,
+    searchMatches: [],
+    activeWorkbookDiffRegion: null,
+    hunkIdx: 0,
+    hunkPositions: [2],
+    diffLines,
+    lineSheetContextLookup: buildWorkbookLineSheetContextLookup(diffLines),
+    preferredSheetName: 'Package',
+  });
+
+  assert.equal(request?.sheetName, 'Package');
 });

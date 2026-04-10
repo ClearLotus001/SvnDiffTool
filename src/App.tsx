@@ -8,7 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
-  useRef, useCallback, useMemo, useState, startTransition, type SetStateAction,
+  useRef, useCallback, useEffect, useMemo, useState, startTransition, type SetStateAction,
 } from 'react';
 
 import type {
@@ -21,10 +21,14 @@ import type {
   WorkbookMoveDirection,
 } from '@/types';
 import { createEmptyTextLayoutSnapshots, type TextLayoutSnapshotsByMode } from '@/utils/diff/textLayoutState';
+import {
+  arePreparedTextAnalysesEquivalent,
+  buildLegacyPreparedTextAnalysis,
+  buildReplacementPairIndexFromPairs,
+} from '@/utils/diff/preparedTextAnalysis';
 import { buildVersionCopyText } from '@/utils/diff/textCopy';
 import { useI18n } from '@/context/i18n';
 import { ThemeContext } from '@/context/theme';
-import { buildReplacementPairIndex } from '@/engine/text/textChangeAlignment';
 import {
   applyWorkbookExpandedBlocksChange,
   applyWorkbookLayoutSnapshot,
@@ -56,6 +60,7 @@ import {
   type CachedDiffResult,
   type WorkbookUiController,
 } from '@/hooks/app';
+import { debugLog } from '@/hooks/app/helpers';
 import { useAppStore } from '@/store/appStore';
 import PerfBar from '@/components/app/PerfBar';
 import DiffSourceNoticeBar from '@/components/diff/DiffSourceNoticeBar';
@@ -66,6 +71,7 @@ import Toolbar from '@/components/navigation/Toolbar';
 import SplitHeader from '@/components/navigation/SplitHeader';
 import StatsBar from '@/components/navigation/StatsBar';
 import { copyText } from '@/utils/app/clipboard';
+import { recordPerfBridgeEvent } from '@/utils/app/perfBridge';
 import { findWorkbookDiffRegionNavigationIndex } from '@/utils/workbook/workbookDiffRegion';
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -92,6 +98,7 @@ export default function App() {
   const setShowWhitespace = useAppStore((s) => s.setShowWhitespace);
   const setShowHiddenColumns = useAppStore((s) => s.setShowHiddenColumns);
   const setFontSize = useAppStore((s) => s.setFontSize);
+  const setTextSplitHeaderRatio = useAppStore((s) => s.setTextSplitHeaderRatio);
 
   // Diff Data (needed by JSX: notice bars, panelProps, debug)
   const diffLines = useAppStore((s) => s.diffLines);
@@ -109,12 +116,11 @@ export default function App() {
   const searchCs = useAppStore((s) => s.searchCs);
   const searchWorkbookScope = useAppStore((s) => s.searchWorkbookScope);
   const activeSearchIdx = useAppStore((s) => s.activeSearchIdx);
+  const resetSearchState = useAppStore((s) => s.resetSearchState);
 
   // Navigation (needed by JSX: Toolbar, panelProps, handlers)
   const hunkIdx = useAppStore((s) => s.hunkIdx);
   const setHunkIdx = useAppStore((s) => s.setHunkIdx);
-  const setGuidedPulseNonce = useAppStore((s) => s.setGuidedPulseNonce);
-  const guidedPulseNonce = useAppStore((s) => s.guidedPulseNonce);
 
   // Electron Environment (needed by JSX: Toolbar, SplitHeader, AppContent)
   const isElectron = useAppStore((s) => s.isElectron);
@@ -203,6 +209,7 @@ export default function App() {
     dialogActions.set('svnConfig', value);
   }, [dialogActions]);
   const closeAllDialogs = dialogActions.closeAll;
+  const previousShowSearchRef = useRef(showSearch);
 
   const diffLoad = useDiffLoadState();
   const { state: diffLoadState } = diffLoad;
@@ -280,13 +287,16 @@ export default function App() {
     artifactNoticeKey,
     diffSourceNoticeKey,
     hunks,
+    preparedTextAnalysis,
     textDiffStats,
     hunkPositions,
     searchJumpNonce,
+    isSearching,
     searchMatches,
     searchResultItemResolver,
     workbookSections,
     workbookSectionRowIndex,
+    modifiedWorkbookSheetNames,
     isWorkbookMode,
     workbookDiffRegions,
     activeWorkbookDiffRegion,
@@ -306,18 +316,46 @@ export default function App() {
     t,
     workbookSharedExpandedBlocksRef,
     scrollToIndexRef,
+    currentDiffData: currentDiffDataRef.current,
   });
+  const shadowPreparedTextAnalysis = useMemo(() => (
+    isDevMode && !isWorkbookMode && diffLines.length > 0
+      ? buildLegacyPreparedTextAnalysis(diffLines)
+      : null
+  ), [diffLines, isDevMode, isWorkbookMode]);
   const textDiffPresentation = useMemo(() => ({
-    stats: textDiffStats,
+    stats: preparedTextAnalysis?.stats ?? textDiffStats,
     replacementPairIndex: (!isWorkbookMode && layout === 'unified')
-      ? buildReplacementPairIndex(diffLines)
+      ? buildReplacementPairIndexFromPairs(preparedTextAnalysis?.replacementPairs ?? [])
       : EMPTY_REPLACEMENT_PAIR_INDEX,
-  }), [diffLines, isWorkbookMode, layout, textDiffStats]);
+  }), [isWorkbookMode, layout, preparedTextAnalysis, textDiffStats]);
   const syntaxPresentation = useSyntaxHighlightPresentation({
     currentDiffData: currentDiffDataRef.current,
     isWorkbookMode,
     themeKey,
   });
+
+  useEffect(() => {
+    if (!shadowPreparedTextAnalysis || !preparedTextAnalysis) return;
+    if (arePreparedTextAnalysesEquivalent(preparedTextAnalysis, shadowPreparedTextAnalysis)) {
+      return;
+    }
+    debugLog('prepared-text-analysis:mismatch', {
+      snapshotStats: preparedTextAnalysis.stats,
+      legacyStats: shadowPreparedTextAnalysis.stats,
+      snapshotReplacementPairs: preparedTextAnalysis.replacementPairs.length,
+      legacyReplacementPairs: shadowPreparedTextAnalysis.replacementPairs.length,
+      snapshotSplitRows: preparedTextAnalysis.splitRowDescriptors.length,
+      legacySplitRows: shadowPreparedTextAnalysis.splitRowDescriptors.length,
+    });
+  }, [preparedTextAnalysis, shadowPreparedTextAnalysis]);
+
+  useEffect(() => {
+    if (previousShowSearchRef.current && !showSearch) {
+      resetSearchState();
+    }
+    previousShowSearchRef.current = showSearch;
+  }, [resetSearchState, showSearch]);
 
   // ── Chrome Effects ────────────────────────────────────────────────────
   useAppChromeEffects({
@@ -403,16 +441,27 @@ export default function App() {
     [],
   );
   const handleLayoutChange = useCallback((nextLayout: typeof layout) => {
+    if (nextLayout === layout) return;
+    recordPerfBridgeEvent('layout-change:start', {
+      fileName: displayFileName,
+      fromLayout: layout,
+      toLayout: nextLayout,
+      isWorkbookMode,
+      compareMode: workbookCompareMode,
+    });
     startTransition(() => {
       setLayout(nextLayout);
     });
-  }, [setLayout]);
+  }, [displayFileName, isWorkbookMode, layout, setLayout, workbookCompareMode]);
   const handleTextLayoutSnapshotChange = useCallback((snapshot: TextLayoutSnapshot) => {
     textLayoutSnapshotsRef.current = {
       ...textLayoutSnapshotsRef.current,
       [snapshot.layout]: snapshot,
     };
-  }, []);
+    if (snapshot.layout === 'split-h') {
+      setTextSplitHeaderRatio(snapshot.splitRatio);
+    }
+  }, [setTextSplitHeaderRatio]);
   const handleTextExpandedBlocksChange = useCallback((expandedBlocks: CollapseExpansionState) => {
     const nextExpandedBlocks = cloneCollapseExpansionState(expandedBlocks);
     textSharedExpandedBlocksRef.current = nextExpandedBlocks;
@@ -495,21 +544,26 @@ export default function App() {
   const [textLineSelectionSummary, setTextLineSelectionSummary] = useState<TextLineSelectionSummary | null>(null);
 
   const panelProps = useMemo(() => ({
-    diffLines, textDiffPresentation, syntaxPresentation, baseVersionLabel, mineVersionLabel, collapseCtx, activeHunkIdx: hunkIdx,
+    diffLines,
+    splitRowDescriptors: preparedTextAnalysis?.splitRowDescriptors ?? null,
+    textDiffPresentation,
+    syntaxPresentation,
+    baseVersionLabel,
+    mineVersionLabel,
+    collapseCtx,
+    activeHunkIdx: hunkIdx,
     searchMatches, activeSearchIdx, hunkPositions, searchJumpNonce,
     showWhitespace, fontSize,
     guidedLineIdx: null,
     guidedHunkRange: isWorkbookMode ? activeWorkbookGuidedRange : (hunks[hunkIdx] ?? null),
-    guidedPulseNonce,
     onScrollerReady: handleScrollerReady,
     onCollapseNavigationReady: handleCollapseNavigationReady,
     onLineSelectionChange: setTextLineSelectionSummary,
   }), [
-    diffLines, textDiffPresentation, syntaxPresentation, baseVersionLabel, mineVersionLabel, collapseCtx, hunkIdx,
+    diffLines, preparedTextAnalysis, textDiffPresentation, syntaxPresentation, baseVersionLabel, mineVersionLabel, collapseCtx, hunkIdx,
     searchMatches, activeSearchIdx, hunkPositions, searchJumpNonce,
     showWhitespace, fontSize,
     isWorkbookMode, activeWorkbookGuidedRange, hunks,
-    guidedPulseNonce,
     handleScrollerReady, handleCollapseNavigationReady,
   ]);
 
@@ -584,8 +638,6 @@ export default function App() {
     activeWorkbookDiffRegion,
     hunkPositions,
     hunkIdx,
-    hasLoadedDiff,
-    setGuidedPulseNonce,
     activeWorkbookTargetCell,
     hunks,
     scrollToIndexRef,
@@ -602,6 +654,7 @@ export default function App() {
     isWorkbookMode,
     layout,
     loadPhase,
+    loadPerfMetrics,
     setCollapseCtx,
     setLayout,
     activeSearchIdx,
@@ -671,6 +724,7 @@ export default function App() {
               activeSheetName={activeWorkbookSheetName}
               matchCount={searchMatches.length}
               activeIdx={activeSearchIdx}
+              isSearching={isSearching}
               resolveResult={searchResultItemResolver}
               onSearch={handleSearch}
               onPreviewNav={handleSearchPreviewNav}
@@ -769,6 +823,7 @@ export default function App() {
             onWorkbookColumnWidthChange={handleWorkbookColumnWidthChange}
             workbookSections={workbookSections}
             workbookSectionRowIndex={workbookSectionRowIndex}
+            modifiedWorkbookSheetNames={modifiedWorkbookSheetNames}
             activeWorkbookSheetName={activeWorkbookSheetName}
             onActiveWorkbookSheetChange={setActiveWorkbookSheetName}
             workbookCompareMode={workbookCompareMode}

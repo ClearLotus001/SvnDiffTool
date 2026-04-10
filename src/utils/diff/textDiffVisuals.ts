@@ -10,6 +10,13 @@ export interface TextDiffCssPalette {
   inlineHighlight: string;
 }
 
+export interface ResolveTextInlineBackgroundOptions {
+  tone: TextDiffVisualTone;
+  hasSearchRanges: boolean;
+  isRangeSelected: boolean;
+  hasRowSurfaceOverride?: boolean;
+}
+
 export function resolveTextDiffVisualTone(
   line: Pick<DiffLine, 'type'>,
   isReplacementPair = false,
@@ -69,4 +76,14 @@ export function resolveTextDiffCssPalette(
     prefix: cssVar('t2'),
     inlineHighlight: cssVar('bg3'),
   };
+}
+
+export function resolveTextInlineBackground(
+  options: ResolveTextInlineBackgroundOptions,
+): string | undefined {
+  if (options.hasRowSurfaceOverride || options.hasSearchRanges || options.isRangeSelected) {
+    return undefined;
+  }
+
+  return resolveTextDiffCssPalette(options.tone).rowBackground;
 }

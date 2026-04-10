@@ -12,7 +12,7 @@ export type LoadPhase = 'bootstrapping' | 'idle' | 'loading' | 'ready' | 'error'
 export type RevisionOptionsStatus = 'idle' | 'loading' | 'loaded' | 'error';
 
 export interface CachedDiffResult {
-  diffLines: DiffLine[];
+  diffLines: DiffLine[] | null;
   workbookDelta: WorkbookPrecomputedDeltaPayload | null;
   baseWorkbookMetadata: WorkbookMetadataMap | null;
   mineWorkbookMetadata: WorkbookMetadataMap | null;

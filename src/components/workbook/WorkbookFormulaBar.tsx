@@ -1,7 +1,8 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useRef } from 'react';
 import { FONT_CODE, FONT_UI, getWorkbookFontScale } from '@/constants/typography';
 import { useI18n } from '@/context/i18n';
 import { useThemeTokens } from '@/context/theme';
+import useElementWidth from '@/hooks/ui/useElementWidth';
 import { cssVar } from '@/theme/cssUtils';
 import type { WorkbookFreezeState, WorkbookMergeRange, WorkbookSelectionState } from '@/types';
 import { findWorkbookMergeRange } from '@/utils/workbook/workbookMergeLayout';
@@ -117,7 +118,16 @@ const WorkbookFormulaBar = memo(({
 }: WorkbookFormulaBarProps) => {
   const T = useThemeTokens();
   const { t } = useI18n();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const containerWidth = useElementWidth(rootRef, 1440);
   const sizes = useMemo(() => getWorkbookFontScale(fontSize), [fontSize]);
+  const responsiveMode = useMemo(() => {
+    if (containerWidth < 1080) return 'stacked';
+    if (containerWidth < 1440) return 'condensed';
+    return 'regular';
+  }, [containerWidth]);
+  const isRegularLayout = responsiveMode === 'regular';
+  const isStackedLayout = responsiveMode === 'stacked';
   const primarySelection = selection.primary;
   const selectionCount = getWorkbookSelectionCount(selection);
   const resolvedBaseTitle = baseTitle || t('tooltipBaseLabel');
@@ -176,7 +186,7 @@ const WorkbookFormulaBar = memo(({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="h-7 px-2.5 rounded-lg whitespace-nowrap font-bold"
+      className="inline-flex items-center justify-center h-7 px-2.5 rounded-lg whitespace-nowrap font-bold"
       style={{
         border: `1px solid ${active ? sideAccentButton.border : cssVar('border')}`,
         background: active ? sideAccentButton.background : cssVar('bg2'),
@@ -185,6 +195,7 @@ const WorkbookFormulaBar = memo(({
         fontSize: sizes.meta,
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.45 : 1,
+        flex: isStackedLayout ? '1 1 148px' : undefined,
       }}>
       {label}
     </button>
@@ -192,159 +203,195 @@ const WorkbookFormulaBar = memo(({
 
   return (
     <div
-      className="grid gap-2 items-stretch px-3 py-2 shrink-0"
+      ref={rootRef}
+      className="px-3 py-2 shrink-0"
       style={{
-        gridTemplateColumns: 'auto auto minmax(180px, auto) minmax(0, 1fr) auto',
         borderBottom: `1px solid ${cssVar('border')}`,
         background: `linear-gradient(180deg, ${cssVar('bg1')} 0%, ${cssVar('bg0')} 100%)`,
       }}>
-      {/* Address cell */}
       <div
-        className="inline-flex items-center justify-center min-w-[96px] h-[30px] px-3 rounded-[10px] font-bold whitespace-nowrap"
+        className="grid gap-2 items-start min-w-0"
         style={{
-          border: `1px solid ${cssVar('border')}`,
-          background: cssVar('bg2'),
-          color: cssVar('t0'),
-          fontFamily: FONT_CODE,
-          fontSize: sizes.cell,
+          gridTemplateColumns: isRegularLayout
+            ? 'minmax(0, auto) minmax(280px, 1fr) minmax(0, auto)'
+            : 'minmax(0, 1fr)',
         }}>
-        {selectionAddress}
-      </div>
-
-      {/* Side meta chip */}
-      <div
-        className="inline-flex items-center gap-2 min-w-0 h-[30px] px-3 rounded-[10px] font-semibold"
-        style={{
-          border: `1px solid ${cssVar('border')}`,
-          background: cssVar('bg2'),
-          color: cssVar('t0'),
-          fontFamily: FONT_UI,
-          fontSize: sizes.ui,
-        }}>
-        <span
-          aria-hidden="true"
-          className="shrink-0"
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: primarySelection?.side === 'base' ? 2 : '50%',
-            transform: primarySelection?.side === 'base' ? 'rotate(45deg)' : undefined,
-            background: sideAccent,
-          }}
-        />
-        <span className="overflow-hidden text-ellipsis whitespace-nowrap">{sideMeta}</span>
-        {selectionSummary && (
-          <span
-            className="ml-auto px-2 rounded-full whitespace-nowrap"
-            style={{
-              padding: '1px 8px',
-              background: sideAccentBadge.background,
-              color: sideAccentBadge.textColor,
-              fontSize: sizes.meta,
-              fontWeight: 800,
-            }}>
-            {selectionSummary}
-          </span>
-        )}
-      </div>
-
-      {/* Merge range */}
-      {mergeRangeLabel && (
         <div
-          className="inline-flex items-center min-w-[160px] h-[30px] px-3 rounded-[10px] gap-2"
+          className="flex items-center gap-2 min-w-0 flex-wrap"
           style={{
-            border: `1px solid ${cssVar('border')}`,
-            background: cssVar('bg2'),
-            color: cssVar('t1'),
-            fontFamily: FONT_UI,
-            fontSize: sizes.ui,
+            alignSelf: isRegularLayout ? 'center' : undefined,
+            maxWidth: isRegularLayout ? 560 : undefined,
           }}>
-          <span style={{ color: cssVar('t2') }}>{t('formulaMergeLabel')}:</span>
-          <span
-            className="whitespace-nowrap font-bold"
-            style={{ color: cssVar('t0'), fontFamily: FONT_CODE }}>
-            {mergeRangeLabel}
-          </span>
+          <div
+            className="inline-flex items-center justify-center min-w-[96px] h-[30px] px-3 rounded-[10px] font-bold whitespace-nowrap shrink-0"
+            style={{
+              border: `1px solid ${cssVar('border')}`,
+              background: cssVar('bg2'),
+              color: cssVar('t0'),
+              fontFamily: FONT_CODE,
+              fontSize: sizes.cell,
+            }}>
+            {selectionAddress}
+          </div>
+
+          <div
+            className="inline-flex items-center gap-2 max-w-full h-[30px] px-3 rounded-[10px] font-semibold flex-1"
+            style={{
+              minWidth: isStackedLayout ? 0 : 220,
+              border: `1px solid ${cssVar('border')}`,
+              background: cssVar('bg2'),
+              color: cssVar('t0'),
+              fontFamily: FONT_UI,
+              fontSize: sizes.ui,
+            }}>
+            <span
+              aria-hidden="true"
+              className="shrink-0"
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: primarySelection?.side === 'base' ? 2 : '50%',
+                transform: primarySelection?.side === 'base' ? 'rotate(45deg)' : undefined,
+                background: sideAccent,
+              }}
+            />
+            <span className="overflow-hidden text-ellipsis whitespace-nowrap">{sideMeta}</span>
+            {selectionSummary && (
+              <span
+                className="ml-auto px-2 rounded-full whitespace-nowrap"
+                style={{
+                  padding: '1px 8px',
+                  background: sideAccentBadge.background,
+                  color: sideAccentBadge.textColor,
+                  fontSize: sizes.meta,
+                  fontWeight: 800,
+                }}>
+                {selectionSummary}
+              </span>
+            )}
+          </div>
+
+          {mergeRangeLabel && (
+            <div
+              className="inline-flex items-center max-w-full h-[30px] px-3 rounded-[10px] gap-2 shrink-0"
+              style={{
+                minWidth: isStackedLayout ? 0 : 160,
+                border: `1px solid ${cssVar('border')}`,
+                background: cssVar('bg2'),
+                color: cssVar('t1'),
+                fontFamily: FONT_UI,
+                fontSize: sizes.ui,
+              }}>
+              <span className="whitespace-nowrap" style={{ color: cssVar('t2') }}>{t('formulaMergeLabel')}:</span>
+              <span
+                className="overflow-hidden text-ellipsis whitespace-nowrap font-bold"
+                style={{ color: cssVar('t0'), fontFamily: FONT_CODE }}>
+                {mergeRangeLabel}
+              </span>
+            </div>
+          )}
         </div>
-      )}
 
-      {/* Cell value */}
-      <div
-        className="inline-flex items-center min-w-[180px] h-[30px] px-3 rounded-[10px]"
-        style={{
-          border: `1px solid ${cssVar('border')}`,
-          background: cssVar('bg2'),
-          color: cssVar('t1'),
-          fontFamily: FONT_UI,
-          fontSize: sizes.ui,
-        }}>
-        <span style={{ color: cssVar('t2') }}>{t('workbookCellValue')}:</span>
-        <span
-          className="ml-2 overflow-hidden text-ellipsis whitespace-nowrap font-semibold"
-          style={{ color: cssVar('t0') }}>
-          {primarySelection?.value || t('formulaBarEmptyValue')}
-        </span>
-      </div>
+        <div
+          className="grid gap-2 min-w-0"
+          style={{
+            gridTemplateColumns: isStackedLayout
+              ? 'minmax(0, 1fr)'
+              : 'minmax(180px, 240px) minmax(0, 1fr)',
+          }}>
+          <div
+            className="inline-flex items-center max-w-full h-[30px] px-3 rounded-[10px]"
+            style={{
+              minWidth: isStackedLayout ? 0 : 180,
+              border: `1px solid ${cssVar('border')}`,
+              background: cssVar('bg2'),
+              color: cssVar('t1'),
+              fontFamily: FONT_UI,
+              fontSize: sizes.ui,
+            }}>
+            <span className="whitespace-nowrap" style={{ color: cssVar('t2') }}>{t('workbookCellValue')}:</span>
+            <span
+              className="ml-2 overflow-hidden text-ellipsis whitespace-nowrap font-semibold"
+              style={{ color: cssVar('t0') }}>
+              {primarySelection?.value || t('formulaBarEmptyValue')}
+            </span>
+          </div>
 
-      {/* Formula bar */}
-      <div
-        className="flex items-center min-w-0 h-[30px] px-3 rounded-[10px] overflow-hidden"
-        style={{
-          border: `1px solid ${cssVar('border')}`,
-          background: cssVar('bg2'),
-        }}>
-        <span
-          className="shrink-0 font-bold uppercase tracking-wider"
-          style={{
-            color: cssVar('acc2'),
-            fontFamily: FONT_UI,
-            fontSize: sizes.meta,
-          }}>
-          fx
-        </span>
-        <span
-          className="ml-2.5 overflow-hidden text-ellipsis whitespace-nowrap"
-          style={{
-            fontFamily: FONT_CODE,
-            fontSize: sizes.ui,
-            color: primarySelection?.formula ? cssVar('t0') : cssVar('t2'),
-          }}>
-          {primarySelection?.formula || t('formulaBarEmpty')}
-        </span>
-      </div>
+          <div
+            className="flex items-center min-w-0 h-[30px] px-3 rounded-[10px] overflow-hidden"
+            style={{
+              border: `1px solid ${cssVar('border')}`,
+              background: cssVar('bg2'),
+            }}>
+            <span
+              className="shrink-0 font-bold uppercase tracking-wider"
+              style={{
+                color: cssVar('acc2'),
+                fontFamily: FONT_UI,
+                fontSize: sizes.meta,
+              }}>
+              fx
+            </span>
+            <span
+              className="ml-2.5 overflow-hidden text-ellipsis whitespace-nowrap"
+              style={{
+                fontFamily: FONT_CODE,
+                fontSize: sizes.ui,
+                color: primarySelection?.formula ? cssVar('t0') : cssVar('t2'),
+              }}>
+              {primarySelection?.formula || t('formulaBarEmpty')}
+            </span>
+          </div>
+        </div>
 
-      {/* Freeze actions */}
-      <div className="inline-flex items-center gap-2 min-w-0 flex-wrap justify-end">
-        <span
-          className="whitespace-nowrap"
-          style={{
-            color: freezePalette.subduedText,
-            fontFamily: FONT_UI,
-            fontSize: sizes.meta,
-          }}>
-          {t('formulaFreezeLabel')}: {freezeSummary}
-        </span>
-        <ActionButton label={t('formulaFreezeRowAction')} onClick={onFreezeRow} disabled={!canFreezeRow} />
-        <ActionButton label={t('formulaFreezeColumnAction')} onClick={onFreezeColumn} disabled={!canFreezeColumn} />
-        <ActionButton
-          label={t('formulaFreezePaneAction')}
-          onClick={onFreezePane}
-          active={Boolean(freezeState?.rowNumber || freezeState?.colCount)}
-          disabled={!canFreezePane}
-        />
-        <ActionButton
-          label={t('formulaFreezeUnfreezeRowAction')}
-          onClick={onUnfreezeRow}
-          active={canUnfreezeRow}
-          disabled={!canUnfreezeRow}
-        />
-        <ActionButton
-          label={t('formulaFreezeUnfreezeColumnAction')}
-          onClick={onUnfreezeColumn}
-          active={canUnfreezeColumn}
-          disabled={!canUnfreezeColumn}
-        />
-        <ActionButton label={t('formulaFreezeResetAction')} onClick={onResetFreeze} disabled={!canResetFreeze} />
+        <div className="min-w-0" style={!isRegularLayout ? { gridColumn: '1 / -1' } : undefined}>
+          <div
+            className={`flex min-w-0 gap-2 ${isStackedLayout ? 'flex-col items-stretch' : 'flex-wrap items-center'} ${isRegularLayout ? 'justify-end' : 'justify-start'}`}>
+            <div
+              className={`inline-flex items-center min-w-0 h-[30px] px-3 rounded-[10px] ${isStackedLayout ? 'w-full' : ''}`}
+              style={{
+                border: `1px solid ${cssVar('border')}`,
+                background: cssVar('bg2'),
+                color: freezePalette.subduedText,
+                fontFamily: FONT_UI,
+                fontSize: sizes.meta,
+              }}>
+              <span
+                className="overflow-hidden text-ellipsis whitespace-nowrap"
+                title={`${t('formulaFreezeLabel')}: ${freezeSummary}`}>
+                {t('formulaFreezeLabel')}: {freezeSummary}
+              </span>
+            </div>
+
+            <div
+              className={`flex min-w-0 gap-2 flex-wrap ${isRegularLayout ? 'justify-end' : 'justify-start'}`}
+              style={{
+                width: isStackedLayout ? '100%' : undefined,
+              }}>
+              <ActionButton label={t('formulaFreezeRowAction')} onClick={onFreezeRow} disabled={!canFreezeRow} />
+              <ActionButton label={t('formulaFreezeColumnAction')} onClick={onFreezeColumn} disabled={!canFreezeColumn} />
+              <ActionButton
+                label={t('formulaFreezePaneAction')}
+                onClick={onFreezePane}
+                active={Boolean(freezeState?.rowNumber || freezeState?.colCount)}
+                disabled={!canFreezePane}
+              />
+              <ActionButton
+                label={t('formulaFreezeUnfreezeRowAction')}
+                onClick={onUnfreezeRow}
+                active={canUnfreezeRow}
+                disabled={!canUnfreezeRow}
+              />
+              <ActionButton
+                label={t('formulaFreezeUnfreezeColumnAction')}
+                onClick={onUnfreezeColumn}
+                active={canUnfreezeColumn}
+                disabled={!canUnfreezeColumn}
+              />
+              <ActionButton label={t('formulaFreezeResetAction')} onClick={onResetFreeze} disabled={!canResetFreeze} />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

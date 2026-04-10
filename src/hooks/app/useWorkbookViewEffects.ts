@@ -11,7 +11,7 @@ import { workbookDiffRegionContainsSelection } from '@/utils/workbook/workbookDi
 import { revealWorkbookSelection } from '@/utils/workbook/workbookManualVisibility';
 import { createWorkbookSelectionState } from '@/utils/workbook/workbookSelectionState';
 import {
-  buildWorkbookLineSheetContexts,
+  buildWorkbookLineSheetContextLookup,
   type WorkbookSection,
 } from '@/utils/workbook/workbookSections';
 import {
@@ -33,8 +33,6 @@ interface UseWorkbookViewEffectsArgs {
   activeWorkbookDiffRegion: WorkbookDiffRegion | null;
   hunkPositions: number[];
   hunkIdx: number;
-  hasLoadedDiff: boolean;
-  setGuidedPulseNonce: Dispatch<SetStateAction<number>>;
   activeWorkbookTargetCell: WorkbookSelectedCell | null;
   hunks: Hunk[];
   scrollToIndexRef: MutableRefObject<((idx: number, align?: 'start' | 'center') => void) | null>;
@@ -54,8 +52,6 @@ export default function useWorkbookViewEffects({
   activeWorkbookDiffRegion,
   hunkPositions,
   hunkIdx,
-  hasLoadedDiff,
-  setGuidedPulseNonce,
   activeWorkbookTargetCell,
   hunks,
   scrollToIndexRef,
@@ -69,8 +65,8 @@ export default function useWorkbookViewEffects({
       setContextMenu: setWorkbookContextMenu,
     },
   } = workbookUi;
-  const lineSheetContexts = useMemo(
-    () => buildWorkbookLineSheetContexts(diffLines),
+  const lineSheetContextLookup = useMemo(
+    () => buildWorkbookLineSheetContextLookup(diffLines),
     [diffLines],
   );
   const preferredSheetNameRef = useRef<string | null>(selectedCell?.sheetName ?? null);
@@ -140,7 +136,7 @@ export default function useWorkbookViewEffects({
       searchJumpNonce,
       searchMatches,
       diffLines,
-      lineSheetContexts,
+      lineSheetContextLookup,
       preferredSheetName: preferredSheetNameRef.current,
       fallbackSheetName: activeWorkbookDiffRegion?.sheetName ?? null,
     });
@@ -148,7 +144,7 @@ export default function useWorkbookViewEffects({
     if (lastSearchSheetSyncKeyRef.current === syncRequest.eventKey) return;
     lastSearchSheetSyncKeyRef.current = syncRequest.eventKey;
     setActiveWorkbookSheetName((prev) => (prev === syncRequest.sheetName ? prev : syncRequest.sheetName));
-  }, [activeSearchIdx, activeWorkbookDiffRegion?.sheetName, diffLines, isWorkbookMode, lineSheetContexts, searchJumpNonce, searchMatches, setActiveWorkbookSheetName]);
+  }, [activeSearchIdx, activeWorkbookDiffRegion?.sheetName, diffLines, isWorkbookMode, lineSheetContextLookup, searchJumpNonce, searchMatches, setActiveWorkbookSheetName]);
 
   useEffect(() => {
     if (!activeSearchRevealSelection) return;
@@ -165,7 +161,7 @@ export default function useWorkbookViewEffects({
       hunkIdx,
       hunkPositions,
       diffLines,
-      lineSheetContexts,
+      lineSheetContextLookup,
       preferredSheetName: preferredSheetNameRef.current,
     });
     if (!syncRequest) return;
@@ -179,15 +175,10 @@ export default function useWorkbookViewEffects({
     hunkIdx,
     hunkPositions,
     isWorkbookMode,
-    lineSheetContexts,
+    lineSheetContextLookup,
     searchMatches,
     setActiveWorkbookSheetName,
   ]);
-
-  useEffect(() => {
-    if (!hasLoadedDiff) return;
-    setGuidedPulseNonce((value) => value + 1);
-  }, [activeWorkbookDiffRegion?.id, hasLoadedDiff, hunkIdx, isWorkbookMode, setGuidedPulseNonce]);
 
   useEffect(() => {
     if (isWorkbookMode) {
@@ -236,7 +227,7 @@ export default function useWorkbookViewEffects({
   ]);
 
   useEffect(() => {
-    setWorkbookSelection(createWorkbookSelectionState(null));
-    setWorkbookContextMenu(null);
+    setWorkbookSelection((prev) => (prev.primary ? createWorkbookSelectionState(null) : prev));
+    setWorkbookContextMenu((prev) => (prev ? null : prev));
   }, [diffLines, setWorkbookContextMenu, setWorkbookSelection]);
 }

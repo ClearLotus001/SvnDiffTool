@@ -21,7 +21,9 @@ function estimateCharSpansBytes(spans: DiffLine['baseCharSpans']): number {
   return total;
 }
 
-function estimateDiffLinesBytes(diffLines: DiffLine[]): number {
+function estimateDiffLinesBytes(diffLines: DiffLine[] | null): number {
+  if (!diffLines) return 0;
+
   let total = 0;
 
   diffLines.forEach((line) => {

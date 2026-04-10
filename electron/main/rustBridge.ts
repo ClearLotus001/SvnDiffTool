@@ -16,7 +16,10 @@ import type {
   WorkbookCompareMode,
   WorkbookMetadataMap,
   WorkbookPrecomputedDeltaPayload,
+  WorkbookRowMiniMapPaintTone,
+  WorkbookRowMiniMapTone,
   WorkbookRowDeltaPayload,
+  WorkbookRowDeltaTone,
   WorkbookSheetMetadata,
 } from './types.js';
 
@@ -318,6 +321,63 @@ function getWorkbookCellDeltaKind(
   return 'modify';
 }
 
+function resolveWorkbookRowDeltaTone(
+  cellDeltas: Iterable<WorkbookCellDeltaPayload>,
+): WorkbookRowDeltaTone {
+  let sawAdd = false;
+  let sawDelete = false;
+  let sawModify = false;
+
+  for (const delta of cellDeltas) {
+    if (!delta.changed) continue;
+    if (delta.kind === 'modify') sawModify = true;
+    else if (delta.kind === 'add') sawAdd = true;
+    else if (delta.kind === 'delete') sawDelete = true;
+  }
+
+  if (!sawAdd && !sawDelete && !sawModify) return 'equal';
+  if (sawModify || (sawAdd && sawDelete)) return 'mixed';
+  if (sawAdd) return 'add';
+  return 'delete';
+}
+
+function resolveWorkbookMiniMapDescriptorFromDeltas(
+  cellDeltas: Iterable<WorkbookCellDeltaPayload>,
+): {
+  tone: WorkbookRowMiniMapTone;
+  tones: WorkbookRowMiniMapPaintTone[];
+} {
+  let sawAdd = false;
+  let sawDelete = false;
+  let sawModify = false;
+  let sawStrictOnly = false;
+
+  for (const delta of cellDeltas) {
+    if (!delta.changed) continue;
+    if (delta.strictOnly) {
+      sawStrictOnly = true;
+      continue;
+    }
+    if (delta.kind === 'add') sawAdd = true;
+    else if (delta.kind === 'delete') sawDelete = true;
+    else if (delta.kind === 'modify') sawModify = true;
+  }
+
+  const tones: WorkbookRowMiniMapPaintTone[] = [];
+  if (sawDelete) tones.push('delete');
+  if (sawModify) tones.push('modify');
+  if (sawAdd) tones.push('add');
+  if (sawStrictOnly) tones.push('strict-only');
+
+  if (tones.length === 0) {
+    return { tone: 'equal', tones };
+  }
+  if (tones.length === 1) {
+    return { tone: tones[0]!, tones };
+  }
+  return { tone: 'mixed', tones };
+}
+
 function normalizeWorkbookCellSnapshot(input: unknown): WorkbookCellSnapshot | null {
   if (!input || typeof input !== 'object') return null;
   const payload = input as {
@@ -400,26 +460,31 @@ function normalizeWorkbookRowDeltaPayload(input: unknown): WorkbookRowDeltaPaylo
     ? rawStrictOnlyColumns.map((value: unknown) => Number(value)).filter((value) => Number.isFinite(value))
     : cellDeltas.filter((delta) => delta.strictOnly).map((delta) => delta.column);
   const toneValue = payload.tone;
+  const fallbackTone = resolveWorkbookRowDeltaTone(cellDeltas);
   const tone = toneValue === 'equal' || toneValue === 'add' || toneValue === 'delete' || toneValue === 'mixed'
     ? toneValue
-    : (
-      changedColumns.length === 0
-        ? 'equal'
-        : (() => {
-            let sawAdd = false;
-            let sawDelete = false;
-            let sawModify = false;
-            cellDeltas.forEach((delta) => {
-              if (delta.kind === 'add') sawAdd = true;
-              else if (delta.kind === 'delete') sawDelete = true;
-              else if (delta.kind === 'modify') sawModify = true;
-            });
-            if (sawModify || (sawAdd && sawDelete)) return 'mixed';
-            if (sawAdd) return 'add';
-            if (sawDelete) return 'delete';
-            return 'equal';
-          })()
-    );
+    : fallbackTone;
+  const rawMiniMapTone = payload.miniMapTone;
+  const rawMiniMapPaintTones = Array.isArray(payload.miniMapPaintTones)
+    ? payload.miniMapPaintTones
+    : null;
+  const fallbackMiniMapDescriptor = resolveWorkbookMiniMapDescriptorFromDeltas(cellDeltas);
+  const miniMapTone = rawMiniMapTone === 'equal'
+    || rawMiniMapTone === 'add'
+    || rawMiniMapTone === 'delete'
+    || rawMiniMapTone === 'modify'
+    || rawMiniMapTone === 'strict-only'
+    || rawMiniMapTone === 'mixed'
+    ? rawMiniMapTone
+    : fallbackMiniMapDescriptor.tone;
+  const miniMapPaintTones = rawMiniMapPaintTones
+    ? rawMiniMapPaintTones.filter((value): value is WorkbookRowMiniMapPaintTone => (
+        value === 'delete'
+        || value === 'modify'
+        || value === 'add'
+        || value === 'strict-only'
+      ))
+    : fallbackMiniMapDescriptor.tones;
   const lineIdx = Number.isFinite(Number(payload.lineIdx)) ? Number(payload.lineIdx) : (lineIdxs[0] ?? 0);
   if (!Number.isFinite(lineIdx) || !tone) return null;
 
@@ -436,6 +501,8 @@ function normalizeWorkbookRowDeltaPayload(input: unknown): WorkbookRowDeltaPaylo
       : cellDeltas.filter((delta) => delta.changed).length,
     hasChanges: payload.hasChanges == null ? changedColumns.length > 0 : Boolean(payload.hasChanges),
     tone,
+    miniMapTone,
+    miniMapPaintTones,
   };
 }
 

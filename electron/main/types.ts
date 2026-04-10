@@ -4,6 +4,7 @@ import type { AppUpdateState } from '../updater/types.js';
 export type SvnRevisionSourceKind = 'revision' | 'working-copy' | 'input-file';
 export type WorkbookCompareMode = 'strict' | 'content';
 export type CompareContext = 'standard_local_compare' | 'literal_two_file_compare' | 'revision_vs_revision_compare';
+export type WorkbookSectionChangeType = 'equal' | 'add' | 'delete' | 'rename';
 
 export interface SvnRevisionInfo {
   id: string;
@@ -35,14 +36,32 @@ export interface RevisionSelectionPair {
   mineRevisionId: string | null;
 }
 
+export interface CharSpan {
+  highlight: boolean;
+  text: string;
+}
+
+export interface TextReplacementPair {
+  lineIdx: number;
+  pairedLineIdx: number;
+}
+
+export interface SplitRowDescriptor {
+  leftLineIdx: number | null;
+  rightLineIdx: number | null;
+  isReplacementPair?: boolean;
+  lineIdx: number;
+  lineIdxs: number[];
+}
+
 export interface DiffLine {
   type: 'equal' | 'add' | 'delete';
   base: string | null;
   mine: string | null;
   baseLineNo: number | null;
   mineLineNo: number | null;
-  baseCharSpans: null;
-  mineCharSpans: null;
+  baseCharSpans: CharSpan[] | null;
+  mineCharSpans: CharSpan[] | null;
 }
 
 export interface DiffPerformanceMetrics {
@@ -53,9 +72,22 @@ export interface DiffPerformanceMetrics {
   baseParserMs?: number;
   mineParserMs?: number;
   metadataMs?: number;
+  diffMs?: number;
   rustDiffMs?: number;
   baseBytes?: number;
   mineBytes?: number;
+}
+
+export interface PreparedTextAnalysis {
+  diffLines: DiffLine[];
+  stats: {
+    add: number;
+    del: number;
+    chg: number;
+  };
+  replacementPairs: TextReplacementPair[];
+  splitRowDescriptors: SplitRowDescriptor[];
+  perf: Pick<DiffPerformanceMetrics, 'diffMs'> | null;
 }
 
 export interface DiffData {
@@ -79,6 +111,7 @@ export interface DiffData {
   precomputedWorkbookDelta: WorkbookPrecomputedDeltaPayload | null;
   precomputedDiffLinesByMode: Partial<Record<WorkbookCompareMode, DiffLine[] | null>> | null;
   precomputedWorkbookDeltaByMode: Partial<Record<WorkbookCompareMode, WorkbookPrecomputedDeltaPayload | null>> | null;
+  analysisSnapshotsByMode: Partial<Record<WorkbookCompareMode, DiffAnalysisSnapshot | null>> | null;
   baseWorkbookMetadata: WorkbookMetadataMap | null;
   mineWorkbookMetadata: WorkbookMetadataMap | null;
   revisionOptions: SvnRevisionInfo[] | null;
@@ -123,12 +156,14 @@ export interface WorkbookCompareModePayload {
   compareMode: WorkbookCompareMode;
   diffLines: DiffLine[] | null;
   workbookDelta: WorkbookPrecomputedDeltaPayload | null;
+  analysisSnapshot?: DiffAnalysisSnapshot | null;
   perf: Pick<DiffPerformanceMetrics, 'rustDiffMs'> | null;
 }
 
 export interface WorkbookMetadataPayload {
   base: WorkbookMetadataMap | null;
   mine: WorkbookMetadataMap | null;
+  analysisSnapshot?: DiffAnalysisSnapshot | null;
   perf: Pick<DiffPerformanceMetrics, 'metadataMs'> | null;
 }
 
@@ -143,6 +178,22 @@ export interface WorkbookMergeRange {
   endRow: number;
   startCol: number;
   endCol: number;
+}
+
+export interface WorkbookSection {
+  name: string;
+  displayName: string;
+  changeType: WorkbookSectionChangeType;
+  hasBaseSide: boolean;
+  hasMineSide: boolean;
+  renamePeerName: string | null;
+  renameRole: 'source' | 'target' | null;
+  startLineIdx: number;
+  endLineIdx: number;
+  maxColumns: number;
+  rowCount: number;
+  firstDataLineIdx: number | null;
+  firstDataRowNumber: number | null;
 }
 
 export interface WorkbookSheetMetadata {
@@ -162,8 +213,23 @@ export interface WorkbookCellSnapshot {
   formula: string;
 }
 
+export interface WorkbookSelectedCell {
+  kind: 'cell' | 'row' | 'column';
+  sheetName: string;
+  side: 'base' | 'mine';
+  versionLabel: string;
+  rowNumber: number;
+  colIndex: number;
+  colLabel: string;
+  address: string;
+  value: string;
+  formula: string;
+}
+
 export type WorkbookCellDeltaKind = 'equal' | 'add' | 'delete' | 'modify';
 export type WorkbookRowDeltaTone = 'equal' | 'add' | 'delete' | 'mixed';
+export type WorkbookRowMiniMapTone = 'equal' | 'add' | 'delete' | 'modify' | 'strict-only' | 'mixed';
+export type WorkbookRowMiniMapPaintTone = Exclude<WorkbookRowMiniMapTone, 'equal' | 'mixed'>;
 
 export interface WorkbookCellDeltaPayload {
   column: number;
@@ -189,6 +255,8 @@ export interface WorkbookRowDeltaPayload {
   changedCount: number;
   hasChanges: boolean;
   tone: WorkbookRowDeltaTone;
+  miniMapTone?: WorkbookRowMiniMapTone;
+  miniMapPaintTones?: WorkbookRowMiniMapPaintTone[];
 }
 
 export interface WorkbookSectionDeltaPayload {
@@ -199,6 +267,57 @@ export interface WorkbookSectionDeltaPayload {
 export interface WorkbookPrecomputedDeltaPayload {
   compareMode: WorkbookCompareMode;
   sections: WorkbookSectionDeltaPayload[];
+}
+
+export interface WorkbookDiffRegionPatch {
+  startRowIndex: number;
+  endRowIndex: number;
+  startCol: number;
+  endCol: number;
+  baseRowStart: number | null;
+  baseRowEnd: number | null;
+  mineRowStart: number | null;
+  mineRowEnd: number | null;
+  hasBaseSide: boolean;
+  hasMineSide: boolean;
+  lineIdxs?: number[];
+}
+
+export interface WorkbookDiffRegion {
+  id: string;
+  sheetName: string;
+  startRowIndex: number;
+  endRowIndex: number;
+  startCol: number;
+  endCol: number;
+  rowNumberStart: number;
+  rowNumberEnd: number;
+  lineStartIdx: number;
+  lineEndIdx: number;
+  anchorLineIdx: number;
+  hasBaseSide: boolean;
+  hasMineSide: boolean;
+  anchorSelection: WorkbookSelectedCell | null;
+  patches: WorkbookDiffRegionPatch[];
+}
+
+export interface PreparedWorkbookAnalysis {
+  diffLinesByMode: Partial<Record<WorkbookCompareMode, DiffLine[] | null>>;
+  workbookDeltaByMode: Partial<Record<WorkbookCompareMode, WorkbookPrecomputedDeltaPayload | null>>;
+  sectionsByMode?: Partial<Record<WorkbookCompareMode, WorkbookSection[] | null>>;
+  navigationRegionsByMode?: Partial<Record<WorkbookCompareMode, WorkbookDiffRegion[] | null>>;
+  metadata: {
+    base: WorkbookMetadataMap | null;
+    mine: WorkbookMetadataMap | null;
+  };
+  artifactDiff: WorkbookArtifactDiffSummary | null;
+  perf: Pick<DiffPerformanceMetrics, 'metadataMs' | 'rustDiffMs'> | null;
+}
+
+export interface DiffAnalysisSnapshot {
+  compareMode: WorkbookCompareMode;
+  textAnalysis: PreparedTextAnalysis | null;
+  workbookAnalysis: PreparedWorkbookAnalysis | null;
 }
 
 export interface FilePayloadMetrics {

@@ -27,7 +27,7 @@ interface WorkbookActiveRegionOverlayLayerProps {
   fallbackBoundsModes: WorkbookRegionOverlayBoundsMode[];
   resolveFocusPatchBoundsModes: (patch: WorkbookDiffRegion['patches'][number]) => WorkbookRegionOverlayBoundsMode[];
   filterPatch?: ((patch: WorkbookDiffRegion['patches'][number]) => boolean) | undefined;
-  pulseNonce?: number;
+  pulseTriggerKey?: string | null;
   label?: string;
 }
 
@@ -173,7 +173,7 @@ const WorkbookActiveRegionOverlayLayer = memo(({
   fallbackBoundsModes,
   resolveFocusPatchBoundsModes,
   filterPatch,
-  pulseNonce = 0,
+  pulseTriggerKey = null,
   label,
 }: WorkbookActiveRegionOverlayLayerProps) => {
   const [canvasAnchorTop, setCanvasAnchorTop] = useState(0);
@@ -295,13 +295,13 @@ const WorkbookActiveRegionOverlayLayer = memo(({
       focusOutlineBoxCount: resolvedBoxSet.focusOutlineBoxes.length,
       focusOutlineBoxes: summarizeOverlayBoxes(resolvedBoxSet.focusOutlineBoxes),
       label: label ?? null,
-      pulseNonce,
+      pulseTriggerKey,
     });
   }, [
     activeDiffRegion,
     activeSheetName,
     label,
-    pulseNonce,
+    pulseTriggerKey,
     resolveBoxSet,
     scrollRef,
     stickyHeaderHeight,
@@ -333,7 +333,7 @@ const WorkbookActiveRegionOverlayLayer = memo(({
             viewportHeight={viewportHeight}
             stickyHeaderHeight={stickyHeaderHeight}
             debugRegionId={activeDiffRegion.id}
-            pulseNonce={pulseNonce}
+            pulseTriggerKey={pulseTriggerKey}
             canvasAnchorTop={canvasAnchorTop}
             canvasHeight={canvasHeight}
             onRepositionNeeded={handleRepositionNeeded}

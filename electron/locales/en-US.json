@@ -1,0 +1,11 @@
+{
+  "dialogPickWorkingCopyTitle": "Select working copy file",
+  "dialogExportDirectoryTitle": "Select export directory",
+  "revisionWorkingCopyTitle": "Working Copy",
+  "revisionWorkingBaseTitle": "Working Base",
+  "revisionBaseFallbackTitle": "Base",
+  "revisionMineFallbackTitle": "Local",
+  "filePayloadReadError": "Error reading file: {message}",
+  "filePayloadMissingRepositoryUrl": "[SVN] Unable to resolve the repository URL, so revision switching is unavailable",
+  "filePayloadReadRevisionError": "[SVN] Failed to read revision {revision}: {message}"
+}

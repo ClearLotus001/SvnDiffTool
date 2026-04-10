@@ -5,8 +5,10 @@ import {
   getStackedWorkbookRowRenderHeight,
 } from '@/utils/workbook/workbookRowBehavior';
 import {
-  buildWorkbookMiniMapState,
+  applyWorkbookMiniMapSearchState,
+  buildWorkbookMiniMapBaseCacheKey,
   getWorkbookMiniMapDescriptor,
+  resolveWorkbookMiniMapBaseState,
 } from '@/utils/workbook/workbookPanelHelpers';
 import type {
   CompareMode,
@@ -44,15 +46,36 @@ export function useWorkbookCompareMiniMapState({
   visibleColumns,
   showColumnHeader,
 }: UseWorkbookCompareMiniMapStateParams): { value: WorkbookMiniMapSegment[]; duration: number } {
-  return useMemo(() => buildWorkbookMiniMapState({
+  const baseCacheKey = useMemo(() => buildWorkbookMiniMapBaseCacheKey({
+    scope: 'compare-minimap-base:v1',
     headerHeight: showColumnHeader ? ROW_H : 0,
-    activeSearchLineIdx,
+    compareMode,
+    visibleColumns,
+    frozenRows,
+    frozenRowsViewportIsOverflowing,
+    frozenRowsViewportHeight,
+    mode,
+    rowHeight,
+  }), [
+    compareMode,
+    frozenRows,
+    frozenRowsViewportHeight,
+    frozenRowsViewportIsOverflowing,
+    mode,
+    rowHeight,
+    showColumnHeader,
+    visibleColumns,
+  ]);
+
+  const baseMeasured = useMemo(() => resolveWorkbookMiniMapBaseState({
+    cacheOwner: itemHeights,
+    cacheKey: baseCacheKey,
+    headerHeight: showColumnHeader ? ROW_H : 0,
     compareMode,
     frozenRows,
     frozenRowsViewportIsOverflowing,
     frozenRowsViewportHeight,
     items,
-    searchMatchSet,
     visibleColumns,
     resolveRowHeight: (row) => (
       mode === 'stacked'
@@ -97,7 +120,7 @@ export function useWorkbookCompareMiniMapState({
       };
     },
   }), [
-    activeSearchLineIdx,
+    baseCacheKey,
     compareMode,
     frozenRows,
     frozenRowsViewportHeight,
@@ -106,8 +129,15 @@ export function useWorkbookCompareMiniMapState({
     items,
     mode,
     rowHeight,
-    searchMatchSet,
-    showColumnHeader,
     visibleColumns,
+    showColumnHeader,
   ]);
+
+  return useMemo(() => {
+    const start = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    return {
+      value: applyWorkbookMiniMapSearchState(baseMeasured.value, searchMatchSet, activeSearchLineIdx),
+      duration: baseMeasured.duration + ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - start),
+    };
+  }, [activeSearchLineIdx, baseMeasured.duration, baseMeasured.value, searchMatchSet]);
 }

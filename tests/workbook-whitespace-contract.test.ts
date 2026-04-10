@@ -175,6 +175,8 @@ test('row delta exposes strict-only columns and delete tone from one structured 
   assert.deepEqual(rowDelta.changedColumns, [1]);
   assert.deepEqual(rowDelta.strictOnlyColumns, [1]);
   assert.equal(rowDelta.tone, 'delete');
+  assert.equal(rowDelta.miniMapTone, 'strict-only');
+  assert.deepEqual(rowDelta.miniMapPaintTones, ['strict-only']);
 });
 
 test('row delta content mode collapses whitespace-only changes into equality', () => {
@@ -188,6 +190,8 @@ test('row delta content mode collapses whitespace-only changes into equality', (
   assert.deepEqual(rowDelta.changedColumns, []);
   assert.deepEqual(rowDelta.strictOnlyColumns, []);
   assert.equal(rowDelta.tone, 'equal');
+  assert.equal(rowDelta.miniMapTone, 'equal');
+  assert.deepEqual(rowDelta.miniMapPaintTones, []);
 });
 
 test('workbook minimap keeps strict-only rows on the blue strict-only tone', () => {

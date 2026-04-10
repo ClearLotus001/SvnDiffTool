@@ -2,6 +2,8 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import type { LayoutMode, SvnRevisionInfo } from '@/types';
 import { useI18n } from '@/context/i18n';
+import { TEXT_DIFF_MINIMAP_WIDTH } from '@/constants/layout';
+import { useAppStore } from '@/store/appStore';
 import { cssAlpha } from '@/theme/cssUtils';
 import { extractDisplayName, extractVersionLabel } from '@/utils/diff/diffMeta';
 import RevisionPicker from '@/components/navigation/RevisionPicker';
@@ -59,6 +61,7 @@ const SplitHeader = memo(({
   onBaseCopy, onMineCopy,
 }: SplitHeaderProps) => {
   const { t } = useI18n();
+  const textSplitHeaderRatio = useAppStore((s) => s.textSplitHeaderRatio);
   const copyTimerRef = useRef<number | null>(null);
   const [copiedSide, setCopiedSide] = useState<'base' | 'mine' | null>(null);
   const baseVersion = baseValueLabel.trim() || baseRevisionInfo?.revision || extractVersionLabel(baseName) || t('commonBase');
@@ -66,6 +69,10 @@ const SplitHeader = memo(({
   const baseDisplayName = extractDisplayName(baseName);
   const mineDisplayName = extractDisplayName(mineName);
   const options = revisionOptions ?? [];
+  const horizontalSplitHeader = layout === 'split-h' && !isWorkbookMode;
+  const resolvedSplitRatio = horizontalSplitHeader
+    ? Math.max(0.2, Math.min(0.8, textSplitHeaderRatio || 0.5))
+    : 0.5;
 
   const resolveAxisLabel = (side: 'base' | 'mine') => {
     if (isWorkbookMode && layout === 'unified') return side === 'base' ? t('splitHeaderAxisTop') : t('splitHeaderAxisBottom');
@@ -275,14 +282,35 @@ const SplitHeader = memo(({
     );
   };
 
-  return (
-    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-0 p-0 w-full min-w-0 border-b border-border-default shrink-0 bg-bg-surface">
+  const pairedHeader = (
+    <div
+      className="grid gap-0 min-w-0"
+      style={{
+        gridTemplateColumns: horizontalSplitHeader
+          ? `minmax(0, ${(resolvedSplitRatio * 100).toFixed(3)}%) minmax(0, ${((1 - resolvedSplitRatio) * 100).toFixed(3)}%)`
+          : 'minmax(0, 1fr) minmax(0, 1fr)',
+      }}>
       <div className="min-w-0">
         {headerSide('base', resolveAxisLabel('base'), baseTitle, baseDisplayName, baseVersion, baseRevisionInfo, false)}
       </div>
       <div className="min-w-0">
         {headerSide('mine', resolveAxisLabel('mine'), mineTitle, mineDisplayName, mineVersion, mineRevisionInfo, true)}
       </div>
+    </div>
+  );
+
+  return horizontalSplitHeader ? (
+    <div
+      className="grid gap-0 p-0 w-full min-w-0 border-b border-border-default shrink-0 bg-bg-surface"
+      style={{ gridTemplateColumns: `minmax(0, 1fr) ${TEXT_DIFF_MINIMAP_WIDTH}px` }}>
+      <div className="min-w-0">
+        {pairedHeader}
+      </div>
+      <div aria-hidden="true" className="min-w-0 border-l border-border-default bg-bg-surface" />
+    </div>
+  ) : (
+    <div className="grid gap-0 p-0 w-full min-w-0 border-b border-border-default shrink-0 bg-bg-surface">
+      {pairedHeader}
     </div>
   );
 });

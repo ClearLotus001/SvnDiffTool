@@ -3,7 +3,10 @@ import { useMemo } from 'react';
 import { ROW_H } from '@/hooks/virtualization/useVirtual';
 import type { Hunk, SplitRow } from '@/types';
 import type { WorkbookPaneCanvasRow } from '@/components/workbook/WorkbookPaneCanvasStrip';
-import { rowTouchesGuidedHunk } from '@/utils/workbook/workbookPanelHelpers';
+import {
+  buildWorkbookLinearBodyLayoutBase,
+  mapWorkbookProjectedBodyRows,
+} from '@/utils/workbook/workbookBodyLayoutProjection';
 
 export type WorkbookHorizontalRenderItem =
   | { kind: 'split-line'; row: SplitRow; lineIdx: number }
@@ -13,7 +16,7 @@ export type WorkbookHorizontalRenderItem =
 
 export type WorkbookHorizontalBodySegment =
   | { kind: 'rows'; rows: WorkbookPaneCanvasRow[]; top: number; height: number }
-  | { kind: 'collapse'; item: Extract<WorkbookHorizontalRenderItem, { kind: 'split-collapse' }>; top: number; height: number }
+  | { kind: 'collapse'; item: Extract<WorkbookHorizontalRenderItem, { kind: 'split-collapse' }>; top: number; height: number; sourceItemIndex: number }
   | { kind: 'hidden-rows'; item: Extract<WorkbookHorizontalRenderItem, { kind: 'hidden-rows' }>; top: number; height: number }
   | { kind: 'sparse-gap'; item: Extract<WorkbookHorizontalRenderItem, { kind: 'sparse-gap' }>; top: number; height: number };
 
@@ -26,6 +29,11 @@ interface UseWorkbookHorizontalBodyLayoutParams {
   searchMatchSet: ReadonlySet<number>;
 }
 
+export interface WorkbookHorizontalBodyLayoutResult {
+  bodySegments: WorkbookHorizontalBodySegment[];
+  rowFramesByKey: Map<string, { top: number; height: number }>;
+}
+
 export function useWorkbookHorizontalBodyLayout({
   items,
   startIdx,
@@ -33,87 +41,82 @@ export function useWorkbookHorizontalBodyLayout({
   guidedHunkRange,
   activeSearchLineIdx,
   searchMatchSet,
-}: UseWorkbookHorizontalBodyLayoutParams): WorkbookHorizontalBodySegment[] {
-  return useMemo(() => {
-    const slice = items.slice(startIdx, endIdx);
-    const segments: WorkbookHorizontalBodySegment[] = [];
-    let currentRows: WorkbookPaneCanvasRow[] = [];
-    let cursorTop = 0;
-    let currentRowsTop = 0;
+}: UseWorkbookHorizontalBodyLayoutParams): WorkbookHorizontalBodyLayoutResult {
+  const bodyBaseLayout = useMemo(
+    () => buildWorkbookLinearBodyLayoutBase({
+      items,
+      startIdx,
+      endIdx,
+      cacheKey: `horizontal:body-base:v1:${startIdx}:${endIdx}`,
+      resolveItemKind: (item) => {
+        if (item.kind === 'split-line') return 'row';
+        if (item.kind === 'split-collapse') return 'collapse';
+        if (item.kind === 'hidden-rows') return 'hidden-rows';
+        return 'sparse-gap';
+      },
+      resolveItemHeight: (item) => item.kind === 'sparse-gap' ? item.count * ROW_H : ROW_H,
+      resolveRow: (item) => item.kind === 'split-line' ? item.row : null,
+      buildStaticRow: (item) => ({
+        row: (item as Extract<WorkbookHorizontalRenderItem, { kind: 'split-line' }>).row,
+      }),
+    }),
+    [endIdx, items, startIdx],
+  );
 
-    const flushRows = () => {
-      if (currentRows.length === 0) return;
-      const height = currentRows.length * ROW_H;
-      segments.push({
-        kind: 'rows',
-        rows: currentRows,
-        top: currentRowsTop,
-        height,
-      });
-      currentRows = [];
-    };
-
-    slice.forEach((item, localIndex) => {
-      const itemIndex = startIdx + localIndex;
-      if (item.kind === 'split-collapse') {
-        flushRows();
-        segments.push({
+  return useMemo(() => ({
+    bodySegments: bodyBaseLayout.segments.map((segment) => {
+      if (segment.kind === 'collapse') {
+        return {
           kind: 'collapse',
-          item,
-          top: cursorTop,
-          height: ROW_H,
-        });
-        cursorTop += ROW_H;
-        currentRowsTop = cursorTop;
-        return;
+          item: segment.item as Extract<WorkbookHorizontalRenderItem, { kind: 'split-collapse' }>,
+          top: segment.top,
+          height: segment.height,
+          sourceItemIndex: segment.sourceItemIndex,
+        };
       }
-      if (item.kind === 'hidden-rows') {
-        flushRows();
-        segments.push({
+      if (segment.kind === 'hidden-rows') {
+        return {
           kind: 'hidden-rows',
-          item,
-          top: cursorTop,
-          height: ROW_H,
-        });
-        cursorTop += ROW_H;
-        currentRowsTop = cursorTop;
-        return;
+          item: segment.item as Extract<WorkbookHorizontalRenderItem, { kind: 'hidden-rows' }>,
+          top: segment.top,
+          height: segment.height,
+        };
       }
-
-      if (item.kind === 'sparse-gap') {
-        flushRows();
-        const height = item.count * ROW_H;
-        segments.push({
+      if (segment.kind === 'sparse-gap') {
+        return {
           kind: 'sparse-gap',
-          item,
-          top: cursorTop,
-          height,
-        });
-        cursorTop += height;
-        currentRowsTop = cursorTop;
-        return;
+          item: segment.item as Extract<WorkbookHorizontalRenderItem, { kind: 'sparse-gap' }>,
+          top: segment.top,
+          height: segment.height,
+        };
       }
-
-      if (currentRows.length === 0) currentRowsTop = cursorTop;
-      const isGuided = rowTouchesGuidedHunk(item.row, guidedHunkRange);
-      const prevGuided = itemIndex > 0
-        && items[itemIndex - 1]?.kind === 'split-line'
-        && rowTouchesGuidedHunk((items[itemIndex - 1] as Extract<typeof items[number], { kind: 'split-line' }>).row, guidedHunkRange);
-      const nextGuided = itemIndex + 1 < items.length
-        && items[itemIndex + 1]?.kind === 'split-line'
-        && rowTouchesGuidedHunk((items[itemIndex + 1] as Extract<typeof items[number], { kind: 'split-line' }>).row, guidedHunkRange);
-      currentRows.push({
-        row: item.row,
-        isSearchMatch: item.row.lineIdxs.some(idx => searchMatchSet.has(idx)),
-        isActiveSearch: item.row.lineIdxs.includes(activeSearchLineIdx),
-        isGuided,
-        isGuidedStart: isGuided && !prevGuided,
-        isGuidedEnd: isGuided && !nextGuided,
-      });
-      cursorTop += ROW_H;
-    });
-
-    flushRows();
-    return segments;
-  }, [activeSearchLineIdx, endIdx, guidedHunkRange, items, searchMatchSet, startIdx]);
+      if (segment.kind === 'rows') {
+        return {
+          kind: 'rows',
+          rows: mapWorkbookProjectedBodyRows({
+            rows: segment.rows,
+            sourceItems: items,
+            resolveSourceRow: (sourceItem) => sourceItem.kind === 'split-line' ? sourceItem.row : null,
+            guidedHunkRange,
+            activeSearchLineIdx,
+            searchMatchSet,
+            decorateRow: (entry, state) => ({
+              ...entry.staticRow,
+              ...state,
+            } as WorkbookPaneCanvasRow),
+          }),
+          top: segment.top,
+          height: segment.height,
+        };
+      }
+      throw new Error(`Unknown workbook horizontal body segment kind: ${String(segment.kind)}`);
+    }),
+    rowFramesByKey: bodyBaseLayout.rowFramesByKey,
+  }), [
+    activeSearchLineIdx,
+    bodyBaseLayout,
+    guidedHunkRange,
+    items,
+    searchMatchSet,
+  ]);
 }

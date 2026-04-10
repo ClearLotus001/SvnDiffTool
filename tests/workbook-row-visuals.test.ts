@@ -61,7 +61,7 @@ test('workbook row visuals resolve region and minimap tones consistently', () =>
   assert.match(mixedMiniMapColor, /^(#|rgba?\()/i);
   assert.equal(strictOnlyMiniMapColor, lightTheme.acc2);
   assert.equal(mixedMiniMapPaint.kind, 'solid');
-  assert.equal(mixedMiniMapPaint.color, lightTheme.chgBg);
+  assert.equal(mixedMiniMapPaint.color, lightTheme.chgBrd);
 });
 
 test('workbook row visuals resolve row surface, selection accent and gutter background consistently', () => {

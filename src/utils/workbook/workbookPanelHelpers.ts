@@ -18,6 +18,13 @@ import {
   getWorkbookSideRowNumber,
   type WorkbookRowEntry,
 } from '@/utils/workbook/workbookNavigation';
+import { getWorkbookRowMiniMapDescriptor } from '@/utils/workbook/workbookDelta';
+import {
+  buildWorkbookCacheSignature,
+  getWorkbookSharedCacheBucket,
+  getWorkbookSharedCacheEntry,
+  setWorkbookSharedCacheEntry,
+} from '@/utils/workbook/workbookSharedCache';
 
 export const WORKBOOK_CONTEXT_LINES = 3;
 
@@ -33,6 +40,10 @@ export interface WorkbookCompareCellsMaps {
 
 const workbookRowEntryMapsCache = new WeakMap<SplitRow[], Map<string, WorkbookRowEntryMaps>>();
 const workbookCompareCellsMapsCache = new WeakMap<SplitRow[], Map<string, WorkbookCompareCellsMaps>>();
+const workbookMiniMapBaseStateCache = new WeakMap<
+  object,
+  Map<string, { value: WorkbookMiniMapBaseSegment[]; duration: number }>
+>();
 
 export function workbookRowHasLineIdx(row: SplitRow, lineIdx: number): boolean {
   return row.lineIdxs.includes(lineIdx);
@@ -82,42 +93,9 @@ export function getWorkbookMiniMapDescriptor(
   visibleColumns: number[],
   compareMode: WorkbookCompareMode,
 ): { tone: WorkbookMiniMapTone; tones: WorkbookMiniMapPaintTone[] } {
-  const rowDelta = buildWorkbookSplitRowCompareState(row, visibleColumns, compareMode);
-  let sawAdd = false;
-  let sawDelete = false;
-  let sawModify = false;
-  let sawStrictOnly = false;
-
-  rowDelta.cellDeltas.forEach((delta) => {
-    if (!delta.changed) return;
-    if (delta.strictOnly) {
-      sawStrictOnly = true;
-      return;
-    }
-    if (delta.kind === 'add') {
-      sawAdd = true;
-      return;
-    }
-    if (delta.kind === 'delete') {
-      sawDelete = true;
-      return;
-    }
-    sawModify = true;
-  });
-
-  const tones: WorkbookMiniMapPaintTone[] = [];
-  if (sawDelete) tones.push('delete');
-  if (sawModify) tones.push('modify');
-  if (sawAdd) tones.push('add');
-  if (sawStrictOnly) tones.push('strict-only');
-
-  if (tones.length === 0) {
-    return { tone: 'equal', tones };
-  }
-  if (tones.length === 1) {
-    return { tone: tones[0]!, tones };
-  }
-  return { tone: 'mixed', tones };
+  return getWorkbookRowMiniMapDescriptor(
+    buildWorkbookSplitRowCompareState(row, visibleColumns, compareMode),
+  );
 }
 
 function mergeWorkbookMiniMapTone(
@@ -203,14 +181,14 @@ export function buildWorkbookCompareCellsMaps(
 
 export function buildWorkbookNavigationRows(
   sheetName: string | null,
-  selectedCell: WorkbookSelectedCell | null,
+  hasSelection: boolean,
   frozenRows: SplitRow[],
   bodyRows: SplitRow[],
   baseVersion: string,
   mineVersion: string,
   visibleColumns: number[],
 ): WorkbookRowEntry[] {
-  if (!sheetName || !selectedCell) return [];
+  if (!sheetName || !hasSelection) return [];
 
   const sourceRows = [
     ...frozenRows,
@@ -227,8 +205,46 @@ export function buildWorkbookNavigationRows(
   });
 }
 
+export function projectWorkbookNavigationRowsFromEntryMaps(
+  rows: readonly SplitRow[],
+  rowEntryByRowNumber: WorkbookRowEntryMaps,
+): WorkbookRowEntry[] {
+  const next: WorkbookRowEntry[] = [];
+  rows.forEach((row) => {
+    const baseRowNumber = getWorkbookSideRowNumber(row, 'base');
+    const mineRowNumber = getWorkbookSideRowNumber(row, 'mine');
+    if (baseRowNumber != null) {
+      const baseEntry = rowEntryByRowNumber.base.get(baseRowNumber);
+      if (baseEntry) next.push(baseEntry);
+    }
+    if (mineRowNumber != null) {
+      const mineEntry = rowEntryByRowNumber.mine.get(mineRowNumber);
+      if (mineEntry) next.push(mineEntry);
+    }
+  });
+  return next;
+}
+
+export function projectWorkbookNavigationRowsFromEntryMapParts(
+  rowParts: readonly (readonly SplitRow[])[],
+  rowEntryByRowNumber: WorkbookRowEntryMaps,
+): WorkbookRowEntry[] {
+  const next: WorkbookRowEntry[] = [];
+  rowParts.forEach((rows) => {
+    projectWorkbookNavigationRowsFromEntryMaps(rows, rowEntryByRowNumber)
+      .forEach((entry) => next.push(entry));
+  });
+  return next;
+}
+
 function getNow() {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
+export function buildWorkbookRowsSignature(
+  rows: readonly SplitRow[],
+): string {
+  return rows.map((row) => getWorkbookRowKey(row)).join('|');
 }
 
 export interface WorkbookMiniMapEntry {
@@ -238,40 +254,41 @@ export interface WorkbookMiniMapEntry {
   lineIdxs: number[];
 }
 
-export interface BuildWorkbookMiniMapStateParams<TItem> {
+export interface WorkbookMiniMapBaseSegment {
+  tone: WorkbookMiniMapTone;
+  tones?: WorkbookMiniMapPaintTone[];
+  height: number;
+  lineIdxs: number[];
+}
+
+export interface BuildWorkbookMiniMapBaseStateParams<TItem> {
   headerHeight?: number;
-  activeSearchLineIdx: number;
   compareMode: WorkbookCompareMode;
   frozenRows: SplitRow[];
   frozenRowsViewportIsOverflowing: boolean;
   frozenRowsViewportHeight: number;
   items: TItem[];
-  searchMatchSet: ReadonlySet<number>;
   visibleColumns: number[];
   resolveRowHeight: (row: SplitRow) => number;
   resolveItemEntry: (item: TItem, index: number) => WorkbookMiniMapEntry;
 }
 
-export function buildWorkbookMiniMapState<TItem>({
+function buildWorkbookMiniMapBaseStateUncached<TItem>({
   headerHeight = 0,
-  activeSearchLineIdx,
   compareMode,
   frozenRows,
   frozenRowsViewportIsOverflowing,
   frozenRowsViewportHeight,
   items,
-  searchMatchSet,
   visibleColumns,
   resolveRowHeight,
   resolveItemEntry,
-}: BuildWorkbookMiniMapStateParams<TItem>): { value: WorkbookMiniMapSegment[]; duration: number } {
+}: BuildWorkbookMiniMapBaseStateParams<TItem>): { value: WorkbookMiniMapBaseSegment[]; duration: number } {
   const start = getNow();
-  const segments: WorkbookMiniMapSegment[] = [];
-  const segmentHasSearchHit = (lineIdxs: number[]) => lineIdxs.some((idx) => searchMatchSet.has(idx));
-  const segmentHasActiveSearchHit = (lineIdxs: number[]) => lineIdxs.includes(activeSearchLineIdx);
+  const segments: WorkbookMiniMapBaseSegment[] = [];
 
   if (headerHeight > 0) {
-    segments.push({ tone: 'equal', height: headerHeight });
+    segments.push({ tone: 'equal', height: headerHeight, lineIdxs: [] });
   }
 
   if (frozenRowsViewportIsOverflowing) {
@@ -287,8 +304,7 @@ export function buildWorkbookMiniMapState<TItem>({
       tone: frozenTone,
       tones: frozenTones,
       height: frozenRowsViewportHeight,
-      searchHit: frozenRows.some((row) => segmentHasSearchHit(row.lineIdxs)),
-      activeSearchHit: frozenRows.some((row) => segmentHasActiveSearchHit(row.lineIdxs)),
+      lineIdxs: frozenRows.flatMap((row) => row.lineIdxs),
     });
   } else {
     frozenRows.forEach((row) => {
@@ -297,8 +313,7 @@ export function buildWorkbookMiniMapState<TItem>({
         tone: descriptor.tone,
         tones: descriptor.tones,
         height: resolveRowHeight(row),
-        searchHit: segmentHasSearchHit(row.lineIdxs),
-        activeSearchHit: segmentHasActiveSearchHit(row.lineIdxs),
+        lineIdxs: row.lineIdxs,
       });
     });
   }
@@ -309,14 +324,109 @@ export function buildWorkbookMiniMapState<TItem>({
       tone: entry.tone,
       ...(entry.tones ? { tones: entry.tones } : {}),
       height: entry.height,
-      searchHit: segmentHasSearchHit(entry.lineIdxs),
-      activeSearchHit: segmentHasActiveSearchHit(entry.lineIdxs),
+      lineIdxs: entry.lineIdxs,
     });
   });
 
   return {
     value: segments,
     duration: getNow() - start,
+  };
+}
+
+export function buildWorkbookMiniMapBaseState<TItem>(
+  params: BuildWorkbookMiniMapBaseStateParams<TItem>,
+): { value: WorkbookMiniMapBaseSegment[]; duration: number } {
+  return buildWorkbookMiniMapBaseStateUncached(params);
+}
+
+export interface ResolveWorkbookMiniMapBaseStateParams<TItem> extends BuildWorkbookMiniMapBaseStateParams<TItem> {
+  cacheOwner: object | null;
+  cacheKey: string | null;
+}
+
+export function resolveWorkbookMiniMapBaseState<TItem>({
+  cacheOwner,
+  cacheKey,
+  ...params
+}: ResolveWorkbookMiniMapBaseStateParams<TItem>): { value: WorkbookMiniMapBaseSegment[]; duration: number } {
+  if (!cacheOwner || !cacheKey) {
+    return buildWorkbookMiniMapBaseStateUncached(params);
+  }
+
+  const cacheBucket = getWorkbookSharedCacheBucket(
+    workbookMiniMapBaseStateCache,
+    cacheOwner,
+  );
+  const cached = getWorkbookSharedCacheEntry(cacheBucket, cacheKey);
+  if (cached) return cached;
+
+  const nextValue = buildWorkbookMiniMapBaseStateUncached(params);
+  setWorkbookSharedCacheEntry(cacheBucket, cacheKey, nextValue);
+  return nextValue;
+}
+
+export function buildWorkbookMiniMapBaseCacheKey(
+  parts: {
+    scope: string;
+    headerHeight: number;
+    compareMode: WorkbookCompareMode;
+    visibleColumns: readonly number[];
+    frozenRows: readonly SplitRow[];
+    frozenRowsViewportIsOverflowing: boolean;
+    frozenRowsViewportHeight: number;
+    mode?: string | null;
+    rowHeight?: number | null;
+  },
+): string {
+  return buildWorkbookCacheSignature([
+    parts.scope,
+    parts.headerHeight,
+    parts.compareMode,
+    parts.visibleColumns.join(','),
+    buildWorkbookRowsSignature(parts.frozenRows),
+    parts.frozenRowsViewportIsOverflowing,
+    parts.frozenRowsViewportHeight,
+    parts.mode ?? null,
+    parts.rowHeight ?? null,
+  ]);
+}
+
+export function applyWorkbookMiniMapSearchState(
+  baseSegments: readonly WorkbookMiniMapBaseSegment[],
+  searchMatchSet: ReadonlySet<number>,
+  activeSearchLineIdx: number,
+): WorkbookMiniMapSegment[] {
+  const segmentHasSearchHit = (lineIdxs: number[]) => lineIdxs.some((idx) => searchMatchSet.has(idx));
+  const segmentHasActiveSearchHit = (lineIdxs: number[]) => lineIdxs.includes(activeSearchLineIdx);
+
+  return baseSegments.map((segment) => ({
+    tone: segment.tone,
+    ...(segment.tones ? { tones: segment.tones } : {}),
+    height: segment.height,
+    searchHit: segmentHasSearchHit(segment.lineIdxs),
+    activeSearchHit: segmentHasActiveSearchHit(segment.lineIdxs),
+  }));
+}
+
+export interface BuildWorkbookMiniMapStateParams<TItem> extends BuildWorkbookMiniMapBaseStateParams<TItem> {
+  activeSearchLineIdx: number;
+  searchMatchSet: ReadonlySet<number>;
+}
+
+export function buildWorkbookMiniMapState<TItem>({
+  activeSearchLineIdx,
+  searchMatchSet,
+  ...rest
+}: BuildWorkbookMiniMapStateParams<TItem>): { value: WorkbookMiniMapSegment[]; duration: number } {
+  const baseState = buildWorkbookMiniMapBaseState({
+    ...rest,
+  });
+  const start = getNow();
+
+  return {
+    value: applyWorkbookMiniMapSearchState(baseState.value, searchMatchSet, activeSearchLineIdx),
+    duration: baseState.duration + (getNow() - start),
   };
 }
 

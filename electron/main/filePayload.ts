@@ -8,6 +8,7 @@ import {
   WORKBOOK_COMPARE_CACHE_LIMIT,
   WORKBOOK_COMPARE_CACHE_MAX_BYTES,
 } from './constants.js';
+import { electronT } from '../i18n.js';
 import {
   canSatisfyWorkbookPayloadRequest,
   estimatePayloadMemoryBytes,
@@ -165,7 +166,7 @@ export async function readFilePayload(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return {
-      content: `[读取文件失败 / Error reading file: ${message}]`,
+      content: `[${electronT('filePayloadReadError', { message })}]`,
       bytes: null,
       metadata: null,
       perf: { readMs: 0, parserMs: 0, metadataMs: 0, byteLength: 0 },
@@ -295,7 +296,7 @@ export async function readRevisionPayload(
       fileName,
     });
     return {
-      content: '[SVN] 无法定位仓库 URL，无法按版本切换',
+      content: electronT('filePayloadMissingRepositoryUrl'),
       bytes: null,
       metadata: null,
       perf: { readMs: 0, parserMs: 0, metadataMs: 0, byteLength: 0 },
@@ -324,7 +325,7 @@ export async function readRevisionPayload(
       message,
     });
     return {
-      content: `[SVN] 读取版本 ${source.revision} 失败: ${message}`,
+      content: electronT('filePayloadReadRevisionError', { revision: source.revision, message }),
       bytes: null,
       metadata: null,
       perf: { readMs: 0, parserMs: 0, metadataMs: 0, byteLength: 0 },

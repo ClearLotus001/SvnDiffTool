@@ -16,17 +16,33 @@ function isTransparentColor(color: string): boolean {
     || normalized === 'rgba(0,0,0,0)';
 }
 
+function resolveMiniMapSemanticColor(
+  theme: ThemeTokens,
+  tone: Exclude<DiffMiniMapHighlightTone, 'mixed'>,
+): string {
+  if (tone === 'add') {
+    return !isTransparentColor(theme.miniAdd)
+      ? theme.miniAdd
+      : (isTransparentColor(theme.addBg) ? theme.addBrd : theme.addBg);
+  }
+
+  if (tone === 'delete') {
+    return !isTransparentColor(theme.miniDel)
+      ? theme.miniDel
+      : (isTransparentColor(theme.delBg) ? theme.delBrd : theme.delBg);
+  }
+
+  return !isTransparentColor(theme.chgBrd)
+    ? theme.chgBrd
+    : (isTransparentColor(theme.chgBg) ? theme.chgTx : theme.chgBg);
+}
+
 export function resolveDiffMiniMapHighlightColor(
   theme: ThemeTokens,
   tone: DiffMiniMapHighlightTone,
 ): string {
-  if (tone === 'add') {
-    return isTransparentColor(theme.addBg) ? theme.addBrd : theme.addBg;
-  }
-  if (tone === 'delete') {
-    return isTransparentColor(theme.delBg) ? theme.delBrd : theme.delBg;
-  }
-  return isTransparentColor(theme.chgBg) ? theme.chgTx : theme.chgBg;
+  if (tone === 'mixed') return resolveMiniMapSemanticColor(theme, 'modify');
+  return resolveMiniMapSemanticColor(theme, tone);
 }
 
 export function resolveDiffMiniMapPaint(
@@ -37,9 +53,9 @@ export function resolveDiffMiniMapPaint(
     return {
       kind: 'gradient',
       stops: [
-        { offset: 0, color: theme.delBg },
-        { offset: 0.5, color: theme.chgBg },
-        { offset: 1, color: theme.addBg },
+        { offset: 0, color: resolveMiniMapSemanticColor(theme, 'delete') },
+        { offset: 0.5, color: resolveMiniMapSemanticColor(theme, 'modify') },
+        { offset: 1, color: resolveMiniMapSemanticColor(theme, 'add') },
       ],
     };
   }

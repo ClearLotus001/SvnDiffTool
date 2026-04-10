@@ -19,14 +19,40 @@ export interface IndexedWorkbookSectionRows {
   rows: SplitRow[];
 }
 
+export interface WorkbookSectionRowIndex {
+  get(sectionName: string): IndexedWorkbookSectionRows | undefined;
+}
+
+export const EMPTY_WORKBOOK_SECTION_ROW_INDEX: WorkbookSectionRowIndex = {
+  get: () => undefined,
+};
+
 const workbookSectionRowIndexCache = new WeakMap<
   DiffLine[],
-  WeakMap<WorkbookSection[], Map<WorkbookCompareMode, Map<string, IndexedWorkbookSectionRows>>>
+  WeakMap<WorkbookSection[], Map<WorkbookCompareMode, WorkbookSectionRowIndex>>
 >();
 const workbookSectionRowIndexFromPrecomputedDeltaCache = new WeakMap<
   DiffLine[],
-  WeakMap<WorkbookPrecomputedDeltaPayload, Map<string, IndexedWorkbookSectionRows>>
+  WeakMap<WorkbookPrecomputedDeltaPayload, WorkbookSectionRowIndex>
 >();
+
+function createWorkbookSectionRowIndex(
+  resolveRows: (sectionName: string) => IndexedWorkbookSectionRows | undefined,
+): WorkbookSectionRowIndex {
+  const rowsBySectionName = new Map<string, IndexedWorkbookSectionRows | undefined>();
+
+  return {
+    get(sectionName: string) {
+      if (rowsBySectionName.has(sectionName)) {
+        return rowsBySectionName.get(sectionName);
+      }
+
+      const nextValue = resolveRows(sectionName);
+      rowsBySectionName.set(sectionName, nextValue);
+      return nextValue;
+    },
+  };
+}
 
 function buildSplitRow(
   left: DiffLine | null,
@@ -181,7 +207,7 @@ export function buildWorkbookSectionRowIndex(
   diffLines: DiffLine[],
   sections: WorkbookSection[],
   compareMode: WorkbookCompareMode = 'strict',
-): Map<string, IndexedWorkbookSectionRows> {
+): WorkbookSectionRowIndex {
   let sectionCache = workbookSectionRowIndexCache.get(diffLines);
   if (!sectionCache) {
     sectionCache = new WeakMap();
@@ -195,14 +221,19 @@ export function buildWorkbookSectionRowIndex(
   const cached = compareModeCache.get(compareMode);
   if (cached) return cached;
 
-  const sectionMap = new Map<string, IndexedWorkbookSectionRows>();
   if (sections.length === 0) {
-    compareModeCache.set(compareMode, sectionMap);
-    return sectionMap;
+    compareModeCache.set(compareMode, EMPTY_WORKBOOK_SECTION_ROW_INDEX);
+    return EMPTY_WORKBOOK_SECTION_ROW_INDEX;
   }
-  const lineSheetContexts = buildWorkbookLineSheetContexts(diffLines);
 
-  sections.forEach((section) => {
+  const lineSheetContexts = buildWorkbookLineSheetContexts(diffLines);
+  const sectionByName = new Map(
+    sections.map((section) => [section.name, section] as const),
+  );
+  const nextIndex = createWorkbookSectionRowIndex((sectionName) => {
+    const section = sectionByName.get(sectionName);
+    if (!section) return undefined;
+
     const contentStartIdx = Math.min(section.startLineIdx + 1, section.endLineIdx + 1);
     const scopedSectionDiffLines = diffLines
       .slice(contentStartIdx, section.endLineIdx + 1)
@@ -211,32 +242,32 @@ export function buildWorkbookSectionRowIndex(
         const context = lineSheetContexts[lineIdx];
         const parsedBase = line.base ? parseWorkbookDisplayLine(line.base) : null;
         const parsedMine = line.mine ? parseWorkbookDisplayLine(line.mine) : null;
-      const keepBase = parsedBase?.kind === 'row' && context?.baseSheetName === section.name;
-      const keepMine = parsedMine?.kind === 'row' && context?.mineSheetName === section.name;
-      if (!keepBase && !keepMine) return [];
+        const keepBase = parsedBase?.kind === 'row' && context?.baseSheetName === section.name;
+        const keepMine = parsedMine?.kind === 'row' && context?.mineSheetName === section.name;
+        if (!keepBase && !keepMine) return [];
 
-      if (
-        isWorkbookDebugEnabled()
-        && parsedBase?.kind === 'row'
-        && parsedMine?.kind === 'row'
-        && context?.baseSheetName !== context?.mineSheetName
-      ) {
-        workbookDebugLog('sheet-index/js-cross-sheet-row', {
-          sectionName: section.name,
+        if (
+          isWorkbookDebugEnabled()
+          && parsedBase?.kind === 'row'
+          && parsedMine?.kind === 'row'
+          && context?.baseSheetName !== context?.mineSheetName
+        ) {
+          workbookDebugLog('sheet-index/js-cross-sheet-row', {
+            sectionName: section.name,
+            lineIdx,
+            baseSheetName: context?.baseSheetName ?? null,
+            mineSheetName: context?.mineSheetName ?? null,
+            keepBase,
+            keepMine,
+            baseRowNumber: parsedBase.rowNumber,
+            mineRowNumber: parsedMine.rowNumber,
+            baseColumnCount: parsedBase.cells.length,
+            mineColumnCount: parsedMine.cells.length,
+          });
+        }
+
+        return [{
           lineIdx,
-          baseSheetName: context?.baseSheetName ?? null,
-          mineSheetName: context?.mineSheetName ?? null,
-          keepBase,
-          keepMine,
-          baseRowNumber: parsedBase.rowNumber,
-          mineRowNumber: parsedMine.rowNumber,
-          baseColumnCount: parsedBase.cells.length,
-          mineColumnCount: parsedMine.cells.length,
-        });
-      }
-
-      return [{
-        lineIdx,
           line: {
             ...line,
             type: keepBase && keepMine ? 'equal' : keepBase ? 'delete' : 'add',
@@ -251,19 +282,18 @@ export function buildWorkbookSectionRowIndex(
       });
     const splitRows = buildWorkbookSplitRows(scopedSectionDiffLines, compareMode)
       .filter(isWorkbookDataRow);
-    sectionMap.set(section.name, { rows: splitRows });
+    return { rows: splitRows };
   });
 
-  compareModeCache.set(compareMode, sectionMap);
-  return sectionMap;
+  compareModeCache.set(compareMode, nextIndex);
+  return nextIndex;
 }
 
 export function buildWorkbookSectionRowIndexFromPrecomputedDelta(
   diffLines: DiffLine[],
   payload: WorkbookPrecomputedDeltaPayload | null | undefined,
-): Map<string, IndexedWorkbookSectionRows> {
-  const sectionMap = new Map<string, IndexedWorkbookSectionRows>();
-  if (!payload || payload.sections.length === 0) return sectionMap;
+): WorkbookSectionRowIndex {
+  if (!payload || payload.sections.length === 0) return EMPTY_WORKBOOK_SECTION_ROW_INDEX;
 
   let payloadCache = workbookSectionRowIndexFromPrecomputedDeltaCache.get(diffLines);
   if (!payloadCache) {
@@ -274,8 +304,13 @@ export function buildWorkbookSectionRowIndexFromPrecomputedDelta(
   if (cached) return cached;
 
   const lineSheetContexts = buildWorkbookLineSheetContexts(diffLines);
+  const sectionPayloadByName = new Map(
+    payload.sections.map((section) => [section.name, section] as const),
+  );
+  const nextIndex = createWorkbookSectionRowIndex((sectionName) => {
+    const section = sectionPayloadByName.get(sectionName);
+    if (!section) return undefined;
 
-  payload.sections.forEach((section) => {
     const rows: SplitRow[] = section.rows.flatMap((row) => {
       const leftLine = row.leftLineIdx != null ? (diffLines[row.leftLineIdx] ?? null) : null;
       const rightLine = row.rightLineIdx != null ? (diffLines[row.rightLineIdx] ?? null) : null;
@@ -326,9 +361,9 @@ export function buildWorkbookSectionRowIndexFromPrecomputedDelta(
           : buildWorkbookRowDelta(scopedLeft, scopedRight, undefined, payload.compareMode),
       }];
     });
-    sectionMap.set(section.name, { rows });
+    return { rows };
   });
 
-  payloadCache.set(payload, sectionMap);
-  return sectionMap;
+  payloadCache.set(payload, nextIndex);
+  return nextIndex;
 }

@@ -216,7 +216,10 @@ const WorkbookColumnsCanvasStrip = memo(({
       ctx.fillRect(0, 0, width, canvasHeight);
       const floatingMergedDraws: Array<() => void> = [];
       const frozenMergedDraws: Array<() => void> = [];
-      const deferredSelectionDraws: Array<() => void> = [];
+      const deferredSelectionDraws = {
+        floating: [] as Array<() => void>,
+        frozen: [] as Array<() => void>,
+      };
       const scrollBorderRegistry = createWorkbookCanvasBorderRegistry();
       const frozenBorderRegistry = createWorkbookCanvasBorderRegistry();
 
@@ -301,6 +304,9 @@ const WorkbookColumnsCanvasStrip = memo(({
         const rowNumber = renderRow.baseEntry?.rowNumber ?? renderRow.mineEntry?.rowNumber ?? 0;
         const compactSide: 'base' | 'mine' = renderRow.renderMode === 'single-mine' ? 'mine' : 'base';
         const deferredMergedDraws = layer === 'floating' ? floatingMergedDraws : frozenMergedDraws;
+        const deferredSelectionDrawBucket = layer === 'floating'
+          ? deferredSelectionDraws.floating
+          : deferredSelectionDraws.frozen;
         const borderRegistry = layer === 'floating' ? scrollBorderRegistry : frozenBorderRegistry;
         const drawCell = (
           side: 'base' | 'mine',
@@ -490,7 +496,7 @@ const WorkbookColumnsCanvasStrip = memo(({
                 });
               });
             });
-            deferredSelectionDraws.push(() => {
+            deferredSelectionDrawBucket.push(() => {
               withRowSegmentClip(() => {
                 selectionSegments.forEach((segment) => {
                   drawWorkbookCanvasSelectionFrame(ctx, segment.left, selectionTop, segment.width, selectionHeight, selectionVisual);
@@ -641,7 +647,16 @@ const WorkbookColumnsCanvasStrip = memo(({
           frozenBorderRegistry.flush(ctx);
         });
       }
-      deferredSelectionDraws.forEach((drawSelection) => drawSelection());
+      if (scrollViewport.width > 0) {
+        clipWorkbookCanvasToViewport(ctx, scrollViewport, 0, canvasHeight, () => {
+          deferredSelectionDraws.floating.forEach((drawSelection) => drawSelection());
+        });
+      }
+      if (frozenViewport) {
+        clipWorkbookCanvasToViewport(ctx, frozenViewport, 0, canvasHeight, () => {
+          deferredSelectionDraws.frozen.forEach((drawSelection) => drawSelection());
+        });
+      }
 
       if (frozenViewport) {
         ctx.fillStyle = `${T.border2}55`;

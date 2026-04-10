@@ -10,6 +10,7 @@ interface TooltipProps {
   placement?: TooltipPlacement;
   maxWidth?: number;
   disabled?: boolean;
+  surface?: 'default' | 'bare';
   anchorStyle?: CSSProperties | undefined;
 }
 
@@ -86,7 +87,7 @@ export function computeTooltipLayout(
 }
 
 const Tooltip = memo(({
-  content, children, placement = 'top', maxWidth = 260, disabled = false, anchorStyle,
+  content, children, placement = 'top', maxWidth = 260, disabled = false, surface = 'default', anchorStyle,
 }: TooltipProps) => {
   const id = useId();
   const anchorRef = useRef<HTMLSpanElement>(null);
@@ -139,18 +140,24 @@ const Tooltip = memo(({
         style={{ left: layout.left, top: layout.top }}>
         <div
           ref={bubbleRef}
-          className="relative p-[8px_10px] rounded-xl border border-border-default text-text-title text-[13px] leading-tight font-ui text-center whitespace-normal shadow-[0_14px_30px_rgba(0,0,0,0.12)]"
+          className={surface === 'bare'
+            ? 'relative'
+            : 'relative p-[8px_10px] rounded-xl border border-border-default text-text-title text-[13px] leading-tight font-ui text-center whitespace-normal shadow-[0_14px_30px_rgba(0,0,0,0.12)]'}
           style={{
             maxWidth,
-            background: `linear-gradient(180deg, var(--bg-surface-hover) 0%, var(--bg-surface-solid) 100%)`,
+            background: surface === 'bare'
+              ? 'transparent'
+              : `linear-gradient(180deg, var(--bg-surface-hover) 0%, var(--bg-surface-solid) 100%)`,
           }}>
           {resolvedContent}
-          <TooltipArrow
-            actualPlacement={layout.actualPlacement}
-            left={layout.arrowOffset}
-            borderColor="var(--border-color)"
-            fillColor={layout.actualPlacement === 'top' ? 'var(--bg-surface-solid)' : 'var(--bg-surface-hover)'}
-          />
+          {surface !== 'bare' && (
+            <TooltipArrow
+              actualPlacement={layout.actualPlacement}
+              left={layout.arrowOffset}
+              borderColor="var(--border-color)"
+              fillColor={layout.actualPlacement === 'top' ? 'var(--bg-surface-solid)' : 'var(--bg-surface-hover)'}
+            />
+          )}
         </div>
       </div>,
       document.body,

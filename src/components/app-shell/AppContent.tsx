@@ -27,11 +27,10 @@ import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
 import type { TextLayoutSnapshotsByMode } from '@/utils/diff/textLayoutState';
 import type { WorkbookColumnWidthBySheet } from '@/utils/workbook/workbookColumnWidths';
 import type { WorkbookLayoutSnapshotsByMode } from '@/utils/workbook/workbookLayoutState';
-import type { IndexedWorkbookSectionRows } from '@/utils/workbook/workbookSheetIndex';
+import type { WorkbookSectionRowIndex } from '@/utils/workbook/workbookSheetIndex';
 import type { WorkbookSection } from '@/utils/workbook/workbookSections';
 import type { WorkbookContextMenuSection } from '@/components/workbook/WorkbookContextMenu';
 import type { UnifiedPanelProps } from '@/components/diff/UnifiedPanel';
-import type { WorkbookComparePanelProps } from '@/components/workbook/WorkbookComparePanel';
 import {
   revealWorkbookColumns,
   revealWorkbookRows,
@@ -44,8 +43,7 @@ const SplitPanel = lazy(() => import('@/components/diff/SplitPanel'));
 const WorkbookComparePanel = lazy(() => import('@/components/workbook/WorkbookComparePanel'));
 const WorkbookHorizontalPanel = lazy(() => import('@/components/workbook/WorkbookHorizontalPanel'));
 
-type AppPanelProps = UnifiedPanelProps
-  & Pick<WorkbookComparePanelProps, 'guidedHunkRange' | 'guidedPulseNonce'>;
+type AppPanelProps = UnifiedPanelProps;
 
 interface AppContentProps {
   loadingLabel: string;
@@ -77,7 +75,8 @@ interface AppContentProps {
   workbookColumnWidthBySheet: WorkbookColumnWidthBySheet;
   onWorkbookColumnWidthChange: (sheetName: string, column: number, nextWidth: number) => void;
   workbookSections: WorkbookSection[];
-  workbookSectionRowIndex: Map<string, IndexedWorkbookSectionRows>;
+  workbookSectionRowIndex: WorkbookSectionRowIndex;
+  modifiedWorkbookSheetNames: ReadonlySet<string>;
   activeWorkbookSheetName: string | null;
   onActiveWorkbookSheetChange: (sheetName: string | null) => void;
   workbookCompareMode: WorkbookCompareMode;
@@ -171,7 +170,7 @@ export default function AppContent({
   baseWorkbookMetadata, mineWorkbookMetadata,
   workbookHiddenStateBySheet, workbookFreezeBySheet,
   workbookColumnWidthBySheet, onWorkbookColumnWidthChange,
-  workbookSections, workbookSectionRowIndex,
+  workbookSections, workbookSectionRowIndex, modifiedWorkbookSheetNames,
   activeWorkbookSheetName, onActiveWorkbookSheetChange,
   workbookCompareMode,
   activeWorkbookSharedExpandedBlocks, onWorkbookExpandedBlocksChange,
@@ -288,6 +287,7 @@ export default function AppContent({
                   onRevealHiddenColumns={handleRevealHiddenColumns}
                   workbookSections={workbookSections}
                   workbookSectionRowIndex={workbookSectionRowIndex}
+                  modifiedSheetNames={modifiedWorkbookSheetNames}
                   activeWorkbookSheetName={activeWorkbookSheetName}
                   onActiveWorkbookSheetChange={onActiveWorkbookSheetChange}
                   compareMode={workbookCompareMode}
@@ -329,6 +329,7 @@ export default function AppContent({
                   onRevealHiddenColumns={handleRevealHiddenColumns}
                   workbookSections={workbookSections}
                   workbookSectionRowIndex={workbookSectionRowIndex}
+                  modifiedSheetNames={modifiedWorkbookSheetNames}
                   activeWorkbookSheetName={activeWorkbookSheetName}
                   onActiveWorkbookSheetChange={onActiveWorkbookSheetChange}
                   compareMode={workbookCompareMode}

@@ -7,10 +7,16 @@ import { strToU8, zipSync } from 'fflate';
 
 import { EMPTY_CLI_ARGS } from '../electron/cliArgs';
 import {
+  clearAnalysisSnapshotCache,
+  getInFlightAnalysisSnapshot,
+  peekAnalysisSnapshot,
+} from '../electron/main/analysisSnapshotService';
+import {
   buildLocalDiffData,
   loadWorkbookCompareModeData,
   loadWorkbookMetadataData,
 } from '../electron/main/diffBuilder';
+import { buildSourceIdentity } from '../electron/main/svnHelpers';
 import {
   filePayloadCache,
   revisionPayloadCache,
@@ -72,11 +78,96 @@ test('local diff keeps compare-mode and metadata loaders usable after initial lo
     await fs.writeFile(minePath, Buffer.from(buildWorkbookZip('Thing', [['ID', 'Name'], ['10001', 'Bravo']])));
 
     const initial = await buildLocalDiffData(basePath, minePath, 'strict');
+    const warmedOrInFlightContentSnapshot = peekAnalysisSnapshot({
+      sourceIdentity: initial.sourceIdentity,
+      compareMode: 'content',
+      baseRevisionId: undefined,
+      mineRevisionId: undefined,
+    }) ?? await getInFlightAnalysisSnapshot({
+      sourceIdentity: initial.sourceIdentity,
+      compareMode: 'content',
+      baseRevisionId: undefined,
+      mineRevisionId: undefined,
+    });
+    const strictPayload = await loadWorkbookCompareModeData('strict');
     const contentPayload = await loadWorkbookCompareModeData('content');
     const metadataPayload = await loadWorkbookMetadataData();
+    const strictSnapshot = initial.analysisSnapshotsByMode?.strict ?? null;
 
     assert.ok((initial.precomputedDiffLinesByMode?.strict?.length ?? 0) > 0);
+    assert.ok((initial.analysisSnapshotsByMode?.strict?.workbookAnalysis?.diffLinesByMode.strict?.length ?? 0) > 0);
+    assert.equal(Object.keys(initial.analysisSnapshotsByMode?.strict?.workbookAnalysis?.metadata.base?.sheets ?? {}).length, 1);
+    assert.equal(Object.keys(initial.analysisSnapshotsByMode?.strict?.workbookAnalysis?.metadata.mine?.sheets ?? {}).length, 1);
+    assert.ok(warmedOrInFlightContentSnapshot);
+    assert.equal(strictPayload.analysisSnapshot, strictSnapshot);
     assert.ok((contentPayload.diffLines?.length ?? 0) > 0);
+    assert.ok((contentPayload.analysisSnapshot?.workbookAnalysis?.diffLinesByMode.content?.length ?? 0) > 0);
+    assert.equal(metadataPayload.analysisSnapshot, strictSnapshot);
+    assert.equal(Object.keys(metadataPayload.base?.sheets ?? {}).length, 1);
+    assert.equal(Object.keys(metadataPayload.mine?.sheets ?? {}).length, 1);
+    assert.equal(Object.keys(metadataPayload.analysisSnapshot?.workbookAnalysis?.metadata.base?.sheets ?? {}).length, 1);
+    assert.equal(Object.keys(metadataPayload.analysisSnapshot?.workbookAnalysis?.metadata.mine?.sheets ?? {}).length, 1);
+  } finally {
+    filePayloadCache.clear();
+    revisionPayloadCache.clear();
+    workbookCompareCache.clear();
+    workbookMetadataCache.clear();
+    clearAnalysisSnapshotCache();
+    setActiveCliArgs(EMPTY_CLI_ARGS);
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('cold metadata follow-up loads workbook metadata without materializing a strict snapshot', async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'svn-diff-local-metadata-'));
+  const basePath = path.join(tempDir, 'base.xlsx');
+  const minePath = path.join(tempDir, 'mine.xlsx');
+
+  try {
+    await fs.writeFile(
+      basePath,
+      Buffer.from(buildWorkbookZip('Thing', [['ID', 'Name'], ['10001', 'Alpha']])),
+    );
+    await fs.writeFile(
+      minePath,
+      Buffer.from(buildWorkbookZip('Thing', [['ID', 'Name'], ['10001', 'Bravo']])),
+    );
+
+    setActiveCliArgs({
+      basePath,
+      minePath,
+      baseName: path.basename(basePath),
+      mineName: path.basename(minePath),
+      baseUrl: '',
+      mineUrl: '',
+      baseRevision: '',
+      mineRevision: '',
+      pegRevision: '',
+      fileName: path.basename(minePath),
+    });
+
+    const metadataPayload = await loadWorkbookMetadataData();
+    const sourceIdentity = buildSourceIdentity({
+      kind: 'local-dev',
+      fileName: path.basename(minePath),
+      baseUrl: '',
+      mineUrl: '',
+      baseRevision: '',
+      mineRevision: '',
+      pegRevision: '',
+      basePath,
+      minePath,
+      baseName: path.basename(basePath),
+      mineName: path.basename(minePath),
+    });
+
+    assert.equal(metadataPayload.analysisSnapshot, null);
+    assert.equal(peekAnalysisSnapshot({
+      sourceIdentity,
+      compareMode: 'strict',
+      baseRevisionId: undefined,
+      mineRevisionId: undefined,
+    }), null);
     assert.equal(Object.keys(metadataPayload.base?.sheets ?? {}).length, 1);
     assert.equal(Object.keys(metadataPayload.mine?.sheets ?? {}).length, 1);
   } finally {
@@ -84,6 +175,7 @@ test('local diff keeps compare-mode and metadata loaders usable after initial lo
     revisionPayloadCache.clear();
     workbookCompareCache.clear();
     workbookMetadataCache.clear();
+    clearAnalysisSnapshotCache();
     setActiveCliArgs(EMPTY_CLI_ARGS);
     await fs.rm(tempDir, { recursive: true, force: true });
   }

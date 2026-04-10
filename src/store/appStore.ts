@@ -77,6 +77,11 @@ interface UiSettingsSlice {
   setWorkbookCompareMode: (v: SetStateAction<WorkbookCompareMode>) => void;
 }
 
+interface SplitHeaderUiSlice {
+  textSplitHeaderRatio: number;
+  setTextSplitHeaderRatio: (v: SetStateAction<number>) => void;
+}
+
 // ---- Diff Data ----
 interface DiffDataSlice {
   diffLines: DiffLine[];
@@ -121,6 +126,7 @@ interface SearchSlice {
   setSearchWorkbookScope: (v: SetStateAction<'all' | 'sheet'>) => void;
   setActiveSearchIdx: (v: SetStateAction<number>) => void;
   setSearchJumpNonce: (v: SetStateAction<number>) => void;
+  resetSearchState: () => void;
 }
 
 // ---- Navigation ----
@@ -199,11 +205,49 @@ interface SvnDiffViewerSlice {
   setSvnDiffViewerError: (v: SetStateAction<string>) => void;
 }
 
+export interface LoadedDiffSessionPayload {
+  baseName: string;
+  mineName: string;
+  launchBaseName: string;
+  launchMineName: string;
+  fileName: string;
+  workbookCompareMode: WorkbookCompareMode;
+  preservedWorkbookViewState?: {
+    activeWorkbookSheetName: string | null;
+    workbookHiddenStateBySheet: WorkbookHiddenStateBySheet;
+    workbookFreezeBySheet: WorkbookFreezeStateMap;
+    workbookColumnWidthBySheet: WorkbookColumnWidthBySheet;
+  } | null;
+  diffLines: DiffLine[];
+  diffSourceNoticeCode: DiffSourceNoticeCode | null;
+  precomputedWorkbookDelta: WorkbookPrecomputedDeltaPayload | null;
+  workbookArtifactDiff: WorkbookArtifactDiff | null;
+  baseWorkbookMetadata: WorkbookMetadataMap | null;
+  mineWorkbookMetadata: WorkbookMetadataMap | null;
+  revisionOptions: SvnRevisionInfo[];
+  baseRevisionInfo: SvnRevisionInfo | null;
+  mineRevisionInfo: SvnRevisionInfo | null;
+  compareContext: CompareContext;
+  resetPair: RevisionSelectionPair | null;
+  canSwitchRevisions: boolean;
+}
+
+export interface WorkbookMetadataStatePayload {
+  baseWorkbookMetadata: WorkbookMetadataMap | null;
+  mineWorkbookMetadata: WorkbookMetadataMap | null;
+}
+
+interface DiffSessionHydrationSlice {
+  hydrateLoadedDiffSession: (payload: LoadedDiffSessionPayload) => void;
+  hydrateWorkbookMetadataState: (payload: WorkbookMetadataStatePayload) => void;
+}
+
 
 // ── Combined Store Type ─────────────────────────────────────────────────────
 
 export type AppState =
   & UiSettingsSlice
+  & SplitHeaderUiSlice
   & DiffDataSlice
   & FileNamesSlice
   & SearchSlice
@@ -212,7 +256,8 @@ export type AppState =
   & RevisionSlice
   & WorkbookUiSlice
   & AppUpdateSlice
-  & SvnDiffViewerSlice;
+  & SvnDiffViewerSlice
+  & DiffSessionHydrationSlice;
 
 
 // ── Store Creation ──────────────────────────────────────────────────────────
@@ -235,6 +280,8 @@ export const useAppStore = create<AppState>()((set) => ({
   setShowHiddenColumns: setter(set, 'showHiddenColumns'),
   setFontSize: setter(set, 'fontSize'),
   setWorkbookCompareMode: setter(set, 'workbookCompareMode'),
+  textSplitHeaderRatio: 0.5,
+  setTextSplitHeaderRatio: setter(set, 'textSplitHeaderRatio'),
 
   // ── Diff Data ─────────────────────────────────────────────────────────
   diffLines: [],
@@ -275,6 +322,14 @@ export const useAppStore = create<AppState>()((set) => ({
   setSearchWorkbookScope: setter(set, 'searchWorkbookScope'),
   setActiveSearchIdx: setter(set, 'activeSearchIdx'),
   setSearchJumpNonce: setter(set, 'searchJumpNonce'),
+  resetSearchState: () => set((state) => ({
+    searchQ: '',
+    searchRx: false,
+    searchCs: false,
+    searchWorkbookScope: 'sheet',
+    activeSearchIdx: -1,
+    searchJumpNonce: state.searchJumpNonce + 1,
+  })),
 
   // ── Navigation ────────────────────────────────────────────────────────
   hunkIdx: 0,
@@ -339,4 +394,35 @@ export const useAppStore = create<AppState>()((set) => ({
   setApplyingSvnDiffViewerScope: setter(set, 'applyingSvnDiffViewerScope'),
   setIsRestoringSvnDiffViewerDefault: setter(set, 'isRestoringSvnDiffViewerDefault'),
   setSvnDiffViewerError: setter(set, 'svnDiffViewerError'),
+  hydrateLoadedDiffSession: (payload) => set(() => ({
+    baseName: payload.baseName,
+    mineName: payload.mineName,
+    launchBaseName: payload.launchBaseName,
+    launchMineName: payload.launchMineName,
+    fileName: payload.fileName,
+    workbookCompareMode: payload.workbookCompareMode,
+    diffLines: payload.diffLines,
+    diffSourceNoticeCode: payload.diffSourceNoticeCode,
+    precomputedWorkbookDelta: payload.precomputedWorkbookDelta,
+    workbookArtifactDiff: payload.workbookArtifactDiff,
+    baseWorkbookMetadata: payload.baseWorkbookMetadata,
+    mineWorkbookMetadata: payload.mineWorkbookMetadata,
+    revisionOptions: payload.revisionOptions,
+    baseRevisionInfo: payload.baseRevisionInfo,
+    mineRevisionInfo: payload.mineRevisionInfo,
+    compareContext: payload.compareContext,
+    resetPair: payload.resetPair,
+    canSwitchRevisions: payload.canSwitchRevisions,
+    hunkIdx: 0,
+    workbookSelection: createWorkbookSelectionState(null),
+    workbookHiddenStateBySheet: payload.preservedWorkbookViewState?.workbookHiddenStateBySheet ?? {},
+    workbookContextMenu: null,
+    workbookFreezeBySheet: payload.preservedWorkbookViewState?.workbookFreezeBySheet ?? {},
+    workbookColumnWidthBySheet: payload.preservedWorkbookViewState?.workbookColumnWidthBySheet ?? {},
+    activeWorkbookSheetName: payload.preservedWorkbookViewState?.activeWorkbookSheetName ?? null,
+  })),
+  hydrateWorkbookMetadataState: (payload) => set(() => ({
+    baseWorkbookMetadata: payload.baseWorkbookMetadata,
+    mineWorkbookMetadata: payload.mineWorkbookMetadata,
+  })),
 }));

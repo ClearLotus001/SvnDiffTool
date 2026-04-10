@@ -141,16 +141,16 @@
   --diff-add-border: #10B981;
 
   /* Diff 删除 */
-  --diff-remove-bg: #450A0A;
-  --diff-remove-hl: #7F1D1D;
-  --diff-remove-text: #F87171;
-  --diff-remove-border: #EF4444;
+  --diff-remove-bg: #3F1018;
+  --diff-remove-hl: #7F1D2D;
+  --diff-remove-text: #FDA4AF;
+  --diff-remove-border: #FB7185;
 
   /* Diff 修改 */
-  --diff-modify-bg: #451A03;
-  --diff-modify-hl: #78350F;
-  --diff-modify-text: #FBBF24;
-  --diff-modify-border: #F59E0B;
+  --diff-modify-bg: #332701;
+  --diff-modify-hl: #5B4700;
+  --diff-modify-text: #FDE047;
+  --diff-modify-border: #FACC15;
 
   /* 语法高亮 */
   --syntax-keyword: #E879F9;
@@ -179,7 +179,7 @@
 
   /* MiniMap */
   --mini-add: #34D399;
-  --mini-del: #F87171;
+  --mini-del: #FB7185;
   --mini-vp: rgba(161, 161, 170, 0.16);
 
   /* 强调辅助色 */

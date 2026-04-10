@@ -11,6 +11,7 @@ import type { WorkbookMergeRange } from '@/utils/workbook/workbookMeta';
 import { buildDiffSelectionSurfaces } from '@/utils/diff/selectionVisuals';
 import {
   resolveTextDiffCssPalette,
+  resolveTextInlineBackground,
   resolveTextDiffVisualTone,
 } from '@/utils/diff/textDiffVisuals';
 import Ln from '@/components/diff/Ln';
@@ -239,25 +240,21 @@ const SplitCell = memo(({
   const isDel    = line.type === 'delete';
   const tone = resolveTextDiffVisualTone(line, isReplacementPair);
   const palette = resolveTextDiffCssPalette(tone);
-  const useModifyTone = tone === 'modify';
-  const bg       = palette.rowBackground;
   const brd      = palette.accent;
   const pfx      = isAdd ? '+' : isDel ? '-' : ' ';
   const pfxC     = palette.prefix;
   const hlBg     = palette.inlineHighlight;
   const charSpans = side === 'left' ? line.baseCharSpans : line.mineCharSpans;
-  const hasInlineModifyHighlight = useModifyTone && Boolean(charSpans && charSpans.length > 0);
   const hasSearchRanges = searchRanges.length > 0;
   const hasTextSelection = Boolean(textSelectionRange && textSelectionRange.end > textSelectionRange.start);
   const searchBg = rowHighlightBg;
   const contentBg = searchBg;
-  const inlineBg = searchBg || hasSearchRanges
-    ? undefined
-    : isRangeSelected
-      ? undefined
-    : useModifyTone
-      ? (hasInlineModifyHighlight ? undefined : cssVar('chgBg'))
-      : bg;
+  const inlineBg = resolveTextInlineBackground({
+    tone,
+    hasSearchRanges,
+    isRangeSelected,
+    hasRowSurfaceOverride: Boolean(searchBg),
+  });
   const effectiveHighlightBackground = diffHighlightBackground ?? hlBg;
   const contentHighlightBackground = undefined;
 

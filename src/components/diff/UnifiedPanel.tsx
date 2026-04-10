@@ -7,6 +7,7 @@ import type {
   LineItem,
   RenderItem,
   SearchMatch,
+  SplitRowDescriptor,
   SyntaxPresentation,
   TextDiffPresentation,
 } from '@/types';
@@ -61,6 +62,7 @@ const CONTEXT_LINES = 3;
 
 export interface UnifiedPanelProps {
   diffLines: DiffLine[];
+  splitRowDescriptors?: SplitRowDescriptor[] | null;
   textDiffPresentation: TextDiffPresentation;
   syntaxPresentation?: SyntaxPresentation | null;
   baseVersionLabel?: string;

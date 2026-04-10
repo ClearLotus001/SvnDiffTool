@@ -139,8 +139,8 @@ const Toolbar = memo((props: ToolbarProps) => {
     updateState, onCheckForUpdates, onDownloadUpdate, onInstallUpdate,
   } = props;
 
-  const { getThemeLabel, locale, setLocale, t } = useI18n();
-  const nextLocale = locale === 'zh-CN' ? 'en-US' : 'zh-CN';
+  const { getThemeLabel, getLocaleLabel, getNextLocale, setLocale, t } = useI18n();
+  const nextLocale = getNextLocale();
   const noDragStyle = (isElectron ? { WebkitAppRegion: 'no-drag' as const } : undefined) as CSSProperties | undefined;
   const noDragAnchorStyle = noDragStyle;
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -215,16 +215,18 @@ const Toolbar = memo((props: ToolbarProps) => {
   }, [isElectron, onCheckForUpdates, onDownloadUpdate, onInstallUpdate, t, updateState]);
 
   const Btn = ({
-    active = false, onClick, children, tooltip = '', compact = false, disabled = false,
+    active = false, onClick, children, tooltip = '', compact = false, disabled = false, testId,
   }: {
     active?: boolean; onClick: () => void; children: React.ReactNode;
     tooltip?: string; compact?: boolean; disabled?: boolean;
+    testId?: string;
   }) => {
     const button = (
       <button
         type="button"
         onClick={onClick}
         disabled={disabled}
+        data-testid={testId}
         aria-label={tooltip || undefined}
         className={`
           inline-flex items-center justify-center gap-1.5
@@ -412,7 +414,12 @@ const Toolbar = memo((props: ToolbarProps) => {
             const labelKey = getLayoutLabelKey(option.id, isWorkbookMode);
             const iconName = getLayoutIconName(option.id, isWorkbookMode);
             return (
-              <Btn key={option.id} active={layout === option.id} onClick={() => setLayout(option.id)} tooltip={t(labelKey)}>
+              <Btn
+                key={option.id}
+                active={layout === option.id}
+                onClick={() => setLayout(option.id)}
+                tooltip={t(labelKey)}
+                testId={`toolbar-layout-${option.id}`}>
                 <Icon name={iconName} />
                 {showLayoutText && <span>{t(labelKey)}</span>}
               </Btn>
@@ -480,7 +487,7 @@ const Toolbar = memo((props: ToolbarProps) => {
           showLabel
           noDragStyle={noDragStyle}
           anchorStyle={noDragAnchorStyle}
-        />
+      />
       </div>
 
       {/* ── Right Section ── */}
@@ -498,7 +505,7 @@ const Toolbar = memo((props: ToolbarProps) => {
           <Btn onClick={() => setLocale(nextLocale)} tooltip={t('toolbarLanguageTitle')}>
             <Icon name="language" />
             {showLanguageText && (
-              <span>{locale === 'zh-CN' ? t('toolbarLanguageEn') : t('toolbarLanguageZh')}</span>
+              <span>{getLocaleLabel(nextLocale)}</span>
             )}
           </Btn>
           <Btn onClick={onAbout} tooltip={t('toolbarAboutTitle')} compact>

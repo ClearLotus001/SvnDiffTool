@@ -7,6 +7,7 @@ import type {
 } from '@/types';
 import { clearTokenCache } from '@/engine/text/tokenizer';
 import { debugLog, hasBytePayload, waitForNextPaint } from '@/hooks/app/helpers';
+import { recordPerfBridgeEvent } from '@/utils/app/perfBridge';
 import type { DiffLoadController, RevisionQueryController } from '@/hooks/app/contracts';
 import { useAppStore } from '@/store/appStore';
 
@@ -165,6 +166,12 @@ export default function useElectronLifecycleEffects({
             seq,
             compareMode: workbookCompareModeRef.current,
           });
+          recordPerfBridgeEvent('diff-payload:request', {
+            reason: 'launch',
+            transport: 'get-diff-data',
+            seq,
+            compareMode: workbookCompareModeRef.current,
+          });
           data = await window.svnDiff.getDiffData(workbookCompareModeRef.current);
           debugLog('electron-lifecycle:get-diff-data:resolved', {
             seq,
@@ -173,13 +180,35 @@ export default function useElectronLifecycleEffects({
             hasDiffData: Boolean(data),
             fileName: data?.fileName ?? '',
           });
+          recordPerfBridgeEvent('diff-payload:ready', {
+            reason: 'launch',
+            transport: 'get-diff-data',
+            seq,
+            compareMode: workbookCompareModeRef.current,
+            hasDiffData: Boolean(data),
+            fileName: data?.fileName ?? '',
+          });
         } else if (window.svnDiff?.getLaunchState) {
           debugLog('electron-lifecycle:get-launch-state:request', { seq });
+          recordPerfBridgeEvent('diff-payload:request', {
+            reason: 'launch',
+            transport: 'get-launch-state',
+            seq,
+            compareMode: workbookCompareModeRef.current,
+          });
           const launchState = await window.svnDiff.getLaunchState(workbookCompareModeRef.current);
           debugLog('electron-lifecycle:get-launch-state:resolved', {
             seq,
             cancelled,
             currentSeq: loadSeqRef.current,
+            hasDiffData: Boolean(launchState?.diffData),
+            fileName: launchState?.diffData?.fileName ?? '',
+          });
+          recordPerfBridgeEvent('diff-payload:ready', {
+            reason: 'launch',
+            transport: 'get-launch-state',
+            seq,
+            compareMode: workbookCompareModeRef.current,
             hasDiffData: Boolean(launchState?.diffData),
             fileName: launchState?.diffData?.fileName ?? '',
           });
@@ -199,6 +228,13 @@ export default function useElectronLifecycleEffects({
 
         if (cancelled || seq !== loadSeqRef.current || !data) return undefined;
 
+        const strictSnapshotDiffLines = data.analysisSnapshotsByMode?.strict?.textAnalysis?.diffLines.length
+          ?? data.analysisSnapshotsByMode?.strict?.workbookAnalysis?.diffLinesByMode.strict?.length
+          ?? 0;
+        const contentSnapshotDiffLines = data.analysisSnapshotsByMode?.content?.textAnalysis?.diffLines.length
+          ?? data.analysisSnapshotsByMode?.content?.workbookAnalysis?.diffLinesByMode.content?.length
+          ?? 0;
+
         const hasDiffPayload = Boolean(
           data
           && (
@@ -209,6 +245,8 @@ export default function useElectronLifecycleEffects({
             || Boolean(data.precomputedDiffLines?.length)
             || Boolean(data.precomputedDiffLinesByMode?.strict?.length)
             || Boolean(data.precomputedDiffLinesByMode?.content?.length)
+            || strictSnapshotDiffLines > 0
+            || contentSnapshotDiffLines > 0
           )
         );
         debugLog('electron-lifecycle:launch-state:evaluated', {
@@ -220,6 +258,8 @@ export default function useElectronLifecycleEffects({
           mineBytes: hasBytePayload(data?.mineBytes) ? data.mineBytes.byteLength : 0,
           strictDiffLines: data?.precomputedDiffLinesByMode?.strict?.length ?? 0,
           contentDiffLines: data?.precomputedDiffLinesByMode?.content?.length ?? 0,
+          strictSnapshotDiffLines,
+          contentSnapshotDiffLines,
         });
         if (hasDiffPayload) {
           await applyDiffData(data, {

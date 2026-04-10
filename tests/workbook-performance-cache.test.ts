@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { buildWorkbookSplitRowCompareState } from '../src/utils/workbook/workbookCompare';
+import { hydrateWorkbookRowDelta } from '../src/utils/workbook/workbookDelta';
 import { computeWorkbookDiff } from '../src/engine/workbook/workbookDiff';
 import { createWorkbookRowLine, createWorkbookSheetLine } from '../src/utils/workbook/workbookDisplay';
 import { getWorkbookSections } from '../src/utils/workbook/workbookSections';
@@ -68,6 +69,8 @@ test('buildWorkbookSplitRowCompareState reuses cached subset deltas for repeated
   assert.equal(first, second);
   assert.deepEqual(first.changedColumns, visibleColumns);
   assert.equal(first.changedCount, visibleColumns.length);
+  assert.equal(first.miniMapTone, 'modify');
+  assert.deepEqual(first.miniMapPaintTones, ['modify']);
 });
 
 test('buildWorkbookSplitRowCompareState keeps different visible-column subsets isolated', () => {
@@ -106,6 +109,39 @@ test('buildWorkbookSectionRowIndex reuses cached result for identical inputs', (
   const second = buildWorkbookSectionRowIndex(diffLines, sections, 'strict');
 
   assert.equal(first, second);
+});
+
+test('buildWorkbookSectionRowIndex memoizes requested section rows independently per sheet', () => {
+  const base = [
+    createWorkbookSheetLine('Thing'),
+    createWorkbookRowLine(1, ['ID', 'Name']),
+    createWorkbookRowLine(2, ['1001', 'Alice']),
+    createWorkbookSheetLine('Other'),
+    createWorkbookRowLine(1, ['ID', 'Status']),
+    createWorkbookRowLine(2, ['2001', 'Open']),
+  ].join('\n');
+  const mine = [
+    createWorkbookSheetLine('Thing'),
+    createWorkbookRowLine(1, ['ID', 'Name']),
+    createWorkbookRowLine(2, ['1001', 'Alicia']),
+    createWorkbookSheetLine('Other'),
+    createWorkbookRowLine(1, ['ID', 'Status']),
+    createWorkbookRowLine(2, ['2001', 'Closed']),
+  ].join('\n');
+  const diffLines = computeWorkbookDiff(base, mine, 'strict');
+  const sections = getWorkbookSections(diffLines, 'strict');
+
+  const rowIndex = buildWorkbookSectionRowIndex(diffLines, sections, 'strict');
+  const firstThing = rowIndex.get('Thing');
+  const secondThing = rowIndex.get('Thing');
+  const firstOther = rowIndex.get('Other');
+  const secondOther = rowIndex.get('Other');
+
+  assert.equal(firstThing, secondThing);
+  assert.equal(firstOther, secondOther);
+  assert.notEqual(firstThing, firstOther);
+  assert.equal(firstThing?.rows.length, 2);
+  assert.equal(firstOther?.rows.length, 2);
 });
 
 test('buildWorkbookSectionRowIndexFromPrecomputedDelta reuses cached result for identical inputs', () => {
@@ -157,6 +193,135 @@ test('buildWorkbookSectionRowIndexFromPrecomputedDelta reuses cached result for 
   const second = buildWorkbookSectionRowIndexFromPrecomputedDelta(diffLines, payload);
 
   assert.equal(first, second);
+});
+
+test('buildWorkbookSectionRowIndexFromPrecomputedDelta memoizes requested section rows independently per sheet', () => {
+  const diffLines = [
+    {
+      type: 'equal' as const,
+      base: '@@sheet\tThing',
+      mine: '@@sheet\tThing',
+      baseLineNo: null,
+      mineLineNo: null,
+      baseCharSpans: null,
+      mineCharSpans: null,
+    },
+    {
+      type: 'equal' as const,
+      base: '@@row\t1\tID\tName',
+      mine: '@@row\t1\tID\tName',
+      baseLineNo: 1,
+      mineLineNo: 1,
+      baseCharSpans: null,
+      mineCharSpans: null,
+    },
+    {
+      type: 'equal' as const,
+      base: '@@sheet\tOther',
+      mine: '@@sheet\tOther',
+      baseLineNo: null,
+      mineLineNo: null,
+      baseCharSpans: null,
+      mineCharSpans: null,
+    },
+    {
+      type: 'equal' as const,
+      base: '@@row\t1\tID\tStatus',
+      mine: '@@row\t1\tID\tStatus',
+      baseLineNo: 2,
+      mineLineNo: 2,
+      baseCharSpans: null,
+      mineCharSpans: null,
+    },
+  ];
+
+  const payload: WorkbookPrecomputedDeltaPayload = {
+    compareMode: 'strict',
+    sections: [
+      {
+        name: 'Thing',
+        rows: [
+          {
+            lineIdx: 1,
+            lineIdxs: [1],
+            leftLineIdx: 1,
+            rightLineIdx: 1,
+            cellDeltas: [],
+            changedColumns: [],
+            strictOnlyColumns: [],
+            changedCount: 0,
+            hasChanges: false,
+            tone: 'equal',
+          },
+        ],
+      },
+      {
+        name: 'Other',
+        rows: [
+          {
+            lineIdx: 3,
+            lineIdxs: [3],
+            leftLineIdx: 3,
+            rightLineIdx: 3,
+            cellDeltas: [],
+            changedColumns: [],
+            strictOnlyColumns: [],
+            changedCount: 0,
+            hasChanges: false,
+            tone: 'equal',
+          },
+        ],
+      },
+    ],
+  };
+
+  const rowIndex = buildWorkbookSectionRowIndexFromPrecomputedDelta(diffLines, payload);
+  const firstThing = rowIndex.get('Thing');
+  const secondThing = rowIndex.get('Thing');
+  const firstOther = rowIndex.get('Other');
+  const secondOther = rowIndex.get('Other');
+
+  assert.equal(firstThing, secondThing);
+  assert.equal(firstOther, secondOther);
+  assert.notEqual(firstThing, firstOther);
+  assert.equal(firstThing?.rows.length, 1);
+  assert.equal(firstOther?.rows.length, 1);
+});
+
+test('hydrateWorkbookRowDelta preserves payload arrays and lazily materializes the cell map', () => {
+  const payload = {
+    lineIdx: 1,
+    lineIdxs: [1],
+    leftLineIdx: 1,
+    rightLineIdx: 1,
+    cellDeltas: [
+      {
+        column: 0,
+        baseCell: { value: 'left', formula: '' },
+        mineCell: { value: 'right', formula: '' },
+        changed: true,
+        masked: false,
+        strictOnly: false,
+        kind: 'modify' as const,
+        hasBaseContent: true,
+        hasMineContent: true,
+        hasContent: true,
+      },
+    ],
+    changedColumns: [0],
+    strictOnlyColumns: [],
+    changedCount: 1,
+    hasChanges: true,
+    tone: 'mixed' as const,
+  };
+
+  const hydrated = hydrateWorkbookRowDelta(payload);
+
+  assert.equal(hydrated.cellDeltaPayloads, payload.cellDeltas);
+  assert.equal(hydrated.changedCount, 1);
+  assert.equal(hydrated.cellDeltas.get(0)?.kind, 'modify');
+  assert.equal(hydrated.miniMapTone, 'modify');
+  assert.deepEqual(hydrated.miniMapPaintTones, ['modify']);
 });
 
 test('buildWorkbookSheetPresentation reuses cached result for identical inputs', () => {

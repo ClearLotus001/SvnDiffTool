@@ -2,6 +2,7 @@ import { app, clipboard, dialog, ipcMain, nativeTheme, shell } from 'electron';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { logMainError } from '../logging.js';
+import { electronT } from '../i18n.js';
 import { AUTO_EXIT_AFTER_LOAD_MS, USE_NATIVE_WINDOW_CONTROLS } from './constants.js';
 import { logDebugTiming } from './logger.js';
 import { getAppUpdater, getMainWindow } from './state.js';
@@ -24,6 +25,10 @@ import {
   launchInstalledUninstaller,
   showMainWindow,
 } from './windowManager.js';
+import {
+  projectTransportDiffData,
+  projectTransportWorkbookCompareModePayload,
+} from './transportProjection.js';
 import type {
   LaunchContextPayload,
   LaunchStatePayload,
@@ -98,9 +103,9 @@ export function registerIpcHandlers(): void {
 
     const promise = (async (): Promise<LaunchStatePayload> => ({
       ...buildLaunchContextPayload(),
-      diffData: await buildDiffData({
+      diffData: projectTransportDiffData(await buildDiffData({
         workbookCompareMode: compareMode,
-      }),
+      })),
     }))();
 
     launchStateInFlight = {
@@ -119,9 +124,9 @@ export function registerIpcHandlers(): void {
 
   safeHandle('get-diff-data', async (_, ...args: unknown[]) => {
     const payload = args[0] as { compareMode?: WorkbookCompareMode } | undefined;
-    return buildDiffData({
+    return projectTransportDiffData(await buildDiffData({
       workbookCompareMode: payload?.compareMode ?? 'strict',
-    });
+    }));
   });
 
   safeHandle('load-revision-diff', async (_, ...args: unknown[]) => {
@@ -130,11 +135,11 @@ export function registerIpcHandlers(): void {
       mineRevisionId?: string;
       compareMode?: WorkbookCompareMode;
     } | undefined;
-    return buildDiffData({
+    return projectTransportDiffData(await buildDiffData({
       baseRevisionId: payload?.baseRevisionId,
       mineRevisionId: payload?.mineRevisionId,
       workbookCompareMode: payload?.compareMode ?? 'strict',
-    });
+    }));
   });
 
   safeHandle('get-revision-options', async () => getRevisionOptions());
@@ -150,11 +155,11 @@ export function registerIpcHandlers(): void {
       baseRevisionId?: string;
       mineRevisionId?: string;
     } | undefined;
-    return loadWorkbookCompareModeData(
+    return projectTransportWorkbookCompareModePayload(await loadWorkbookCompareModeData(
       payload?.compareMode ?? 'strict',
       payload?.baseRevisionId,
       payload?.mineRevisionId,
-    );
+    ));
   });
 
   safeHandle('load-workbook-metadata', async (_, ...args: unknown[]) => {
@@ -174,7 +179,7 @@ export function registerIpcHandlers(): void {
     const win = getMainWindow();
     if (!win) return null;
     const result = await dialog.showOpenDialog(win, {
-      title: 'Select working copy file',
+      title: electronT('dialogPickWorkingCopyTitle'),
       properties: ['openFile'],
     });
 
@@ -191,7 +196,7 @@ export function registerIpcHandlers(): void {
       filePath?: string;
       compareMode?: WorkbookCompareMode;
     } | undefined;
-    return buildDevWorkingCopyDiffData(payload?.filePath ?? '', payload?.compareMode ?? 'strict');
+    return projectTransportDiffData(await buildDevWorkingCopyDiffData(payload?.filePath ?? '', payload?.compareMode ?? 'strict'));
   });
 
   safeHandle('load-local-diff', async (_, ...args: unknown[]) => {
@@ -200,7 +205,7 @@ export function registerIpcHandlers(): void {
       minePath?: string;
       compareMode?: WorkbookCompareMode;
     } | undefined;
-    return buildLocalDiffData(payload?.basePath ?? '', payload?.minePath ?? '', payload?.compareMode ?? 'strict');
+    return projectTransportDiffData(await buildLocalDiffData(payload?.basePath ?? '', payload?.minePath ?? '', payload?.compareMode ?? 'strict'));
   });
 
   safeHandle('get-svn-diff-viewer-status', async () => getSvnDiffViewerStatus());
@@ -247,7 +252,7 @@ export function registerIpcHandlers(): void {
     const suggestedFileName = buildDiagnosticReportFileName(payload?.defaultFileName);
     const targetWindow = getMainWindow();
     const pickDirectoryOptions: Electron.OpenDialogOptions = {
-      title: '选择导出目录',
+      title: electronT('dialogExportDirectoryTitle'),
       defaultPath: app.getPath('desktop'),
       properties: ['openDirectory', 'createDirectory'],
     };

@@ -121,15 +121,16 @@ const ToolbarViewMenu = memo(({
   );
 
   const CompareModeButton = ({
-    active, label, onClick, tooltip,
+    active, label, onClick, tooltip, testId,
   }: {
-    active: boolean; label: string; onClick: () => void; tooltip: string;
+    active: boolean; label: string; onClick: () => void; tooltip: string; testId?: string;
   }) => (
     <Tooltip content={tooltip} anchorStyle={anchorStyle}>
       <button
         type="button"
         role="menuitemradio"
         aria-checked={active}
+        data-testid={testId}
         onClick={onClick}
         className={`
           min-h-[42px] px-3 rounded-xl border font-ui text-[13px] font-bold
@@ -182,8 +183,20 @@ const ToolbarViewMenu = memo(({
             <div className="grid gap-1.5">
               <div className="text-[11px] font-ui font-bold text-text-secondary tracking-wider uppercase">{t('toolbarSectionCompare')}</div>
               <div className="grid grid-cols-2 gap-1.5">
-                <CompareModeButton active={workbookCompareMode === 'content'} label={t('toolbarCompareModeContent')} onClick={() => setWorkbookCompareMode('content')} tooltip={t('toolbarCompareModeContentTitle')} />
-                <CompareModeButton active={workbookCompareMode === 'strict'} label={t('toolbarCompareModeStrict')} onClick={() => setWorkbookCompareMode('strict')} tooltip={t('toolbarCompareModeStrictTitle')} />
+                <CompareModeButton
+                  active={workbookCompareMode === 'content'}
+                  label={t('toolbarCompareModeContent')}
+                  onClick={() => setWorkbookCompareMode('content')}
+                  tooltip={t('toolbarCompareModeContentTitle')}
+                  testId="toolbar-compare-content"
+                />
+                <CompareModeButton
+                  active={workbookCompareMode === 'strict'}
+                  label={t('toolbarCompareModeStrict')}
+                  onClick={() => setWorkbookCompareMode('strict')}
+                  tooltip={t('toolbarCompareModeStrictTitle')}
+                  testId="toolbar-compare-strict"
+                />
               </div>
             </div>
           </>
@@ -226,6 +239,7 @@ const ToolbarViewMenu = memo(({
           type="button"
           aria-haspopup="menu"
           aria-expanded={open}
+          data-testid="toolbar-view-menu"
           onClick={() => setOpen((v) => !v)}
           className={`
             h-8 rounded-[10px] border border-border-default

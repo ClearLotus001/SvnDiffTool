@@ -15,6 +15,10 @@ const WINDOWED_STARTUP_INSET = 14;
 const WINDOW_CORNER_RADIUS = 18;
 const NATIVE_ROUNDED_CORNERS_MIN_WINDOWS_BUILD = 22000;
 
+function shouldEnablePerfBridge(): boolean {
+  return process.env.SVN_DIFF_PERF_BRIDGE?.trim() === '1';
+}
+
 function getWindowsBuildNumber(): number {
   if (process.platform !== 'win32') return 0;
   const releaseParts = os.release().split('.');
@@ -291,12 +295,17 @@ export function createWindow(): void {
   });
 
   if (process.env.NODE_ENV === 'development') {
-    void win.loadURL(DEV_SERVER_URL);
+    const targetUrl = shouldEnablePerfBridge()
+      ? `${DEV_SERVER_URL}${DEV_SERVER_URL.includes('?') ? '&' : '?'}__perf=1`
+      : DEV_SERVER_URL;
+    void win.loadURL(targetUrl);
     if (process.env.OPEN_ELECTRON_DEVTOOLS === '1') {
       win.webContents.openDevTools({ mode: 'detach' });
     }
   } else {
-    void win.loadFile(path.join(RENDERER_DIST, 'index.html'));
+    void win.loadFile(path.join(RENDERER_DIST, 'index.html'), shouldEnablePerfBridge()
+      ? { query: { __perf: '1' } }
+      : undefined);
   }
 
   win.on('maximize', notifyWindowFrameState);

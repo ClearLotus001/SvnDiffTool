@@ -1,0 +1,11 @@
+{
+  "dialogPickWorkingCopyTitle": "选择工作副本文件",
+  "dialogExportDirectoryTitle": "选择导出目录",
+  "revisionWorkingCopyTitle": "本地工作副本",
+  "revisionWorkingBaseTitle": "工作基线",
+  "revisionBaseFallbackTitle": "基线",
+  "revisionMineFallbackTitle": "本地",
+  "filePayloadReadError": "读取文件失败：{message}",
+  "filePayloadMissingRepositoryUrl": "[SVN] 无法定位仓库 URL，无法按版本切换",
+  "filePayloadReadRevisionError": "[SVN] 读取版本 {revision} 失败：{message}"
+}

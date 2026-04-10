@@ -9,6 +9,7 @@ import { LN_W } from '@/constants/layout';
 import { buildDiffSelectionSurfaces } from '@/utils/diff/selectionVisuals';
 import {
   resolveTextDiffCssPalette,
+  resolveTextInlineBackground,
   resolveTextDiffVisualTone,
 } from '@/utils/diff/textDiffVisuals';
 import Ln from '@/components/diff/Ln';
@@ -105,7 +106,6 @@ const DiffRow = memo(({
   const isDel = line.type === 'delete';
   const tone = resolveTextDiffVisualTone(line, isReplacementPair);
   const palette = resolveTextDiffCssPalette(tone);
-  const rowBg = palette.rowBackground;
   const brdL = palette.accent;
   const pfxTx = palette.prefix;
   const pfx = isAdd ? '+' : isDel ? '-' : ' ';
@@ -129,7 +129,11 @@ const DiffRow = memo(({
     isRangeSelected,
     isActiveSearch,
   });
-  const inlineBg = hasSearchRanges || isRangeSelected ? undefined : rowBg;
+  const inlineBg = resolveTextInlineBackground({
+    tone,
+    hasSearchRanges,
+    isRangeSelected,
+  });
   const effectiveHighlightBackground = diffHighlightBackground ?? hlBg;
   const contentHighlightBackground = undefined;
 

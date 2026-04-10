@@ -4,6 +4,7 @@ import type {
   ReactNode,
   RefObject,
 } from 'react';
+import { useI18n } from '@/context/i18n';
 
 interface WorkbookHorizontalShellProps {
   paneContainerRef: RefObject<HTMLDivElement | null>;
@@ -44,6 +45,8 @@ export default function WorkbookHorizontalShell({
   hoverTooltip,
   sheetTabs,
 }: WorkbookHorizontalShellProps) {
+  const { t } = useI18n();
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden min-w-0 min-h-0">
       {perfPanel}
@@ -62,7 +65,7 @@ export default function WorkbookHorizontalShell({
             <div
               role="separator"
               aria-orientation="vertical"
-              aria-label="调整左右表格宽度"
+              aria-label={t('toolbarSplitPaneResizeWorkbook')}
               aria-valuemin={minSplitRatioPercent}
               aria-valuemax={maxSplitRatioPercent}
               aria-valuenow={Math.round(splitRatio * 100)}

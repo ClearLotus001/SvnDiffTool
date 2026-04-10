@@ -33,7 +33,7 @@ interface UseWorkbookHorizontalPaneRenderPropsParams {
   viewportHeight: number;
   stickyHeaderHeight: number;
   activeRegionOverlayVisibleRowFrames: Map<number, { top: number; height: number }>;
-  guidedPulseNonce: number;
+  activeRegionPulseTriggerKey: string | null;
   overlayLabel: string;
   selection: WorkbookSelectionState;
   onSelectionRequest: (request: WorkbookSelectionRequest) => void;
@@ -63,7 +63,7 @@ export function useWorkbookHorizontalPaneRenderProps({
   viewportHeight,
   stickyHeaderHeight,
   activeRegionOverlayVisibleRowFrames,
-  guidedPulseNonce,
+  activeRegionPulseTriggerKey,
   overlayLabel,
   selection,
   onSelectionRequest,
@@ -132,7 +132,7 @@ export function useWorkbookHorizontalPaneRenderProps({
           fallbackBoundsModes: [...boundsModes],
           resolveFocusPatchBoundsModes: () => [...boundsModes],
           filterPatch,
-          pulseNonce: guidedPulseNonce,
+          pulseTriggerKey: activeRegionPulseTriggerKey,
           ...(side === 'left' ? { label: overlayLabel } : {}),
         },
       };
@@ -153,7 +153,7 @@ export function useWorkbookHorizontalPaneRenderProps({
     compareMode,
     fontSize,
     freezeColumnCount,
-    guidedPulseNonce,
+    activeRegionPulseTriggerKey,
     headerRowNumber,
     leftScrollRef,
     mineCompareCellsByRowNumber,

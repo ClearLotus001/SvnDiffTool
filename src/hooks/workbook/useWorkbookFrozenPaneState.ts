@@ -30,6 +30,11 @@ import {
   buildWorkbookStackedLayoutRows,
   buildWorkbookStackedVisualGroups,
 } from '@/utils/workbook/workbookStackedMergeGroups';
+import { getWorkbookRowKey } from '@/utils/workbook/workbookPanelHelpers';
+import {
+  collectWorkbookRowFramesByKey,
+  type WorkbookRowFrame,
+} from '@/utils/workbook/workbookVisibleRowFrames';
 
 const EMPTY_HEIGHTS: number[] = [];
 const MIN_WORKBOOK_SCROLLABLE_BODY_ROWS = 8;
@@ -74,6 +79,7 @@ export interface UseWorkbookFrozenPaneStateResult {
   visibleFrozenColumnsCanvasRows: WorkbookColumnsCanvasRow[];
   visibleFrozenColumnsCanvasHeight: number;
   visibleFrozenStackedCanvasRuns: FrozenStackedCanvasRun[];
+  visibleFrozenRowFramesByKey: Map<string, WorkbookRowFrame>;
   frozenRowsRangeLabel: string;
   frozenColumnsRangeLabel: string;
 }
@@ -276,6 +282,32 @@ export function useWorkbookFrozenPaneState({
     });
   }, [mode, visibleFrozenStackedCanvasGroups]);
 
+  const visibleFrozenRowFramesByKey = useMemo(() => {
+    if (mode === 'stacked') {
+      const next = new Map<string, WorkbookRowFrame>();
+      visibleFrozenStackedCanvasRuns.forEach((run) => {
+        let groupTop = run.top;
+        run.groups.forEach((group) => {
+          const framesByKey = collectWorkbookRowFramesByKey(group.rows, {
+            getRowKey: (row) => getWorkbookRowKey(row.row),
+            getItemHeight: (row) => row.height,
+            initialTop: groupTop,
+          });
+          framesByKey.forEach((frame, rowKey) => {
+            next.set(rowKey, frame);
+          });
+          groupTop += group.height;
+        });
+      });
+      return next;
+    }
+
+    return collectWorkbookRowFramesByKey(visibleFrozenColumnsCanvasRows, {
+      getRowKey: (row) => getWorkbookRowKey(row.row),
+      getItemHeight: () => ROW_H,
+    });
+  }, [mode, visibleFrozenColumnsCanvasRows, visibleFrozenStackedCanvasRuns]);
+
   const visibleFrozenRowsForStatus = useMemo(
     () => (
       mode === 'stacked'
@@ -336,6 +368,7 @@ export function useWorkbookFrozenPaneState({
     visibleFrozenColumnsCanvasRows,
     visibleFrozenColumnsCanvasHeight,
     visibleFrozenStackedCanvasRuns,
+    visibleFrozenRowFramesByKey,
     frozenRowsRangeLabel,
     frozenColumnsRangeLabel,
   };

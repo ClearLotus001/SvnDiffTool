@@ -1,6 +1,6 @@
 import type { Hunk, SplitRow, WorkbookCompareMode, WorkbookSelectedCell } from '@/types';
 import type { WorkbookSection } from '@/utils/workbook/workbookSections';
-import type { IndexedWorkbookSectionRows } from '@/utils/workbook/workbookSheetIndex';
+import type { WorkbookSectionRowIndex } from '@/utils/workbook/workbookSheetIndex';
 import { buildWorkbookSplitRowCompareState } from '@/utils/workbook/workbookCompare';
 import {
   buildWorkbookRowEntry,
@@ -14,7 +14,7 @@ function rowTouchesHunk(row: SplitRow, hunk: Hunk): boolean {
 export function findWorkbookHunkTargetCell(
   hunk: Hunk,
   workbookSections: WorkbookSection[],
-  workbookSectionRowIndex: Map<string, IndexedWorkbookSectionRows>,
+  workbookSectionRowIndex: WorkbookSectionRowIndex,
   baseVersionLabel: string,
   mineVersionLabel: string,
   compareMode: WorkbookCompareMode = 'strict',

@@ -36,7 +36,7 @@ import {
 } from '@/utils/workbook/workbookMeta';
 import { findWorkbookDiffRegionIndexForSelection } from '@/utils/workbook/workbookDiffRegion';
 import { getSelectedWorkbookColumns, getSelectedWorkbookRows } from '@/utils/workbook/workbookManualVisibility';
-import type { IndexedWorkbookSectionRows } from '@/utils/workbook/workbookSheetIndex';
+import type { WorkbookSectionRowIndex } from '@/utils/workbook/workbookSheetIndex';
 import type { WorkbookSection } from '@/utils/workbook/workbookSections';
 import type { WorkbookContextMenuSection } from '@/components/workbook/WorkbookContextMenu';
 import type { WorkbookUiController } from '@/hooks/app/contracts';
@@ -47,7 +47,7 @@ interface UseWorkbookActionsArgs {
   fontSize: number;
   workbookCompareMode: WorkbookCompareMode;
   workbookSections: WorkbookSection[];
-  workbookSectionRowIndex: Map<string, IndexedWorkbookSectionRows>;
+  workbookSectionRowIndex: WorkbookSectionRowIndex;
   baseWorkbookMetadata: WorkbookMetadataMap | null;
   mineWorkbookMetadata: WorkbookMetadataMap | null;
   workbookUi: WorkbookUiController;

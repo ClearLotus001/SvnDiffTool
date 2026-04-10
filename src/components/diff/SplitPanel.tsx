@@ -14,6 +14,7 @@ import type {
   Hunk,
   SearchMatch,
   SplitRow,
+  SplitRowDescriptor,
   SyntaxPresentation,
   TextSplitLayoutSnapshot,
   WorkbookMoveDirection,
@@ -21,7 +22,6 @@ import type {
 } from '@/types';
 import { cssAlpha, cssVar } from '@/theme/cssUtils';
 import { useI18n } from '@/context/i18n';
-import { buildSplitRows } from '@/engine/text/diff';
 import {
   clampSplitRatio,
   useSplitPanelHorizontalState,
@@ -38,10 +38,13 @@ import {
   getWorkbookSections,
 } from '@/utils/workbook/workbookSections';
 import {
-  buildWorkbookRowEntry,
+  getWorkbookSideRowNumber,
   findWorkbookSectionIndexByName,
   moveWorkbookSelection,
 } from '@/utils/workbook/workbookNavigation';
+import {
+  buildWorkbookRowEntryMaps,
+} from '@/utils/workbook/workbookPanelHelpers';
 import {
   addManualCollapsedRange,
   cloneCollapseExpansionState,
@@ -72,6 +75,7 @@ import { useTextLineRangeSelectionState } from '@/hooks/diff/useTextLineRangeSel
 import { doesLogicalTextSelectionIntersectLineRange } from '@/utils/diff/logicalTextSelection';
 import { useSplitPanelLayoutSnapshotEffects } from '@/hooks/diff/useSplitPanelLayoutSnapshotEffects';
 import { useSplitPanelWorkbookNavigationRows } from '@/hooks/diff/useSplitPanelWorkbookNavigationRows';
+import { materializeSplitRowsFromDescriptors, prepareTextDiffAnalysisFromDiffLines } from '@/utils/diff/preparedTextAnalysis';
 import SplitWorkbookStickyRegion from '@/components/diff/SplitWorkbookStickyRegion';
 import SplitHorizontalTextPane from '@/components/diff/SplitHorizontalTextPane';
 import SplitMainBodyContent from '@/components/diff/SplitMainBodyContent';
@@ -106,6 +110,7 @@ function splitRowTouchesOrAfter(row: SplitRow, lineIdx: number): boolean {
 
 export interface SplitPanelProps {
   diffLines: DiffLine[];
+  splitRowDescriptors?: SplitRowDescriptor[] | null;
   syntaxPresentation?: SyntaxPresentation | null;
   baseVersionLabel?: string;
   mineVersionLabel?: string;
@@ -134,7 +139,7 @@ export interface SplitPanelProps {
 }
 
 const SplitPanel = memo(({
-  diffLines, syntaxPresentation = null, baseVersionLabel = '', mineVersionLabel = '', onLineSelectionChange, collapseCtx, activeHunkIdx, searchMatches, activeSearchIdx,
+  diffLines, splitRowDescriptors = null, syntaxPresentation = null, baseVersionLabel = '', mineVersionLabel = '', onLineSelectionChange, collapseCtx, activeHunkIdx, searchMatches, activeSearchIdx,
   searchJumpNonce,
   hunkPositions, showWhitespace, fontSize, guidedHunkRange: _guidedHunkRange = null, vertical, onScrollerReady, onCollapseNavigationReady,
   baseName = '', mineName = '', selectedCell = null, onSelectCell, onWorkbookNavigationReady,
@@ -176,7 +181,19 @@ const SplitPanel = memo(({
   const baseVersion = useMemo(() => extractVersionLabel(baseName) || baseName, [baseName]);
   const mineVersion = useMemo(() => extractVersionLabel(mineName) || mineName, [mineName]);
 
-  const splitRows = useMemo(() => buildSplitRows(diffLines), [diffLines]);
+  const preparedAnalysis = useMemo(
+    () => splitRowDescriptors
+      ? null
+      : (diffLines.length > 0 ? prepareTextDiffAnalysisFromDiffLines(diffLines) : null),
+    [diffLines, splitRowDescriptors],
+  );
+  const effectiveSplitRowDescriptors = splitRowDescriptors ?? preparedAnalysis?.splitRowDescriptors ?? null;
+  const splitRows = useMemo(
+    () => effectiveSplitRowDescriptors
+      ? materializeSplitRowsFromDescriptors(diffLines, effectiveSplitRowDescriptors)
+      : [],
+    [diffLines, effectiveSplitRowDescriptors],
+  );
   const workbookSections = useMemo(() => getWorkbookSections(diffLines), [diffLines]);
   const isWorkbookMode = workbookSections.length > 0;
   const horizontalSplitEnabled = !vertical && !isWorkbookMode;
@@ -519,6 +536,22 @@ const SplitPanel = memo(({
   }, [activeWorkbookSection?.name, diffLines, resetActiveCollapseNavigation]);
   const columnLabels = getWorkbookColumnLabels(activeWorkbookSection?.maxColumns ?? 0);
   const singleGridWidth = (LN_W + 3) + (columnLabels.length * WORKBOOK_CELL_WIDTH);
+  const splitWorkbookNavigationSourceRows = useMemo(
+    () => frozenRow ? [frozenRow, ...visibleSplitRows] : visibleSplitRows,
+    [frozenRow, visibleSplitRows],
+  );
+  const splitWorkbookRowEntryByRowNumber = useMemo(
+    () => activeWorkbookSection
+      ? buildWorkbookRowEntryMaps(
+        splitWorkbookNavigationSourceRows,
+        activeWorkbookSection.name,
+        baseVersion,
+        mineVersion,
+        [],
+      )
+      : null,
+    [activeWorkbookSection, baseVersion, mineVersion, splitWorkbookNavigationSourceRows],
+  );
   const workbookNavigationRows = useSplitPanelWorkbookNavigationRows({
     activeSheetName: activeWorkbookSection?.name ?? null,
     selectedCell,
@@ -526,6 +559,7 @@ const SplitPanel = memo(({
     items,
     baseVersion,
     mineVersion,
+    rowEntryByRowNumber: splitWorkbookRowEntryByRowNumber,
   });
 
   const handleWorkbookMove = useCallback((direction: WorkbookMoveDirection) => {
@@ -578,16 +612,10 @@ const SplitPanel = memo(({
     if (selectedCell.sheetName !== activeWorkbookSection.name) return;
     const idx = items.findIndex(item => {
       if (item.kind !== 'split-line') return false;
-      const entry = buildWorkbookRowEntry(
-        item.row,
-        selectedCell.side,
-        activeWorkbookSection.name,
-        selectedCell.side === 'base' ? baseVersion : mineVersion,
-      );
-      return entry?.rowNumber === selectedCell.rowNumber;
+      return getWorkbookSideRowNumber(item.row, selectedCell.side) === selectedCell.rowNumber;
     });
     if (idx >= 0) scrollToIndex(idx, 'center');
-  }, [activeWorkbookSection, baseVersion, isWorkbookMode, items, mineVersion, scrollToIndex, selectedCell]);
+  }, [activeWorkbookSection, isWorkbookMode, items, scrollToIndex, selectedCell]);
 
   useSplitPanelLayoutSnapshotEffects({
     diffIdentity: diffLines,
@@ -715,7 +743,7 @@ const SplitPanel = memo(({
             <div
               role="separator"
               aria-orientation="vertical"
-              aria-label="调整左右文本宽度"
+              aria-label={t('toolbarSplitPaneResizeText')}
               aria-valuemin={Math.round(MIN_SPLIT_RATIO * 100)}
               aria-valuemax={Math.round(MAX_SPLIT_RATIO * 100)}
               aria-valuenow={Math.round(splitRatio * 100)}

@@ -4,6 +4,8 @@ import type {
   WorkbookCellDeltaKind,
   WorkbookCompareMode,
   WorkbookRowDelta,
+  WorkbookRowMiniMapPaintTone,
+  WorkbookRowMiniMapTone,
   WorkbookRowDeltaPayload,
   WorkbookRowDeltaTone,
 } from '@/types';
@@ -19,6 +21,17 @@ const EMPTY_CELL: WorkbookCellDisplay = { value: '', formula: '' };
 const NULL_LINE_CACHE_KEY: object = {};
 const rowDeltaCache = new WeakMap<object, WeakMap<object, Map<string, WorkbookRowDelta>>>();
 const splitRowSubsetDeltaCache = new WeakMap<object, Map<string, WorkbookRowDelta>>();
+const EMPTY_CELL_DELTA_MAP = new Map<number, WorkbookCellDelta>();
+
+interface WorkbookRowDeltaSummary {
+  changedColumns: number[];
+  strictOnlyColumns: number[];
+  changedCount: number;
+  hasChanges: boolean;
+  tone: WorkbookRowDeltaTone;
+  miniMapTone: WorkbookRowMiniMapTone;
+  miniMapPaintTones: WorkbookRowMiniMapPaintTone[];
+}
 
 export function parseWorkbookRowLine(line: DiffLine | null): WorkbookRowDisplayLine | null {
   if (!line) return null;
@@ -62,6 +75,68 @@ function resolveWorkbookRowDeltaTone(
   return 'delete';
 }
 
+function resolveWorkbookMiniMapDescriptorFromDeltas(
+  cellDeltas: Iterable<WorkbookCellDelta>,
+): {
+  tone: WorkbookRowMiniMapTone;
+  tones: WorkbookRowMiniMapPaintTone[];
+} {
+  let sawAdd = false;
+  let sawDelete = false;
+  let sawModify = false;
+  let sawStrictOnly = false;
+
+  for (const delta of cellDeltas) {
+    if (!delta.changed) continue;
+    if (delta.strictOnly) {
+      sawStrictOnly = true;
+      continue;
+    }
+    if (delta.kind === 'add') sawAdd = true;
+    else if (delta.kind === 'delete') sawDelete = true;
+    else if (delta.kind === 'modify') sawModify = true;
+  }
+
+  const tones: WorkbookRowMiniMapPaintTone[] = [];
+  if (sawDelete) tones.push('delete');
+  if (sawModify) tones.push('modify');
+  if (sawAdd) tones.push('add');
+  if (sawStrictOnly) tones.push('strict-only');
+
+  if (tones.length === 0) {
+    return { tone: 'equal', tones };
+  }
+  if (tones.length === 1) {
+    return { tone: tones[0]!, tones };
+  }
+  return { tone: 'mixed', tones };
+}
+
+function summarizeWorkbookCellDeltas(
+  cellDeltas: Iterable<WorkbookCellDelta>,
+): WorkbookRowDeltaSummary {
+  const entries = [...cellDeltas];
+  const changedColumns: number[] = [];
+  const strictOnlyColumns: number[] = [];
+
+  entries.forEach((delta) => {
+    if (!delta.changed) return;
+    changedColumns.push(delta.column);
+    if (delta.strictOnly) strictOnlyColumns.push(delta.column);
+  });
+
+  const miniMapDescriptor = resolveWorkbookMiniMapDescriptorFromDeltas(entries);
+  return {
+    changedColumns,
+    strictOnlyColumns,
+    changedCount: changedColumns.length,
+    hasChanges: changedColumns.length > 0,
+    tone: resolveWorkbookRowDeltaTone(entries),
+    miniMapTone: miniMapDescriptor.tone,
+    miniMapPaintTones: miniMapDescriptor.tones,
+  };
+}
+
 export function buildWorkbookRowDelta(
   leftLine: DiffLine | null,
   rightLine: DiffLine | null,
@@ -99,6 +174,8 @@ export function buildWorkbookRowDelta(
       changedCount: 0,
       hasChanges: false,
       tone: 'equal',
+      miniMapTone: 'equal',
+      miniMapPaintTones: [],
     };
     columnsCache.set(columnsKey, empty);
     return empty;
@@ -161,14 +238,16 @@ export function buildWorkbookRowDelta(
     });
   }
 
-  const deltas = [...cellDeltas.values()];
+  const summary = summarizeWorkbookCellDeltas(cellDeltas.values());
   const rowDelta: WorkbookRowDelta = {
     cellDeltas,
-    changedColumns: deltas.filter((delta) => delta.changed).map((delta) => delta.column),
-    strictOnlyColumns: deltas.filter((delta) => delta.strictOnly).map((delta) => delta.column),
-    changedCount: deltas.filter((delta) => delta.changed).length,
-    hasChanges: deltas.some((delta) => delta.changed),
-    tone: resolveWorkbookRowDeltaTone(deltas),
+    changedColumns: summary.changedColumns,
+    strictOnlyColumns: summary.strictOnlyColumns,
+    changedCount: summary.changedCount,
+    hasChanges: summary.hasChanges,
+    tone: summary.tone,
+    miniMapTone: summary.miniMapTone,
+    miniMapPaintTones: summary.miniMapPaintTones,
   };
 
   columnsCache.set(columnsKey, rowDelta);
@@ -176,17 +255,64 @@ export function buildWorkbookRowDelta(
 }
 
 export function hydrateWorkbookRowDelta(payload: WorkbookRowDeltaPayload): WorkbookRowDelta {
-  const cellDeltas = new Map<number, WorkbookCellDelta>(
-    payload.cellDeltas.map((delta) => [delta.column, delta]),
-  );
+  const fallbackSummary = (
+    payload.miniMapTone != null
+    && Array.isArray(payload.miniMapPaintTones)
+  )
+    ? null
+    : summarizeWorkbookCellDeltas(payload.cellDeltas);
+  let hydratedCellDeltas: Map<number, WorkbookCellDelta> | null = null;
   return {
-    cellDeltas,
+    get cellDeltas() {
+      if (!hydratedCellDeltas) {
+        hydratedCellDeltas = payload.cellDeltas.length > 0
+          ? new Map<number, WorkbookCellDelta>(payload.cellDeltas.map((delta) => [delta.column, delta]))
+          : EMPTY_CELL_DELTA_MAP;
+      }
+      return hydratedCellDeltas;
+    },
+    cellDeltaPayloads: payload.cellDeltas,
     changedColumns: payload.changedColumns,
     strictOnlyColumns: payload.strictOnlyColumns,
     changedCount: payload.changedCount,
     hasChanges: payload.hasChanges,
     tone: payload.tone,
+    miniMapTone: payload.miniMapTone ?? fallbackSummary?.miniMapTone ?? 'equal',
+    miniMapPaintTones: payload.miniMapPaintTones ?? fallbackSummary?.miniMapPaintTones ?? [],
   };
+}
+
+export function getWorkbookRowMiniMapDescriptor(
+  rowDelta: WorkbookRowDelta,
+): { tone: WorkbookRowMiniMapTone; tones: WorkbookRowMiniMapPaintTone[] } {
+  if (rowDelta.miniMapTone && Array.isArray(rowDelta.miniMapPaintTones)) {
+    return {
+      tone: rowDelta.miniMapTone,
+      tones: rowDelta.miniMapPaintTones,
+    };
+  }
+  return resolveWorkbookMiniMapDescriptorFromDeltas(getWorkbookRowDeltaEntries(rowDelta));
+}
+
+export function getWorkbookRowDeltaEntries(
+  rowDelta: WorkbookRowDelta,
+  columns?: readonly number[],
+): readonly WorkbookCellDelta[] {
+  const payloadCellDeltas = rowDelta.cellDeltaPayloads;
+  if (payloadCellDeltas) {
+    if (!columns || columns.length === 0) return payloadCellDeltas;
+    const selectedColumns = new Set(columns);
+    return payloadCellDeltas.filter((delta) => selectedColumns.has(delta.column));
+  }
+  if (!columns || columns.length === 0) {
+    return [...rowDelta.cellDeltas.values()];
+  }
+  const selected: WorkbookCellDelta[] = [];
+  columns.forEach((column) => {
+    const delta = rowDelta.cellDeltas.get(column);
+    if (delta) selected.push(delta);
+  });
+  return selected;
 }
 
 export function buildWorkbookSplitRowDelta(
@@ -210,19 +336,20 @@ export function buildWorkbookSplitRowDelta(
   const cachedSubset = subsetCache.get(subsetCacheKey);
   if (cachedSubset) return cachedSubset;
 
-  const nextCellDeltas = new Map<number, WorkbookCellDelta>();
-  columns.forEach((column) => {
-    const delta = precomputed.cellDeltas.get(column);
-    if (delta) nextCellDeltas.set(column, delta);
-  });
-  const deltas = [...nextCellDeltas.values()];
+  const deltas = getWorkbookRowDeltaEntries(precomputed, columns);
+  const nextCellDeltas = new Map<number, WorkbookCellDelta>(
+    deltas.map((delta) => [delta.column, delta]),
+  );
+  const summary = summarizeWorkbookCellDeltas(deltas);
   const subsetDelta = {
     cellDeltas: nextCellDeltas,
-    changedColumns: deltas.filter((delta) => delta.changed).map((delta) => delta.column),
-    strictOnlyColumns: deltas.filter((delta) => delta.strictOnly).map((delta) => delta.column),
-    changedCount: deltas.filter((delta) => delta.changed).length,
-    hasChanges: deltas.some((delta) => delta.changed),
-    tone: resolveWorkbookRowDeltaTone(deltas),
+    changedColumns: summary.changedColumns,
+    strictOnlyColumns: summary.strictOnlyColumns,
+    changedCount: summary.changedCount,
+    hasChanges: summary.hasChanges,
+    tone: summary.tone,
+    miniMapTone: summary.miniMapTone,
+    miniMapPaintTones: summary.miniMapPaintTones,
   };
 
   subsetCache.set(subsetCacheKey, subsetDelta);

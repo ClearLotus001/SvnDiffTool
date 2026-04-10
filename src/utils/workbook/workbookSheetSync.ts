@@ -6,6 +6,7 @@ import type {
 import {
   resolveWorkbookSheetNameForLineContext,
   type WorkbookLineSheetContext,
+  type WorkbookLineSheetContextLookup,
 } from '@/utils/workbook/workbookSections';
 
 export interface WorkbookSheetSyncRequest {
@@ -19,7 +20,8 @@ interface ResolveWorkbookSearchSheetSyncArgs {
   searchJumpNonce: number;
   searchMatches: SearchMatch[];
   diffLines: DiffLine[];
-  lineSheetContexts: WorkbookLineSheetContext[];
+  lineSheetContexts?: WorkbookLineSheetContext[] | null;
+  lineSheetContextLookup?: WorkbookLineSheetContextLookup | null;
   preferredSheetName: string | null;
   fallbackSheetName: string | null;
 }
@@ -32,12 +34,24 @@ interface ResolveWorkbookNavigationSheetSyncArgs {
   hunkIdx: number;
   hunkPositions: number[];
   diffLines: DiffLine[];
-  lineSheetContexts: WorkbookLineSheetContext[];
+  lineSheetContexts?: WorkbookLineSheetContext[] | null;
+  lineSheetContextLookup?: WorkbookLineSheetContextLookup | null;
   preferredSheetName: string | null;
 }
 
 function normalizeSyncKeyPart(value: string | number | null | undefined): string {
   return value == null ? '' : String(value);
+}
+
+function resolveLineSheetContext(
+  lineIdx: number,
+  lineSheetContexts: WorkbookLineSheetContext[] | null | undefined,
+  lineSheetContextLookup: WorkbookLineSheetContextLookup | null | undefined,
+): WorkbookLineSheetContext | null {
+  if (lineIdx < 0) return null;
+  return lineSheetContexts?.[lineIdx]
+    ?? lineSheetContextLookup?.get(lineIdx)
+    ?? null;
 }
 
 export function resolveWorkbookSearchSheetSyncRequest({
@@ -46,7 +60,8 @@ export function resolveWorkbookSearchSheetSyncRequest({
   searchJumpNonce,
   searchMatches,
   diffLines,
-  lineSheetContexts,
+  lineSheetContexts = null,
+  lineSheetContextLookup = null,
   preferredSheetName,
   fallbackSheetName,
 }: ResolveWorkbookSearchSheetSyncArgs): WorkbookSheetSyncRequest | null {
@@ -59,7 +74,7 @@ export function resolveWorkbookSearchSheetSyncRequest({
   const sheetName = activeSearchMatch?.workbookTarget?.sheetName
     ?? resolveWorkbookSheetNameForLineContext({
       line: diffLines[lineIdx] ?? null,
-      context: lineSheetContexts[lineIdx] ?? null,
+      context: resolveLineSheetContext(lineIdx, lineSheetContexts, lineSheetContextLookup),
       preferredSheetName: preferredSheetName ?? fallbackSheetName ?? null,
     });
   if (!sheetName) return null;
@@ -87,7 +102,8 @@ export function resolveWorkbookNavigationSheetSyncRequest({
   hunkIdx,
   hunkPositions,
   diffLines,
-  lineSheetContexts,
+  lineSheetContexts = null,
+  lineSheetContextLookup = null,
   preferredSheetName,
 }: ResolveWorkbookNavigationSheetSyncArgs): WorkbookSheetSyncRequest | null {
   if (!isWorkbookMode) return null;
@@ -103,7 +119,7 @@ export function resolveWorkbookNavigationSheetSyncRequest({
       ? null
       : resolveWorkbookSheetNameForLineContext({
         line: diffLines[targetLineIdx] ?? null,
-        context: lineSheetContexts[targetLineIdx] ?? null,
+        context: resolveLineSheetContext(targetLineIdx, lineSheetContexts, lineSheetContextLookup),
         preferredSheetName,
       }));
   if (!sheetName) return null;

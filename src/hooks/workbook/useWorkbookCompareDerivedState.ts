@@ -39,6 +39,7 @@ import {
   getWorkbookCollapsibleSheetView,
   isWorkbookSectionEffectivelyEqual,
 } from '@/utils/workbook/workbookSheetViewCache';
+import { buildWorkbookExpandedBlocksSignature } from '@/utils/workbook/workbookExpandedBlocksSignature';
 import {
   buildWorkbookCacheSignature,
   getWorkbookSharedCacheBucket,
@@ -156,15 +157,6 @@ function getWorkbookComparePanelCacheObjectId(value: object | null | undefined):
   nextWorkbookComparePanelCacheObjectId += 1;
   workbookComparePanelCacheObjectIds.set(value, nextId);
   return nextId;
-}
-
-function buildCollapseExpansionStateCacheKey(state: CollapseExpansionState): string {
-  const keys = Object.keys(state).sort();
-  if (keys.length === 0) return '';
-  return keys.map((key) => {
-    const ranges = state[key] ?? [];
-    return `${key}:${ranges.map((range) => `${range.start}-${range.end}`).join(',')}`;
-  }).join('|');
 }
 
 function hasVerticalWorkbookMergeRanges(
@@ -380,7 +372,7 @@ export function useWorkbookCompareDerivedState({
     [collapsibleSheetView.collapsedRowDescriptors, expandedBlocks, freezeRowNumber],
   );
   const expandedBlocksSignature = useMemo(
-    () => buildCollapseExpansionStateCacheKey(effectiveExpandedBlocks),
+    () => buildWorkbookExpandedBlocksSignature(effectiveExpandedBlocks),
     [effectiveExpandedBlocks],
   );
 

@@ -11,17 +11,22 @@ import type { FrozenStackedCanvasRun } from '@/hooks/workbook/useWorkbookFrozenP
 import type { WorkbookColumnsCanvasRow } from '@/components/workbook/WorkbookColumnsCanvasStrip';
 import type { WorkbookCanvasRenderGroup } from '@/components/workbook/WorkbookStackedCanvasStrip';
 import { getWorkbookColumnsRenderMode } from '@/utils/workbook/workbookRowBehavior';
-import { rowTouchesGuidedHunk } from '@/utils/workbook/workbookPanelHelpers';
+import {
+  buildWorkbookGroupedBodyLayoutBase,
+  buildWorkbookLinearBodyLayoutBase,
+  mapWorkbookProjectedBodyRows,
+} from '@/utils/workbook/workbookBodyLayoutProjection';
+import type { WorkbookRowFrame } from '@/utils/workbook/workbookVisibleRowFrames';
 
 export type WorkbookCompareStackedBodySegment =
   | { kind: 'rows'; group: WorkbookCanvasRenderGroup; top: number; height: number }
-  | { kind: 'collapse'; item: Extract<WorkbookCompareRenderItem, { kind: 'collapse' }>; top: number; height: number }
+  | { kind: 'collapse'; item: Extract<WorkbookCompareRenderItem, { kind: 'collapse' }>; top: number; height: number; sourceItemIndex: number }
   | { kind: 'hidden-rows'; item: Extract<WorkbookCompareRenderItem, { kind: 'hidden-rows' }>; top: number; height: number }
   | { kind: 'sparse-gap'; item: Extract<WorkbookCompareRenderItem, { kind: 'sparse-gap' }>; top: number; height: number };
 
 export type WorkbookCompareColumnsBodySegment =
   | { kind: 'rows'; rows: WorkbookColumnsCanvasRow[]; top: number; height: number }
-  | { kind: 'collapse'; item: Extract<WorkbookCompareRenderItem, { kind: 'collapse' }>; top: number; height: number }
+  | { kind: 'collapse'; item: Extract<WorkbookCompareRenderItem, { kind: 'collapse' }>; top: number; height: number; sourceItemIndex: number }
   | { kind: 'hidden-rows'; item: Extract<WorkbookCompareRenderItem, { kind: 'hidden-rows' }>; top: number; height: number }
   | { kind: 'sparse-gap'; item: Extract<WorkbookCompareRenderItem, { kind: 'sparse-gap' }>; top: number; height: number };
 
@@ -44,12 +49,15 @@ interface UseWorkbookCompareBodyLayoutParams {
   visibleFrozenStackedCanvasRuns: FrozenStackedCanvasRun[];
 }
 
-interface UseWorkbookCompareBodyLayoutResult {
+export interface WorkbookCompareBodyLayoutResult {
   bodySegments: WorkbookCompareStackedBodySegment[];
   stackedCanvasRuns: WorkbookCompareStackedCanvasRun[];
   stackedVisibleMergeGroupCount: number;
   columnsBodySegments: WorkbookCompareColumnsBodySegment[] | null;
+  rowFramesByKey: Map<string, WorkbookRowFrame>;
 }
+
+const EMPTY_ROW_FRAMES_BY_KEY = new Map<string, WorkbookRowFrame>();
 
 export function useWorkbookCompareBodyLayout({
   mode,
@@ -61,92 +69,121 @@ export function useWorkbookCompareBodyLayout({
   activeSearchLineIdx,
   searchMatchSet,
   visibleFrozenStackedCanvasRuns,
-}: UseWorkbookCompareBodyLayoutParams): UseWorkbookCompareBodyLayoutResult {
-  const bodySegments = useMemo<WorkbookCompareStackedBodySegment[]>(() => {
-    if (mode !== 'stacked') return [];
+}: UseWorkbookCompareBodyLayoutParams): WorkbookCompareBodyLayoutResult {
+  const stackedBodyBaseLayout = useMemo(() => {
+    if (mode !== 'stacked') {
+      return {
+        segments: [],
+        rowFramesByKey: EMPTY_ROW_FRAMES_BY_KEY,
+      };
+    }
 
-    const slice = stackedVirtualItems.slice(startIdx, endIdx);
+    return buildWorkbookGroupedBodyLayoutBase({
+      items: stackedVirtualItems,
+      startIdx,
+      endIdx,
+      cacheKey: `compare:stacked-body-base:v1:${startIdx}:${endIdx}`,
+      resolveItemKind: (item) => item.kind,
+      resolveItemHeight: (item) => item.height,
+      resolveRows: (item) => item.kind === 'rows'
+        ? item.rows.map((renderRow, localIndex) => ({
+          row: renderRow.row,
+          height: renderRow.height,
+          sourceItemIndex: item.sourceStartItemIndex + localIndex,
+          staticRow: renderRow,
+        }))
+        : [],
+    });
+  }, [endIdx, mode, stackedVirtualItems, startIdx]);
+
+  const stackedBodyLayout = useMemo<{
+    segments: WorkbookCompareStackedBodySegment[];
+    rowFramesByKey: Map<string, WorkbookRowFrame>;
+  }>(() => {
+    if (mode !== 'stacked') {
+      return {
+        segments: [],
+        rowFramesByKey: EMPTY_ROW_FRAMES_BY_KEY,
+      };
+    }
+
     const segments: WorkbookCompareStackedBodySegment[] = [];
-    let cursorTop = 0;
-
-    slice.forEach((item) => {
-      if (item.kind === 'collapse') {
+    stackedBodyBaseLayout.segments.forEach((segment) => {
+      if (segment.kind === 'collapse') {
         segments.push({
           kind: 'collapse',
-          item: item.item,
-          top: cursorTop,
-          height: item.height,
+          item: (segment.item as Extract<WorkbookStackedVirtualItem, { kind: 'collapse' }>).item,
+          top: segment.top,
+          height: segment.height,
+          sourceItemIndex: segment.sourceItemIndex,
         });
-        cursorTop += item.height;
         return;
       }
 
-      if (item.kind === 'hidden-rows') {
+      if (segment.kind === 'hidden-rows') {
         segments.push({
           kind: 'hidden-rows',
-          item: item.item,
-          top: cursorTop,
-          height: item.height,
+          item: (segment.item as Extract<WorkbookStackedVirtualItem, { kind: 'hidden-rows' }>).item,
+          top: segment.top,
+          height: segment.height,
         });
-        cursorTop += item.height;
         return;
       }
 
-      if (item.kind === 'sparse-gap') {
+      if (segment.kind === 'sparse-gap') {
         segments.push({
           kind: 'sparse-gap',
-          item: item.item,
-          top: cursorTop,
-          height: item.height,
+          item: (segment.item as Extract<WorkbookStackedVirtualItem, { kind: 'sparse-gap' }>).item,
+          top: segment.top,
+          height: segment.height,
         });
-        cursorTop += item.height;
         return;
       }
+
+      if (segment.kind !== 'rows') return;
+      const item = segment.item as Extract<WorkbookStackedVirtualItem, { kind: 'rows' }>;
+      const rows = mapWorkbookProjectedBodyRows({
+        rows: segment.rows,
+        sourceItems: items,
+        resolveSourceRow: (sourceItem) => sourceItem.kind === 'row' ? sourceItem.row : null,
+        guidedHunkRange,
+        activeSearchLineIdx,
+        searchMatchSet,
+        decorateRow: (entry, state) => ({
+          ...entry.staticRow,
+          ...state,
+        }),
+      });
 
       segments.push({
         kind: 'rows',
         group: {
           key: item.groupKey,
-          rows: item.rows.map((renderRow, localIndex) => {
-            const sourceItemIndex = item.sourceStartItemIndex + localIndex;
-            const isGuided = rowTouchesGuidedHunk(renderRow.row, guidedHunkRange);
-            const prevGuided = sourceItemIndex > 0
-              && items[sourceItemIndex - 1]?.kind === 'row'
-              && rowTouchesGuidedHunk((items[sourceItemIndex - 1] as Extract<typeof items[number], { kind: 'row' }>).row, guidedHunkRange);
-            const nextGuided = sourceItemIndex + 1 < items.length
-              && items[sourceItemIndex + 1]?.kind === 'row'
-              && rowTouchesGuidedHunk((items[sourceItemIndex + 1] as Extract<typeof items[number], { kind: 'row' }>).row, guidedHunkRange);
-            return {
-              ...renderRow,
-              isSearchMatch: renderRow.row.lineIdxs.some(idx => searchMatchSet.has(idx)),
-              isActiveSearch: renderRow.row.lineIdxs.includes(activeSearchLineIdx),
-              isGuided,
-              isGuidedStart: isGuided && !prevGuided,
-              isGuidedEnd: isGuided && !nextGuided,
-            };
-          }),
+          rows,
           height: item.height,
           hasVerticalMerge: item.hasVerticalMerge,
           baseTrack: item.baseTrack,
           mineTrack: item.mineTrack,
         },
-        top: cursorTop,
-        height: item.height,
+        top: segment.top,
+        height: segment.height,
       });
-      cursorTop += item.height;
     });
 
-    return segments;
+    return {
+      segments,
+      rowFramesByKey: stackedBodyBaseLayout.rowFramesByKey,
+    };
   }, [
     activeSearchLineIdx,
-    endIdx,
     guidedHunkRange,
     items,
     mode,
     searchMatchSet,
-    stackedVirtualItems,
-    startIdx,
+    stackedBodyBaseLayout,
   ]);
+
+  const bodySegments = stackedBodyLayout.segments;
 
   const stackedCanvasRuns = useMemo<WorkbookCompareStackedCanvasRun[]>(() => {
     if (mode !== 'stacked') return [];
@@ -179,98 +216,123 @@ export function useWorkbookCompareBodyLayout({
     return visibleKeys.size;
   }, [bodySegments, mode, visibleFrozenStackedCanvasRuns]);
 
-  const columnsBodySegments = useMemo<WorkbookCompareColumnsBodySegment[] | null>(() => {
-    if (mode !== 'columns') return null;
+  const columnsBodyBaseLayout = useMemo(() => {
+    if (mode !== 'columns') {
+      return {
+        segments: null,
+        rowFramesByKey: EMPTY_ROW_FRAMES_BY_KEY,
+      };
+    }
 
-    const slice = items.slice(startIdx, endIdx);
+    return buildWorkbookLinearBodyLayoutBase({
+      items,
+      startIdx,
+      endIdx,
+      cacheKey: `compare:columns-body-base:v1:${startIdx}:${endIdx}`,
+      resolveItemKind: (item) => {
+        if (item.kind === 'row') return 'row';
+        if (item.kind === 'collapse') return 'collapse';
+        if (item.kind === 'hidden-rows') return 'hidden-rows';
+        return 'sparse-gap';
+      },
+      resolveItemHeight: (item) => item.kind === 'sparse-gap' ? item.count * ROW_H : ROW_H,
+      resolveRow: (item) => item.kind === 'row' ? item.row : null,
+      buildStaticRow: (item) => ({
+        row: (item as Extract<WorkbookCompareRenderItem, { kind: 'row' }>).row,
+        renderMode: getWorkbookColumnsRenderMode(
+          (item as Extract<WorkbookCompareRenderItem, { kind: 'row' }>).row,
+        ),
+      }),
+    });
+  }, [endIdx, items, mode, startIdx]);
+
+  const columnsBodyLayout = useMemo<{
+    segments: WorkbookCompareColumnsBodySegment[] | null;
+    rowFramesByKey: Map<string, WorkbookRowFrame>;
+  }>(() => {
+    if (mode !== 'columns') {
+      return {
+        segments: null,
+        rowFramesByKey: EMPTY_ROW_FRAMES_BY_KEY,
+      };
+    }
+
     const segments: WorkbookCompareColumnsBodySegment[] = [];
-    let currentRows: WorkbookColumnsCanvasRow[] = [];
-    let cursorTop = 0;
-    let currentRowsTop = 0;
-
-    const flushRows = () => {
-      if (currentRows.length === 0) return;
-      const height = currentRows.length * ROW_H;
-      segments.push({
-        kind: 'rows',
-        rows: currentRows,
-        top: currentRowsTop,
-        height,
-      });
-      currentRows = [];
-    };
-
-    slice.forEach((item, localIndex) => {
-      const itemIndex = startIdx + localIndex;
-      if (item.kind === 'collapse') {
-        flushRows();
+    columnsBodyBaseLayout.segments?.forEach((segment) => {
+      if (segment.kind === 'collapse') {
         segments.push({
           kind: 'collapse',
-          item,
-          top: cursorTop,
-          height: ROW_H,
+          item: segment.item as Extract<WorkbookCompareRenderItem, { kind: 'collapse' }>,
+          top: segment.top,
+          height: segment.height,
+          sourceItemIndex: segment.sourceItemIndex,
         });
-        cursorTop += ROW_H;
-        currentRowsTop = cursorTop;
         return;
       }
 
-      if (item.kind === 'hidden-rows') {
-        flushRows();
+      if (segment.kind === 'hidden-rows') {
         segments.push({
           kind: 'hidden-rows',
-          item,
-          top: cursorTop,
-          height: ROW_H,
+          item: segment.item as Extract<WorkbookCompareRenderItem, { kind: 'hidden-rows' }>,
+          top: segment.top,
+          height: segment.height,
         });
-        cursorTop += ROW_H;
-        currentRowsTop = cursorTop;
         return;
       }
 
-      if (item.kind === 'sparse-gap') {
-        flushRows();
-        const height = item.count * ROW_H;
+      if (segment.kind === 'sparse-gap') {
         segments.push({
           kind: 'sparse-gap',
-          item,
-          top: cursorTop,
-          height,
+          item: segment.item as Extract<WorkbookCompareRenderItem, { kind: 'sparse-gap' }>,
+          top: segment.top,
+          height: segment.height,
         });
-        cursorTop += height;
-        currentRowsTop = cursorTop;
         return;
       }
 
-      if (currentRows.length === 0) currentRowsTop = cursorTop;
-      const renderMode = getWorkbookColumnsRenderMode(item.row);
-      const isGuided = rowTouchesGuidedHunk(item.row, guidedHunkRange);
-      const prevGuided = itemIndex > 0
-        && items[itemIndex - 1]?.kind === 'row'
-        && rowTouchesGuidedHunk((items[itemIndex - 1] as Extract<typeof items[number], { kind: 'row' }>).row, guidedHunkRange);
-      const nextGuided = itemIndex + 1 < items.length
-        && items[itemIndex + 1]?.kind === 'row'
-        && rowTouchesGuidedHunk((items[itemIndex + 1] as Extract<typeof items[number], { kind: 'row' }>).row, guidedHunkRange);
-      currentRows.push({
-        row: item.row,
-        renderMode,
-        isSearchMatch: item.row.lineIdxs.some(idx => searchMatchSet.has(idx)),
-        isActiveSearch: item.row.lineIdxs.includes(activeSearchLineIdx),
-        isGuided,
-        isGuidedStart: isGuided && !prevGuided,
-        isGuidedEnd: isGuided && !nextGuided,
-      } as WorkbookColumnsCanvasRow);
-      cursorTop += ROW_H;
+      if (segment.kind !== 'rows') return;
+
+      segments.push({
+        kind: 'rows',
+        rows: mapWorkbookProjectedBodyRows({
+          rows: segment.rows,
+          sourceItems: items,
+          resolveSourceRow: (sourceItem) => sourceItem.kind === 'row' ? sourceItem.row : null,
+          guidedHunkRange,
+          activeSearchLineIdx,
+          searchMatchSet,
+          decorateRow: (entry, state) => ({
+            ...entry.staticRow,
+            ...state,
+          } as WorkbookColumnsCanvasRow),
+        }),
+        top: segment.top,
+        height: segment.height,
+      });
     });
 
-    flushRows();
-    return segments;
-  }, [activeSearchLineIdx, endIdx, guidedHunkRange, items, mode, searchMatchSet, startIdx]);
+    return {
+      segments,
+      rowFramesByKey: columnsBodyBaseLayout.rowFramesByKey,
+    };
+  }, [
+    activeSearchLineIdx,
+    columnsBodyBaseLayout,
+    guidedHunkRange,
+    items,
+    mode,
+    searchMatchSet,
+  ]);
+
+  const columnsBodySegments = columnsBodyLayout.segments;
 
   return {
     bodySegments,
     stackedCanvasRuns,
     stackedVisibleMergeGroupCount,
     columnsBodySegments,
+    rowFramesByKey: mode === 'stacked'
+      ? stackedBodyLayout.rowFramesByKey
+      : columnsBodyLayout.rowFramesByKey,
   };
 }

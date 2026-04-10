@@ -9,6 +9,19 @@ export interface CharSpan {
   text: string;
 }
 
+export interface TextReplacementPair {
+  lineIdx: number;
+  pairedLineIdx: number;
+}
+
+export interface SplitRowDescriptor {
+  leftLineIdx: number | null;
+  rightLineIdx: number | null;
+  isReplacementPair?: boolean;
+  lineIdx: number;
+  lineIdxs: number[];
+}
+
 export interface DiffLine {
   type: LineType;
   base: string | null;
@@ -28,6 +41,14 @@ export interface TextDiffStats {
 export interface TextDiffPresentation {
   replacementPairIndex: Map<number, number>;
   stats: TextDiffStats;
+}
+
+export interface PreparedTextAnalysis {
+  diffLines: DiffLine[];
+  stats: TextDiffStats;
+  replacementPairs: TextReplacementPair[];
+  splitRowDescriptors: SplitRowDescriptor[];
+  perf?: Pick<DiffPerformanceMetrics, 'diffMs'> | null;
 }
 
 export interface Hunk {

@@ -8,11 +8,12 @@ import type {
 import type { WorkbookMetadataMap } from '@/utils/workbook/workbookMeta';
 import { findWorkbookMergeRange } from '@/utils/workbook/workbookMergeLayout';
 import { buildWorkbookSplitRowCompareState } from '@/utils/workbook/workbookCompare';
+import { getWorkbookRowDeltaEntries } from '@/utils/workbook/workbookDelta';
 import {
   buildWorkbookRowEntry,
   buildWorkbookSelectedCell,
 } from '@/utils/workbook/workbookNavigation';
-import type { IndexedWorkbookSectionRows } from '@/utils/workbook/workbookSheetIndex';
+import type { IndexedWorkbookSectionRows, WorkbookSectionRowIndex } from '@/utils/workbook/workbookSheetIndex';
 import { getWorkbookColumnLabel, type WorkbookSection } from '@/utils/workbook/workbookSections';
 
 interface WorkbookDiffRegionNode extends WorkbookDiffRegionPatch {
@@ -226,17 +227,13 @@ function resolveRowIndex(
 }
 
 function buildNodeAnchorSelection(
-  sheetName: string,
-  baseVersionLabel: string,
-  mineVersionLabel: string,
   row: IndexedWorkbookSectionRows['rows'][number],
+  baseEntry: ReturnType<typeof buildWorkbookRowEntry>,
+  mineEntry: ReturnType<typeof buildWorkbookRowEntry>,
   column: number,
   baseMergeRanges: NonNullable<WorkbookMetadataMap['sheets'][string]>['mergeRanges'],
   mineMergeRanges: NonNullable<WorkbookMetadataMap['sheets'][string]>['mergeRanges'],
 ): WorkbookSelectedCell | null {
-  const baseEntry = buildWorkbookRowEntry(row, 'base', sheetName, baseVersionLabel);
-  const mineEntry = buildWorkbookRowEntry(row, 'mine', sheetName, mineVersionLabel);
-
   if (row.right?.type === 'add' && mineEntry) {
     return buildWorkbookSelectedCell(mineEntry, column, mineMergeRanges);
   }
@@ -282,7 +279,8 @@ function collectWorkbookDiffRegionNodes(
     const rowState = buildWorkbookSplitRowCompareState(entry.row, undefined, compareMode);
     if (!rowState.hasChanges) return;
 
-    rowState.cellDeltas.forEach((cellDelta, column) => {
+    getWorkbookRowDeltaEntries(rowState).forEach((cellDelta) => {
+      const column = cellDelta.column;
       if (!cellDelta.changed) return;
 
       const baseRowNumber = entry.baseEntry?.rowNumber ?? null;
@@ -331,10 +329,9 @@ function collectWorkbookDiffRegionNodes(
         rowNumberStart,
         rowNumberEnd,
         anchorSelection: buildNodeAnchorSelection(
-          section.name,
-          baseVersionLabel,
-          mineVersionLabel,
           entry.row,
+          entry.baseEntry,
+          entry.mineEntry,
           startCol,
           baseMergeRanges,
           mineMergeRanges,
@@ -390,7 +387,7 @@ function aggregateWorkbookDiffRegions(
 
 export function buildWorkbookDiffRegions(
   workbookSections: WorkbookSection[],
-  workbookSectionRowIndex: Map<string, IndexedWorkbookSectionRows>,
+  workbookSectionRowIndex: WorkbookSectionRowIndex,
   baseVersionLabel: string,
   mineVersionLabel: string,
   compareMode: WorkbookCompareMode = 'strict',

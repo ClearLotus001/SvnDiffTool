@@ -1,8 +1,10 @@
 import type { DiffLine, WorkbookCompareMode } from '@/types';
+import type { Locale } from '@/i18n/core';
 import type { DiffTextSourceInput } from '@/utils/diff/diffSource';
 
 export interface WorkbookDiffAsyncInput extends DiffTextSourceInput {
   compareMode?: WorkbookCompareMode;
+  locale?: Locale;
 }
 
 export interface WorkbookDiffAsyncResult {
@@ -15,6 +17,7 @@ export interface WorkbookDiffWorkerRequest {
   requestId: number;
   source: DiffTextSourceInput;
   compareMode: WorkbookCompareMode;
+  locale: Locale;
 }
 
 export interface WorkbookDiffWorkerSuccess {

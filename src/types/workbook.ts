@@ -4,6 +4,7 @@
 
 import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
 import type { DiffLine, DiffPerformanceMetrics } from '@/types/diff';
+import type { DiffAnalysisSnapshot } from '@/types/svn';
 
 export type WorkbookMoveDirection = 'up' | 'down' | 'left' | 'right';
 export type WorkbookSelectionKind = 'cell' | 'row' | 'column';
@@ -11,6 +12,22 @@ export type WorkbookCompareMode = 'strict' | 'content';
 export type WorkbookSelectionRequestReason = 'click' | 'drag' | 'contextmenu' | 'keyboard' | 'programmatic' | 'search';
 export type WorkbookSelectionMode = 'replace' | 'range' | 'toggle';
 export type WorkbookSectionChangeType = 'equal' | 'add' | 'delete' | 'rename';
+
+export interface WorkbookSection {
+  name: string;
+  displayName: string;
+  changeType: WorkbookSectionChangeType;
+  hasBaseSide: boolean;
+  hasMineSide: boolean;
+  renamePeerName: string | null;
+  renameRole: 'source' | 'target' | null;
+  startLineIdx: number;
+  endLineIdx: number;
+  maxColumns: number;
+  rowCount: number;
+  firstDataLineIdx: number | null;
+  firstDataRowNumber: number | null;
+}
 
 export interface WorkbookSelectedCell {
   kind: WorkbookSelectionKind;
@@ -154,6 +171,8 @@ export interface WorkbookCellSnapshot {
 
 export type WorkbookCellDeltaKind = 'equal' | 'add' | 'delete' | 'modify';
 export type WorkbookRowDeltaTone = 'equal' | 'add' | 'delete' | 'mixed';
+export type WorkbookRowMiniMapTone = 'equal' | 'add' | 'delete' | 'modify' | 'strict-only' | 'mixed';
+export type WorkbookRowMiniMapPaintTone = Exclude<WorkbookRowMiniMapTone, 'equal' | 'mixed'>;
 
 export interface WorkbookCellDelta {
   column: number;
@@ -170,11 +189,14 @@ export interface WorkbookCellDelta {
 
 export interface WorkbookRowDelta {
   cellDeltas: Map<number, WorkbookCellDelta>;
+  cellDeltaPayloads?: WorkbookCellDeltaPayload[];
   changedColumns: number[];
   strictOnlyColumns: number[];
   changedCount: number;
   hasChanges: boolean;
   tone: WorkbookRowDeltaTone;
+  miniMapTone?: WorkbookRowMiniMapTone;
+  miniMapPaintTones?: WorkbookRowMiniMapPaintTone[];
 }
 
 export interface WorkbookCellDeltaPayload extends Omit<WorkbookCellDelta, 'baseCell' | 'mineCell'> {
@@ -200,6 +222,19 @@ export interface WorkbookPrecomputedDeltaPayload {
   sections: WorkbookSectionDeltaPayload[];
 }
 
+export interface PreparedWorkbookAnalysis {
+  diffLinesByMode: Partial<Record<WorkbookCompareMode, DiffLine[] | null>>;
+  workbookDeltaByMode: Partial<Record<WorkbookCompareMode, WorkbookPrecomputedDeltaPayload | null>>;
+  sectionsByMode?: Partial<Record<WorkbookCompareMode, WorkbookSection[] | null>>;
+  navigationRegionsByMode?: Partial<Record<WorkbookCompareMode, WorkbookDiffRegion[] | null>>;
+  metadata: {
+    base: WorkbookMetadataMap | null;
+    mine: WorkbookMetadataMap | null;
+  };
+  artifactDiff: WorkbookArtifactDiff | null;
+  perf?: Pick<DiffPerformanceMetrics, 'metadataMs' | 'rustDiffMs'> | null;
+}
+
 export interface WorkbookArtifactDiff {
   hasArtifactOnlyDiff: true;
   kind: 'binary-only';
@@ -211,12 +246,14 @@ export interface WorkbookCompareModePayload {
   compareMode: WorkbookCompareMode;
   diffLines: DiffLine[] | null;
   workbookDelta: WorkbookPrecomputedDeltaPayload | null;
+  analysisSnapshot?: DiffAnalysisSnapshot | null;
   perf?: Pick<DiffPerformanceMetrics, 'rustDiffMs'> | null;
 }
 
 export interface WorkbookMetadataPayload {
   base: WorkbookMetadataMap | null;
   mine: WorkbookMetadataMap | null;
+  analysisSnapshot?: DiffAnalysisSnapshot | null;
   perf?: Pick<DiffPerformanceMetrics, 'metadataMs'> | null;
 }
 

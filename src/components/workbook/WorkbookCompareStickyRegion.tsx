@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { cssVar } from '@/theme/cssUtils';
 
 interface WorkbookCompareStickyRegionProps {
   minBodyWidth: number;
@@ -16,8 +17,8 @@ export default function WorkbookCompareStickyRegion({
         top: 0,
         zIndex: 30,
         isolation: 'isolate',
-        background: 'var(--bg1)',
-        boxShadow: '0 1px 0 var(--border)',
+        background: cssVar('bg1'),
+        boxShadow: `0 1px 0 ${cssVar('border')}`,
         minWidth: minBodyWidth,
       }}>
       {children}
