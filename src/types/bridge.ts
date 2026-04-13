@@ -24,6 +24,7 @@ export interface LaunchContextPayload {
   isDevMode: boolean;
   usesNativeWindowControls: boolean;
   windowFrameState: WindowFrameState;
+  launchedAfterUpdate: boolean;
   updateState: AppUpdateState;
 }
 

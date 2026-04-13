@@ -35,6 +35,7 @@ export const RENDERER_TRANSLATION_PARAM_KEYS = {
   "statsWorkbookSheetsRenamedHint": ["count"],
   "tooltipAddedHint": ["mineLabel", "baseLabel"],
   "tooltipClearedHint": ["mineLabel", "baseLabel"],
+  "updateInstalledNoticeTitle": ["version"],
   "workbookContextAutoFitColumns": ["count"],
   "workbookContextHideColumns": ["count"],
   "workbookContextHideRows": ["count"],

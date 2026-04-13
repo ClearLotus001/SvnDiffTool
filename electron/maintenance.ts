@@ -55,6 +55,10 @@ export function shouldDeleteAppDataFromArgv(argv: string[]): boolean {
   return argv.some((arg) => arg.trim() === '--delete-app-data');
 }
 
+export function wasLaunchedAfterUpdateFromArgv(argv: string[]): boolean {
+  return argv.some((arg) => arg.trim() === '--updated');
+}
+
 function deleteFileSync(targetPath: string) {
   try {
     fs.rmSync(targetPath, { force: true });

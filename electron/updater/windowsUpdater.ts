@@ -216,7 +216,7 @@ export class WindowsUpdater implements PlatformUpdater {
   async installUpdate(): Promise<void> {
     this.initialize();
     if (this.state.status !== 'downloaded') return;
-    autoUpdater.quitAndInstall(true, false);
+    autoUpdater.quitAndInstall(true, true);
   }
 
   subscribe(listener: AppUpdateListener): () => void {

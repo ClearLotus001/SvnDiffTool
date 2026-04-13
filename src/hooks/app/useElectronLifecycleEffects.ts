@@ -17,6 +17,7 @@ interface UseElectronLifecycleEffectsArgs {
     options?: { seq?: number; loadingAlreadyStarted?: boolean; compareMode?: WorkbookCompareMode },
   ) => Promise<void>;
   reloadCliDiffData: () => Promise<void>;
+  onLaunchedAfterUpdate?: (version: string) => void;
   workbookCompareModeRef: MutableRefObject<WorkbookCompareMode>;
   loadSeqRef: MutableRefObject<number>;
   revisionQuerySeqRef: MutableRefObject<number>;
@@ -28,6 +29,7 @@ interface UseElectronLifecycleEffectsArgs {
 export default function useElectronLifecycleEffects({
   applyDiffData,
   reloadCliDiffData,
+  onLaunchedAfterUpdate,
   workbookCompareModeRef,
   loadSeqRef,
   revisionQuerySeqRef,
@@ -114,6 +116,9 @@ export default function useElectronLifecycleEffects({
       setUsesNativeWindowControls(Boolean(launchContext.usesNativeWindowControls));
       setIsWindowMaximized(Boolean(launchContext.windowFrameState?.isMaximized));
       setAppUpdateState(launchContext.updateState);
+      if (launchContext.launchedAfterUpdate) {
+        onLaunchedAfterUpdate?.(launchContext.updateState.currentVersion);
+      }
       if (!launchContext.updateState.supportsAutoUpdate || updateAutoCheckRequestedRef.current) return;
       updateAutoCheckRequestedRef.current = true;
       void window.svnDiff?.checkForAppUpdate?.({ manual: false });
@@ -315,6 +320,7 @@ export default function useElectronLifecycleEffects({
     setIsWindowMaximized,
     setLaunchBaseName,
     setLaunchMineName,
+    onLaunchedAfterUpdate,
     setResetPair,
     setRevisionOptions,
     setUsesNativeWindowControls,

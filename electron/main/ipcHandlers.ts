@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { logMainError } from '../logging.js';
 import { electronT } from '../i18n.js';
+import { wasLaunchedAfterUpdateFromArgv } from '../maintenance.js';
 import { AUTO_EXIT_AFTER_LOAD_MS, USE_NATIVE_WINDOW_CONTROLS } from './constants.js';
 import { logDebugTiming } from './logger.js';
 import { getAppUpdater, getMainWindow } from './state.js';
@@ -70,6 +71,7 @@ function buildLaunchContextPayload(): LaunchContextPayload {
     isDevMode: process.env.NODE_ENV === 'development',
     usesNativeWindowControls: USE_NATIVE_WINDOW_CONTROLS,
     windowFrameState: getWindowFrameStateSnapshot(),
+    launchedAfterUpdate: wasLaunchedAfterUpdateFromArgv(process.argv),
     updateState: getAppUpdater().getState(),
   };
 }

@@ -20,6 +20,7 @@ import {
   getMaintenanceModeFromArgv,
   hasPendingPostInstallMaintenance,
   shouldDeleteAppDataFromArgv,
+  wasLaunchedAfterUpdateFromArgv,
 } from '../electron/maintenance';
 
 test('normalizeInstallerBootstrapConfig falls back to safe defaults', () => {
@@ -89,6 +90,17 @@ test('shouldDeleteAppDataFromArgv only enables explicit personal-data cleanup', 
   );
   assert.equal(
     shouldDeleteAppDataFromArgv(['Uninstall SvnDiffTool.exe', '/S']),
+    false,
+  );
+});
+
+test('wasLaunchedAfterUpdateFromArgv detects update relaunch marker', () => {
+  assert.equal(
+    wasLaunchedAfterUpdateFromArgv(['SvnDiffTool.exe', '--updated']),
+    true,
+  );
+  assert.equal(
+    wasLaunchedAfterUpdateFromArgv(['SvnDiffTool.exe', '--maintenance=post-install']),
     false,
   );
 });

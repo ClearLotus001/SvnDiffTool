@@ -61,6 +61,7 @@ import {
 import { getPreparedWorkbookDeltaForMode } from '@/hooks/app/helpers';
 import { useAppStore } from '@/store/appStore';
 import PerfBar from '@/components/app/PerfBar';
+import AppUpdateInstalledNoticeBar from '@/components/app/AppUpdateInstalledNoticeBar';
 import DiffSourceNoticeBar from '@/components/diff/DiffSourceNoticeBar';
 import SearchBar from '@/components/diff/SearchBar';
 import WorkbookFormulaBar from '@/components/workbook/WorkbookFormulaBar';
@@ -207,6 +208,7 @@ export default function App() {
   }, [dialogActions]);
   const closeAllDialogs = dialogActions.closeAll;
   const previousShowSearchRef = useRef(showSearch);
+  const [installedUpdateVersion, setInstalledUpdateVersion] = useState<string | null>(null);
 
   const diffLoad = useDiffLoadState();
   const { state: diffLoadState } = diffLoad;
@@ -399,6 +401,7 @@ export default function App() {
   useElectronLifecycleEffects({
     applyDiffData,
     reloadCliDiffData,
+    onLaunchedAfterUpdate: setInstalledUpdateVersion,
     workbookCompareModeRef,
     loadSeqRef,
     revisionQuerySeqRef,
@@ -712,6 +715,13 @@ export default function App() {
               onNav={handleSearchNav}
               onJump={handleSearchJump}
               onClose={() => setShowSearch(false)}
+            />
+          )}
+
+          {installedUpdateVersion && (
+            <AppUpdateInstalledNoticeBar
+              version={installedUpdateVersion}
+              onClose={() => setInstalledUpdateVersion(null)}
             />
           )}
 
