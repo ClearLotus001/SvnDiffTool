@@ -27,7 +27,6 @@ import {
 } from './windowManager.js';
 import {
   projectTransportDiffData,
-  projectTransportWorkbookCompareModePayload,
 } from './transportProjection.js';
 import type {
   LaunchContextPayload,
@@ -155,11 +154,11 @@ export function registerIpcHandlers(): void {
       baseRevisionId?: string;
       mineRevisionId?: string;
     } | undefined;
-    return projectTransportWorkbookCompareModePayload(await loadWorkbookCompareModeData(
+    return loadWorkbookCompareModeData(
       payload?.compareMode ?? 'strict',
       payload?.baseRevisionId,
       payload?.mineRevisionId,
-    ));
+    );
   });
 
   safeHandle('load-workbook-metadata', async (_, ...args: unknown[]) => {

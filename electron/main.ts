@@ -15,11 +15,6 @@ import {
   configureRuntimePaths,
   getRuntimePathState,
 } from './runtimePaths';
-import {
-  ensureLegacyUserDataMigration,
-  performLegacyUserDataMigration,
-  resolvePendingLegacyUserDataMigration,
-} from './userDataMigration';
 import { DEV_PROFILE_ROOT } from './main/constants';
 import { registerIpcHandlers } from './main/ipcHandlers';
 import { writeExternalDiffDebugLog } from './main/logger';
@@ -40,10 +35,6 @@ const DEFERRED_STARTUP_HOUSEKEEPING_DELAY_MS = 2000;
 
 const maintenanceMode = getMaintenanceModeFromArgv(process.argv);
 const installerBootstrap = readInstallerBootstrapSync(process.execPath);
-const pendingLegacyUserDataMigration = maintenanceMode
-  ? null
-  : resolvePendingLegacyUserDataMigration();
-
 configureRuntimePaths(app, DEV_PROFILE_ROOT, installerBootstrap);
 
 // ---------------------------------------------------------------------------
@@ -114,10 +105,6 @@ function schedulePendingPostInstallMaintenance() {
 
 function runDeferredStartupHousekeeping() {
   clearDeferredStartupHousekeepingTimer();
-
-  if (pendingLegacyUserDataMigration) {
-    performLegacyUserDataMigration(pendingLegacyUserDataMigration);
-  }
   cleanupStaleManagedTempFilesSync(Date.now(), { force: true });
 }
 
@@ -182,7 +169,6 @@ registerIpcHandlers();
 // ---------------------------------------------------------------------------
 
 if (maintenanceMode) {
-  ensureLegacyUserDataMigration();
   void app.whenReady().then(async () => {
     try {
       await runMaintenance(app, maintenanceMode, process.argv);

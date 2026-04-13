@@ -104,14 +104,6 @@ function createWorkbookDiffData(): DiffData {
     mineContent: null,
     baseBytes: null,
     mineBytes: null,
-    precomputedDiffLines: strictDiffLines,
-    precomputedWorkbookDelta: createWorkbookDelta('strict'),
-    precomputedDiffLinesByMode: {
-      strict: strictDiffLines,
-    },
-    precomputedWorkbookDeltaByMode: {
-      strict: createWorkbookDelta('strict'),
-    },
     analysisSnapshotsByMode: {
       strict: createWorkbookSnapshot('strict', strictDiffLines, strictMetadata),
     },
@@ -131,7 +123,7 @@ function createWorkbookDiffData(): DiffData {
   };
 }
 
-test('mergeWorkbookCompareModePayload ignores redundant legacy arrays and keeps snapshot-backed workbook projections authoritative', () => {
+test('mergeWorkbookCompareModePayload adds snapshot-backed workbook projections for a new mode', () => {
   const initial = createWorkbookDiffData();
   const contentDiffLines = [
     createDiffLine('equal', 'Sheet: Sheet1', 'Sheet: Sheet1'),
@@ -139,8 +131,6 @@ test('mergeWorkbookCompareModePayload ignores redundant legacy arrays and keeps 
   ];
   const payload: WorkbookCompareModePayload = {
     compareMode: 'content',
-    diffLines: contentDiffLines,
-    workbookDelta: createWorkbookDelta('content'),
     analysisSnapshot: createWorkbookSnapshot('content', contentDiffLines, {
       base: initial.baseWorkbookMetadata ?? null,
       mine: initial.mineWorkbookMetadata ?? null,
@@ -152,43 +142,15 @@ test('mergeWorkbookCompareModePayload ignores redundant legacy arrays and keeps 
 
   const merged = mergeWorkbookCompareModePayload(initial, payload);
 
-  assert.equal(merged.precomputedDiffLinesByMode?.content, undefined);
-  assert.equal(merged.precomputedWorkbookDeltaByMode?.content, undefined);
   assert.equal(merged.analysisSnapshotsByMode?.content?.workbookAnalysis?.diffLinesByMode.content, contentDiffLines);
   assert.equal(merged.analysisSnapshotsByMode?.content?.workbookAnalysis?.workbookDeltaByMode.content?.compareMode, 'content');
   assert.deepEqual(merged.baseWorkbookMetadata, initial.baseWorkbookMetadata);
   assert.deepEqual(merged.mineWorkbookMetadata, initial.mineWorkbookMetadata);
 });
 
-test('mergeWorkbookCompareModePayload keeps legacy projections lean when transport payload is snapshot-only', () => {
-  const initial = createWorkbookDiffData();
-  const contentDiffLines = [
-    createDiffLine('equal', 'Sheet: Sheet1', 'Sheet: Sheet1'),
-    createDiffLine('equal', 'Alpha', 'Bravo'),
-  ];
-  const payload: WorkbookCompareModePayload = {
-    compareMode: 'content',
-    diffLines: null,
-    workbookDelta: null,
-    analysisSnapshot: createWorkbookSnapshot('content', contentDiffLines, {
-      base: initial.baseWorkbookMetadata ?? null,
-      mine: initial.mineWorkbookMetadata ?? null,
-    }),
-    perf: {
-      rustDiffMs: 3,
-    },
-  };
-
-  const merged = mergeWorkbookCompareModePayload(initial, payload);
-
-  assert.equal(merged.precomputedDiffLinesByMode?.content, undefined);
-  assert.equal(merged.precomputedWorkbookDeltaByMode?.content, undefined);
-  assert.equal(merged.analysisSnapshotsByMode?.content?.workbookAnalysis?.diffLinesByMode.content, contentDiffLines);
-  assert.equal(merged.analysisSnapshotsByMode?.content?.workbookAnalysis?.workbookDeltaByMode.content?.compareMode, 'content');
-});
-
 test('mergeWorkbookMetadataPayload enriches all cached workbook snapshots with metadata', () => {
   const initial = createWorkbookDiffData();
+  const strictDiffLines = initial.analysisSnapshotsByMode?.strict?.workbookAnalysis?.diffLinesByMode.strict ?? [];
   const contentDiffLines = [
     createDiffLine('equal', 'Sheet: Sheet1', 'Sheet: Sheet1'),
     createDiffLine('equal', 'Alpha', 'Bravo'),
@@ -198,7 +160,7 @@ test('mergeWorkbookMetadataPayload enriches all cached workbook snapshots with m
     baseWorkbookMetadata: null,
     mineWorkbookMetadata: null,
     analysisSnapshotsByMode: {
-      strict: createWorkbookSnapshot('strict', initial.precomputedDiffLines ?? [], {
+      strict: createWorkbookSnapshot('strict', strictDiffLines, {
         base: null,
         mine: null,
       }),
@@ -211,7 +173,7 @@ test('mergeWorkbookMetadataPayload enriches all cached workbook snapshots with m
   const payload: WorkbookMetadataPayload = {
     base: createWorkbookMetadata('Sheet1'),
     mine: createWorkbookMetadata('Sheet1'),
-    analysisSnapshot: createWorkbookSnapshot('strict', initial.precomputedDiffLines ?? [], {
+    analysisSnapshot: createWorkbookSnapshot('strict', strictDiffLines, {
       base: null,
       mine: null,
     }),

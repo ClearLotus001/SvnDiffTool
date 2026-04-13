@@ -32,6 +32,7 @@ import { resolveWorkbookSearchMatchTarget } from '@/utils/workbook/workbookNavig
 import {
   applyWorkbookRegionVersionLabels,
   getCompareContextLabels,
+  getPreparedWorkbookAnalysisForMode,
   getPreparedTextAnalysisForMode,
   getPreparedWorkbookNavigationRegionsForMode,
   getPreparedWorkbookSectionsForMode,
@@ -90,7 +91,6 @@ export default function useAppViewModel({
   const isElectron = useAppStore((s) => s.isElectron);
   const isDevMode = useAppStore((s) => s.isDevMode);
   const workbookCompareMode = useAppStore((s) => s.workbookCompareMode);
-  const precomputedWorkbookDelta = useAppStore((s) => s.precomputedWorkbookDelta);
   const hunkIdx = useAppStore((s) => s.hunkIdx);
   const activeWorkbookSheetName = useAppStore((s) => s.activeWorkbookSheetName);
   const isWorkbookCandidate = useMemo(
@@ -108,6 +108,10 @@ export default function useAppViewModel({
   );
   const preparedWorkbookNavigationRegions = useMemo(
     () => getPreparedWorkbookNavigationRegionsForMode(currentDiffData, workbookCompareMode),
+    [currentDiffData, workbookCompareMode],
+  );
+  const preparedWorkbookAnalysis = useMemo(
+    () => getPreparedWorkbookAnalysisForMode(currentDiffData, workbookCompareMode),
     [currentDiffData, workbookCompareMode],
   );
 
@@ -292,11 +296,12 @@ export default function useAppViewModel({
   const workbookSectionRowIndex = useMemo(
     () => {
       if (!isWorkbookMode) return EMPTY_WORKBOOK_SECTION_ROW_INDEX;
-      return precomputedWorkbookDelta
-        ? buildWorkbookSectionRowIndexFromPrecomputedDelta(diffLines, precomputedWorkbookDelta)
+      const snapshotWorkbookDelta = preparedWorkbookAnalysis?.workbookDeltaByMode[workbookCompareMode] ?? null;
+      return snapshotWorkbookDelta
+        ? buildWorkbookSectionRowIndexFromPrecomputedDelta(diffLines, snapshotWorkbookDelta)
         : buildWorkbookSectionRowIndex(diffLines, workbookSections, workbookCompareMode);
     },
-    [diffLines, isWorkbookMode, precomputedWorkbookDelta, workbookCompareMode, workbookSections],
+    [diffLines, isWorkbookMode, preparedWorkbookAnalysis, workbookCompareMode, workbookSections],
   );
   const searchMatches = useMemo<SearchMatch[]>(() => {
     if (!isWorkbookMode || searchWorkbookScope !== 'sheet' || !activeWorkbookSheetName) {
@@ -347,17 +352,9 @@ export default function useAppViewModel({
     if (preparedWorkbookNavigationRegions) {
       return new Set(preparedWorkbookNavigationRegions.map((region) => region.sheetName));
     }
-    if (precomputedWorkbookDelta) {
-      return new Set(
-        precomputedWorkbookDelta.sections
-          .filter((section) => section.rows.some((row) => row.hasChanges))
-          .map((section) => section.name),
-      );
-    }
     return new Set(workbookDiffRegions.map((region) => region.sheetName));
   }, [
     isWorkbookMode,
-    precomputedWorkbookDelta,
     preparedWorkbookNavigationRegions,
     workbookDiffRegions,
   ]);

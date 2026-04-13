@@ -9,8 +9,8 @@ import type {
   FilePayloadCacheEntry,
   RevisionOptionsPayload,
   RevisionPayloadCacheEntry,
+  ResolvedWorkbookCompareModePayload,
   WorkbookCompareCacheEntry,
-  WorkbookCompareModePayload,
   WorkbookMetadataCacheEntry,
   WorkbookMetadataPayload,
 } from './types.js';
@@ -76,7 +76,7 @@ export const fileEqualityCache = new Map<string, FileEqualityCacheEntry>();
 
 export const workbookCompareCache = new Map<string, WorkbookCompareCacheEntry>();
 
-export const workbookCompareInFlight = new Map<string, Promise<WorkbookCompareModePayload | null>>();
+export const workbookCompareInFlight = new Map<string, Promise<ResolvedWorkbookCompareModePayload | null>>();
 
 export const workbookMetadataCache = new Map<string, WorkbookMetadataCacheEntry>();
 

@@ -137,7 +137,7 @@ export function notifyAppUpdateState(state: AppUpdateState): void {
   win.webContents.send('app-update-state-changed', state);
 }
 
-export function notifyWindowFrameState(): void {
+function notifyWindowFrameState(): void {
   const win = getMainWindow();
   if (!win || win.isDestroyed()) return;
   win.webContents.send('window-frame-state-changed', {
@@ -168,7 +168,7 @@ export function showMainWindow(): void {
 // Uninstaller helpers
 // ---------------------------------------------------------------------------
 
-export function resolveInstalledUninstallerPath(app: Electron.App): string | null {
+function resolveInstalledUninstallerPath(app: Electron.App): string | null {
   if (process.platform !== 'win32' || !app.isPackaged) return null;
 
   const installDir = path.dirname(process.execPath);

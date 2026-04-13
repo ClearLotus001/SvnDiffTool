@@ -28,7 +28,6 @@ import type {
   WorkbookCompareMode,
   WorkbookHiddenStateBySheet,
   WorkbookMetadataMap,
-  WorkbookPrecomputedDeltaPayload,
   WorkbookSelectionState,
 } from '@/types';
 import { getStoredAppSettings } from '@/utils/app/settings';
@@ -87,13 +86,11 @@ interface DiffDataSlice {
   diffLines: DiffLine[];
   diffSourceNoticeCode: DiffSourceNoticeCode | null;
   diffSourceNoticeDismissed: boolean;
-  precomputedWorkbookDelta: WorkbookPrecomputedDeltaPayload | null;
   workbookArtifactDiff: WorkbookArtifactDiff | null;
   artifactNoticeDismissed: boolean;
   setDiffLines: (v: SetStateAction<DiffLine[]>) => void;
   setDiffSourceNoticeCode: (v: SetStateAction<DiffSourceNoticeCode | null>) => void;
   setDiffSourceNoticeDismissed: (v: SetStateAction<boolean>) => void;
-  setPrecomputedWorkbookDelta: (v: SetStateAction<WorkbookPrecomputedDeltaPayload | null>) => void;
   setWorkbookArtifactDiff: (v: SetStateAction<WorkbookArtifactDiff | null>) => void;
   setArtifactNoticeDismissed: (v: SetStateAction<boolean>) => void;
 }
@@ -220,7 +217,6 @@ export interface LoadedDiffSessionPayload {
   } | null;
   diffLines: DiffLine[];
   diffSourceNoticeCode: DiffSourceNoticeCode | null;
-  precomputedWorkbookDelta: WorkbookPrecomputedDeltaPayload | null;
   workbookArtifactDiff: WorkbookArtifactDiff | null;
   baseWorkbookMetadata: WorkbookMetadataMap | null;
   mineWorkbookMetadata: WorkbookMetadataMap | null;
@@ -287,13 +283,11 @@ export const useAppStore = create<AppState>()((set) => ({
   diffLines: [],
   diffSourceNoticeCode: null,
   diffSourceNoticeDismissed: false,
-  precomputedWorkbookDelta: null,
   workbookArtifactDiff: null,
   artifactNoticeDismissed: false,
   setDiffLines: setter(set, 'diffLines'),
   setDiffSourceNoticeCode: setter(set, 'diffSourceNoticeCode'),
   setDiffSourceNoticeDismissed: setter(set, 'diffSourceNoticeDismissed'),
-  setPrecomputedWorkbookDelta: setter(set, 'precomputedWorkbookDelta'),
   setWorkbookArtifactDiff: setter(set, 'workbookArtifactDiff'),
   setArtifactNoticeDismissed: setter(set, 'artifactNoticeDismissed'),
 
@@ -403,7 +397,6 @@ export const useAppStore = create<AppState>()((set) => ({
     workbookCompareMode: payload.workbookCompareMode,
     diffLines: payload.diffLines,
     diffSourceNoticeCode: payload.diffSourceNoticeCode,
-    precomputedWorkbookDelta: payload.precomputedWorkbookDelta,
     workbookArtifactDiff: payload.workbookArtifactDiff,
     baseWorkbookMetadata: payload.baseWorkbookMetadata,
     mineWorkbookMetadata: payload.mineWorkbookMetadata,

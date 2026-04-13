@@ -104,13 +104,11 @@ test('local diff keeps compare-mode and metadata loaders usable after initial lo
     const metadataPayload = await loadWorkbookMetadataData();
     const strictSnapshot = initial.analysisSnapshotsByMode?.strict ?? null;
 
-    assert.ok((initial.precomputedDiffLinesByMode?.strict?.length ?? 0) > 0);
     assert.ok((initial.analysisSnapshotsByMode?.strict?.workbookAnalysis?.diffLinesByMode.strict?.length ?? 0) > 0);
     assert.equal(Object.keys(initial.analysisSnapshotsByMode?.strict?.workbookAnalysis?.metadata.base?.sheets ?? {}).length, 1);
     assert.equal(Object.keys(initial.analysisSnapshotsByMode?.strict?.workbookAnalysis?.metadata.mine?.sheets ?? {}).length, 1);
     assert.ok(warmedOrInFlightContentSnapshot);
     assert.equal(strictPayload.analysisSnapshot, strictSnapshot);
-    assert.ok((contentPayload.diffLines?.length ?? 0) > 0);
     assert.ok((contentPayload.analysisSnapshot?.workbookAnalysis?.diffLinesByMode.content?.length ?? 0) > 0);
     assert.equal(metadataPayload.analysisSnapshot, strictSnapshot);
     assert.equal(Object.keys(metadataPayload.base?.sheets ?? {}).length, 1);

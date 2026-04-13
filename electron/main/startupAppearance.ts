@@ -1,7 +1,6 @@
 import { app, nativeTheme } from 'electron';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { resolveLegacyUserDataPath } from '../userDataMigration.js';
 
 export type StartupThemeKey = 'dark' | 'light' | 'hc';
 export type StartupLocale = 'zh-CN' | 'en-US';
@@ -23,15 +22,6 @@ function resolveAppearanceFilePath(): string {
   return path.join(app.getPath('userData'), STARTUP_APPEARANCE_FILE);
 }
 
-function resolveLegacyAppearanceFilePath(currentFilePath: string): string | null {
-  const currentUserDataPath = path.dirname(currentFilePath);
-  const legacyUserDataPath = resolveLegacyUserDataPath(currentUserDataPath);
-  if (!legacyUserDataPath) return null;
-
-  const legacyFilePath = path.join(legacyUserDataPath, STARTUP_APPEARANCE_FILE);
-  return fs.existsSync(legacyFilePath) ? legacyFilePath : null;
-}
-
 function isThemeKey(value: unknown): value is StartupThemeKey {
   return value === 'dark' || value === 'light' || value === 'hc';
 }
@@ -50,14 +40,11 @@ function getDefaultStartupAppearance(): StartupAppearance {
 export function readStartupAppearance(): StartupAppearance {
   try {
     const filePath = resolveAppearanceFilePath();
-    const effectiveFilePath = fs.existsSync(filePath)
-      ? filePath
-      : resolveLegacyAppearanceFilePath(filePath);
-    if (!effectiveFilePath) {
+    if (!fs.existsSync(filePath)) {
       return getDefaultStartupAppearance();
     }
 
-    const raw = fs.readFileSync(effectiveFilePath, 'utf8');
+    const raw = fs.readFileSync(filePath, 'utf8');
     const parsed = JSON.parse(raw) as Partial<StartupAppearance>;
     const fallback = getDefaultStartupAppearance();
 

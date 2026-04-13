@@ -27,7 +27,7 @@ interface TruncatedTooltipTextProps {
   anchorStyle?: CSSProperties | undefined;
 }
 
-export const TruncatedTooltipText = memo(({
+const TruncatedTooltipText = memo(({
   text, query, lines = 1, maxWidth = 360, textStyle, tooltipText, highlightStyle, anchorStyle,
 }: TruncatedTooltipTextProps) => {
   const contentRef = useRef<HTMLSpanElement | null>(null);

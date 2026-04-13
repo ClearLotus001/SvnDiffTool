@@ -7,13 +7,11 @@
 //   3. Canvas / 纯函数场景显式读取 ThemeTokens 快照
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { TokenType } from '@/types';
+import type { TokenType } from '@/types/diff';
 import { type ThemeTokens, THEME_VAR_MAP } from '@/theme/tokens';
 
 export type { ThemeTokens };
-export { THEME_VAR_MAP };
 
-export type Theme = ThemeTokens;
 export type ThemeKey = 'dark' | 'light' | 'hc';
 
 export const THEME_KEYS: readonly ThemeKey[] = ['light', 'dark', 'hc'] as const;

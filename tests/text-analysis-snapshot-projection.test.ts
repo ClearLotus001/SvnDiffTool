@@ -31,7 +31,7 @@ test('local text diff projects main-side prepared analysis while preserving raw 
     assert.ok((prepared?.diffLines.length ?? 0) > 0);
     assert.ok((prepared?.replacementPairs.length ?? 0) > 0);
     assert.ok((prepared?.splitRowDescriptors.length ?? 0) > 0);
-    assert.equal(data.precomputedDiffLinesByMode?.strict, prepared?.diffLines ?? null);
+    assert.equal(data.analysisSnapshotsByMode?.strict?.textAnalysis?.diffLines, prepared?.diffLines ?? null);
     assert.equal(typeof data.baseContent, 'string');
     assert.equal(typeof data.mineContent, 'string');
   } finally {

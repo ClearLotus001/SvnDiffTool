@@ -4,12 +4,14 @@ import assert from 'node:assert/strict';
 import { computeDiff, buildSplitRows } from '../src/engine/text/diff';
 import { buildReplacementPairIndex, summarizeDiffChanges } from '../src/engine/text/textChangeAlignment';
 import {
-  arePreparedTextAnalysesEquivalent,
-  buildLegacyPreparedTextAnalysis,
   buildReplacementPairIndexFromPairs,
   materializeSplitRowsFromDescriptors,
   prepareTextDiffAnalysisFromDiffLines,
 } from '../src/utils/diff/preparedTextAnalysis';
+import {
+  arePreparedTextAnalysesEquivalent,
+  buildLegacyPreparedTextAnalysis,
+} from './helpers/legacyPreparedTextAnalysis';
 
 test('prepareTextDiffAnalysisFromDiffLines matches legacy stats, replacement pairs, and split rows', () => {
   const baseText = [
@@ -70,4 +72,3 @@ test('materializeSplitRowsFromDescriptors reproduces legacy split-row structure'
     })),
   );
 });
-

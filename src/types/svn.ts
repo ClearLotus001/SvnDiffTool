@@ -3,7 +3,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type {
-  DiffLine,
   DiffMeta,
   DiffPerformanceMetrics,
   DiffSourceNoticeCode,
@@ -14,7 +13,6 @@ import type {
   WorkbookArtifactDiff,
   WorkbookCompareMode,
   WorkbookMetadataMap,
-  WorkbookPrecomputedDeltaPayload,
 } from '@/types/workbook';
 
 export type SvnRevisionSourceKind = 'revision' | 'working-copy' | 'input-file';
@@ -73,10 +71,6 @@ export interface DiffData extends DiffMeta {
   mineContent: string | null;
   baseBytes: Uint8Array | null;
   mineBytes: Uint8Array | null;
-  precomputedDiffLines?: DiffLine[] | null;
-  precomputedWorkbookDelta?: WorkbookPrecomputedDeltaPayload | null;
-  precomputedDiffLinesByMode?: Partial<Record<WorkbookCompareMode, DiffLine[] | null>> | null;
-  precomputedWorkbookDeltaByMode?: Partial<Record<WorkbookCompareMode, WorkbookPrecomputedDeltaPayload | null>> | null;
   analysisSnapshotsByMode?: Partial<Record<WorkbookCompareMode, DiffAnalysisSnapshot | null>> | null;
   baseWorkbookMetadata?: WorkbookMetadataMap | null;
   mineWorkbookMetadata?: WorkbookMetadataMap | null;

@@ -107,10 +107,6 @@ export interface DiffData {
   mineContent: string | null;
   baseBytes: Uint8Array | null;
   mineBytes: Uint8Array | null;
-  precomputedDiffLines: DiffLine[] | null;
-  precomputedWorkbookDelta: WorkbookPrecomputedDeltaPayload | null;
-  precomputedDiffLinesByMode: Partial<Record<WorkbookCompareMode, DiffLine[] | null>> | null;
-  precomputedWorkbookDeltaByMode: Partial<Record<WorkbookCompareMode, WorkbookPrecomputedDeltaPayload | null>> | null;
   analysisSnapshotsByMode: Partial<Record<WorkbookCompareMode, DiffAnalysisSnapshot | null>> | null;
   baseWorkbookMetadata: WorkbookMetadataMap | null;
   mineWorkbookMetadata: WorkbookMetadataMap | null;
@@ -154,9 +150,14 @@ export interface ReadFilePayloadOptions {
 
 export interface WorkbookCompareModePayload {
   compareMode: WorkbookCompareMode;
+  analysisSnapshot?: DiffAnalysisSnapshot | null;
+  perf: Pick<DiffPerformanceMetrics, 'rustDiffMs'> | null;
+}
+
+export interface ResolvedWorkbookCompareModePayload {
+  compareMode: WorkbookCompareMode;
   diffLines: DiffLine[] | null;
   workbookDelta: WorkbookPrecomputedDeltaPayload | null;
-  analysisSnapshot?: DiffAnalysisSnapshot | null;
   perf: Pick<DiffPerformanceMetrics, 'rustDiffMs'> | null;
 }
 
@@ -398,7 +399,7 @@ export interface FileEqualityCacheEntry {
 
 export interface InlineWorkbookCompareCachePayload {
   kind: 'inline';
-  value: WorkbookCompareModePayload;
+  value: ResolvedWorkbookCompareModePayload;
 }
 
 export interface CompressedWorkbookCompareCachePayload {

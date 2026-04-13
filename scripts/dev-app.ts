@@ -11,7 +11,7 @@ const viteCliPath = path.join(rootDir, 'node_modules', 'vite', 'bin', 'vite.js')
 const tscCliPath = path.join(rootDir, 'node_modules', 'typescript', 'bin', 'tsc');
 const tsxCliPath = path.join(rootDir, 'node_modules', 'tsx', 'dist', 'cli.mjs');
 const devAppLockHash = createHash('sha1').update(rootDir).digest('hex').slice(0, 10);
-const devAppLockDir = path.join(os.tmpdir(), 'SvnExcelDiffTool-dev');
+const devAppLockDir = path.join(os.tmpdir(), 'SvnDiffTool-dev');
 const devAppLockPath = path.join(devAppLockDir, `dev-app-${devAppLockHash}.lock.json`);
 
 const processes: ChildProcess[] = [];

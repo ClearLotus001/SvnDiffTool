@@ -29,7 +29,7 @@ const execFileAsync = promisify(execFile);
 // Command execution helpers
 // ---------------------------------------------------------------------------
 
-export async function execFileTextCommand(
+async function execFileTextCommand(
   file: string,
   args: string[],
   maxBuffer: number,
@@ -56,7 +56,7 @@ export async function execFileTextCommand(
   }
 }
 
-export async function execFileBufferCommand(
+async function execFileBufferCommand(
   file: string,
   args: string[],
   maxBuffer: number,
@@ -103,7 +103,7 @@ export function runSvnBuffer(args: string[]): Promise<{ ok: boolean; stdout: Buf
 // Rust parser path resolution
 // ---------------------------------------------------------------------------
 
-export function resolveRustParserPath(): string | null {
+function resolveRustParserPath(): string | null {
   const candidates = [
     path.join(APP_ROOT, 'rust', 'target', 'release', RUST_PARSER_NAME),
     path.join(process.resourcesPath, 'bin', RUST_PARSER_NAME),
@@ -147,7 +147,7 @@ export async function tryParseWorkbookWithRust(
 // Workbook metadata normalization
 // ---------------------------------------------------------------------------
 
-export function normalizeWorkbookMetadata(input: unknown): WorkbookMetadataMap | null {
+function normalizeWorkbookMetadata(input: unknown): WorkbookMetadataMap | null {
   if (!input || typeof input !== 'object') return null;
   const rawSheets = (input as { sheets?: unknown; s?: unknown }).sheets
     ?? (input as { s?: unknown }).s;
@@ -237,7 +237,7 @@ export async function tryResolveWorkbookMetadataWithRust(
 // Diff line normalization
 // ---------------------------------------------------------------------------
 
-export function normalizeRustDiffLines(input: unknown): DiffLine[] | null {
+function normalizeRustDiffLines(input: unknown): DiffLine[] | null {
   if (!Array.isArray(input)) return null;
 
   const diffLines = input.flatMap((entry): DiffLine[] => {
@@ -506,7 +506,7 @@ function normalizeWorkbookRowDeltaPayload(input: unknown): WorkbookRowDeltaPaylo
   };
 }
 
-export function normalizeWorkbookPrecomputedDeltaPayload(
+function normalizeWorkbookPrecomputedDeltaPayload(
   input: unknown,
 ): WorkbookPrecomputedDeltaPayload | null {
   if (!input || typeof input !== 'object') return null;
@@ -537,7 +537,7 @@ export function normalizeWorkbookPrecomputedDeltaPayload(
   return { compareMode, sections };
 }
 
-export function normalizeRustWorkbookDiffPayload(
+function normalizeRustWorkbookDiffPayload(
   input: unknown,
 ): { diffLines: DiffLine[] | null; workbookDelta: WorkbookPrecomputedDeltaPayload | null } {
   if (Array.isArray(input)) {
@@ -598,18 +598,3 @@ export async function tryResolveWorkbookDiffWithRust(
   }
 }
 
-export function createWorkbookDiffLinesByMode(
-  compareMode: WorkbookCompareMode,
-  diffLines: DiffLine[] | null,
-): Partial<Record<WorkbookCompareMode, DiffLine[] | null>> | null {
-  if (!diffLines) return null;
-  return { [compareMode]: diffLines };
-}
-
-export function createWorkbookDeltaByMode(
-  compareMode: WorkbookCompareMode,
-  workbookDelta: WorkbookPrecomputedDeltaPayload | null,
-): Partial<Record<WorkbookCompareMode, WorkbookPrecomputedDeltaPayload | null>> | null {
-  if (!workbookDelta) return null;
-  return { [compareMode]: workbookDelta };
-}

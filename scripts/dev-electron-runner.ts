@@ -15,7 +15,7 @@ const readyResources = [
   preloadBundlePath,
 ];
 const devProfileHash = createHash('sha1').update(rootDir).digest('hex').slice(0, 10);
-const devProfileDir = path.join(os.tmpdir(), 'SvnExcelDiffTool-dev', devProfileHash);
+const devProfileDir = path.join(os.tmpdir(), 'SvnDiffTool-dev', devProfileHash);
 const EARLY_EXIT_WINDOW_MS = 5_000;
 const MAX_EARLY_EXIT_RETRIES = 3;
 const EARLY_EXIT_RETRY_DELAY_MS = 800;

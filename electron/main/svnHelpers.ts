@@ -40,20 +40,20 @@ export function isWorkbookFile(filePath: string): boolean {
 // XML helpers
 // ---------------------------------------------------------------------------
 
-export function asArray<T>(value: T | T[] | null | undefined): T[] {
+function asArray<T>(value: T | T[] | null | undefined): T[] {
   if (value == null) return [];
   return Array.isArray(value) ? value : [value];
 }
 
-export function asXmlNode(value: unknown): XmlNode | null {
+function asXmlNode(value: unknown): XmlNode | null {
   return value != null && typeof value === 'object' ? value as XmlNode : null;
 }
 
-export function asXmlNodeArray(value: unknown): XmlNode[] {
+function asXmlNodeArray(value: unknown): XmlNode[] {
   return asArray(value).map(asXmlNode).filter((item): item is XmlNode => item != null);
 }
 
-export function getXmlString(node: XmlNode | null, key: string): string {
+function getXmlString(node: XmlNode | null, key: string): string {
   const value = node?.[key];
   return typeof value === 'string' ? value : '';
 }
@@ -62,7 +62,7 @@ export function getXmlString(node: XmlNode | null, key: string): string {
 // File identity
 // ---------------------------------------------------------------------------
 
-export function buildFileIdentity(filePath: string): string {
+function buildFileIdentity(filePath: string): string {
   const resolved = filePath.trim();
   if (!resolved) return '';
 
@@ -136,12 +136,12 @@ export function normalizeRevisionNumber(revision: string): string {
   return trimmed.replace(/^r/i, '');
 }
 
-export function formatRevisionLabel(revision: string): string {
+function formatRevisionLabel(revision: string): string {
   const normalized = normalizeRevisionNumber(revision);
   return normalized ? `r${normalized}` : '';
 }
 
-export function normalizeRevisionLabelToken(value: string): string {
+function normalizeRevisionLabelToken(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return '';
   if (/^(wc|working copy|local)$/i.test(trimmed)) return 'WC';
@@ -153,11 +153,11 @@ export function normalizeRevisionLabelToken(value: string): string {
   return trimmed;
 }
 
-export function isWorkingCopyRevisionToken(value: string): boolean {
+function isWorkingCopyRevisionToken(value: string): boolean {
   return normalizeRevisionLabelToken(value) === 'WC';
 }
 
-export function isRemoteRevisionToken(value: string): boolean {
+function isRemoteRevisionToken(value: string): boolean {
   const normalized = normalizeRevisionLabelToken(value);
   return Boolean(normalized && (normalized === 'HEAD' || /^r\d+/i.test(normalized)));
 }
@@ -166,7 +166,7 @@ export function isRemoteHeadSelectionId(value: string | undefined): boolean {
   return value?.trim() === REMOTE_HEAD_ID;
 }
 
-export function extractRevisionToken(name: string): string {
+function extractRevisionToken(name: string): string {
   const normalized = name.trim();
   if (!normalized) return '';
 
@@ -189,7 +189,7 @@ export function getRevisionNumberValue(revision: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export function formatLogDate(dateText: string): string {
+function formatLogDate(dateText: string): string {
   if (!dateText) return '';
   const parsed = new Date(dateText);
   if (Number.isNaN(parsed.getTime())) return dateText;
@@ -205,12 +205,12 @@ export function formatLogDate(dateText: string): string {
 // Revision query normalization
 // ---------------------------------------------------------------------------
 
-export function clampRevisionQueryLimit(limit: number | undefined): number {
+function clampRevisionQueryLimit(limit: number | undefined): number {
   if (!Number.isFinite(limit)) return DEFAULT_REVISION_QUERY_LIMIT;
   return Math.max(1, Math.min(MAX_REVISION_QUERY_LIMIT, Math.floor(limit!)));
 }
 
-export function normalizeAnchorDateTime(value: string | undefined): string {
+function normalizeAnchorDateTime(value: string | undefined): string {
   return value?.trim() ?? '';
 }
 
@@ -237,7 +237,7 @@ export function buildRevisionQueryCacheKey(query: Required<RevisionOptionsQuery>
 // CLI → Revision info
 // ---------------------------------------------------------------------------
 
-export function getCliSideRevisionLabel(side: 'base' | 'mine'): string {
+function getCliSideRevisionLabel(side: 'base' | 'mine'): string {
   const args = getActiveCliArgs();
   const explicit = side === 'base' ? args.baseRevision : args.mineRevision;
   const normalizedExplicit = normalizeRevisionLabelToken(explicit);
@@ -257,7 +257,7 @@ export function resolveSideName(explicitName: string, filePath: string): string 
   return normalized;
 }
 
-export function resolveUrlPegRevision(value: string): string {
+function resolveUrlPegRevision(value: string): string {
   const normalized = normalizeRevisionLabelToken(value);
   if (!normalized) return '';
   if (normalized === 'HEAD') return 'HEAD';
@@ -287,7 +287,7 @@ export function resolveIconPath(): string | undefined {
 // Revision info factories
 // ---------------------------------------------------------------------------
 
-export function makeRevisionSelectionPair(
+function makeRevisionSelectionPair(
   baseRevisionId: string | null | undefined,
   mineRevisionId: string | null | undefined,
 ): RevisionSelectionPair {
@@ -297,7 +297,7 @@ export function makeRevisionSelectionPair(
   };
 }
 
-export function createWorkingCopyRevisionInfo(): SvnRevisionInfo {
+function createWorkingCopyRevisionInfo(): SvnRevisionInfo {
   return {
     id: SPECIAL_MINE_ID,
     revision: 'WC',
@@ -362,7 +362,7 @@ export function createCliRevisionInfo(side: 'base' | 'mine'): SvnRevisionInfo | 
   };
 }
 
-export function makeFallbackRevisionInfo(side: 'base' | 'mine'): SvnRevisionInfo {
+function makeFallbackRevisionInfo(side: 'base' | 'mine'): SvnRevisionInfo {
   const args = getActiveCliArgs();
   const sideName = side === 'base' ? args.baseName : args.mineName;
   const filePath = side === 'base' ? args.basePath : args.minePath;
@@ -383,7 +383,7 @@ export function makeFallbackRevisionInfo(side: 'base' | 'mine'): SvnRevisionInfo
   };
 }
 
-export function resolveCurrentRevisionInfo(
+function resolveCurrentRevisionInfo(
   side: 'base' | 'mine',
   options: SvnRevisionInfo[],
 ): SvnRevisionInfo {
@@ -402,7 +402,7 @@ export function resolveCurrentRevisionInfo(
   return makeFallbackRevisionInfo(side);
 }
 
-export function resolveRevisionById(
+function resolveRevisionById(
   side: 'base' | 'mine',
   options: SvnRevisionInfo[],
   requestedId: string | undefined,
@@ -424,12 +424,12 @@ export function isRevisionSelectionId(value: string | null | undefined): boolean
   return true;
 }
 
-export function isStartupRevisionVsRevisionCompare(): boolean {
+function isStartupRevisionVsRevisionCompare(): boolean {
   return isRemoteRevisionToken(getCliSideRevisionLabel('base'))
     && isRemoteRevisionToken(getCliSideRevisionLabel('mine'));
 }
 
-export function isStartupWorkingCopyCompare(): boolean {
+function isStartupWorkingCopyCompare(): boolean {
   const baseRevision = getCliSideRevisionLabel('base');
   const mineRevision = getCliSideRevisionLabel('mine');
   return isWorkingCopyRevisionToken(mineRevision) || normalizeRevisionLabelToken(baseRevision) === 'BASE';

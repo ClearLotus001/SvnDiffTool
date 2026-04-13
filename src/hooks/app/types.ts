@@ -3,7 +3,6 @@ import type {
   WorkbookContextMenuPoint,
   WorkbookFreezeState,
   WorkbookMetadataMap,
-  WorkbookPrecomputedDeltaPayload,
   WorkbookSelectionState,
 } from '@/types';
 
@@ -13,7 +12,6 @@ export type RevisionOptionsStatus = 'idle' | 'loading' | 'loaded' | 'error';
 
 export interface CachedDiffResult {
   diffLines: DiffLine[] | null;
-  workbookDelta: WorkbookPrecomputedDeltaPayload | null;
   baseWorkbookMetadata: WorkbookMetadataMap | null;
   mineWorkbookMetadata: WorkbookMetadataMap | null;
   memoryBytes: number;

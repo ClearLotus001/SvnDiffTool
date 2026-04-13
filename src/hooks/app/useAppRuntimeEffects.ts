@@ -14,7 +14,7 @@ import type {
   TextLineSelectionSummary,
   WorkbookCompareMode,
   WorkbookDiffRegion,
-  WorkbookPrecomputedDeltaPayload,
+  WorkbookSectionDeltaPayload,
 } from '@/types';
 import type { LoadPhase } from '@/hooks/app/types';
 import { debugLog } from '@/hooks/app/helpers';
@@ -53,7 +53,7 @@ interface UseAppRuntimeEffectsArgs {
   setTextLineSelectionSummary: Dispatch<SetStateAction<TextLineSelectionSummary | null>>;
   activeWorkbookDiffRegion: WorkbookDiffRegion | null;
   activeWorkbookSheetName: string | null;
-  precomputedWorkbookDelta: WorkbookPrecomputedDeltaPayload | null;
+  preparedWorkbookSectionsDelta: WorkbookSectionDeltaPayload[] | null;
   workbookCompareMode: WorkbookCompareMode;
   workbookSectionRowIndex: WorkbookSectionRowIndex;
   workbookSections: WorkbookSection[];
@@ -79,7 +79,7 @@ export default function useAppRuntimeEffects({
   setTextLineSelectionSummary,
   activeWorkbookDiffRegion,
   activeWorkbookSheetName,
-  precomputedWorkbookDelta,
+  preparedWorkbookSectionsDelta,
   workbookCompareMode,
   workbookSectionRowIndex,
   workbookSections,
@@ -243,7 +243,7 @@ export default function useAppRuntimeEffects({
     if (!activeSheetName) return;
 
     const activeSectionRows = workbookSectionRowIndex.get(activeSheetName)?.rows ?? [];
-    const activePayloadSection = precomputedWorkbookDelta?.sections.find(
+    const activePayloadSection = preparedWorkbookSectionsDelta?.find(
       (section) => section.name === activeSheetName,
     ) ?? null;
 
@@ -251,7 +251,7 @@ export default function useAppRuntimeEffects({
       activeSheetName,
       compareMode: workbookCompareMode,
       sectionCount: workbookSections.length,
-      payloadSectionCount: precomputedWorkbookDelta?.sections.length ?? 0,
+      payloadSectionCount: preparedWorkbookSectionsDelta?.length ?? 0,
       activePayloadRowCount: activePayloadSection?.rows.length ?? 0,
       activeSectionRowCount: activeSectionRows.length,
       activeSectionPreview: activeSectionRows.slice(0, 8).map((row) => ({
@@ -286,7 +286,7 @@ export default function useAppRuntimeEffects({
     activeWorkbookSheetName,
     isDevMode,
     isWorkbookMode,
-    precomputedWorkbookDelta,
+    preparedWorkbookSectionsDelta,
     workbookCompareMode,
     workbookSectionRowIndex,
     workbookSections,

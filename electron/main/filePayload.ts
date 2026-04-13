@@ -46,9 +46,9 @@ import { getLocalWorkbookPairCacheContext, resolveWorkingCopyPathForTarget } fro
 import type {
   FilePayload,
   ReadFilePayloadOptions,
+  ResolvedWorkbookCompareModePayload,
   SvnRevisionInfo,
   WorkbookCompareMode,
-  WorkbookCompareModePayload,
   WorkbookMetadataPayload,
 } from './types.js';
 
@@ -190,7 +190,7 @@ export async function readFilePayload(
 // buildPayloadFromBuffer — parse a workbook from an in-memory buffer
 // ---------------------------------------------------------------------------
 
-export async function buildPayloadFromBuffer(
+async function buildPayloadFromBuffer(
   buffer: Buffer,
   fileName: string,
   options: ReadFilePayloadOptions = {},
@@ -519,7 +519,7 @@ export async function resolveWorkbookCompareModePayload(
   mineBytes: Uint8Array | null,
   fileName: string,
   compareMode: WorkbookCompareMode,
-): Promise<WorkbookCompareModePayload | null> {
+): Promise<ResolvedWorkbookCompareModePayload | null> {
   if (!isWorkbookFile(fileName)) return null;
   const cacheContext = await getLocalWorkbookPairCacheContext(
     basePathCandidate,
@@ -556,7 +556,7 @@ export async function resolveWorkbookCompareModePayload(
     }
   }
 
-  const resolver = (async (): Promise<WorkbookCompareModePayload | null> => {
+  const resolver = (async (): Promise<ResolvedWorkbookCompareModePayload | null> => {
     const directResult = canUseDirectWorkbookDiff(basePathCandidate, minePathCandidate, fileName)
       ? await tryResolveWorkbookDiffWithRust(basePathCandidate, minePathCandidate, compareMode)
       : await withWorkbookDiffSources(
@@ -570,7 +570,7 @@ export async function resolveWorkbookCompareModePayload(
 
     if (!directResult?.diffLines) return null;
 
-    const payload: WorkbookCompareModePayload = {
+    const payload: ResolvedWorkbookCompareModePayload = {
       compareMode,
       diffLines: directResult.diffLines,
       workbookDelta: directResult.workbookDelta,

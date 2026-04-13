@@ -1,4 +1,4 @@
-import type { DiffLine, WorkbookMetadataMap, WorkbookPrecomputedDeltaPayload } from '@/types';
+import type { DiffLine, WorkbookMetadataMap } from '@/types';
 import type { CachedDiffResult } from '@/hooks/app/types';
 
 const DEFAULT_DIFF_RESULT_CACHE_LIMIT = 8;
@@ -38,7 +38,7 @@ function estimateDiffLinesBytes(diffLines: DiffLine[] | null): number {
   return total;
 }
 
-function estimateJsonBytes(value: WorkbookMetadataMap | WorkbookPrecomputedDeltaPayload | null): number {
+function estimateJsonBytes(value: WorkbookMetadataMap | null): number {
   if (!value) return 0;
   return estimateStringBytes(JSON.stringify(value));
 }
@@ -49,7 +49,6 @@ export function buildCachedDiffResult(
   return {
     ...result,
     memoryBytes: estimateDiffLinesBytes(result.diffLines)
-      + estimateJsonBytes(result.workbookDelta)
       + estimateJsonBytes(result.baseWorkbookMetadata)
       + estimateJsonBytes(result.mineWorkbookMetadata),
   };

@@ -6,7 +6,7 @@ import { computeDiff } from '../src/engine/text/diff';
 import {
   arePreparedTextAnalysesEquivalent,
   buildLegacyPreparedTextAnalysis,
-} from '../src/utils/diff/preparedTextAnalysis';
+} from './helpers/legacyPreparedTextAnalysis';
 
 test('main prepareTextDiffAnalysis matches legacy prepared analysis for aligned replacements', () => {
   const baseText = [

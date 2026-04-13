@@ -16,7 +16,7 @@
  * DOM 组件使用此映射从 ThemeTokens 的 `T.xxx` 迁移到 `var(--xxx)`。
  * 键名与 `ThemeTokens` 接口的字段名一一对应。
  */
-export const TOKEN_CSS_MAP = {
+const TOKEN_CSS_MAP = {
     bg0: '--bg-base',
     bg1: '--bg-surface-solid',
     bg2: '--bg-surface-hover',

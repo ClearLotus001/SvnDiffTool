@@ -20,8 +20,7 @@ import { recordPerfBridgeEvent } from '@/utils/app/perfBridge';
 import {
   debugLog,
   getNow,
-  getPrecomputedDiffLinesForMode,
-  getPrecomputedWorkbookDeltaForMode,
+  getPreparedDiffLinesForMode,
   getRevisionOptionsStatus,
   hasBytePayload,
   mergeWorkbookCompareModePayload,
@@ -91,7 +90,6 @@ export default function useDiffLoader({
   workbookUi,
 }: UseDiffLoaderArgs): UseDiffLoaderResult {
   // ── Read setters directly from Zustand store ──────────────────────────
-  const setPrecomputedWorkbookDelta = useAppStore((s) => s.setPrecomputedWorkbookDelta);
   const setWorkbookArtifactDiff = useAppStore((s) => s.setWorkbookArtifactDiff);
   const setBaseWorkbookMetadata = useAppStore((s) => s.setBaseWorkbookMetadata);
   const setMineWorkbookMetadata = useAppStore((s) => s.setMineWorkbookMetadata);
@@ -183,18 +181,19 @@ export default function useDiffLoader({
         }
       : null;
     const cacheKey = buildDiffCacheKey(data, compareMode);
+    const preparedDiffLines = getPreparedDiffLinesForMode(data, compareMode);
     recordPerfBridgeEvent('apply-diff-data:start', {
       seq,
       compareMode,
       fileName: data.fileName,
-      hasPrecomputedDiff: Boolean(getPrecomputedDiffLinesForMode(data, compareMode)),
+      hasPreparedDiff: Boolean(preparedDiffLines),
       source: data.perf?.source ?? 'local-dev',
     });
     debugLog('apply-diff-data:start', {
       seq,
       compareMode,
       cacheKey,
-      hasPrecomputedDiff: Boolean(getPrecomputedDiffLinesForMode(data, compareMode)),
+      hasPreparedDiff: Boolean(preparedDiffLines),
       fileName: data.fileName,
     });
     if (!options?.loadingAlreadyStarted) {
@@ -205,9 +204,7 @@ export default function useDiffLoader({
     }
 
     try {
-      const precomputedDiffLines = getPrecomputedDiffLinesForMode(data, compareMode);
-      const selectedPrecomputedWorkbookDelta = getPrecomputedWorkbookDeltaForMode(data, compareMode);
-      const shouldUsePrecomputedDiff = Boolean(precomputedDiffLines);
+      const shouldUsePreparedDiff = Boolean(preparedDiffLines);
       let textResolveMs = 0;
       const cachedResult = diffResultCacheRef.current.get(cacheKey);
       const metadataInput: WorkbookMetadataSource = {
@@ -233,7 +230,6 @@ export default function useDiffLoader({
       const hydrateDiffSession = (
         nextData: DiffData,
         nextDiffLines: DiffLine[],
-        nextWorkbookDelta: DiffData['precomputedWorkbookDelta'],
         nextBaseWorkbookMetadata: DiffData['baseWorkbookMetadata'],
         nextMineWorkbookMetadata: DiffData['mineWorkbookMetadata'],
       ) => {
@@ -250,7 +246,6 @@ export default function useDiffLoader({
           preservedWorkbookViewState,
           diffLines: nextDiffLines,
           diffSourceNoticeCode: nextData.sourceNoticeCode ?? null,
-          precomputedWorkbookDelta: nextWorkbookDelta ?? null,
           workbookArtifactDiff: nextData.workbookArtifactDiff ?? null,
           baseWorkbookMetadata: nextBaseWorkbookMetadata ?? null,
           mineWorkbookMetadata: nextMineWorkbookMetadata ?? null,
@@ -346,11 +341,9 @@ export default function useDiffLoader({
         });
       };
 
-      const cachedDiffLines = shouldUsePrecomputedDiff
-        ? precomputedDiffLines
+      const cachedDiffLines = shouldUsePreparedDiff
+        ? preparedDiffLines
         : (cachedResult?.diffLines ?? null);
-      const cachedWorkbookDelta = selectedPrecomputedWorkbookDelta
-        ?? (cachedResult?.workbookDelta ?? null);
       const canUseCachedResult = Boolean(cachedResult && cachedDiffLines);
 
       if (canUseCachedResult) {
@@ -359,7 +352,6 @@ export default function useDiffLoader({
         hydrateDiffSession(
           data,
           cachedDiffLines ?? [],
-          cachedWorkbookDelta,
           cachedResult?.baseWorkbookMetadata ?? data.baseWorkbookMetadata ?? null,
           cachedResult?.mineWorkbookMetadata ?? data.mineWorkbookMetadata ?? null,
         );
@@ -394,8 +386,8 @@ export default function useDiffLoader({
 
       let nextDiffLines: DiffLine[];
       let diffDuration: number;
-      if (shouldUsePrecomputedDiff) {
-        nextDiffLines = precomputedDiffLines!;
+      if (shouldUsePreparedDiff) {
+        nextDiffLines = preparedDiffLines!;
         diffDuration = data.perf?.rustDiffMs ?? data.perf?.diffMs ?? 0;
       } else {
         const shouldUseWorkbookDiff = isWorkbookFileName(data.fileName || data.baseName || data.mineName)
@@ -434,7 +426,6 @@ export default function useDiffLoader({
       hydrateDiffSession(
         data,
         nextDiffLines,
-        selectedPrecomputedWorkbookDelta,
         data.baseWorkbookMetadata ?? null,
         data.mineWorkbookMetadata ?? null,
       );
@@ -442,7 +433,7 @@ export default function useDiffLoader({
         source: data.perf?.source ?? 'local-dev',
         ...data.perf,
         textResolveMs,
-        diffMs: shouldUsePrecomputedDiff ? (data.perf?.rustDiffMs ?? data.perf?.diffMs ?? 0) : diffDuration,
+        diffMs: shouldUsePreparedDiff ? (data.perf?.rustDiffMs ?? data.perf?.diffMs ?? 0) : diffDuration,
         totalAppMs,
         diffLineCount: nextDiffLines.length,
       });
@@ -454,7 +445,7 @@ export default function useDiffLoader({
         diffLineCount: nextDiffLines.length,
         totalAppMs,
         textResolveMs,
-        diffMs: shouldUsePrecomputedDiff ? (data.perf?.rustDiffMs ?? data.perf?.diffMs ?? 0) : diffDuration,
+        diffMs: shouldUsePreparedDiff ? (data.perf?.rustDiffMs ?? data.perf?.diffMs ?? 0) : diffDuration,
       });
       debugLog('apply-diff-data:done', {
         seq,
@@ -467,8 +458,7 @@ export default function useDiffLoader({
         source: data.perf?.source ?? 'local-dev',
       });
       rememberCachedDiffResult(diffResultCacheRef.current, cacheKey, buildCachedDiffResult({
-        diffLines: shouldUsePrecomputedDiff ? null : nextDiffLines,
-        workbookDelta: shouldUsePrecomputedDiff ? null : selectedPrecomputedWorkbookDelta,
+        diffLines: shouldUsePreparedDiff ? null : nextDiffLines,
         baseWorkbookMetadata: data.baseWorkbookMetadata ?? null,
         mineWorkbookMetadata: data.mineWorkbookMetadata ?? null,
       }));
@@ -477,7 +467,6 @@ export default function useDiffLoader({
       if (seq !== loadSeqRef.current) return;
       if (!hasLoadedDiffRef.current) {
         setDiffLines([]);
-        setPrecomputedWorkbookDelta(null);
         setWorkbookArtifactDiff(null);
         setBaseWorkbookMetadata(null);
         setMineWorkbookMetadata(null);
@@ -509,7 +498,6 @@ export default function useDiffLoader({
     setDiffLines,
     setDiffSourceNoticeCode,
     setMineWorkbookMetadata,
-    setPrecomputedWorkbookDelta,
     setWorkbookArtifactDiff,
     workbookCompareModeRef,
   ]);
@@ -518,7 +506,7 @@ export default function useDiffLoader({
     data: DiffData,
     compareMode: WorkbookCompareMode,
   ): Promise<DiffData> => {
-    if (getPrecomputedDiffLinesForMode(data, compareMode)) {
+    if (getPreparedDiffLinesForMode(data, compareMode)) {
       recordPerfBridgeEvent('diff-payload:ready', {
         reason: 'workbook-compare-mode',
         compareMode,
@@ -588,10 +576,10 @@ export default function useDiffLoader({
       fromCompareMode: workbookCompareModeRef.current,
       toCompareMode: nextMode,
       isWorkbookMode: isCurrentWorkbook,
-      hasPrecomputedDiff: Boolean(getPrecomputedDiffLinesForMode(currentData, nextMode)),
+      hasPreparedDiff: Boolean(getPreparedDiffLinesForMode(currentData, nextMode)),
     });
 
-    if (!isCurrentWorkbook || getPrecomputedDiffLinesForMode(currentData, nextMode)) {
+    if (!isCurrentWorkbook || getPreparedDiffLinesForMode(currentData, nextMode)) {
       void applyDiffData(currentData, {
         compareMode: nextMode,
         loadingAlreadyStarted: true,

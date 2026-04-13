@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// src/App.tsx  —  SvnExcelDiffTool root
+// src/App.tsx  —  SvnDiffTool root
 //
 // This file is now a thin orchestrator:
 //   - Reads state from Zustand store (only fields needed for rendering)
@@ -22,8 +22,6 @@ import type {
 } from '@/types';
 import { createEmptyTextLayoutSnapshots, type TextLayoutSnapshotsByMode } from '@/utils/diff/textLayoutState';
 import {
-  arePreparedTextAnalysesEquivalent,
-  buildLegacyPreparedTextAnalysis,
   buildReplacementPairIndexFromPairs,
 } from '@/utils/diff/preparedTextAnalysis';
 import { buildVersionCopyText } from '@/utils/diff/textCopy';
@@ -60,7 +58,7 @@ import {
   type CachedDiffResult,
   type WorkbookUiController,
 } from '@/hooks/app';
-import { debugLog } from '@/hooks/app/helpers';
+import { getPreparedWorkbookDeltaForMode } from '@/hooks/app/helpers';
 import { useAppStore } from '@/store/appStore';
 import PerfBar from '@/components/app/PerfBar';
 import DiffSourceNoticeBar from '@/components/diff/DiffSourceNoticeBar';
@@ -104,7 +102,6 @@ export default function App() {
   const diffLines = useAppStore((s) => s.diffLines);
   const diffSourceNoticeCode = useAppStore((s) => s.diffSourceNoticeCode);
   const diffSourceNoticeDismissed = useAppStore((s) => s.diffSourceNoticeDismissed);
-  const precomputedWorkbookDelta = useAppStore((s) => s.precomputedWorkbookDelta);
   const workbookArtifactDiff = useAppStore((s) => s.workbookArtifactDiff);
   const artifactNoticeDismissed = useAppStore((s) => s.artifactNoticeDismissed);
   const setArtifactNoticeDismissed = useAppStore((s) => s.setArtifactNoticeDismissed);
@@ -318,11 +315,6 @@ export default function App() {
     scrollToIndexRef,
     currentDiffData: currentDiffDataRef.current,
   });
-  const shadowPreparedTextAnalysis = useMemo(() => (
-    isDevMode && !isWorkbookMode && diffLines.length > 0
-      ? buildLegacyPreparedTextAnalysis(diffLines)
-      : null
-  ), [diffLines, isDevMode, isWorkbookMode]);
   const textDiffPresentation = useMemo(() => ({
     stats: preparedTextAnalysis?.stats ?? textDiffStats,
     replacementPairIndex: (!isWorkbookMode && layout === 'unified')
@@ -334,21 +326,10 @@ export default function App() {
     isWorkbookMode,
     themeKey,
   });
-
-  useEffect(() => {
-    if (!shadowPreparedTextAnalysis || !preparedTextAnalysis) return;
-    if (arePreparedTextAnalysesEquivalent(preparedTextAnalysis, shadowPreparedTextAnalysis)) {
-      return;
-    }
-    debugLog('prepared-text-analysis:mismatch', {
-      snapshotStats: preparedTextAnalysis.stats,
-      legacyStats: shadowPreparedTextAnalysis.stats,
-      snapshotReplacementPairs: preparedTextAnalysis.replacementPairs.length,
-      legacyReplacementPairs: shadowPreparedTextAnalysis.replacementPairs.length,
-      snapshotSplitRows: preparedTextAnalysis.splitRowDescriptors.length,
-      legacySplitRows: shadowPreparedTextAnalysis.splitRowDescriptors.length,
-    });
-  }, [preparedTextAnalysis, shadowPreparedTextAnalysis]);
+  const preparedWorkbookDelta = getPreparedWorkbookDeltaForMode(
+    currentDiffDataRef.current,
+    workbookCompareMode,
+  );
 
   useEffect(() => {
     if (previousShowSearchRef.current && !showSearch) {
@@ -664,7 +645,7 @@ export default function App() {
     setTextLineSelectionSummary,
     activeWorkbookDiffRegion,
     activeWorkbookSheetName,
-    precomputedWorkbookDelta,
+    preparedWorkbookSectionsDelta: preparedWorkbookDelta?.sections ?? null,
     workbookCompareMode,
     workbookSectionRowIndex,
     workbookSections,

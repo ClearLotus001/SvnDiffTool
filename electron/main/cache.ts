@@ -7,9 +7,9 @@ import type {
   FilePayload,
   InlineWorkbookCompareCachePayload,
   ReadFilePayloadOptions,
+  ResolvedWorkbookCompareModePayload,
   StoredWorkbookCompareCachePayload,
   WorkbookCellDeltaPayload,
-  WorkbookCompareModePayload,
   WorkbookMetadataMap,
   WorkbookMetadataPayload,
   WorkbookPayloadCoverage,
@@ -77,7 +77,7 @@ function estimateWorkbookDeltaMemoryBytes(
 }
 
 export function estimateWorkbookComparePayloadMemoryBytes(
-  payload: WorkbookCompareModePayload,
+  payload: ResolvedWorkbookCompareModePayload,
 ): number {
   const diffLinesBytes = payload.diffLines?.reduce((total, line) => (
     total + estimateDiffLineBytes(line)
@@ -87,7 +87,7 @@ export function estimateWorkbookComparePayloadMemoryBytes(
 }
 
 function createInlineWorkbookCompareCachePayload(
-  payload: WorkbookCompareModePayload,
+  payload: ResolvedWorkbookCompareModePayload,
 ): InlineWorkbookCompareCachePayload {
   return {
     kind: 'inline',
@@ -105,7 +105,7 @@ function createCompressedWorkbookCompareCachePayload(
 }
 
 export async function storeWorkbookCompareCachePayload(
-  payload: WorkbookCompareModePayload,
+  payload: ResolvedWorkbookCompareModePayload,
 ): Promise<{ payload: StoredWorkbookCompareCachePayload; memoryBytes: number }> {
   const estimatedMemoryBytes = estimateWorkbookComparePayloadMemoryBytes(payload);
   if (estimatedMemoryBytes < WORKBOOK_COMPARE_CACHE_COMPRESS_MIN_BYTES) {
@@ -127,13 +127,13 @@ export async function storeWorkbookCompareCachePayload(
 
 export async function readWorkbookCompareCachePayload(
   payload: StoredWorkbookCompareCachePayload,
-): Promise<WorkbookCompareModePayload> {
+): Promise<ResolvedWorkbookCompareModePayload> {
   if (payload.kind === 'inline') {
     return payload.value;
   }
 
   const jsonBytes = await gunzipAsync(payload.bytes);
-  return JSON.parse(jsonBytes.toString('utf-8')) as WorkbookCompareModePayload;
+  return JSON.parse(jsonBytes.toString('utf-8')) as ResolvedWorkbookCompareModePayload;
 }
 
 function estimateWorkbookSheetMetadataMemoryBytes(
@@ -165,7 +165,7 @@ export function estimateWorkbookMetadataPayloadMemoryBytes(
     + 128;
 }
 
-export function trimCacheByBudget<T extends { memoryBytes: number }>(
+function trimCacheByBudget<T extends { memoryBytes: number }>(
   cache: Map<string, T>,
   limit: number,
   maxBytes: number,

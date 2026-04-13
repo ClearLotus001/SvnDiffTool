@@ -1,6 +1,5 @@
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import type { ThemeTokens } from '@/theme/tokens';
 
 export type TooltipPlacement = 'top' | 'bottom';
 
@@ -25,10 +24,6 @@ const VIEWPORT_PADDING = 12;
 const TOOLTIP_GAP = 8;
 const ARROW_SAFE_PADDING = 18;
 const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
-
-export function getTooltipSurfaceBackground(_T?: ThemeTokens): string {
-  return `linear-gradient(180deg, var(--bg-surface-hover) 0%, var(--bg-surface-solid) 100%)`;
-}
 
 interface TooltipArrowProps {
   actualPlacement: TooltipPlacement;

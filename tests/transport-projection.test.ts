@@ -1,15 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  projectTransportDiffData,
-  projectTransportWorkbookCompareModePayload,
-} from '../electron/main/transportProjection.js';
+import { projectTransportDiffData } from '../electron/main/transportProjection.js';
 import type {
   DiffAnalysisSnapshot,
   DiffData,
   DiffLine,
-  WorkbookCompareModePayload,
   WorkbookMetadataMap,
   WorkbookPrecomputedDeltaPayload,
 } from '../electron/main/types.js';
@@ -77,7 +73,7 @@ function createWorkbookSnapshot(
   };
 }
 
-test('projectTransportDiffData drops redundant legacy diff payloads when snapshot projections exist', () => {
+test('projectTransportDiffData leaves snapshot-only workbook payloads unchanged', () => {
   const strictDiffLines = [
     createDiffLine('equal', '@@sheet\tSheet1', '@@sheet\tSheet1'),
     createDiffLine('add', null, '@@row\t1\tBravo'),
@@ -99,14 +95,6 @@ test('projectTransportDiffData drops redundant legacy diff payloads when snapsho
     mineContent: null,
     baseBytes: null,
     mineBytes: null,
-    precomputedDiffLines: strictDiffLines,
-    precomputedWorkbookDelta: createWorkbookDelta('strict'),
-    precomputedDiffLinesByMode: {
-      strict: strictDiffLines,
-    },
-    precomputedWorkbookDeltaByMode: {
-      strict: createWorkbookDelta('strict'),
-    },
     analysisSnapshotsByMode: {
       strict: createWorkbookSnapshot('strict', strictDiffLines),
     },
@@ -125,10 +113,7 @@ test('projectTransportDiffData drops redundant legacy diff payloads when snapsho
 
   const projected = projectTransportDiffData(data);
 
-  assert.equal(projected.precomputedDiffLines, null);
-  assert.equal(projected.precomputedWorkbookDelta, null);
-  assert.equal(projected.precomputedDiffLinesByMode, null);
-  assert.equal(projected.precomputedWorkbookDeltaByMode, null);
+  assert.equal(projected, data);
   assert.equal(projected.analysisSnapshotsByMode?.strict?.workbookAnalysis?.diffLinesByMode.strict, strictDiffLines);
 });
 
@@ -156,12 +141,6 @@ test('projectTransportDiffData strips large raw text payloads when snapshot text
     mineContent,
     baseBytes: null,
     mineBytes: null,
-    precomputedDiffLines: diffLines,
-    precomputedWorkbookDelta: null,
-    precomputedDiffLinesByMode: {
-      strict: diffLines,
-    },
-    precomputedWorkbookDeltaByMode: null,
     analysisSnapshotsByMode: {
       strict: {
         compareMode: 'strict',
@@ -193,26 +172,4 @@ test('projectTransportDiffData strips large raw text payloads when snapshot text
   assert.equal(projected.baseContent, null);
   assert.equal(projected.mineContent, null);
   assert.equal(projected.analysisSnapshotsByMode?.strict?.textAnalysis?.diffLines, diffLines);
-});
-
-test('projectTransportWorkbookCompareModePayload drops redundant legacy workbook compare payload arrays when snapshot projections exist', () => {
-  const contentDiffLines = [
-    createDiffLine('equal', '@@sheet\tSheet1', '@@sheet\tSheet1'),
-    createDiffLine('equal', '@@row\t1\tAlpha', '@@row\t1\tBravo'),
-  ];
-  const payload: WorkbookCompareModePayload = {
-    compareMode: 'content',
-    diffLines: contentDiffLines,
-    workbookDelta: createWorkbookDelta('content'),
-    analysisSnapshot: createWorkbookSnapshot('content', contentDiffLines),
-    perf: {
-      rustDiffMs: 3,
-    },
-  };
-
-  const projected = projectTransportWorkbookCompareModePayload(payload);
-
-  assert.equal(projected.diffLines, null);
-  assert.equal(projected.workbookDelta, null);
-  assert.equal(projected.analysisSnapshot?.workbookAnalysis?.diffLinesByMode.content, contentDiffLines);
 });

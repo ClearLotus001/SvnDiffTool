@@ -16,7 +16,6 @@ function buildResult(multiplier: number) {
         mineCharSpans: null,
       },
     ],
-    workbookDelta: null,
     baseWorkbookMetadata: null,
     mineWorkbookMetadata: null,
   });

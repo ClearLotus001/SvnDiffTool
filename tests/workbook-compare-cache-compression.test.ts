@@ -6,9 +6,9 @@ import {
   readWorkbookCompareCachePayload,
   storeWorkbookCompareCachePayload,
 } from '../electron/main/cache';
-import type { WorkbookCompareModePayload } from '../electron/main/types';
+import type { ResolvedWorkbookCompareModePayload } from '../electron/main/types';
 
-function buildSmallPayload(): WorkbookCompareModePayload {
+function buildSmallPayload(): ResolvedWorkbookCompareModePayload {
   return {
     compareMode: 'strict',
     diffLines: [
@@ -27,7 +27,7 @@ function buildSmallPayload(): WorkbookCompareModePayload {
   };
 }
 
-function buildLargePayload(): WorkbookCompareModePayload {
+function buildLargePayload(): ResolvedWorkbookCompareModePayload {
   const repeatedCell = 'CELL'.repeat(512);
   return {
     compareMode: 'strict',

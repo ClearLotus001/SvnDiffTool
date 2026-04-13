@@ -11,7 +11,6 @@ import type {
   WorkbookMetadataPayload,
   PreparedWorkbookAnalysis,
   WorkbookMetadataSource,
-  WorkbookPrecomputedDeltaPayload,
   WorkbookSection,
 } from '@/types';
 import type { RevisionOptionsStatus } from '@/hooks/app/types';
@@ -91,7 +90,7 @@ export function getPreparedTextAnalysisForMode(
   return getAnalysisSnapshotForMode(data, compareMode)?.textAnalysis ?? null;
 }
 
-function getPreparedWorkbookAnalysisForMode(
+export function getPreparedWorkbookAnalysisForMode(
   data: DiffData | null | undefined,
   compareMode: WorkbookCompareMode,
 ): PreparedWorkbookAnalysis | null {
@@ -110,6 +109,22 @@ export function getPreparedWorkbookNavigationRegionsForMode(
   compareMode: WorkbookCompareMode,
 ): WorkbookDiffRegion[] | null {
   return getPreparedWorkbookAnalysisForMode(data, compareMode)?.navigationRegionsByMode?.[compareMode] ?? null;
+}
+
+export function getPreparedDiffLinesForMode(
+  data: DiffData | null | undefined,
+  compareMode: WorkbookCompareMode,
+): DiffLine[] | null {
+  return getPreparedTextAnalysisForMode(data, compareMode)?.diffLines
+    ?? getPreparedWorkbookAnalysisForMode(data, compareMode)?.diffLinesByMode[compareMode]
+    ?? null;
+}
+
+export function getPreparedWorkbookDeltaForMode(
+  data: DiffData | null | undefined,
+  compareMode: WorkbookCompareMode,
+) {
+  return getPreparedWorkbookAnalysisForMode(data, compareMode)?.workbookDeltaByMode[compareMode] ?? null;
 }
 
 export function applyWorkbookRegionVersionLabels(
@@ -177,28 +192,6 @@ function updateWorkbookSnapshotMetadata(
       },
     },
   };
-}
-
-export function getPrecomputedDiffLinesForMode(
-  data: DiffData,
-  compareMode: WorkbookCompareMode,
-): DiffLine[] | null {
-  const snapshotDiffLines = getPreparedTextAnalysisForMode(data, compareMode)?.diffLines
-    ?? getPreparedWorkbookAnalysisForMode(data, compareMode)?.diffLinesByMode[compareMode]
-    ?? null;
-  if (snapshotDiffLines) return snapshotDiffLines;
-  return data.precomputedDiffLinesByMode?.[compareMode]
-    ?? (compareMode === 'strict' ? (data.precomputedDiffLines ?? null) : null);
-}
-
-export function getPrecomputedWorkbookDeltaForMode(
-  data: DiffData,
-  compareMode: WorkbookCompareMode,
-): WorkbookPrecomputedDeltaPayload | null {
-  const snapshotWorkbookDelta = getPreparedWorkbookAnalysisForMode(data, compareMode)?.workbookDeltaByMode[compareMode] ?? null;
-  if (snapshotWorkbookDelta) return snapshotWorkbookDelta;
-  return data.precomputedWorkbookDeltaByMode?.[compareMode]
-    ?? (compareMode === 'strict' ? (data.precomputedWorkbookDelta ?? null) : null);
 }
 
 export function mergeWorkbookCompareModePayload(

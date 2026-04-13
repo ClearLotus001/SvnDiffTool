@@ -12,7 +12,6 @@ import {
   resolveAnalysisSnapshot,
 } from './analysisSnapshotService.js';
 import { logDebugTiming, writeExternalDiffDebugLog } from './logger.js';
-import { createWorkbookDeltaByMode, createWorkbookDiffLinesByMode } from './rustBridge.js';
 import {
   buildInitialPairFromCli,
   buildLaunchDisplayName,
@@ -680,7 +679,6 @@ export async function buildDiffData(options: BuildDiffDataOptions = {}): Promise
   const selectedPreparedDiffLines = isWorkbook
     ? (preparedWorkbookAnalysis?.diffLinesByMode[workbookCompareMode] ?? null)
     : (preparedTextAnalysis?.diffLines ?? null);
-  const selectedPreparedWorkbookDelta = preparedWorkbookAnalysis?.workbookDeltaByMode[workbookCompareMode] ?? null;
   const hasPreparedDiff = Boolean(selectedPreparedDiffLines);
   const [basePayload, minePayload] = hasPreparedDiff || !isWorkbook
     ? [initialBasePayload, initialMinePayload]
@@ -727,7 +725,7 @@ export async function buildDiffData(options: BuildDiffDataOptions = {}): Promise
     mineRevisionId: resolvedMineRevisionId ?? null,
     includeRevisionOptions: shouldLoadRevisionOptions,
     isWorkbook,
-    hasPrecomputedWorkbookDiff: hasPreparedDiff,
+    hasPreparedWorkbookDiff: hasPreparedDiff,
     durationMs: Number((performance.now() - buildStart).toFixed(1)),
     baseReadMs: Number((basePayload.perf.readMs ?? 0).toFixed(1)),
     mineReadMs: Number((minePayload.perf.readMs ?? 0).toFixed(1)),
@@ -782,10 +780,6 @@ export async function buildDiffData(options: BuildDiffDataOptions = {}): Promise
     mineContent: isWorkbook && hasPreparedDiff ? null : minePayload.content,
     baseBytes: isWorkbook && hasPreparedDiff ? null : basePayload.bytes,
     mineBytes: isWorkbook && hasPreparedDiff ? null : minePayload.bytes,
-    precomputedDiffLines: workbookCompareMode === 'strict' ? (selectedPreparedDiffLines ?? null) : null,
-    precomputedWorkbookDelta: workbookCompareMode === 'strict' ? selectedPreparedWorkbookDelta : null,
-    precomputedDiffLinesByMode: createWorkbookDiffLinesByMode(workbookCompareMode, selectedPreparedDiffLines ?? null),
-    precomputedWorkbookDeltaByMode: createWorkbookDeltaByMode(workbookCompareMode, selectedPreparedWorkbookDelta ?? null),
     analysisSnapshotsByMode: {
       [workbookCompareMode]: analysisSnapshot,
     },
@@ -947,7 +941,6 @@ export async function buildLocalDiffData(
   const selectedPreparedDiffLines = isWorkbook
     ? (preparedWorkbookAnalysis?.diffLinesByMode[workbookCompareMode] ?? null)
     : (preparedTextAnalysis?.diffLines ?? null);
-  const selectedPreparedWorkbookDelta = preparedWorkbookAnalysis?.workbookDeltaByMode[workbookCompareMode] ?? null;
   const hasPreparedDiff = Boolean(selectedPreparedDiffLines);
   const [basePayload, minePayload] = hasPreparedDiff || !isWorkbook
     ? [initialBasePayload, initialMinePayload]
@@ -997,10 +990,6 @@ export async function buildLocalDiffData(
     mineContent: isWorkbook && hasPreparedDiff ? null : minePayload.content,
     baseBytes: isWorkbook && hasPreparedDiff ? null : basePayload.bytes,
     mineBytes: isWorkbook && hasPreparedDiff ? null : minePayload.bytes,
-    precomputedDiffLines: workbookCompareMode === 'strict' ? (selectedPreparedDiffLines ?? null) : null,
-    precomputedWorkbookDelta: workbookCompareMode === 'strict' ? selectedPreparedWorkbookDelta : null,
-    precomputedDiffLinesByMode: createWorkbookDiffLinesByMode(workbookCompareMode, selectedPreparedDiffLines ?? null),
-    precomputedWorkbookDeltaByMode: createWorkbookDeltaByMode(workbookCompareMode, selectedPreparedWorkbookDelta ?? null),
     analysisSnapshotsByMode: {
       [workbookCompareMode]: analysisSnapshot,
     },
@@ -1041,8 +1030,6 @@ export async function loadWorkbookCompareModeData(
   const context = await resolveWorkbookRequestContext(baseRevisionId, mineRevisionId);
   const { analysisSnapshot, basePayload, minePayload } = await resolveWorkbookAnalysisBundle(context, compareMode);
   const workbookAnalysis = analysisSnapshot.workbookAnalysis;
-  const diffLines = workbookAnalysis?.diffLinesByMode[compareMode] ?? null;
-  const workbookDelta = workbookAnalysis?.workbookDeltaByMode[compareMode] ?? null;
 
   logDebugTiming('load-workbook-compare-mode:done', {
     compareMode,
@@ -1057,8 +1044,6 @@ export async function loadWorkbookCompareModeData(
 
   return {
     compareMode,
-    diffLines,
-    workbookDelta,
     analysisSnapshot,
     perf: typeof workbookAnalysis?.perf?.rustDiffMs === 'number'
       ? {

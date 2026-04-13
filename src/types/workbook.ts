@@ -244,8 +244,6 @@ export interface WorkbookArtifactDiff {
 
 export interface WorkbookCompareModePayload {
   compareMode: WorkbookCompareMode;
-  diffLines: DiffLine[] | null;
-  workbookDelta: WorkbookPrecomputedDeltaPayload | null;
   analysisSnapshot?: DiffAnalysisSnapshot | null;
   perf?: Pick<DiffPerformanceMetrics, 'rustDiffMs'> | null;
 }
