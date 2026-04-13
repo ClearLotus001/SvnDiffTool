@@ -7,11 +7,14 @@ import {
   REVISION_PAYLOAD_CACHE_MAX_BYTES,
   WORKBOOK_COMPARE_CACHE_LIMIT,
   WORKBOOK_COMPARE_CACHE_MAX_BYTES,
+  WORKBOOK_METADATA_CACHE_LIMIT,
+  WORKBOOK_METADATA_CACHE_MAX_BYTES,
 } from './constants.js';
 import { electronT } from '../i18n.js';
 import {
   canSatisfyWorkbookPayloadRequest,
   estimatePayloadMemoryBytes,
+  estimateWorkbookMetadataPayloadMemoryBytes,
   getRequestedWorkbookPayloadCoverage,
   mergeWorkbookPayload,
   mergeWorkbookPayloadCoverage,
@@ -35,6 +38,8 @@ import {
   revisionPayloadCache,
   workbookCompareCache,
   workbookCompareInFlight,
+  workbookMetadataCache,
+  workbookMetadataInFlight,
 } from './state.js';
 import { removeManagedTempFile, writeManagedTempFile } from '../runtimePaths.js';
 import { getLocalWorkbookPairCacheContext, resolveWorkingCopyPathForTarget } from './svnOperations.js';
@@ -44,7 +49,14 @@ import type {
   SvnRevisionInfo,
   WorkbookCompareMode,
   WorkbookCompareModePayload,
+  WorkbookMetadataPayload,
 } from './types.js';
+
+const WORKBOOK_METADATA_ONLY_OPTIONS = {
+  includeWorkbookText: false,
+  includeWorkbookBytes: false,
+  includeWorkbookMetadata: true,
+} as const;
 
 // ---------------------------------------------------------------------------
 // readFilePayload — read a file from the local filesystem (with caching)
@@ -363,6 +375,83 @@ export async function readRevisionPayload(
   return isWorkbookFile(fileName)
     ? projectWorkbookPayloadForOptions(mergedPayload, options)
     : mergedPayload;
+}
+
+// ---------------------------------------------------------------------------
+// Workbook metadata resolution
+// ---------------------------------------------------------------------------
+
+export async function resolveWorkbookMetadataPairPayload(
+  basePathCandidate: string,
+  minePathCandidate: string,
+  fileName: string,
+): Promise<WorkbookMetadataPayload | null> {
+  if (!isWorkbookFile(fileName)) return null;
+
+  const cacheContext = await getLocalWorkbookPairCacheContext(
+    basePathCandidate,
+    minePathCandidate,
+    'metadata',
+  );
+  if (!cacheContext) return null;
+
+  const cachedPayload = workbookMetadataCache.get(cacheContext.key);
+  if (
+    cachedPayload
+    && cachedPayload.leftMtimeMs === cacheContext.leftMtimeMs
+    && cachedPayload.rightMtimeMs === cacheContext.rightMtimeMs
+    && cachedPayload.leftSize === cacheContext.leftSize
+    && cachedPayload.rightSize === cacheContext.rightSize
+  ) {
+    logDebugTiming('workbook-metadata-cache:memory-hit', {
+      fileName,
+    });
+    return cachedPayload.payload;
+  }
+
+  const inFlight = workbookMetadataInFlight.get(cacheContext.key);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const resolver = (async (): Promise<WorkbookMetadataPayload> => {
+    const basePayloadPromise = readFilePayload(basePathCandidate, WORKBOOK_METADATA_ONLY_OPTIONS);
+    const [basePayload, minePayload] = basePathCandidate === minePathCandidate
+      ? await Promise.all([basePayloadPromise, basePayloadPromise])
+      : await Promise.all([
+          basePayloadPromise,
+          readFilePayload(minePathCandidate, WORKBOOK_METADATA_ONLY_OPTIONS),
+        ]);
+
+    const payload: WorkbookMetadataPayload = {
+      base: basePayload.metadata,
+      mine: minePayload.metadata,
+      analysisSnapshot: null,
+      perf: {
+        metadataMs: (basePayload.perf.metadataMs ?? 0) + (minePayload.perf.metadataMs ?? 0),
+      },
+    };
+
+    rememberCacheEntry(workbookMetadataCache, cacheContext.key, {
+      leftMtimeMs: cacheContext.leftMtimeMs,
+      rightMtimeMs: cacheContext.rightMtimeMs,
+      leftSize: cacheContext.leftSize,
+      rightSize: cacheContext.rightSize,
+      payload,
+      memoryBytes: estimateWorkbookMetadataPayloadMemoryBytes(payload),
+    }, WORKBOOK_METADATA_CACHE_LIMIT, WORKBOOK_METADATA_CACHE_MAX_BYTES);
+
+    return payload;
+  })();
+
+  workbookMetadataInFlight.set(cacheContext.key, resolver);
+  try {
+    return await resolver;
+  } finally {
+    if (workbookMetadataInFlight.get(cacheContext.key) === resolver) {
+      workbookMetadataInFlight.delete(cacheContext.key);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

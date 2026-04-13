@@ -25,6 +25,6 @@
       "@/*": ["src/*"]
     }
   },
-  "include": ["src"],
+  "include": ["src", "shared/**/*.ts"],
   "exclude": ["node_modules", "dist", "release"]
 }

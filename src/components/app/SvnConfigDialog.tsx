@@ -141,6 +141,7 @@ const SvnConfigDialog = memo(({
       <button
         type="button"
         onClick={onClose}
+        aria-label={t('commonClose')}
         className="absolute top-4 right-4 size-[34px] rounded-[10px] border-none bg-transparent text-text-primary cursor-pointer flex items-center justify-center hover:bg-bg-surface-hover hover:text-accent active:scale-95 transition-all duration-150">
         <X size={16} />
       </button>

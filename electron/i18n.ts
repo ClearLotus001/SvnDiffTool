@@ -1,29 +1,46 @@
 import enUS from './locales/en-US.json';
+import { ELECTRON_TRANSLATION_PARAM_KEYS } from './i18nParamKeys.js';
 import zhCN from './locales/zh-CN.json';
 import { readStartupAppearance, type StartupLocale } from './main/startupAppearance.js';
+import {
+  coerceMessages,
+  translateMessage,
+  type LocaleKeyParity,
+  type RuntimeTranslationParams,
+  type TranslationArgsForKeyMap,
+  type TranslationParamsForKeyMap,
+} from '../shared/i18n/common.js';
 
-type Messages = Record<string, string>;
-type TranslationParams = Record<string, number | string>;
+type ElectronLocaleMessagesZh = typeof zhCN;
+type ElectronLocaleMessagesEn = typeof enUS;
+type ElectronLocaleKeyParity = LocaleKeyParity<ElectronLocaleMessagesZh, ElectronLocaleMessagesEn>;
+const electronLocaleKeyParity: ElectronLocaleKeyParity = true;
+void electronLocaleKeyParity;
 
-export type ElectronTranslationKey = keyof typeof enUS;
+type Messages = ElectronLocaleMessagesZh;
+type ElectronTranslationParamKeyMap = typeof ELECTRON_TRANSLATION_PARAM_KEYS;
+export type ElectronTranslationParams<K extends ElectronTranslationKey = ElectronTranslationKey> = TranslationParamsForKeyMap<
+  ElectronTranslationParamKeyMap,
+  K
+>;
+type ElectronTranslationArgs<K extends ElectronTranslationKey> = TranslationArgsForKeyMap<ElectronTranslationParamKeyMap, K>;
+
+export type ElectronTranslationKey = keyof Messages;
 
 const MESSAGES_BY_LOCALE: Record<StartupLocale, Messages> = {
-  'zh-CN': zhCN as Messages,
-  'en-US': enUS as Messages,
+  'zh-CN': coerceMessages(zhCN, 'Invalid electron locale messages payload.'),
+  'en-US': coerceMessages(enUS, 'Invalid electron locale messages payload.'),
 };
 
-function formatMessage(template: string, params: TranslationParams = {}): string {
-  return template.replace(/\{(\w+)\}/g, (_, key: string) => String(params[key] ?? `{${key}}`));
-}
-
-export function getElectronLocale(): StartupLocale {
+function getElectronLocale(): StartupLocale {
   return readStartupAppearance().locale;
 }
 
-export function electronT(
-  key: ElectronTranslationKey,
-  params?: TranslationParams,
-  locale: StartupLocale = getElectronLocale(),
+export function electronT<K extends ElectronTranslationKey>(
+  key: K,
+  ...args: ElectronTranslationArgs<K>
 ): string {
-  return formatMessage(MESSAGES_BY_LOCALE[locale][key] ?? key, params);
+  const locale = getElectronLocale();
+  const params = (args[0] ?? {}) as RuntimeTranslationParams;
+  return translateMessage(MESSAGES_BY_LOCALE[locale], key, params);
 }

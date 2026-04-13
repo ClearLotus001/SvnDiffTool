@@ -10,8 +10,6 @@ import {
   translate,
   type Locale,
   type TranslationFn,
-  type TranslationKey,
-  type TranslationParams,
 } from '@/i18n/core';
 import type { ThemeKey } from '@/types';
 
@@ -49,7 +47,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   }, [locale]);
 
   const value = useMemo<I18nContextValue>(() => {
-    const t = (key: TranslationKey, params?: TranslationParams) => translate(locale, key, params);
+    const t: TranslationFn = (key, ...args) => translate(locale, key, ...args);
 
     return {
       locale,

@@ -38,7 +38,6 @@ import {
   getWorkbookSections,
 } from '@/utils/workbook/workbookSections';
 import {
-  getWorkbookSideRowNumber,
   findWorkbookSectionIndexByName,
   moveWorkbookSelection,
 } from '@/utils/workbook/workbookNavigation';
@@ -76,6 +75,10 @@ import { doesLogicalTextSelectionIntersectLineRange } from '@/utils/diff/logical
 import { useSplitPanelLayoutSnapshotEffects } from '@/hooks/diff/useSplitPanelLayoutSnapshotEffects';
 import { useSplitPanelWorkbookNavigationRows } from '@/hooks/diff/useSplitPanelWorkbookNavigationRows';
 import { materializeSplitRowsFromDescriptors, prepareTextDiffAnalysisFromDiffLines } from '@/utils/diff/preparedTextAnalysis';
+import {
+  buildTextRenderItemIndexes,
+  findNearestTextRenderItemIndex,
+} from '@/utils/diff/textRenderItemIndexes';
 import SplitWorkbookStickyRegion from '@/components/diff/SplitWorkbookStickyRegion';
 import SplitHorizontalTextPane from '@/components/diff/SplitHorizontalTextPane';
 import SplitMainBodyContent from '@/components/diff/SplitMainBodyContent';
@@ -83,6 +86,7 @@ import CollapseBar from '@/components/diff/CollapseBar';
 import CollapseJumpButton from '@/components/diff/CollapseJumpButton';
 import MiniMap, { buildSplitMiniMapSegments } from '@/components/diff/MiniMap';
 import DiffContextMenu from '@/components/diff/DiffContextMenu';
+import { buildWorkbookRenderItemIndexes } from '@/utils/workbook/workbookRenderItemIndexes';
 
 const CONTEXT_LINES = 3;
 const DOUBLE_ROW_H = (ROW_H * 2) + 1;
@@ -102,10 +106,6 @@ function isEqualSplitRow(row: SplitRow): boolean {
 
 function splitRowHasLineIdx(row: SplitRow, lineIdx: number): boolean {
   return row.lineIdxs.includes(lineIdx);
-}
-
-function splitRowTouchesOrAfter(row: SplitRow, lineIdx: number): boolean {
-  return row.lineIdxs.some(idx => idx >= lineIdx);
 }
 
 export interface SplitPanelProps {
@@ -397,6 +397,13 @@ const SplitPanel = memo(({
     activeSearchLineIdx,
     searchRangesByLineIdx,
   } = useTextSearchDecorations(searchMatches, activeSearchIdx);
+  const renderItemIndexes = useMemo(
+    () => buildTextRenderItemIndexes(items, {
+      cacheKey: `split:render-items:${vertical ? 'vertical' : 'horizontal'}:v1`,
+      getLineIdxs: (item) => item.kind === 'split-line' ? item.row.lineIdxs : null,
+    }),
+    [items, vertical],
+  );
   useResolvedTextLineNavigation({
     itemsDependency: items,
     rowBlocks,
@@ -405,8 +412,8 @@ const SplitPanel = memo(({
     contextLines: CONTEXT_LINES,
     blockPrefix,
     scrollToIndex,
-    findExactItemIndex: (lineIdx) => items.findIndex((item) => item.kind === 'split-line' && splitRowHasLineIdx(item.row, lineIdx)),
-    findNearestItemIndex: (lineIdx) => items.findIndex((item) => item.kind === 'split-line' && splitRowTouchesOrAfter(item.row, lineIdx)),
+    findExactItemIndex: (lineIdx) => renderItemIndexes.visibleItemIndexByLineIdx.get(lineIdx) ?? -1,
+    findNearestItemIndex: (lineIdx) => findNearestTextRenderItemIndex(renderItemIndexes, lineIdx),
     rowHasLineIdx: splitRowHasLineIdx,
     onAfterScrollToIndex: horizontalSplitEnabled
       ? () => { requestAnimationFrame(() => syncPaneScrollPosition('left')); }
@@ -540,6 +547,15 @@ const SplitPanel = memo(({
     () => frozenRow ? [frozenRow, ...visibleSplitRows] : visibleSplitRows,
     [frozenRow, visibleSplitRows],
   );
+  const splitWorkbookRenderItemIndexes = useMemo(
+    () => isWorkbookMode
+      ? buildWorkbookRenderItemIndexes(items, {
+        cacheKey: 'split-panel:workbook-render-items:v1',
+        getRow: (item) => item.kind === 'split-line' ? item.row : null,
+      })
+      : null,
+    [isWorkbookMode, items],
+  );
   const splitWorkbookRowEntryByRowNumber = useMemo(
     () => activeWorkbookSection
       ? buildWorkbookRowEntryMaps(
@@ -610,12 +626,9 @@ const SplitPanel = memo(({
   useEffect(() => {
     if (!isWorkbookMode || !selectedCell || !activeWorkbookSection) return;
     if (selectedCell.sheetName !== activeWorkbookSection.name) return;
-    const idx = items.findIndex(item => {
-      if (item.kind !== 'split-line') return false;
-      return getWorkbookSideRowNumber(item.row, selectedCell.side) === selectedCell.rowNumber;
-    });
+    const idx = splitWorkbookRenderItemIndexes?.rowItemIndexBySide[selectedCell.side].get(selectedCell.rowNumber) ?? -1;
     if (idx >= 0) scrollToIndex(idx, 'center');
-  }, [activeWorkbookSection, isWorkbookMode, items, scrollToIndex, selectedCell]);
+  }, [activeWorkbookSection, isWorkbookMode, scrollToIndex, selectedCell, splitWorkbookRenderItemIndexes]);
 
   useSplitPanelLayoutSnapshotEffects({
     diffIdentity: diffLines,

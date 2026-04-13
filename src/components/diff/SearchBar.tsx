@@ -55,6 +55,9 @@ const SearchBar = memo(({
   const manuallyOpenedResultsKeyRef = useRef<string | null>(null);
   const hasQuery = query.trim().length > 0;
   const resolvedScope = isWorkbookMode ? workbookSearchScope : 'all';
+  const searchPlaceholderKey = isWorkbookMode
+    ? (resolvedScope === 'sheet' ? 'searchPlaceholderWorkbookCurrentSheet' : 'searchPlaceholderWorkbookAllSheets')
+    : 'searchPlaceholderText';
   const resultsVisibilityKey = `${query}::${isRegex ? '1' : '0'}::${isCaseSensitive ? '1' : '0'}::${resolvedScope}`;
   const closeResults = useCallback(() => {
     collapsedResultsKeyRef.current = resultsVisibilityKey;
@@ -283,7 +286,7 @@ const SearchBar = memo(({
                 onClose();
               }
             }}
-            placeholder={t('searchPlaceholder')}
+            placeholder={t(searchPlaceholderKey)}
             className={`
               searchbar-input flex-1 h-9 w-full pl-8 rounded-[14px] appearance-none allow-text-selection
               bg-bg-surface-hover border border-border-default

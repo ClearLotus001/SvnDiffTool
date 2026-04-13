@@ -23,10 +23,9 @@ const WorkbookHiddenRowsBar = memo(({ count, onReveal }: WorkbookHiddenRowsBarPr
         borderTop: `1px dashed ${palette.border}`,
         borderBottom: `1px dashed ${palette.border}`,
       }}>
-      <span className="font-code text-text-secondary">···</span>
-      <span className="text-text-secondary font-ui text-[13px] font-semibold inline-flex items-center gap-1.5">
-        <span className="font-code" style={{ color: palette.accent }}>ROWS</span>
-        <span>{t('workbookHiddenRowsLabel', { count })}</span>
+      <span aria-hidden="true" className="font-code text-text-secondary">...</span>
+      <span className="text-text-secondary font-ui text-[13px] font-semibold">
+        {t('workbookHiddenRowsLabel', { count })}
       </span>
       <button
         type="button"

@@ -16,6 +16,7 @@ const lintedFiles = [
   'src/**/*.{ts,tsx}',
   'electron/**/*.ts',
   'scripts/**/*.ts',
+  'shared/**/*.ts',
 ];
 
 export default tseslint.config(

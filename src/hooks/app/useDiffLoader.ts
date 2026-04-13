@@ -553,8 +553,7 @@ export default function useDiffLoader({
       data.baseRevisionInfo?.id,
       data.mineRevisionInfo?.id,
     );
-    const payloadDiffLines = payload.diffLines
-      ?? payload.analysisSnapshot?.workbookAnalysis?.diffLinesByMode[compareMode]
+    const payloadDiffLines = payload.analysisSnapshot?.workbookAnalysis?.diffLinesByMode[compareMode]
       ?? null;
     if (!payloadDiffLines) {
       throw new Error(`Failed to load workbook compare mode '${compareMode}'.`);

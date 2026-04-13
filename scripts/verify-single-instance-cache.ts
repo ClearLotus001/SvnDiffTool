@@ -10,8 +10,8 @@ const electronBinary = require('electron') as string;
 
 const rootDir = path.resolve(__dirname, '..');
 const rendererEntry = path.join(rootDir, 'dist', 'index.html');
-const mainEntry = path.join(rootDir, 'dist-electron', 'main.js');
-const preloadEntry = path.join(rootDir, 'dist-electron', 'preload.js');
+const mainEntry = path.join(rootDir, 'dist-electron', 'electron', 'main.js');
+const preloadEntry = path.join(rootDir, 'dist-electron', 'electron', 'preload.js');
 
 interface VerifyOptions {
   basePath: string;

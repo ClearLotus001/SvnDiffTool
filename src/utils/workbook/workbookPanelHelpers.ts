@@ -205,7 +205,7 @@ export function buildWorkbookNavigationRows(
   });
 }
 
-export function projectWorkbookNavigationRowsFromEntryMaps(
+function projectWorkbookNavigationRowsFromEntryMaps(
   rows: readonly SplitRow[],
   rowEntryByRowNumber: WorkbookRowEntryMaps,
 ): WorkbookRowEntry[] {
@@ -241,7 +241,7 @@ function getNow() {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
 
-export function buildWorkbookRowsSignature(
+function buildWorkbookRowsSignature(
   rows: readonly SplitRow[],
 ): string {
   return rows.map((row) => getWorkbookRowKey(row)).join('|');
@@ -407,27 +407,6 @@ export function applyWorkbookMiniMapSearchState(
     searchHit: segmentHasSearchHit(segment.lineIdxs),
     activeSearchHit: segmentHasActiveSearchHit(segment.lineIdxs),
   }));
-}
-
-export interface BuildWorkbookMiniMapStateParams<TItem> extends BuildWorkbookMiniMapBaseStateParams<TItem> {
-  activeSearchLineIdx: number;
-  searchMatchSet: ReadonlySet<number>;
-}
-
-export function buildWorkbookMiniMapState<TItem>({
-  activeSearchLineIdx,
-  searchMatchSet,
-  ...rest
-}: BuildWorkbookMiniMapStateParams<TItem>): { value: WorkbookMiniMapSegment[]; duration: number } {
-  const baseState = buildWorkbookMiniMapBaseState({
-    ...rest,
-  });
-  const start = getNow();
-
-  return {
-    value: applyWorkbookMiniMapSearchState(baseState.value, searchMatchSet, activeSearchLineIdx),
-    duration: baseState.duration + (getNow() - start),
-  };
 }
 
 export interface BuildWorkbookPerfStatsParams {

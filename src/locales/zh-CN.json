@@ -273,7 +273,9 @@
   "collapseJumpNextTitle": "跳转到下一个折叠块 (Alt+])",
   "collapseJumpNext": "下一个折叠块",
   "collapseJumpStatus": "当前折叠块 {current}/{total}",
-  "searchPlaceholder": "在差异中搜索…（Enter 下一个，Shift+Enter 上一个）",
+  "searchPlaceholderText": "在文件中搜索…（↑↓ 切换结果）",
+  "searchPlaceholderWorkbookCurrentSheet": "在当前页签内搜索…（↑↓ 切换结果）",
+  "searchPlaceholderWorkbookAllSheets": "在全部页签内搜索…（↑↓ 切换结果）",
   "searchNoResults": "无结果",
   "searchRegexTitle": "正则表达式",
   "searchCaseSensitiveTitle": "区分大小写",
@@ -473,5 +475,8 @@
   "themeDark": "深色",
   "themeLight": "浅色",
   "themeHighContrast": "高对比",
-  "searchLoading": "搜索中…"
+  "searchLoading": "搜索中…",
+  "commonClose": "关闭",
+  "diffContextMenuAriaLabel": "差异操作菜单",
+  "workbookContextMenuAriaLabel": "工作表操作菜单"
 }

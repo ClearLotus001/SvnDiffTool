@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { useI18n } from '@/context/i18n';
 import type { WorkbookContextMenuPoint } from '@/types';
 import ContextMenuSurface, {
   type ContextMenuAction as WorkbookContextMenuAction,
@@ -15,15 +16,19 @@ const WorkbookContextMenu = memo(({
   anchorPoint,
   sections,
   onClose,
-}: WorkbookContextMenuProps) => (
-  <ContextMenuSurface
-    anchorPoint={anchorPoint}
-    sections={sections}
-    onClose={onClose}
-    ariaLabel="Workbook actions"
-    zIndex={160}
-  />
-));
+}: WorkbookContextMenuProps) => {
+  const { t } = useI18n();
+
+  return (
+    <ContextMenuSurface
+      anchorPoint={anchorPoint}
+      sections={sections}
+      onClose={onClose}
+      ariaLabel={t('workbookContextMenuAriaLabel')}
+      zIndex={160}
+    />
+  );
+});
 
 export type {
   WorkbookContextMenuAction,

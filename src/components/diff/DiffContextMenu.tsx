@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { useI18n } from '@/context/i18n';
 import ContextMenuSurface, {
   type ContextMenuAction as DiffContextMenuAction,
   type ContextMenuPoint as DiffContextMenuPoint,
@@ -15,15 +16,19 @@ const DiffContextMenu = memo(({
   anchorPoint,
   sections,
   onClose,
-}: DiffContextMenuProps) => (
-  <ContextMenuSurface
-    anchorPoint={anchorPoint}
-    sections={sections}
-    onClose={onClose}
-    ariaLabel="Diff actions"
-    zIndex={170}
-  />
-));
+}: DiffContextMenuProps) => {
+  const { t } = useI18n();
+
+  return (
+    <ContextMenuSurface
+      anchorPoint={anchorPoint}
+      sections={sections}
+      onClose={onClose}
+      ariaLabel={t('diffContextMenuAriaLabel')}
+      zIndex={170}
+    />
+  );
+});
 
 export type {
   DiffContextMenuAction,

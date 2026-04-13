@@ -131,7 +131,7 @@ function createWorkbookDiffData(): DiffData {
   };
 }
 
-test('mergeWorkbookCompareModePayload preserves snapshot-backed workbook projections for follow-up compare modes', () => {
+test('mergeWorkbookCompareModePayload ignores redundant legacy arrays and keeps snapshot-backed workbook projections authoritative', () => {
   const initial = createWorkbookDiffData();
   const contentDiffLines = [
     createDiffLine('equal', 'Sheet: Sheet1', 'Sheet: Sheet1'),
@@ -152,7 +152,8 @@ test('mergeWorkbookCompareModePayload preserves snapshot-backed workbook project
 
   const merged = mergeWorkbookCompareModePayload(initial, payload);
 
-  assert.equal(merged.precomputedDiffLinesByMode?.content, contentDiffLines);
+  assert.equal(merged.precomputedDiffLinesByMode?.content, undefined);
+  assert.equal(merged.precomputedWorkbookDeltaByMode?.content, undefined);
   assert.equal(merged.analysisSnapshotsByMode?.content?.workbookAnalysis?.diffLinesByMode.content, contentDiffLines);
   assert.equal(merged.analysisSnapshotsByMode?.content?.workbookAnalysis?.workbookDeltaByMode.content?.compareMode, 'content');
   assert.deepEqual(merged.baseWorkbookMetadata, initial.baseWorkbookMetadata);

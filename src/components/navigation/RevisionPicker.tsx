@@ -185,8 +185,9 @@ const RevisionPicker = memo(({
         title={triggerTitleText}
         disabled={disabled}
         onClick={handleToggleOpen}
-        className="flex items-center justify-between gap-2.5 w-full min-w-0 rounded-[14px] text-left"
+        className="flex items-center justify-between gap-1.5 w-full min-w-0 rounded-full text-left"
         style={{
+          height: RP_UI.triggerHeight,
           padding: RP_UI.triggerPadding,
           border: `1px solid ${open ? cssAlphaRaw(accent, '55') : cssVar('border')}`,
           background: disabled ? cssVar('bg1') : `linear-gradient(180deg, ${cssVar('bg2')} 0%, ${cssVar('bg1')} 100%)`,
@@ -194,12 +195,12 @@ const RevisionPicker = memo(({
           boxShadow: open ? `0 14px 28px -24px ${cssAlphaRaw(accent, '66')}, inset 0 0 0 1px ${cssAlphaRaw(accent, '22')}` : 'none',
           cursor: disabled ? 'default' : 'pointer',
         }}>
-        <div className="flex items-center gap-2.5 min-w-0 flex-1">
-          <span className="shrink-0 font-code text-[13px] font-bold whitespace-nowrap overflow-hidden text-ellipsis" style={{ color: `var(${accent})` }}>
+        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+          <span className="inline-flex items-center h-full shrink-0 font-ui text-[11px] font-semibold leading-none tracking-[-0.01em] whitespace-nowrap overflow-hidden text-ellipsis" style={{ color: `var(${accent})` }}>
             {value ? formatDisplayRevision(value.revision) : t('splitHeaderVersionUnknown')}
           </span>
         </div>
-        <span aria-hidden="true" className="shrink-0 text-[10px] font-ui" style={{ color: open ? `var(${accent})` : cssVar('t2') }}>
+        <span aria-hidden="true" className="shrink-0 text-[8px] font-ui leading-none" style={{ color: open ? `var(${accent})` : cssVar('t2') }}>
           {open ? '▲' : '▼'}
         </span>
       </button>

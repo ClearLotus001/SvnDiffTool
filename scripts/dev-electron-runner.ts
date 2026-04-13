@@ -7,8 +7,8 @@ import path from 'node:path';
 const electronBinary = require('electron') as string;
 
 const rootDir = path.resolve(__dirname, '..');
-const mainBundlePath = path.join(rootDir, 'dist-electron', 'main.js');
-const preloadBundlePath = path.join(rootDir, 'dist-electron', 'preload.js');
+const mainBundlePath = path.join(rootDir, 'dist-electron', 'electron', 'main.js');
+const preloadBundlePath = path.join(rootDir, 'dist-electron', 'electron', 'preload.js');
 const devServerUrl = process.env.DEV_SERVER_URL?.trim() || 'http://localhost:5173';
 const readyResources = [
   mainBundlePath,

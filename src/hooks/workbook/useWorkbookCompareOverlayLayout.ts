@@ -8,8 +8,7 @@ import WorkbookActiveRegionOverlayLayer from '@/components/workbook/WorkbookActi
 import type { WorkbookRegionOverlayBoundsMode } from '@/utils/workbook/workbookRegionOverlay';
 import type { WorkbookRowFrame } from '@/utils/workbook/workbookVisibleRowFrames';
 import {
-  buildWorkbookSectionRowIndexByKey,
-  projectWorkbookVisibleRowFrames,
+  resolveWorkbookVisibleRowFrames,
 } from '@/utils/workbook/workbookVisibleRowFrames';
 
 interface UseWorkbookCompareOverlayLayoutParams {
@@ -53,13 +52,8 @@ export function useWorkbookCompareOverlayLayout({
   pulseTriggerKey,
   label,
 }: UseWorkbookCompareOverlayLayoutParams): ComponentProps<typeof WorkbookActiveRegionOverlayLayer> {
-  const sectionRowIndexByKey = useMemo(
-    () => buildWorkbookSectionRowIndexByKey(sectionRows),
-    [sectionRows],
-  );
-
   const visibleRowFrames = useMemo(() => {
-    return projectWorkbookVisibleRowFrames(sectionRowIndexByKey, [
+    return resolveWorkbookVisibleRowFrames(sectionRows, [
       {
         framesByKey: frozenRowFramesByKey,
         topOffset: showColumnHeader ? ROW_H : 0,
@@ -73,7 +67,7 @@ export function useWorkbookCompareOverlayLayout({
     bodyRowFramesByKey,
     frozenRowFramesByKey,
     rowWindowOffsetTop,
-    sectionRowIndexByKey,
+    sectionRows,
     showColumnHeader,
     stickyHeaderHeight,
   ]);

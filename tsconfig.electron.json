@@ -16,9 +16,9 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "outDir": "dist-electron",
-    "rootDir": "electron",
+    "rootDir": ".",
     "types": ["node"]
   },
-  "include": ["electron/**/*.ts"],
+  "include": ["electron/**/*.ts", "shared/**/*.ts"],
   "exclude": ["node_modules", "dist", "dist-electron", "release"]
 }

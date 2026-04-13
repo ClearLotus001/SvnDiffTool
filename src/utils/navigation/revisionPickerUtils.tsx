@@ -6,8 +6,9 @@ import { FONT_CODE, FONT_SIZE, FONT_UI } from '@/constants/typography';
 import type { Locale } from '@/context/i18n';
 
 export const RP_UI = {
-  triggerPadding: '6px 10px 7px',
-  triggerRadius: 14,
+  triggerPadding: '0 8px',
+  triggerHeight: 26,
+  triggerRadius: 999,
   metaSize: 10,
   inputHeight: 34,
   actionHeight: 32,

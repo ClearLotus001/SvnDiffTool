@@ -206,18 +206,6 @@ export function mergeWorkbookCompareModePayload(
   payload: WorkbookCompareModePayload,
 ): DiffData {
   const payloadSnapshot = payload.analysisSnapshot ?? null;
-  const nextDiffLinesByMode = payload.diffLines != null
-    ? {
-        ...(data.precomputedDiffLinesByMode ?? {}),
-        [payload.compareMode]: payload.diffLines,
-      }
-    : (data.precomputedDiffLinesByMode ?? null);
-  const nextWorkbookDeltaByMode = payload.workbookDelta != null
-    ? {
-        ...(data.precomputedWorkbookDeltaByMode ?? {}),
-        [payload.compareMode]: payload.workbookDelta,
-      }
-    : (data.precomputedWorkbookDeltaByMode ?? null);
   const nextBaseWorkbookMetadata = payloadSnapshot?.workbookAnalysis?.metadata.base
     ?? data.baseWorkbookMetadata
     ?? null;
@@ -236,14 +224,6 @@ export function mergeWorkbookCompareModePayload(
 
   return {
     ...data,
-    precomputedDiffLines: payload.compareMode === 'strict' && payload.diffLines != null
-      ? payload.diffLines
-      : (data.precomputedDiffLines ?? null),
-    precomputedWorkbookDelta: payload.compareMode === 'strict' && payload.workbookDelta != null
-      ? payload.workbookDelta
-      : (data.precomputedWorkbookDelta ?? null),
-    precomputedDiffLinesByMode: nextDiffLinesByMode,
-    precomputedWorkbookDeltaByMode: nextWorkbookDeltaByMode,
     analysisSnapshotsByMode: nextAnalysisSnapshotsByMode,
     baseWorkbookMetadata: nextBaseWorkbookMetadata,
     mineWorkbookMetadata: nextMineWorkbookMetadata,

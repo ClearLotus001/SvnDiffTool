@@ -1,7 +1,14 @@
 import * as path from 'node:path';
 import { XMLParser } from 'fast-xml-parser';
 
-export const APP_ROOT = path.resolve(__dirname, '..', '..');
+export function resolveElectronAppRoot(currentDir: string): string {
+  const appRootCandidate = path.resolve(currentDir, '..', '..');
+  return path.basename(appRootCandidate) === 'dist-electron'
+    ? path.dirname(appRootCandidate)
+    : appRootCandidate;
+}
+
+export const APP_ROOT = resolveElectronAppRoot(__dirname);
 export const RENDERER_DIST = path.join(APP_ROOT, 'dist');
 export const PRELOAD_PATH = path.join(__dirname, '..', 'preload.js');
 export const DEV_SERVER_URL = process.env.DEV_SERVER_URL?.trim() || 'http://localhost:5173';
@@ -28,6 +35,8 @@ export const REVISION_PAYLOAD_CACHE_MAX_BYTES = 128 * 1024 * 1024;
 export const WORKBOOK_COMPARE_CACHE_LIMIT = 8;
 export const WORKBOOK_COMPARE_CACHE_MAX_BYTES = 96 * 1024 * 1024;
 export const WORKBOOK_COMPARE_CACHE_COMPRESS_MIN_BYTES = 8 * 1024 * 1024;
+export const WORKBOOK_METADATA_CACHE_LIMIT = 16;
+export const WORKBOOK_METADATA_CACHE_MAX_BYTES = 32 * 1024 * 1024;
 export const DEV_PROFILE_ROOT = process.env.ELECTRON_DEV_PROFILE_DIR?.trim() || '';
 export const AUTO_EXIT_AFTER_LOAD_MS = Number(process.env.SVN_DIFF_AUTO_EXIT_AFTER_LOAD_MS ?? '0');
 export const FILE_EQUALITY_CACHE_LIMIT = 24;

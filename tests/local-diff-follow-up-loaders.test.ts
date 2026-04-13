@@ -25,6 +25,15 @@ import {
   workbookMetadataCache,
 } from '../electron/main/state';
 
+function resetLoaderCaches() {
+  filePayloadCache.clear();
+  revisionPayloadCache.clear();
+  workbookCompareCache.clear();
+  workbookMetadataCache.clear();
+  clearAnalysisSnapshotCache();
+  setActiveCliArgs(EMPTY_CLI_ARGS);
+}
+
 function buildWorkbookZip(sheetName: string, rows: string[][]) {
   const sheetRows = rows.map((cells, rowIndex) => {
     const cellXml = cells.map((value, columnIndex) => {
@@ -62,6 +71,7 @@ function buildWorkbookZip(sheetName: string, rows: string[][]) {
 }
 
 test('local diff keeps compare-mode and metadata loaders usable after initial load', async () => {
+  resetLoaderCaches();
   if (!process.resourcesPath) {
     Object.defineProperty(process, 'resourcesPath', {
       value: '',
@@ -108,17 +118,13 @@ test('local diff keeps compare-mode and metadata loaders usable after initial lo
     assert.equal(Object.keys(metadataPayload.analysisSnapshot?.workbookAnalysis?.metadata.base?.sheets ?? {}).length, 1);
     assert.equal(Object.keys(metadataPayload.analysisSnapshot?.workbookAnalysis?.metadata.mine?.sheets ?? {}).length, 1);
   } finally {
-    filePayloadCache.clear();
-    revisionPayloadCache.clear();
-    workbookCompareCache.clear();
-    workbookMetadataCache.clear();
-    clearAnalysisSnapshotCache();
-    setActiveCliArgs(EMPTY_CLI_ARGS);
+    resetLoaderCaches();
     await fs.rm(tempDir, { recursive: true, force: true });
   }
 });
 
-test('cold metadata follow-up loads workbook metadata without materializing a strict snapshot', async () => {
+test('cold metadata follow-up uses metadata pair cache without materializing a strict snapshot', async () => {
+  resetLoaderCaches();
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'svn-diff-local-metadata-'));
   const basePath = path.join(tempDir, 'base.xlsx');
   const minePath = path.join(tempDir, 'mine.xlsx');
@@ -146,7 +152,8 @@ test('cold metadata follow-up loads workbook metadata without materializing a st
       fileName: path.basename(minePath),
     });
 
-    const metadataPayload = await loadWorkbookMetadataData();
+    const firstMetadataPayload = await loadWorkbookMetadataData();
+    const secondMetadataPayload = await loadWorkbookMetadataData();
     const sourceIdentity = buildSourceIdentity({
       kind: 'local-dev',
       fileName: path.basename(minePath),
@@ -161,22 +168,84 @@ test('cold metadata follow-up loads workbook metadata without materializing a st
       mineName: path.basename(minePath),
     });
 
-    assert.equal(metadataPayload.analysisSnapshot, null);
+    assert.equal(firstMetadataPayload.analysisSnapshot, null);
+    assert.equal(secondMetadataPayload.analysisSnapshot, null);
+    assert.equal(firstMetadataPayload, secondMetadataPayload);
     assert.equal(peekAnalysisSnapshot({
       sourceIdentity,
       compareMode: 'strict',
       baseRevisionId: undefined,
       mineRevisionId: undefined,
     }), null);
-    assert.equal(Object.keys(metadataPayload.base?.sheets ?? {}).length, 1);
-    assert.equal(Object.keys(metadataPayload.mine?.sheets ?? {}).length, 1);
+    assert.equal(Object.keys(firstMetadataPayload.base?.sheets ?? {}).length, 1);
+    assert.equal(Object.keys(firstMetadataPayload.mine?.sheets ?? {}).length, 1);
+    assert.equal(workbookMetadataCache.size, 1);
   } finally {
-    filePayloadCache.clear();
-    revisionPayloadCache.clear();
-    workbookCompareCache.clear();
-    workbookMetadataCache.clear();
-    clearAnalysisSnapshotCache();
-    setActiveCliArgs(EMPTY_CLI_ARGS);
+    resetLoaderCaches();
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('concurrent cold metadata follow-up dedupes workbook metadata pair loading', async () => {
+  resetLoaderCaches();
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'svn-diff-local-metadata-concurrent-'));
+  const basePath = path.join(tempDir, 'base.xlsx');
+  const minePath = path.join(tempDir, 'mine.xlsx');
+
+  try {
+    await fs.writeFile(
+      basePath,
+      Buffer.from(buildWorkbookZip('Thing', [['ID', 'Name'], ['10001', 'Alpha']])),
+    );
+    await fs.writeFile(
+      minePath,
+      Buffer.from(buildWorkbookZip('Thing', [['ID', 'Name'], ['10001', 'Bravo']])),
+    );
+
+    setActiveCliArgs({
+      basePath,
+      minePath,
+      baseName: path.basename(basePath),
+      mineName: path.basename(minePath),
+      baseUrl: '',
+      mineUrl: '',
+      baseRevision: '',
+      mineRevision: '',
+      pegRevision: '',
+      fileName: path.basename(minePath),
+    });
+
+    const sourceIdentity = buildSourceIdentity({
+      kind: 'local-dev',
+      fileName: path.basename(minePath),
+      baseUrl: '',
+      mineUrl: '',
+      baseRevision: '',
+      mineRevision: '',
+      pegRevision: '',
+      basePath,
+      minePath,
+      baseName: path.basename(basePath),
+      mineName: path.basename(minePath),
+    });
+    const [firstMetadataPayload, secondMetadataPayload] = await Promise.all([
+      loadWorkbookMetadataData(),
+      loadWorkbookMetadataData(),
+    ]);
+
+    assert.equal(firstMetadataPayload, secondMetadataPayload);
+    assert.equal(firstMetadataPayload.analysisSnapshot, null);
+    assert.equal(workbookMetadataCache.size, 1);
+    assert.equal(peekAnalysisSnapshot({
+      sourceIdentity,
+      compareMode: 'strict',
+      baseRevisionId: undefined,
+      mineRevisionId: undefined,
+    }), null);
+    assert.equal(Object.keys(firstMetadataPayload.base?.sheets ?? {}).length, 1);
+    assert.equal(Object.keys(firstMetadataPayload.mine?.sheets ?? {}).length, 1);
+  } finally {
+    resetLoaderCaches();
     await fs.rm(tempDir, { recursive: true, force: true });
   }
 });

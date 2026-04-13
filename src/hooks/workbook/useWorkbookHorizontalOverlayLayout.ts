@@ -5,9 +5,8 @@ import type { WorkbookPaneCanvasRow } from '@/components/workbook/WorkbookPaneCa
 import type { WorkbookHorizontalBodyLayoutResult } from '@/hooks/workbook/useWorkbookHorizontalBodyLayout';
 import { ROW_H } from '@/hooks/virtualization/useVirtual';
 import {
-  buildWorkbookSectionRowIndexByKey,
   collectWorkbookRowFramesByKey,
-  projectWorkbookVisibleRowFrames,
+  resolveWorkbookVisibleRowFrames,
 } from '@/utils/workbook/workbookVisibleRowFrames';
 import { getWorkbookRowKey as getWorkbookHorizontalRowKey } from '@/utils/workbook/workbookPanelHelpers';
 
@@ -26,21 +25,17 @@ export function useWorkbookHorizontalOverlayLayout({
   rowWindowOffsetTop,
   stickyHeaderHeight,
 }: UseWorkbookHorizontalOverlayLayoutParams): Map<number, { top: number; height: number }> {
-  const sectionRowIndexByKey = useMemo(
-    () => buildWorkbookSectionRowIndexByKey(sectionRows),
-    [sectionRows],
-  );
-
   const frozenRowFramesByKey = useMemo(
     () => collectWorkbookRowFramesByKey(visibleFrozenCanvasRows, {
       getRowKey: (renderRow) => getWorkbookHorizontalRowKey(renderRow.row),
       getItemHeight: () => ROW_H,
+      cacheKey: 'horizontal:overlay:frozen-row-frames:v1',
     }),
     [visibleFrozenCanvasRows],
   );
 
   return useMemo(() => {
-    return projectWorkbookVisibleRowFrames(sectionRowIndexByKey, [
+    return resolveWorkbookVisibleRowFrames(sectionRows, [
       {
         framesByKey: frozenRowFramesByKey,
         topOffset: ROW_H,
@@ -50,5 +45,5 @@ export function useWorkbookHorizontalOverlayLayout({
         topOffset: stickyHeaderHeight + rowWindowOffsetTop,
       },
     ]);
-  }, [bodyLayout.rowFramesByKey, frozenRowFramesByKey, rowWindowOffsetTop, sectionRowIndexByKey, stickyHeaderHeight]);
+  }, [bodyLayout.rowFramesByKey, frozenRowFramesByKey, rowWindowOffsetTop, sectionRows, stickyHeaderHeight]);
 }

@@ -91,8 +91,8 @@ interface SummaryMetric {
 
 const rootDir = path.resolve(__dirname, '..');
 const rendererIndexPath = path.join(rootDir, 'dist', 'index.html');
-const electronMainPath = path.join(rootDir, 'dist-electron', 'main.js');
-const electronPreloadPath = path.join(rootDir, 'dist-electron', 'preload.js');
+const electronMainPath = path.join(rootDir, 'dist-electron', 'electron', 'main.js');
+const electronPreloadPath = path.join(rootDir, 'dist-electron', 'electron', 'preload.js');
 const layoutTestIds: Record<LayoutMode, string> = {
   unified: 'toolbar-layout-unified',
   'split-h': 'toolbar-layout-split-h',

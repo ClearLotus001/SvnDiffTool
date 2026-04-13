@@ -435,6 +435,35 @@ export function isStartupWorkingCopyCompare(): boolean {
   return isWorkingCopyRevisionToken(mineRevision) || normalizeRevisionLabelToken(baseRevision) === 'BASE';
 }
 
+function hasStartupSvnRuntimeContextHint(): boolean {
+  const args = getActiveCliArgs();
+  return isRemoteRepositoryTarget(args.baseUrl)
+    || isRemoteRepositoryTarget(args.mineUrl)
+    || isStartupRevisionVsRevisionCompare()
+    || isStartupWorkingCopyCompare();
+}
+
+export function shouldResolveSvnRuntimeContext(
+  requestedBaseRevisionId?: string,
+  requestedMineRevisionId?: string,
+): boolean {
+  return Boolean(
+    requestedBaseRevisionId?.trim()
+    || requestedMineRevisionId?.trim()
+    || hasStartupSvnRuntimeContextHint()
+  );
+}
+
+export function resolveCliSourceIdentityKind(
+  requestedBaseRevisionId?: string,
+  requestedMineRevisionId?: string,
+): 'cli' | 'revision-switch' | 'local-dev' {
+  if (requestedBaseRevisionId?.trim() || requestedMineRevisionId?.trim()) {
+    return 'revision-switch';
+  }
+  return hasStartupSvnRuntimeContextHint() ? 'cli' : 'local-dev';
+}
+
 // ---------------------------------------------------------------------------
 // Compare context / pair resolution
 // ---------------------------------------------------------------------------

@@ -35,8 +35,51 @@ interface CharDiffBudget {
   remainingChars: number;
 }
 
-function appendSharedEqualLines(
-  result: DiffLine[],
+interface PreparedTextAnalysisAccumulator {
+  diffLines: DiffLine[];
+  stats: PreparedTextAnalysis['stats'];
+  replacementPairs: TextReplacementPair[];
+  splitRowDescriptors: SplitRowDescriptor[];
+}
+
+function createPreparedTextAnalysisAccumulator(): PreparedTextAnalysisAccumulator {
+  return {
+    diffLines: [],
+    stats: {
+      add: 0,
+      del: 0,
+      chg: 0,
+    },
+    replacementPairs: [],
+    splitRowDescriptors: [],
+  };
+}
+
+function appendPreparedEqualLine(
+  accumulator: PreparedTextAnalysisAccumulator,
+  baseLine: string,
+  mineLine: string,
+  baseLineNo: number,
+  mineLineNo: number,
+): void {
+  const lineIdx = accumulator.diffLines.length;
+  accumulator.diffLines.push(makeLine(
+    'equal',
+    baseLine,
+    mineLine,
+    baseLineNo,
+    mineLineNo,
+  ));
+  accumulator.splitRowDescriptors.push({
+    leftLineIdx: lineIdx,
+    rightLineIdx: lineIdx,
+    lineIdx,
+    lineIdxs: [lineIdx],
+  });
+}
+
+function appendPreparedEqualLines(
+  accumulator: PreparedTextAnalysisAccumulator,
   baseLines: readonly string[],
   mineLines: readonly string[],
   baseStartIdx: number,
@@ -46,13 +89,13 @@ function appendSharedEqualLines(
   for (let index = 0; index < count; index += 1) {
     const baseLineIdx = baseStartIdx + index;
     const mineLineIdx = mineStartIdx + index;
-    result.push(makeLine(
-      'equal',
+    appendPreparedEqualLine(
+      accumulator,
       baseLines[baseLineIdx]!,
       mineLines[mineLineIdx]!,
       baseLineIdx + 1,
       mineLineIdx + 1,
-    ));
+    );
   }
 }
 
@@ -131,24 +174,25 @@ function exceedsLcsCandidatePairBudget(a: string[], b: string[]): boolean {
   return false;
 }
 
-function buildAnchoredReplacementDiff(
+function appendAnchoredReplacementAnalysis(
+  accumulator: PreparedTextAnalysisAccumulator,
   baseLines: string[],
   mineLines: string[],
+  charDiffBudget: CharDiffBudget,
   baseOffset = 0,
   mineOffset = 0,
-): DiffLine[] {
-  const result: DiffLine[] = [];
+): void {
   const sharedPrefixCount = Math.min(baseLines.length, mineLines.length);
   let prefixCount = 0;
 
   while (prefixCount < sharedPrefixCount && baseLines[prefixCount] === mineLines[prefixCount]) {
-    result.push(makeLine(
-      'equal',
+    appendPreparedEqualLine(
+      accumulator,
       baseLines[prefixCount]!,
       mineLines[prefixCount]!,
       baseOffset + prefixCount + 1,
       mineOffset + prefixCount + 1,
-    ));
+    );
     prefixCount += 1;
   }
 
@@ -168,17 +212,24 @@ function buildAnchoredReplacementDiff(
     mineIdx -= 1;
   }
 
-  for (let i = prefixCount; i <= baseIdx; i += 1) {
-    result.push(makeLine('delete', baseLines[i]!, null, baseOffset + i + 1, null));
-  }
-
-  for (let i = prefixCount; i <= mineIdx; i += 1) {
-    result.push(makeLine('add', null, mineLines[i]!, null, mineOffset + i + 1));
-  }
-
+  appendPreparedChangeBlock(
+    accumulator,
+    prefixCount <= baseIdx ? baseLines.slice(prefixCount, baseIdx + 1) : [],
+    prefixCount <= mineIdx ? mineLines.slice(prefixCount, mineIdx + 1) : [],
+    baseOffset + prefixCount,
+    mineOffset + prefixCount,
+    charDiffBudget,
+  );
   suffix.reverse();
-  result.push(...suffix);
-  return result;
+  suffix.forEach((line) => {
+    appendPreparedEqualLine(
+      accumulator,
+      line.base ?? '',
+      line.mine ?? '',
+      line.baseLineNo ?? 0,
+      line.mineLineNo ?? 0,
+    );
+  });
 }
 
 function longestIncreasingAnchors(candidates: LCSEntry[]): LCSEntry[] {
@@ -245,65 +296,166 @@ function findUniqueCommonAnchors(baseLines: string[], mineLines: string[]): LCSE
   return longestIncreasingAnchors(candidates);
 }
 
-function buildFallbackDiff(
+function buildFallbackAnalysis(
+  accumulator: PreparedTextAnalysisAccumulator,
   baseLines: string[],
   mineLines: string[],
+  charDiffBudget: CharDiffBudget,
   baseOffset = 0,
   mineOffset = 0,
-): DiffLine[] {
+): void {
   const anchors = findUniqueCommonAnchors(baseLines, mineLines);
   if (anchors.length === 0) {
-    return buildAnchoredReplacementDiff(baseLines, mineLines, baseOffset, mineOffset);
+    appendAnchoredReplacementAnalysis(
+      accumulator,
+      baseLines,
+      mineLines,
+      charDiffBudget,
+      baseOffset,
+      mineOffset,
+    );
+    return;
   }
 
-  const result: DiffLine[] = [];
   let baseStart = 0;
   let mineStart = 0;
 
   anchors.forEach((anchor) => {
-    result.push(...buildAnchoredReplacementDiff(
+    appendAnchoredReplacementAnalysis(
+      accumulator,
       baseLines.slice(baseStart, anchor.biIdx),
       mineLines.slice(mineStart, anchor.miIdx),
+      charDiffBudget,
       baseOffset + baseStart,
       mineOffset + mineStart,
-    ));
-    result.push(makeLine(
-      'equal',
+    );
+    appendPreparedEqualLine(
+      accumulator,
       baseLines[anchor.biIdx]!,
       mineLines[anchor.miIdx]!,
       baseOffset + anchor.biIdx + 1,
       mineOffset + anchor.miIdx + 1,
-    ));
+    );
     baseStart = anchor.biIdx + 1;
     mineStart = anchor.miIdx + 1;
   });
 
-  result.push(...buildAnchoredReplacementDiff(
+  appendAnchoredReplacementAnalysis(
+    accumulator,
     baseLines.slice(baseStart),
     mineLines.slice(mineStart),
+    charDiffBudget,
     baseOffset + baseStart,
     mineOffset + mineStart,
-  ));
-
-  return result;
+  );
 }
 
-function buildDiffFromLineArrays(
+function appendPreparedChangeBlock(
+  accumulator: PreparedTextAnalysisAccumulator,
+  delLines: string[],
+  addLines: string[],
+  biBase: number,
+  miBase: number,
+  charDiffBudget: CharDiffBudget,
+): void {
+  const deleteCharSpans = Array.from(
+    { length: delLines.length },
+    () => null as DiffLine['baseCharSpans'],
+  );
+  const addCharSpans = Array.from(
+    { length: addLines.length },
+    () => null as DiffLine['mineCharSpans'],
+  );
+  const alignedPairs = alignTextChangeBlock(delLines, addLines);
+  let replacementPairIndex = 0;
+  const deleteStart = accumulator.diffLines.length;
+  const addStart = deleteStart + delLines.length;
+
+  alignedPairs.forEach((pair) => {
+    const leftLineIdx = pair.deleteIndex != null ? deleteStart + pair.deleteIndex : null;
+    const rightLineIdx = pair.addIndex != null ? addStart + pair.addIndex : null;
+
+    if (pair.isReplacement && pair.deleteIndex != null && pair.addIndex != null) {
+      accumulator.replacementPairs.push(
+        { lineIdx: leftLineIdx!, pairedLineIdx: rightLineIdx! },
+        { lineIdx: rightLineIdx!, pairedLineIdx: leftLineIdx! },
+      );
+      accumulator.stats.chg += 1;
+
+      const baseLine = delLines[pair.deleteIndex]!;
+      const mineLine = addLines[pair.addIndex]!;
+      if (shouldComputeCharDiff(baseLine, mineLine, replacementPairIndex, charDiffBudget)) {
+        const diff = computeCharDiff(baseLine, mineLine);
+        if (diff) {
+          deleteCharSpans[pair.deleteIndex] = diff.baseSpans;
+          addCharSpans[pair.addIndex] = diff.mineSpans;
+        }
+      }
+      replacementPairIndex += 1;
+    } else {
+      if (pair.deleteIndex != null) accumulator.stats.del += 1;
+      if (pair.addIndex != null) accumulator.stats.add += 1;
+    }
+
+    const lineIdxs = [leftLineIdx, rightLineIdx].filter((value): value is number => value != null);
+    accumulator.splitRowDescriptors.push({
+      leftLineIdx,
+      rightLineIdx,
+      lineIdx: lineIdxs[0] ?? deleteStart,
+      lineIdxs,
+      ...(pair.isReplacement ? { isReplacementPair: true } : {}),
+    });
+  });
+
+  for (let i = 0; i < delLines.length; i++) {
+    accumulator.diffLines.push({
+      type: 'delete',
+      base: delLines[i]!,
+      mine: null,
+      baseLineNo: biBase + i + 1,
+      mineLineNo: null,
+      baseCharSpans: deleteCharSpans[i] ?? null,
+      mineCharSpans: null,
+    });
+  }
+
+  for (let i = 0; i < addLines.length; i++) {
+    accumulator.diffLines.push({
+      type: 'add',
+      base: null,
+      mine: addLines[i]!,
+      baseLineNo: null,
+      mineLineNo: miBase + i + 1,
+      baseCharSpans: null,
+      mineCharSpans: addCharSpans[i] ?? null,
+    });
+  }
+}
+
+function buildPreparedDiffFromLineArrays(
+  accumulator: PreparedTextAnalysisAccumulator,
   baseLines: string[],
   mineLines: string[],
   baseLineOffset: number,
   mineLineOffset: number,
   charDiffBudget: CharDiffBudget,
-): DiffLine[] {
+): void {
   if (
     baseLines.length > MAX_LINES_FOR_DIFF
     || mineLines.length > MAX_LINES_FOR_DIFF
     || exceedsLcsCandidatePairBudget(baseLines, mineLines)
   ) {
-    return buildFallbackDiff(baseLines, mineLines, baseLineOffset, mineLineOffset);
+    buildFallbackAnalysis(
+      accumulator,
+      baseLines,
+      mineLines,
+      charDiffBudget,
+      baseLineOffset,
+      mineLineOffset,
+    );
+    return;
   }
 
-  const result: DiffLine[] = [];
   const lcs = patienceLCS(baseLines, mineLines);
   let bi = 0, mi = 0, li = 0;
 
@@ -311,13 +463,13 @@ function buildDiffFromLineArrays(
     const anchor = li < lcs.length ? lcs[li] : null;
 
     if (anchor && bi === anchor.biIdx && mi === anchor.miIdx) {
-      result.push(makeLine(
-        'equal',
+      appendPreparedEqualLine(
+        accumulator,
         baseLines[bi]!,
         mineLines[mi]!,
         baseLineOffset + bi + 1,
         mineLineOffset + mi + 1,
-      ));
+      );
       bi += 1;
       mi += 1;
       li += 1;
@@ -327,8 +479,8 @@ function buildDiffFromLineArrays(
       const safeDelEnd = Math.max(bi, delEnd);
       const safeAddEnd = Math.max(mi, addEnd);
 
-      emitChangeBlock(
-        result,
+      appendPreparedChangeBlock(
+        accumulator,
         baseLines.slice(bi, safeDelEnd),
         mineLines.slice(mi, safeAddEnd),
         baseLineOffset + bi,
@@ -339,15 +491,19 @@ function buildDiffFromLineArrays(
       mi = safeAddEnd;
     }
   }
-
-  return result;
 }
 
 // ── Main diff ─────────────────────────────────────────────────────────────────
 
-function computeDiff(baseText: string, mineText: string): DiffLine[] {
+function buildPreparedTextAnalysisCore(
+  baseText: string,
+  mineText: string,
+): Omit<PreparedTextAnalysis, 'perf'> {
+  const accumulator = createPreparedTextAnalysisAccumulator();
   if (baseText === mineText) {
-    return splitLines(baseText).map((line, index) => makeLine('equal', line, line, index + 1, index + 1));
+    const lines = splitLines(baseText);
+    appendPreparedEqualLines(accumulator, lines, lines, 0, 0, lines.length);
+    return accumulator;
   }
 
   const baseLines = splitLines(baseText);
@@ -377,17 +533,17 @@ function computeDiff(baseText: string, mineText: string): DiffLine[] {
 
   const middleBaseEnd = baseLines.length - sharedSuffixCount;
   const middleMineEnd = mineLines.length - sharedSuffixCount;
-  const result: DiffLine[] = [];
-  appendSharedEqualLines(result, baseLines, mineLines, 0, 0, sharedPrefixCount);
-  result.push(...buildDiffFromLineArrays(
+  appendPreparedEqualLines(accumulator, baseLines, mineLines, 0, 0, sharedPrefixCount);
+  buildPreparedDiffFromLineArrays(
+    accumulator,
     baseLines.slice(sharedPrefixCount, middleBaseEnd),
     mineLines.slice(sharedPrefixCount, middleMineEnd),
     sharedPrefixCount,
     sharedPrefixCount,
     charDiffBudget,
-  ));
-  appendSharedEqualLines(
-    result,
+  );
+  appendPreparedEqualLines(
+    accumulator,
     baseLines,
     mineLines,
     middleBaseEnd,
@@ -395,7 +551,7 @@ function computeDiff(baseText: string, mineText: string): DiffLine[] {
     sharedSuffixCount,
   );
 
-  return result;
+  return accumulator;
 }
 
 export function prepareTextDiffAnalysis(
@@ -403,142 +559,14 @@ export function prepareTextDiffAnalysis(
   mineText: string,
 ): PreparedTextAnalysis {
   const diffStart = performance.now();
-  const diffLines = computeDiff(baseText, mineText);
-  const replacementPairs: TextReplacementPair[] = [];
-  const splitRowDescriptors: SplitRowDescriptor[] = [];
-  const stats = {
-    add: 0,
-    del: 0,
-    chg: 0,
-  };
-  let index = 0;
-
-  while (index < diffLines.length) {
-    if (diffLines[index]!.type === 'equal') {
-      splitRowDescriptors.push({
-        leftLineIdx: index,
-        rightLineIdx: index,
-        lineIdx: index,
-        lineIdxs: [index],
-      });
-      index += 1;
-      continue;
-    }
-
-    const deleteStart = index;
-    while (index < diffLines.length && diffLines[index]!.type === 'delete') {
-      index += 1;
-    }
-    const addStart = index;
-    while (index < diffLines.length && diffLines[index]!.type === 'add') {
-      index += 1;
-    }
-
-    const deleteLines = diffLines.slice(deleteStart, addStart);
-    const addLines = diffLines.slice(addStart, index);
-    const alignedPairs = alignTextChangeBlock(
-      deleteLines.map((line) => line.base ?? ''),
-      addLines.map((line) => line.mine ?? ''),
-    );
-
-    alignedPairs.forEach((pair) => {
-      if (pair.isReplacement && pair.deleteIndex != null && pair.addIndex != null) {
-        const leftLineIdx = deleteStart + pair.deleteIndex;
-        const rightLineIdx = addStart + pair.addIndex;
-        replacementPairs.push(
-          { lineIdx: leftLineIdx, pairedLineIdx: rightLineIdx },
-          { lineIdx: rightLineIdx, pairedLineIdx: leftLineIdx },
-        );
-        stats.chg += 1;
-      } else {
-        if (pair.deleteIndex != null) stats.del += 1;
-        if (pair.addIndex != null) stats.add += 1;
-      }
-
-      const leftLineIdx = pair.deleteIndex != null ? deleteStart + pair.deleteIndex : null;
-      const rightLineIdx = pair.addIndex != null ? addStart + pair.addIndex : null;
-      const lineIdxs = [leftLineIdx, rightLineIdx].filter((value): value is number => value != null);
-      splitRowDescriptors.push({
-        leftLineIdx,
-        rightLineIdx,
-        lineIdx: lineIdxs[0] ?? deleteStart,
-        lineIdxs,
-        ...(pair.isReplacement ? { isReplacementPair: true } : {}),
-      });
-    });
-  }
+  const prepared = buildPreparedTextAnalysisCore(baseText, mineText);
 
   return {
-    diffLines,
-    stats,
-    replacementPairs,
-    splitRowDescriptors,
+    ...prepared,
     perf: {
       diffMs: performance.now() - diffStart,
     },
   };
-}
-
-function emitChangeBlock(
-  result: DiffLine[],
-  delLines: string[],
-  addLines: string[],
-  biBase: number,
-  miBase: number,
-  charDiffBudget: CharDiffBudget,
-): void {
-  const deleteCharSpans = Array.from(
-    { length: delLines.length },
-    () => null as DiffLine['baseCharSpans'],
-  );
-  const addCharSpans = Array.from(
-    { length: addLines.length },
-    () => null as DiffLine['mineCharSpans'],
-  );
-  const alignedPairs = alignTextChangeBlock(delLines, addLines);
-  let replacementPairIndex = 0;
-
-  alignedPairs.forEach((pair) => {
-    if (!pair.isReplacement || pair.deleteIndex == null || pair.addIndex == null) return;
-
-    const baseLine = delLines[pair.deleteIndex]!;
-    const mineLine = addLines[pair.addIndex]!;
-    if (!shouldComputeCharDiff(baseLine, mineLine, replacementPairIndex, charDiffBudget)) {
-      replacementPairIndex += 1;
-      return;
-    }
-
-    const diff = computeCharDiff(baseLine, mineLine);
-    if (diff) {
-      deleteCharSpans[pair.deleteIndex] = diff.baseSpans;
-      addCharSpans[pair.addIndex] = diff.mineSpans;
-    }
-    replacementPairIndex += 1;
-  });
-
-  for (let i = 0; i < delLines.length; i++) {
-    result.push({
-      type: 'delete',
-      base: delLines[i]!,
-      mine: null,
-      baseLineNo: biBase + i + 1,
-      mineLineNo: null,
-      baseCharSpans: deleteCharSpans[i] ?? null,
-      mineCharSpans: null,
-    });
-  }
-
-  for (let i = 0; i < addLines.length; i++) {
-    result.push({
-      type: 'add',
-      base: null,
-      mine: addLines[i]!,
-      baseLineNo: null,
-      mineLineNo: miBase + i + 1,
-      baseCharSpans: null,
-      mineCharSpans: addCharSpans[i] ?? null,
-    });
-  }
 }
 
 function shouldComputeCharDiff(

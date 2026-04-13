@@ -242,9 +242,6 @@ export default function useElectronLifecycleEffects({
             || typeof data.mineContent === 'string'
             || hasBytePayload(data.baseBytes)
             || hasBytePayload(data.mineBytes)
-            || Boolean(data.precomputedDiffLines?.length)
-            || Boolean(data.precomputedDiffLinesByMode?.strict?.length)
-            || Boolean(data.precomputedDiffLinesByMode?.content?.length)
             || strictSnapshotDiffLines > 0
             || contentSnapshotDiffLines > 0
           )
@@ -256,8 +253,6 @@ export default function useElectronLifecycleEffects({
           mineContentType: typeof data?.mineContent,
           baseBytes: hasBytePayload(data?.baseBytes) ? data.baseBytes.byteLength : 0,
           mineBytes: hasBytePayload(data?.mineBytes) ? data.mineBytes.byteLength : 0,
-          strictDiffLines: data?.precomputedDiffLinesByMode?.strict?.length ?? 0,
-          contentDiffLines: data?.precomputedDiffLinesByMode?.content?.length ?? 0,
           strictSnapshotDiffLines,
           contentSnapshotDiffLines,
         });

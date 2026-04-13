@@ -273,7 +273,9 @@
   "collapseJumpNextTitle": "Jump to the next collapsed block (Alt+])",
   "collapseJumpNext": "Next collapsed block",
   "collapseJumpStatus": "Current collapsed block {current}/{total}",
-  "searchPlaceholder": "Search in diff… (Enter = next, Shift+Enter = prev)",
+  "searchPlaceholderText": "Search in file… (↑/↓ = navigate results)",
+  "searchPlaceholderWorkbookCurrentSheet": "Search current sheet… (↑/↓ = navigate results)",
+  "searchPlaceholderWorkbookAllSheets": "Search all sheets… (↑/↓ = navigate results)",
   "searchNoResults": "No results",
   "searchRegexTitle": "Regex",
   "searchCaseSensitiveTitle": "Case sensitive",
@@ -473,5 +475,8 @@
   "themeDark": "Dark",
   "themeLight": "Light",
   "themeHighContrast": "High Contrast",
-  "searchLoading": "Searching…"
+  "searchLoading": "Searching…",
+  "commonClose": "Close",
+  "diffContextMenuAriaLabel": "Diff actions",
+  "workbookContextMenuAriaLabel": "Workbook actions"
 }

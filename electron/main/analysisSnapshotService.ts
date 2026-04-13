@@ -1,7 +1,11 @@
 import { performance } from 'node:perf_hooks';
 
 import { detectWorkbookArtifactOnlyDiffFromEqualityState } from '../workbookArtifactDiff.js';
-import { resolveWorkbookCompareModePayload } from './filePayload.js';
+import {
+  readFilePayload,
+  resolveWorkbookCompareModePayload,
+  resolveWorkbookMetadataPairPayload,
+} from './filePayload.js';
 import { prepareWorkbookProjection } from './workbookProjection.js';
 import { haveSameLocalFileAndBytes, haveSameLocalFileContents } from './svnOperations.js';
 import { prepareTextDiffAnalysis } from './text/diff.js';
@@ -15,6 +19,11 @@ const ANALYSIS_SNAPSHOT_CACHE_LIMIT = 8;
 
 const analysisSnapshotCache = new Map<string, DiffAnalysisSnapshot>();
 const analysisSnapshotInFlight = new Map<string, Promise<DiffAnalysisSnapshot>>();
+const WORKBOOK_METADATA_ONLY_PAYLOAD_OPTIONS = {
+  includeWorkbookText: false,
+  includeWorkbookBytes: false,
+  includeWorkbookMetadata: true,
+} as const;
 
 export interface ResolveAnalysisSnapshotInput {
   sourceIdentity: string;
@@ -126,23 +135,82 @@ async function buildWorkbookSnapshot(
   input: ResolveAnalysisSnapshotInput,
 ): Promise<DiffAnalysisSnapshot> {
   const diffStart = performance.now();
-  const workbookComparePayload = await resolveWorkbookCompareModePayload(
-    input.baseLocalPath,
-    input.basePayload.bytes,
-    input.mineLocalPath,
-    input.minePayload.bytes,
-    input.fileName,
-    input.compareMode,
-  );
-  const metadataMs = (input.basePayload.perf.metadataMs ?? 0) + (input.minePayload.perf.metadataMs ?? 0);
+  const resolveMetadataState = async (): Promise<{
+    baseWorkbookMetadata: FilePayload['metadata'];
+    mineWorkbookMetadata: FilePayload['metadata'];
+    metadataMs: number;
+  }> => {
+    const shouldPreferPairPayload = Boolean(
+      input.baseLocalPath
+      && input.mineLocalPath
+      && (!input.basePayload.metadata || !input.minePayload.metadata),
+    );
+    if (shouldPreferPairPayload) {
+      const metadataPairPayload = await resolveWorkbookMetadataPairPayload(
+        input.baseLocalPath,
+        input.mineLocalPath,
+        input.fileName,
+      );
+      if (metadataPairPayload) {
+        return {
+          baseWorkbookMetadata: metadataPairPayload.base ?? input.basePayload.metadata,
+          mineWorkbookMetadata: metadataPairPayload.mine ?? input.minePayload.metadata,
+          metadataMs: metadataPairPayload.perf?.metadataMs ?? 0,
+        };
+      }
+    }
+
+    const resolveMetadataPayload = (
+      payload: FilePayload,
+      localPath: string,
+    ): Promise<FilePayload> => {
+      if (payload.metadata || !localPath) {
+        return Promise.resolve(payload);
+      }
+      return readFilePayload(localPath, WORKBOOK_METADATA_ONLY_PAYLOAD_OPTIONS);
+    };
+    const baseMetadataPayloadPromise = resolveMetadataPayload(input.basePayload, input.baseLocalPath);
+    const mineMetadataPayloadPromise = input.mineLocalPath
+      && input.mineLocalPath === input.baseLocalPath
+      && !input.minePayload.metadata
+      && !input.basePayload.metadata
+      ? baseMetadataPayloadPromise
+      : resolveMetadataPayload(input.minePayload, input.mineLocalPath);
+    const [baseMetadataPayload, mineMetadataPayload] = await Promise.all([
+      baseMetadataPayloadPromise,
+      mineMetadataPayloadPromise,
+    ]);
+
+    return {
+      baseWorkbookMetadata: baseMetadataPayload.metadata ?? input.basePayload.metadata,
+      mineWorkbookMetadata: mineMetadataPayload.metadata ?? input.minePayload.metadata,
+      metadataMs: (baseMetadataPayload.perf.metadataMs ?? 0) + (mineMetadataPayload.perf.metadataMs ?? 0),
+    };
+  };
+  const [workbookComparePayload, metadataState] = await Promise.all([
+    resolveWorkbookCompareModePayload(
+      input.baseLocalPath,
+      input.basePayload.bytes,
+      input.mineLocalPath,
+      input.minePayload.bytes,
+      input.fileName,
+      input.compareMode,
+    ),
+    resolveMetadataState(),
+  ]);
+  const {
+    baseWorkbookMetadata,
+    mineWorkbookMetadata,
+    metadataMs,
+  } = metadataState;
   const diffLines = workbookComparePayload?.diffLines ?? null;
   const workbookDelta = workbookComparePayload?.workbookDelta ?? null;
   const workbookProjection = prepareWorkbookProjection({
     diffLines,
     workbookDelta,
     compareMode: input.compareMode,
-    baseWorkbookMetadata: input.basePayload.metadata,
-    mineWorkbookMetadata: input.minePayload.metadata,
+    baseWorkbookMetadata,
+    mineWorkbookMetadata,
   });
   const contentsEqual = diffLines
     ? await resolveWorkbookContentsEqual(
@@ -186,8 +254,8 @@ async function buildWorkbookSnapshot(
         [input.compareMode]: workbookProjection.navigationRegions,
       },
       metadata: {
-        base: input.basePayload.metadata,
-        mine: input.minePayload.metadata,
+        base: baseWorkbookMetadata,
+        mine: mineWorkbookMetadata,
       },
       artifactDiff,
       perf: {

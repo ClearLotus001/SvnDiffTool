@@ -11,6 +11,7 @@ import type {
   WorkbookCellDeltaPayload,
   WorkbookCompareModePayload,
   WorkbookMetadataMap,
+  WorkbookMetadataPayload,
   WorkbookPayloadCoverage,
   WorkbookPrecomputedDeltaPayload,
   WorkbookSectionDeltaPayload,
@@ -154,6 +155,14 @@ function estimateWorkbookMetadataMapMemoryBytes(
   return Object.entries(metadata.sheets).reduce((total, [sheetName, sheetMetadata]) => (
     total + estimateWorkbookSheetMetadataMemoryBytes(sheetName, sheetMetadata)
   ), 32);
+}
+
+export function estimateWorkbookMetadataPayloadMemoryBytes(
+  payload: WorkbookMetadataPayload,
+): number {
+  return estimateWorkbookMetadataMapMemoryBytes(payload.base)
+    + estimateWorkbookMetadataMapMemoryBytes(payload.mine)
+    + 128;
 }
 
 export function trimCacheByBudget<T extends { memoryBytes: number }>(

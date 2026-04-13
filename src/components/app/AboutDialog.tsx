@@ -114,6 +114,7 @@ const AboutDialog = memo(({
         <button
           type="button"
           onClick={onClose}
+          aria-label={t('commonClose')}
           className="size-7 rounded-lg bg-transparent border-none text-text-primary cursor-pointer flex items-center justify-center hover:bg-bg-surface-hover hover:text-accent active:scale-95 transition-all duration-150">
           <X size={16} />
         </button>

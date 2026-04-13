@@ -3,6 +3,6 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["tests/**/*.ts", "tests/**/*.tsx"],
+  "include": ["tests/**/*.ts", "tests/**/*.tsx", "shared/**/*.ts"],
   "exclude": ["node_modules", "dist", "dist-electron", "release"]
 }

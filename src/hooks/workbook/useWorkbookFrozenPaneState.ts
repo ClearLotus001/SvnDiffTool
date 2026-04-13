@@ -287,11 +287,12 @@ export function useWorkbookFrozenPaneState({
       const next = new Map<string, WorkbookRowFrame>();
       visibleFrozenStackedCanvasRuns.forEach((run) => {
         let groupTop = run.top;
-        run.groups.forEach((group) => {
+        run.groups.forEach((group, groupIndex) => {
           const framesByKey = collectWorkbookRowFramesByKey(group.rows, {
             getRowKey: (row) => getWorkbookRowKey(row.row),
             getItemHeight: (row) => row.height,
             initialTop: groupTop,
+            cacheKey: `compare:frozen:stacked-group-row-frames:v1:${run.key}:${group.key}:${groupIndex}`,
           });
           framesByKey.forEach((frame, rowKey) => {
             next.set(rowKey, frame);
@@ -305,6 +306,7 @@ export function useWorkbookFrozenPaneState({
     return collectWorkbookRowFramesByKey(visibleFrozenColumnsCanvasRows, {
       getRowKey: (row) => getWorkbookRowKey(row.row),
       getItemHeight: () => ROW_H,
+      cacheKey: 'compare:frozen:columns-row-frames:v1',
     });
   }, [mode, visibleFrozenColumnsCanvasRows, visibleFrozenStackedCanvasRuns]);
 

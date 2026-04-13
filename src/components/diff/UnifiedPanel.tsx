@@ -52,6 +52,10 @@ import { useTextSelectionContextMenu } from '@/hooks/diff/useTextSelectionContex
 import { useTextLineRangeSelectionState } from '@/hooks/diff/useTextLineRangeSelectionState';
 import { doesLogicalTextSelectionIntersectLineRange } from '@/utils/diff/logicalTextSelection';
 import { getUnifiedLineSyntaxTokens } from '@/utils/diff/syntaxHighlighting';
+import {
+  buildTextRenderItemIndexes,
+  findNearestTextRenderItemIndex,
+} from '@/utils/diff/textRenderItemIndexes';
 import DiffRow from '@/components/diff/DiffRow';
 import CollapseBar from '@/components/diff/CollapseBar';
 import CollapseJumpButton from '@/components/diff/CollapseJumpButton';
@@ -237,6 +241,13 @@ const UnifiedPanel = memo(({
     activeSearchLineIdx,
     searchRangesByLineIdx,
   } = useTextSearchDecorations(searchMatches, activeSearchIdx);
+  const renderItemIndexes = useMemo(
+    () => buildTextRenderItemIndexes(items, {
+      cacheKey: 'unified:render-items:v1',
+      getLineIdxs: (item) => item.kind === 'line' ? [item.lineIdx] : null,
+    }),
+    [items],
+  );
   useResolvedTextLineNavigation({
     itemsDependency: items,
     rowBlocks,
@@ -245,8 +256,8 @@ const UnifiedPanel = memo(({
     contextLines: CONTEXT_LINES,
     blockPrefix,
     scrollToIndex,
-    findExactItemIndex: (lineIdx) => items.findIndex((item) => item.kind === 'line' && item.lineIdx === lineIdx),
-    findNearestItemIndex: (lineIdx) => items.findIndex((item) => item.kind === 'line' && item.lineIdx > lineIdx),
+    findExactItemIndex: (lineIdx) => renderItemIndexes.visibleItemIndexByLineIdx.get(lineIdx) ?? -1,
+    findNearestItemIndex: (lineIdx) => findNearestTextRenderItemIndex(renderItemIndexes, lineIdx),
     onScrollerReady,
     activeSearchLineIdx,
     searchJumpNonce,

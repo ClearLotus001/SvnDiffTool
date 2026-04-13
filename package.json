@@ -3,7 +3,7 @@
   "version": "1.0.3",
   "description": "SvnDiffTool — TortoiseSVN external diff viewer for text and workbook files",
   "author": "ClearLotus",
-  "main": "dist-electron/main.js",
+  "main": "dist-electron/electron/main.js",
   "repository": {
     "type": "git",
     "url": "https://github.com/ClearLotus001/SvnDiffTool.git"
@@ -14,8 +14,9 @@
     "dev:electron:watch": "tsc -p tsconfig.electron.json --watch --preserveWatchOutput",
     "dev:electron:run": "tsx scripts/dev-electron-runner.ts",
     "generate:shiki-registry": "tsx scripts/generate-shiki-language-registry.ts",
+    "generate:i18n-param-keys": "tsx scripts/generate-i18n-param-keys.ts",
     "lint": "npm run lint:eslint && npm run lint:exports",
-    "lint:eslint": "eslint src electron scripts --max-warnings=0",
+    "lint:eslint": "eslint src electron scripts shared --max-warnings=0",
     "lint:exports": "tsx scripts/check-unused-exports.ts",
     "build": "npm run typecheck && npm run build:renderer && npm run build:electron && npm run build:rust",
     "build:renderer": "vite build",

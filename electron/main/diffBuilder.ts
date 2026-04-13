@@ -27,8 +27,10 @@ import {
   isSameWorkbookSource,
   isWorkbookFile,
   makeSideDisplayName,
+  resolveCliSourceIdentityKind,
   resolveCurrentCompareContext,
   resolveSideName,
+  shouldResolveSvnRuntimeContext,
   usesLocalInputSource,
 } from './svnHelpers.js';
 import {
@@ -45,6 +47,7 @@ import {
 import {
   readFilePayload,
   readRevisionPayload,
+  resolveWorkbookMetadataPairPayload,
 } from './filePayload.js';
 import type {
   BuildDiffDataOptions,
@@ -138,17 +141,6 @@ async function ensureWorkbookFallbackPayload(
     : readFilePayload(localPath, fallbackOptions);
 }
 
-function resolveWorkbookSourceIdentityKind(
-  target: string,
-  baseRevisionId?: string,
-  mineRevisionId?: string,
-): 'cli' | 'revision-switch' | 'local-dev' {
-  if (baseRevisionId || mineRevisionId) {
-    return 'revision-switch';
-  }
-  return target ? 'cli' : 'local-dev';
-}
-
 function createWorkbookRequestContext(params: {
   args: CliArgs;
   target: string;
@@ -158,6 +150,7 @@ function createWorkbookRequestContext(params: {
   baseSourceInfo: SvnRevisionInfo;
   mineSourceInfo: SvnRevisionInfo;
   workingCopyPath: string;
+  sourceIdentityKind?: 'cli' | 'revision-switch' | 'local-dev';
 }): WorkbookRequestContext {
   const {
     args,
@@ -168,6 +161,7 @@ function createWorkbookRequestContext(params: {
     baseSourceInfo,
     mineSourceInfo,
     workingCopyPath,
+    sourceIdentityKind = resolveCliSourceIdentityKind(baseRevisionId, mineRevisionId),
   } = params;
 
   return {
@@ -175,7 +169,7 @@ function createWorkbookRequestContext(params: {
     target,
     resolvedFileName,
     sourceIdentity: buildSourceIdentity({
-      kind: resolveWorkbookSourceIdentityKind(target, baseRevisionId, mineRevisionId),
+      kind: sourceIdentityKind,
       fileName: resolvedFileName,
       baseUrl: isRevisionSelectionId(baseRevisionId) ? target : args.baseUrl,
       mineUrl: isRevisionSelectionId(mineRevisionId) ? target : args.mineUrl,
@@ -203,10 +197,15 @@ async function resolveWorkbookRequestContext(
   mineRevisionId?: string,
 ): Promise<WorkbookRequestContext> {
   const args = getActiveCliArgs();
-  const target = await resolveSvnTarget();
+  const sourceIdentityKind = resolveCliSourceIdentityKind(baseRevisionId, mineRevisionId);
+  const shouldResolveSvnContext = shouldResolveSvnRuntimeContext(baseRevisionId, mineRevisionId);
+  const target = shouldResolveSvnContext
+    ? await resolveSvnTarget()
+    : '';
   const resolvedFileName = args.fileName.trim()
     || path.basename(args.minePath || args.basePath || '');
-  const workingCopyPath = baseRevisionId === SPECIAL_MINE_ID || mineRevisionId === SPECIAL_MINE_ID
+  const workingCopyPath = shouldResolveSvnContext
+    && (baseRevisionId === SPECIAL_MINE_ID || mineRevisionId === SPECIAL_MINE_ID)
     ? await resolveWorkingCopyPathForTarget(args, target)
     : '';
 
@@ -219,6 +218,7 @@ async function resolveWorkbookRequestContext(
     baseSourceInfo: createRequestedRevisionInfo('base', baseRevisionId),
     mineSourceInfo: createRequestedRevisionInfo('mine', mineRevisionId),
     workingCopyPath,
+    sourceIdentityKind,
   });
 }
 
@@ -232,6 +232,12 @@ function buildAnalysisSnapshotLookup(
     baseRevisionId: context.baseRevisionId,
     mineRevisionId: context.mineRevisionId,
   };
+}
+
+function canResolveWorkbookAnalysisDirectlyFromLocalFiles(
+  context: WorkbookRequestContext,
+): boolean {
+  return Boolean(context.baseLocalPath && context.mineLocalPath);
 }
 
 async function resolveWorkbookPayloadPair(
@@ -296,6 +302,23 @@ async function resolveWorkbookAnalysisBundle(
     }
   }
 
+  if (canResolveWorkbookAnalysisDirectlyFromLocalFiles(context)) {
+    return {
+      analysisSnapshot: await resolveAnalysisSnapshot({
+        ...lookup,
+        fileName: context.resolvedFileName,
+        isWorkbook: true,
+        basePayload: EMPTY_FILE_PAYLOAD,
+        minePayload: EMPTY_FILE_PAYLOAD,
+        baseLocalPath: context.baseLocalPath,
+        mineLocalPath: context.mineLocalPath,
+      }),
+      basePayload: EMPTY_FILE_PAYLOAD,
+      minePayload: EMPTY_FILE_PAYLOAD,
+      cacheStatus: 'miss',
+    };
+  }
+
   const { basePayload, minePayload } = await resolveWorkbookPayloadPair(context);
   return {
     analysisSnapshot: await resolveAnalysisSnapshot({
@@ -354,6 +377,18 @@ async function warmWorkbookAnalysisSnapshot(
   const hintedMinePayload = payloadHints?.minePayload ?? EMPTY_FILE_PAYLOAD;
   const shouldReuseHints = canReuseWorkbookPayloadHints(context, hintedBasePayload, 'base')
     && canReuseWorkbookPayloadHints(context, hintedMinePayload, 'mine');
+  if (!shouldReuseHints && canResolveWorkbookAnalysisDirectlyFromLocalFiles(context)) {
+    await resolveAnalysisSnapshot({
+      ...lookup,
+      fileName: context.resolvedFileName,
+      isWorkbook: true,
+      basePayload: EMPTY_FILE_PAYLOAD,
+      minePayload: EMPTY_FILE_PAYLOAD,
+      baseLocalPath: context.baseLocalPath,
+      mineLocalPath: context.mineLocalPath,
+    });
+    return 'warmed';
+  }
   const { basePayload, minePayload } = shouldReuseHints
     ? {
         basePayload: hintedBasePayload,
@@ -412,6 +447,7 @@ async function resolveWorkbookMetadataBundle(
   analysisSnapshot: Awaited<ReturnType<typeof resolveAnalysisSnapshot>> | null;
   basePayload: FilePayload;
   minePayload: FilePayload;
+  metadataPayload: WorkbookMetadataPayload | null;
   metadataMs: number;
 }> {
   const cachedSnapshot = peekWorkbookAnalysisSnapshot({
@@ -424,8 +460,26 @@ async function resolveWorkbookMetadataBundle(
       analysisSnapshot: cachedSnapshot,
       basePayload: EMPTY_FILE_PAYLOAD,
       minePayload: EMPTY_FILE_PAYLOAD,
+      metadataPayload: null,
       metadataMs: cachedSnapshot.workbookAnalysis.perf?.metadataMs ?? 0,
     };
+  }
+
+  if (canResolveWorkbookAnalysisDirectlyFromLocalFiles(context)) {
+    const metadataPayload = await resolveWorkbookMetadataPairPayload(
+      context.baseLocalPath,
+      context.mineLocalPath,
+      context.resolvedFileName,
+    );
+    if (metadataPayload) {
+      return {
+        analysisSnapshot: null,
+        basePayload: EMPTY_FILE_PAYLOAD,
+        minePayload: EMPTY_FILE_PAYLOAD,
+        metadataPayload,
+        metadataMs: metadataPayload.perf?.metadataMs ?? 0,
+      };
+    }
   }
 
   const metadataOnlyOptions: ReadFilePayloadOptions = {
@@ -441,6 +495,7 @@ async function resolveWorkbookMetadataBundle(
     analysisSnapshot: null,
     basePayload,
     minePayload,
+    metadataPayload: null,
     metadataMs: (basePayload.perf.metadataMs ?? 0) + (minePayload.perf.metadataMs ?? 0),
   };
 }
@@ -459,15 +514,22 @@ export async function buildDiffData(options: BuildDiffDataOptions = {}): Promise
     revisionOptionsOverride = null,
   } = options;
   const args = getActiveCliArgs();
-  const target = await resolveSvnTarget();
-  const timelineTargetUrl = await resolveTimelineTargetUrl();
-  const workingCopyPath = target
+  const shouldResolveSvnContext = shouldResolveSvnRuntimeContext(baseRevisionId, mineRevisionId)
+    || includeRevisionOptions;
+  const target = shouldResolveSvnContext
+    ? await resolveSvnTarget()
+    : '';
+  const timelineTargetUrl = shouldResolveSvnContext
+    ? await resolveTimelineTargetUrl()
+    : '';
+  const workingCopyPath = shouldResolveSvnContext && target
     ? await resolveWorkingCopyPathForTarget(args, target)
     : '';
   const workingCopyAvailable = Boolean(workingCopyPath);
   const resolvedFileName = args.fileName.trim()
     || path.basename(args.minePath || args.basePath || '');
-  const shouldLoadRevisionOptions = Boolean(includeRevisionOptions || baseRevisionId || mineRevisionId);
+  const shouldLoadRevisionOptions = shouldResolveSvnContext
+    && Boolean(includeRevisionOptions || baseRevisionId || mineRevisionId);
   const revisionOptions = shouldLoadRevisionOptions
     ? (revisionOptionsOverride ?? await getRevisionOptions())
     : null;
@@ -478,6 +540,10 @@ export async function buildDiffData(options: BuildDiffDataOptions = {}): Promise
   const resolvedMineRevisionId = isRemoteHeadSelectionId(mineRevisionId)
     ? (latestRemoteRevisionId ?? undefined)
     : mineRevisionId;
+  const sourceIdentityKind = resolveCliSourceIdentityKind(
+    resolvedBaseRevisionId,
+    resolvedMineRevisionId,
+  );
   const isLaunchView = !resolvedBaseRevisionId && !resolvedMineRevisionId;
   const compareContext = resolveCurrentCompareContext({
     target,
@@ -510,6 +576,7 @@ export async function buildDiffData(options: BuildDiffDataOptions = {}): Promise
         baseSourceInfo: resolvedBasePayloadInfo,
         mineSourceInfo: resolvedMinePayloadInfo,
         workingCopyPath,
+        sourceIdentityKind,
       })
     : null;
   const basePayloadOptions = createWorkbookPayloadOptions(
@@ -528,7 +595,7 @@ export async function buildDiffData(options: BuildDiffDataOptions = {}): Promise
     ?? isSameWorkbookSource(args, resolvedBaseRevisionId, resolvedMineRevisionId);
   const sourceIdentity = workbookRequestContext?.sourceIdentity
     ?? buildSourceIdentity({
-      kind: resolvedBaseRevisionId || resolvedMineRevisionId ? 'revision-switch' : 'cli',
+      kind: sourceIdentityKind,
       fileName: resolvedFileName,
       baseUrl: isRevisionSelectionId(resolvedBaseRevisionId) ? target : args.baseUrl,
       mineUrl: isRevisionSelectionId(resolvedMineRevisionId) ? target : args.mineUrl,
@@ -651,6 +718,8 @@ export async function buildDiffData(options: BuildDiffDataOptions = {}): Promise
           ),
         ]);
   const workbookArtifactDiff = preparedWorkbookAnalysis?.artifactDiff ?? null;
+  const metadataMs = preparedWorkbookAnalysis?.perf?.metadataMs
+    ?? ((basePayload.perf.metadataMs ?? 0) + (minePayload.perf.metadataMs ?? 0));
 
   logDebugTiming('build-diff-data:done', {
     compareMode: workbookCompareMode,
@@ -664,7 +733,7 @@ export async function buildDiffData(options: BuildDiffDataOptions = {}): Promise
     mineReadMs: Number((minePayload.perf.readMs ?? 0).toFixed(1)),
     baseParserMs: Number((basePayload.perf.parserMs ?? 0).toFixed(1)),
     mineParserMs: Number((minePayload.perf.parserMs ?? 0).toFixed(1)),
-    metadataMs: Number(((basePayload.perf.metadataMs ?? 0) + (minePayload.perf.metadataMs ?? 0)).toFixed(1)),
+    metadataMs: Number(metadataMs.toFixed(1)),
     rustDiffMs: Number((preparedWorkbookAnalysis?.perf?.rustDiffMs ?? 0).toFixed(1)),
     diffMs: Number((preparedTextAnalysis?.perf?.diffMs ?? 0).toFixed(1)),
   });
@@ -735,7 +804,7 @@ export async function buildDiffData(options: BuildDiffDataOptions = {}): Promise
       mineReadMs: minePayload.perf.readMs,
       baseParserMs: basePayload.perf.parserMs,
       mineParserMs: minePayload.perf.parserMs,
-      metadataMs: basePayload.perf.metadataMs + minePayload.perf.metadataMs,
+      metadataMs,
       diffMs: preparedTextAnalysis?.perf?.diffMs ?? 0,
       rustDiffMs: preparedWorkbookAnalysis?.perf?.rustDiffMs ?? 0,
       baseBytes: basePayload.perf.byteLength,
@@ -901,6 +970,8 @@ export async function buildLocalDiffData(
         ),
       ]);
   const workbookArtifactDiff = preparedWorkbookAnalysis?.artifactDiff ?? null;
+  const metadataMs = preparedWorkbookAnalysis?.perf?.metadataMs
+    ?? ((basePayload.perf.metadataMs ?? 0) + (minePayload.perf.metadataMs ?? 0));
 
   if (isWorkbook) {
     scheduleWorkbookAlternateSnapshotWarmup(workbookRequestContext, workbookCompareMode, {
@@ -948,7 +1019,7 @@ export async function buildLocalDiffData(
       mineReadMs: minePayload.perf.readMs,
       baseParserMs: basePayload.perf.parserMs,
       mineParserMs: minePayload.perf.parserMs,
-      metadataMs: basePayload.perf.metadataMs + minePayload.perf.metadataMs,
+      metadataMs,
       diffMs: preparedTextAnalysis?.perf?.diffMs ?? 0,
       rustDiffMs: preparedWorkbookAnalysis?.perf?.rustDiffMs ?? 0,
       baseBytes: basePayload.perf.byteLength,
@@ -1003,7 +1074,13 @@ export async function loadWorkbookMetadataData(
 ): Promise<WorkbookMetadataPayload> {
   const start = performance.now();
   const context = await resolveWorkbookRequestContext(baseRevisionId, mineRevisionId);
-  const { analysisSnapshot, basePayload, minePayload, metadataMs } = await resolveWorkbookMetadataBundle(context);
+  const {
+    analysisSnapshot,
+    basePayload,
+    minePayload,
+    metadataPayload,
+    metadataMs,
+  } = await resolveWorkbookMetadataBundle(context);
   const workbookAnalysis = analysisSnapshot?.workbookAnalysis ?? null;
 
   logDebugTiming('load-workbook-metadata:done', {
@@ -1012,6 +1089,10 @@ export async function loadWorkbookMetadataData(
     durationMs: Number((performance.now() - start).toFixed(1)),
     metadataMs: Number(metadataMs.toFixed(1)),
   });
+
+  if (!analysisSnapshot && metadataPayload) {
+    return metadataPayload;
+  }
 
   return {
     base: workbookAnalysis?.metadata.base ?? basePayload.metadata,

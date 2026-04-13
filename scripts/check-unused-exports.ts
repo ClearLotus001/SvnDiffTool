@@ -8,7 +8,7 @@ interface ExportRecord {
 }
 
 const repoRoot = process.cwd();
-const exportTargetDirs = ['src', 'electron', 'scripts'];
+const exportTargetDirs = ['src', 'electron', 'scripts', 'shared'];
 const consumerDirs = [...exportTargetDirs, 'tests'];
 const entryPoints = new Set([
   'src/main.tsx',

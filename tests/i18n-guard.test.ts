@@ -33,3 +33,18 @@ test('renderer source does not branch UI copy directly on locale', () => {
 
   assert.deepEqual(violations, []);
 });
+
+test('renderer source does not hardcode literal accessibility or hint copy in JSX attributes', () => {
+  const roots = [
+    path.join(process.cwd(), 'src', 'components'),
+    path.join(process.cwd(), 'src', 'hooks'),
+  ];
+
+  const violationPattern = /\b(?:aria-label|ariaLabel|title|placeholder|alt)=["'][^"']+["']/;
+
+  const violations = roots
+    .flatMap(collectSourceFiles)
+    .filter((filePath) => violationPattern.test(fs.readFileSync(filePath, 'utf8')));
+
+  assert.deepEqual(violations, []);
+});
