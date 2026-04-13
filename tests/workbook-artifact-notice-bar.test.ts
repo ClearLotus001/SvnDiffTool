@@ -14,7 +14,7 @@ test('WorkbookArtifactNoticeBar renders prominent artifact-only diff copy', () =
       { value: 'light' },
       React.createElement(
         I18nProvider,
-        null,
+        { initialLocale: 'zh-CN' },
         React.createElement(WorkbookArtifactNoticeBar, {
           onClose: () => {},
         }),

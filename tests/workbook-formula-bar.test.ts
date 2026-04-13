@@ -18,7 +18,7 @@ function renderFormulaBar(
       { value: 'light' },
       React.createElement(
         I18nProvider,
-        null,
+        { initialLocale: 'zh-CN' },
         React.createElement(WorkbookFormulaBar, {
           selection,
           fontSize: 13,

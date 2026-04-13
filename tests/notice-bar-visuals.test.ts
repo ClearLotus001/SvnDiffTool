@@ -9,7 +9,7 @@ import WorkbookArtifactNoticeBar from '../src/components/workbook/WorkbookArtifa
 
 function renderWithI18n(element: React.ReactElement): string {
   return renderToStaticMarkup(
-    React.createElement(I18nProvider, null, element),
+    React.createElement(I18nProvider, { initialLocale: 'zh-CN' }, element),
   );
 }
 

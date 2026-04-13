@@ -53,7 +53,7 @@ function renderStatsBar(
       { value: 'light' },
       React.createElement(
         I18nProvider,
-        null,
+        { initialLocale: 'zh-CN' },
         React.createElement(StatsBar, {
           textDiffPresentation: buildTextDiffPresentation(diffLines),
           baseName: 'Base',

@@ -56,7 +56,7 @@ test('HomeStartPanel shows retry and close actions when an error is present', ()
   const html = renderToStaticMarkup(
     React.createElement(
       I18nProvider,
-      null,
+      { initialLocale: 'zh-CN' },
       React.createElement(HomeStartPanel, {
         error: '文件加载失败：boom',
         isElectron: true,
