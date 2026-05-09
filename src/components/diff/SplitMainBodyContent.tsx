@@ -10,6 +10,7 @@ import { ROW_H } from '@/hooks/virtualization/useVirtual';
 import { cssVar } from '@/theme/cssUtils';
 import { getSplitLineSyntaxTokens } from '@/utils/diff/syntaxHighlighting';
 import { getTextVerticalRenderMode } from '@/utils/diff/splitRowBehavior';
+import { resolveTextSplitRowVisualTone } from '@/utils/diff/textDiffVisuals';
 import DiffRow from '@/components/diff/DiffRow';
 import SplitCell from '@/components/diff/SplitCell';
 import type { TokenSearchRange } from '@/components/shared/TokenText';
@@ -103,6 +104,7 @@ export default function SplitMainBodyContent({
         const renderMode = vertical ? getTextVerticalRenderMode(item.row) : 'double';
         const isSearchMatch = item.row.lineIdxs.some(idx => searchMatchSet.has(idx));
         const isActiveSearch = item.row.lineIdxs.includes(activeSearchLineIdx);
+        const isModifyRow = resolveTextSplitRowVisualTone(item.row) === 'modify';
         const singleLine = renderMode === 'single-left'
           ? item.row.left
           : renderMode === 'single-right'
@@ -147,7 +149,7 @@ export default function SplitMainBodyContent({
                   singleLine,
                   singleLine === item.row.left ? 'left' : 'right',
                 )}
-                isReplacementPair={Boolean(item.row.isReplacementPair)}
+                isReplacementPair={isModifyRow}
                 widthMode="content"
                 isSearchMatch={isSearchMatch}
                 isActiveSearch={isActiveSearch}
@@ -192,10 +194,11 @@ export default function SplitMainBodyContent({
               line={item.row.left}
               side="left"
               copySide="base"
+              lineIdx={leftLineIdx}
               syntaxTokens={getSplitLineSyntaxTokens(syntaxPresentation, item.row.left, 'left')}
               widthMode={vertical ? 'content' : 'fill'}
               lineNumberLayout={vertical ? 'paired' : 'single'}
-              isReplacementPair={Boolean(item.row.isReplacementPair)}
+              isReplacementPair={isModifyRow}
               isSearchMatch={isSearchMatch}
               isActiveSearch={isActiveSearch}
               isRangeSelected={isSplitRowSelected(item.row)}
@@ -213,8 +216,8 @@ export default function SplitMainBodyContent({
               showWhitespace={showWhitespace}
               fontSize={fontSize}
               allowTextSelection={!isWorkbookMode}
-              textSelectionRange={!isWorkbookMode
-                ? getCombinedTextSelectionRangeForLine(item.lineIdx, 'base', item.row.left?.base?.length ?? 0)
+              textSelectionRange={!isWorkbookMode && leftLineIdx != null
+                ? getCombinedTextSelectionRangeForLine(leftLineIdx, 'base', item.row.left?.base?.length ?? 0)
                 : null}
               sheetName={activeWorkbookSectionName}
               versionLabel={baseVersion}
@@ -231,10 +234,11 @@ export default function SplitMainBodyContent({
               line={item.row.right}
               side="right"
               copySide="mine"
+              lineIdx={rightLineIdx}
               syntaxTokens={getSplitLineSyntaxTokens(syntaxPresentation, item.row.right, 'right')}
               widthMode={vertical ? 'content' : 'fill'}
               lineNumberLayout={vertical ? 'paired' : 'single'}
-              isReplacementPair={Boolean(item.row.isReplacementPair)}
+              isReplacementPair={isModifyRow}
               isSearchMatch={isSearchMatch}
               isActiveSearch={isActiveSearch}
               isRangeSelected={isSplitRowSelected(item.row)}
@@ -252,8 +256,8 @@ export default function SplitMainBodyContent({
               showWhitespace={showWhitespace}
               fontSize={fontSize}
               allowTextSelection={!isWorkbookMode}
-              textSelectionRange={!isWorkbookMode
-                ? getCombinedTextSelectionRangeForLine(item.lineIdx, 'mine', item.row.right?.mine?.length ?? 0)
+              textSelectionRange={!isWorkbookMode && rightLineIdx != null
+                ? getCombinedTextSelectionRangeForLine(rightLineIdx, 'mine', item.row.right?.mine?.length ?? 0)
                 : null}
               sheetName={activeWorkbookSectionName}
               versionLabel={mineVersion}

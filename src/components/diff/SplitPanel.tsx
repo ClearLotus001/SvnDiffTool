@@ -75,6 +75,8 @@ import { doesLogicalTextSelectionIntersectLineRange } from '@/utils/diff/logical
 import { useSplitPanelLayoutSnapshotEffects } from '@/hooks/diff/useSplitPanelLayoutSnapshotEffects';
 import { useSplitPanelWorkbookNavigationRows } from '@/hooks/diff/useSplitPanelWorkbookNavigationRows';
 import { materializeSplitRowsFromDescriptors, prepareTextDiffAnalysisFromDiffLines } from '@/utils/diff/preparedTextAnalysis';
+import { buildVersionRangeCopyText, hasVersionContentInRange } from '@/utils/diff/textCopy';
+import { copyText } from '@/utils/app/clipboard';
 import {
   buildTextRenderItemIndexes,
   findNearestTextRenderItemIndex,
@@ -468,7 +470,9 @@ const SplitPanel = memo(({
       return row.left ? (row.lineIdxs[0] ?? null) : null;
     }
     if (!row.right) return null;
-    return row.left ? (row.lineIdxs[1] ?? null) : (row.lineIdxs[0] ?? null);
+    if (!row.left) return row.lineIdxs[0] ?? null;
+    // Both sides present. Equal rows share a single lineIdx; aligned change rows have [deleteIdx, addIdx].
+    return row.lineIdxs[1] ?? row.lineIdxs[0] ?? null;
   }, []);
 
   useEffect(() => {
@@ -589,15 +593,80 @@ const SplitPanel = memo(({
 
     if (openTextSelectionContextMenu(event, textSelection)) return;
 
-    if (selectionAnchorSide !== side) return;
     void openLineSelectionContextMenu(event, side === 'left' ? 'base' : 'mine');
-  }, [leftTextSelectionCopyText, openLineSelectionContextMenu, openTextSelectionContextMenu, rightTextSelectionCopyText, selectionAnchorSide]);
+  }, [leftTextSelectionCopyText, openLineSelectionContextMenu, openTextSelectionContextMenu, rightTextSelectionCopyText]);
 
   const handleContextMenu = useCallback((event: ReactMouseEvent<HTMLElement>) => {
     if (isWorkbookMode) return;
     if (openTextSelectionContextMenu(event, combinedTextSelectionCopyText)) return;
     void openLineSelectionContextMenu(event, 'both');
   }, [combinedTextSelectionCopyText, isWorkbookMode, openLineSelectionContextMenu, openTextSelectionContextMenu]);
+
+  const lastHoveredPaneSideRef = useRef<'left' | 'right' | null>(null);
+  useEffect(() => {
+    if (!horizontalSplitEnabled) {
+      lastHoveredPaneSideRef.current = null;
+      return undefined;
+    }
+    const left = leftPaneScrollRef.current;
+    const right = rightPaneScrollRef.current;
+    const handleLeft = () => { lastHoveredPaneSideRef.current = 'left'; };
+    const handleRight = () => { lastHoveredPaneSideRef.current = 'right'; };
+    left?.addEventListener('pointerenter', handleLeft);
+    left?.addEventListener('pointerdown', handleLeft, true);
+    right?.addEventListener('pointerenter', handleRight);
+    right?.addEventListener('pointerdown', handleRight, true);
+    return () => {
+      left?.removeEventListener('pointerenter', handleLeft);
+      left?.removeEventListener('pointerdown', handleLeft, true);
+      right?.removeEventListener('pointerenter', handleRight);
+      right?.removeEventListener('pointerdown', handleRight, true);
+    };
+  }, [horizontalSplitEnabled, leftPaneScrollRef, rightPaneScrollRef]);
+
+  useEffect(() => {
+    if (isWorkbookMode || !normalizedLineRangeSelection) return undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
+      if (event.key.toLowerCase() !== 'c') return;
+      // text selections own Ctrl+C when active in their host pane
+      if (leftTextSelectionCopyText || rightTextSelectionCopyText || combinedTextSelectionCopyText) return;
+      const active = document.activeElement;
+      if (active instanceof HTMLElement
+        && (active.matches('input, textarea, select') || active.isContentEditable)) {
+        return;
+      }
+      const { startLineIdx, endLineIdx } = normalizedLineRangeSelection;
+      let side: 'base' | 'mine';
+      if (horizontalSplitEnabled) {
+        const hovered = lastHoveredPaneSideRef.current;
+        if (hovered === 'right') side = 'mine';
+        else if (hovered === 'left') side = 'base';
+        else side = selectionAnchorSide === 'right' ? 'mine' : 'base';
+      } else {
+        // unified/vertical: prefer mine (working copy) when it has content, else base
+        side = hasVersionContentInRange(diffLines, 'mine', startLineIdx, endLineIdx)
+          ? 'mine'
+          : 'base';
+      }
+      const text = buildVersionRangeCopyText(diffLines, side, startLineIdx, endLineIdx);
+      if (!text) return;
+      event.preventDefault();
+      void copyText(text);
+    };
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => document.removeEventListener('keydown', handleKeyDown, true);
+  }, [
+    combinedTextSelectionCopyText,
+    diffLines,
+    horizontalSplitEnabled,
+    isWorkbookMode,
+    leftTextSelectionCopyText,
+    normalizedLineRangeSelection,
+    rightTextSelectionCopyText,
+    selectionAnchorSide,
+  ]);
+
   useEffect(() => {
     const hasTextSelectionMenu = contextMenuSections.some((section) => (
       section.items.some((item) => item.id === 'copy-selected-text')

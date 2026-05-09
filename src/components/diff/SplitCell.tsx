@@ -27,6 +27,7 @@ interface SplitCellProps {
   line: DiffLine | null;
   side: 'left' | 'right';
   copySide?: 'base' | 'mine' | 'both';
+  lineIdx?: number | null;
   syntaxTokens?: Token[] | undefined;
   widthMode?: 'fill' | 'content';
   lineNumberLayout?: 'single' | 'paired';
@@ -103,6 +104,7 @@ const SplitCell = memo(({
   line,
   side,
   copySide = side === 'left' ? 'base' : 'mine',
+  lineIdx,
   syntaxTokens,
   widthMode = 'fill',
   lineNumberLayout = 'single',
@@ -205,7 +207,10 @@ const SplitCell = memo(({
   // Empty padding cell (for alignment when one side has no matching line)
   if (!line) {
     return (
-      <div style={{
+      <div
+        {...(lineIdx != null ? { 'data-line-idx': lineIdx } : {})}
+        data-copy-side={copySide}
+        style={{
         flex: isContentWidth ? '1 1 auto' : 1,
         display: 'flex',
         height: resolvedRowHeight,
@@ -254,13 +259,15 @@ const SplitCell = memo(({
     hasSearchRanges,
     isRangeSelected,
     hasRowSurfaceOverride: Boolean(searchBg),
+    hasTextSelection,
   });
-  const effectiveHighlightBackground = diffHighlightBackground ?? hlBg;
+  const effectiveHighlightBackground = hasTextSelection ? undefined : (diffHighlightBackground ?? hlBg);
   const contentHighlightBackground = undefined;
 
   return (
     <div
       data-copy-side={copySide}
+      {...(lineIdx != null ? { 'data-line-idx': lineIdx } : {})}
       style={{
         flex: isContentWidth ? '1 1 auto' : 1,
         display: 'flex',

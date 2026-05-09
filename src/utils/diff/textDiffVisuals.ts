@@ -15,6 +15,7 @@ export interface ResolveTextInlineBackgroundOptions {
   hasSearchRanges: boolean;
   isRangeSelected: boolean;
   hasRowSurfaceOverride?: boolean;
+  hasTextSelection?: boolean;
 }
 
 export function resolveTextDiffVisualTone(
@@ -81,7 +82,12 @@ export function resolveTextDiffCssPalette(
 export function resolveTextInlineBackground(
   options: ResolveTextInlineBackgroundOptions,
 ): string | undefined {
-  if (options.hasRowSurfaceOverride || options.hasSearchRanges || options.isRangeSelected) {
+  if (
+    options.hasRowSurfaceOverride
+    || options.hasSearchRanges
+    || options.isRangeSelected
+    || options.hasTextSelection
+  ) {
     return undefined;
   }
 

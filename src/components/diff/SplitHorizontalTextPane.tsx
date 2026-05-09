@@ -9,6 +9,7 @@ import type { DiffLine, SplitRow, SyntaxPresentation } from '@/types';
 import { ROW_H } from '@/hooks/virtualization/useVirtual';
 import { cssAlpha, cssVar } from '@/theme/cssUtils';
 import { getSplitLineSyntaxTokens } from '@/utils/diff/syntaxHighlighting';
+import { resolveTextSplitRowVisualTone } from '@/utils/diff/textDiffVisuals';
 import SplitCell from '@/components/diff/SplitCell';
 import type { TokenSearchRange } from '@/components/shared/TokenText';
 
@@ -138,12 +139,15 @@ export default function SplitHorizontalTextPane({
             const lineText = side === 'left'
               ? (line?.base ?? '')
               : (line?.mine ?? '');
-            const textSelectionRange = getTextSelectionRangeForLine(item.lineIdx, lineText.length);
+            const textSelectionRange = sideLineIdx != null
+              ? getTextSelectionRangeForLine(sideLineIdx, lineText.length)
+              : null;
+            const isModifyRow = resolveTextSplitRowVisualTone(item.row) === 'modify';
 
             return (
               <div
                 key={key}
-                data-line-idx={item.lineIdx}
+                data-line-idx={sideClickLineIdx}
                 data-line-span-end={Math.max(...item.row.lineIdxs)}
                 data-selection-band={rowSelected ? 'true' : undefined}
                 onPointerDown={onPointerDown}
@@ -152,10 +156,11 @@ export default function SplitHorizontalTextPane({
                   line={line}
                   side={side}
                   copySide={side === 'left' ? 'base' : 'mine'}
+                  lineIdx={sideLineIdx}
                   syntaxTokens={getSplitLineSyntaxTokens(syntaxPresentation, line, side)}
                   widthMode="content"
                   lineNumberLayout="single"
-                  isReplacementPair={Boolean(item.row.isReplacementPair)}
+                  isReplacementPair={isModifyRow}
                   isSearchMatch={isSearchMatch}
                   isActiveSearch={isActiveSearch}
                   isRangeSelected={rowSelected}

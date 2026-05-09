@@ -133,8 +133,9 @@ const DiffRow = memo(({
     tone,
     hasSearchRanges,
     isRangeSelected,
+    hasTextSelection,
   });
-  const effectiveHighlightBackground = diffHighlightBackground ?? hlBg;
+  const effectiveHighlightBackground = hasTextSelection ? undefined : (diffHighlightBackground ?? hlBg);
   const contentHighlightBackground = undefined;
 
   return (

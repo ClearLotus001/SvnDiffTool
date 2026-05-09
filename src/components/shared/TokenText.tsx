@@ -13,7 +13,7 @@ export interface TokenSearchRange {
 interface TokenTextProps {
   tokens: Token[];
   charSpans?: { highlight: boolean; text: string }[] | null;
-  hlBg?: string;
+  hlBg?: string | undefined;
   searchRanges?: TokenSearchRange[] | undefined;
   searchHlBg?: string | undefined;
   activeSearchHlBg?: string | undefined;
