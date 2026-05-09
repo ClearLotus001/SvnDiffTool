@@ -145,15 +145,11 @@ fn decode_shared_string_item(shared_string_item_xml: &str) -> String {
 
     loop {
         match reader.read_event() {
-            Ok(Event::Start(event)) => {
-                if event.name().as_ref() == b"t" {
-                    capture_text = true;
-                }
+            Ok(Event::Start(event)) if event.name().as_ref() == b"t" => {
+                capture_text = true;
             }
-            Ok(Event::End(event)) => {
-                if event.name().as_ref() == b"t" {
-                    capture_text = false;
-                }
+            Ok(Event::End(event)) if event.name().as_ref() == b"t" => {
+                capture_text = false;
             }
             Ok(Event::Text(text)) if capture_text => {
                 if let Ok(value) = text.decode() {
