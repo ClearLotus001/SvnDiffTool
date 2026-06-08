@@ -34,7 +34,7 @@ test('paired workbook changes use the yellow modify palette', () => {
 
   assert.deepEqual(visual, {
     background: lightTheme.chgBg,
-    border: lightTheme.chgTx,
+    border: lightTheme.chgBrd,
     textColor: lightTheme.chgTx,
     maskOverlay: null,
   });

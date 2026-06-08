@@ -76,7 +76,7 @@ If your goal is "make SVN diffs easier to read", this project is built for that.
 - npm
 - Rust stable with `cargo`
 
-> Note: `npm run build` builds the frontend, the Electron main process, and the Rust parser, so a working Rust toolchain is required for local builds.
+> Note: workbook regression tests depend on the Rust parser artifact. Run `npm run build:rust` before the first test run, or run `npm run verify:ci`.
 
 ## Quick Start
 
@@ -97,7 +97,10 @@ If you launch the app directly instead of letting TortoiseSVN pass file argument
 |---------|-------------|
 | `npm run dev:app` | Starts Vite, Electron, and Electron TypeScript watch mode |
 | `npm run typecheck` | Runs type checks for renderer, electron, and scripts |
-| `npm run test:workbook` | Runs the repository test suite, including workbook-focused regressions |
+| `npm run test:workbook` | Checks the Rust parser artifact and runs the repository test suite, including workbook-focused regressions |
+| `npm run test:workbook:unit` | Runs repository tests that do not directly require the Rust parser artifact, useful for quick checks without a Rust toolchain |
+| `npm run test:workbook:js` | Compatibility alias for `test:workbook:unit` |
+| `npm run verify:ci` | Reproduces the main CI gate locally: lint, typecheck, Rust build, tests, and app build |
 | `npm run verify:single-instance-cache` | Verifies single-instance and cache-related behavior |
 | `npm run build` | Builds renderer, Electron, and Rust artifacts |
 | `npm run build:win` | Produces the native Windows installer plus auto-update assets |
@@ -279,9 +282,9 @@ That is usually expected. If the app is launched manually or via the development
 - `strict` is more sensitive to whitespace, formula text, and exact workbook representation
 - `content` is more normalized and is better when you want to downplay "technically different but not materially important" changes
 
-### 4. `npm run build` fails because `cargo` is missing
+### 4. `npm run build` or `npm run verify:ci` fails because `cargo` is missing
 
-The build process compiles the Rust parser as part of the normal pipeline. Install Rust stable and make sure `cargo` is available in your `PATH`.
+The build and CI verification pipelines compile the Rust parser. Install Rust stable and make sure `cargo` is available in your `PATH`; if it is not, set the `CARGO` environment variable to a working cargo executable.
 
 ### 5. Can very large files still be opened
 
@@ -293,15 +296,14 @@ A practical local development flow is:
 
 ```bash
 npm install
-npm run typecheck
-npm run test:workbook
+npm run verify:ci
 npm run dev:app
 ```
 
 Before committing, at minimum run:
 
 ```bash
-npm run build
+npm run verify:ci
 ```
 
-That covers TypeScript checks, frontend build output, and the Rust parser build pipeline in one pass.
+That covers lint, TypeScript checks, the Rust parser build, repository tests, and app build output in one pass.

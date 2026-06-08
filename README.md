@@ -76,7 +76,7 @@
 - npm
 - Rust 稳定版与 `cargo`
 
-> 注意：`npm run build` 会同时构建前端、Electron 主进程和 Rust 解析器，因此本地打包时需要可用的 Rust 工具链。
+> 注意：工作簿回归测试依赖 Rust 解析器产物。首次测试前请先执行 `npm run build:rust`，或直接执行 `npm run verify:ci`。
 
 ## 快速开始
 
@@ -97,7 +97,10 @@ npm run dev:app
 |------|------|
 | `npm run dev:app` | 启动 Vite、Electron，以及主进程 TypeScript 监听编译 |
 | `npm run typecheck` | 执行前端、主进程和脚本三部分类型检查 |
-| `npm run test:workbook` | 运行仓库中的测试集，包含工作簿相关回归测试 |
+| `npm run test:workbook` | 检查 Rust 解析器产物并运行仓库测试集，包含工作簿相关回归测试 |
+| `npm run test:workbook:unit` | 运行不直接依赖 Rust 解析器产物的仓库测试，适合没有 Rust 工具链的快速检查 |
+| `npm run test:workbook:js` | `test:workbook:unit` 的兼容别名 |
+| `npm run verify:ci` | 本地复现 CI 主验证：lint、typecheck、Rust 构建、测试、应用构建 |
 | `npm run verify:single-instance-cache` | 验证单实例与缓存相关逻辑 |
 | `npm run build` | 构建前端、Electron 主进程与 Rust 产物 |
 | `npm run build:win` | 生成 Windows 原生安装器与自动更新资产 |
@@ -279,9 +282,9 @@ SvnDiffTool/
 - 严格模式：对空白、公式文本等更敏感，适合精确比对
 - 内容模式：更偏向内容归一化后的比较，适合弱化某些“严格但不重要”的差异
 
-### 4. `npm run build` 报找不到 `cargo`
+### 4. `npm run build` 或 `npm run verify:ci` 报找不到 `cargo`
 
-这是因为构建流程会一起编译 Rust 解析器。安装 Rust 稳定版，并确保 `cargo` 在 `PATH` 中即可。
+这是因为构建与 CI 验证流程会编译 Rust 解析器。安装 Rust 稳定版，并确保 `cargo` 在 `PATH` 中；如果 `cargo` 不在 `PATH`，也可以设置 `CARGO` 环境变量指向可用的 `cargo` 可执行文件。
 
 ### 5. 超大文件会不会打不开
 
@@ -293,15 +296,14 @@ SvnDiffTool/
 
 ```bash
 npm install
-npm run typecheck
-npm run test:workbook
+npm run verify:ci
 npm run dev:app
 ```
 
 提交前至少执行：
 
 ```bash
-npm run build
+npm run verify:ci
 ```
 
-这样可以同时覆盖类型检查、前端构建和 Rust 解析器构建链路。
+这样可以同时覆盖 lint、类型检查、Rust 解析器构建、仓库测试和应用构建链路。

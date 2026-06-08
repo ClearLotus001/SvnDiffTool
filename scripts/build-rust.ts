@@ -36,8 +36,19 @@ const result = spawnSync(cargoPath, ['build', '--manifest-path', manifestPath, '
   },
 });
 
+if (result.error) {
+  console.error(`Failed to run Rust cargo executable "${cargoPath}".`);
+  console.error(result.error.message);
+  console.error('Install the Rust stable toolchain or set the CARGO environment variable to a working cargo executable.');
+  process.exit(1);
+}
+
 if (typeof result.status === 'number') {
   process.exit(result.status);
+}
+
+if (result.signal) {
+  console.error(`Rust build was terminated by signal ${result.signal}.`);
 }
 
 process.exit(1);
