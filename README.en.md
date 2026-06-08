@@ -99,8 +99,9 @@ If you launch the app directly instead of letting TortoiseSVN pass file argument
 | `npm run typecheck` | Runs type checks for renderer, electron, and scripts |
 | `npm run test:workbook` | Checks the Rust parser artifact and runs the repository test suite, including workbook-focused regressions |
 | `npm run test:workbook:unit` | Runs repository tests that do not directly require the Rust parser artifact, useful for quick checks without a Rust toolchain |
+| `npm run test:workbook:rust` | Checks the Rust parser artifact and runs only the Rust parser integration tests |
 | `npm run test:workbook:js` | Compatibility alias for `test:workbook:unit` |
-| `npm run verify:ci` | Reproduces the main CI gate locally: lint, typecheck, Rust build, tests, and app build |
+| `npm run verify:ci` | Reproduces the main CI gate locally: static checks, Rust build and lint, unit tests, Rust integration tests, and app build |
 | `npm run verify:single-instance-cache` | Verifies single-instance and cache-related behavior |
 | `npm run build` | Builds renderer, Electron, and Rust artifacts |
 | `npm run build:win` | Produces the native Windows installer plus auto-update assets |

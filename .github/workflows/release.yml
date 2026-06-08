@@ -8,9 +8,62 @@ on:
 permissions:
   contents: write
 
+defaults:
+  run:
+    shell: pwsh
+
+env:
+  CI: 'true'
+  npm_config_audit: 'false'
+  npm_config_fund: 'false'
+
 jobs:
-  build-win-release:
+  static-checks:
+    name: Static checks
     runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run lint and typecheck
+        run: npm run verify:static
+
+  workbook-unit-tests:
+    name: Workbook unit tests
+    runs-on: windows-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run non-Rust workbook tests
+        run: npm run test:workbook:unit
+
+  rust-integration-tests:
+    name: Rust integration tests
+    runs-on: windows-latest
+    timeout-minutes: 35
 
     steps:
       - name: Checkout
@@ -30,8 +83,64 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify CI gates
-        run: npm run verify:ci
+      - name: Build and lint Rust parser
+        run: npm run verify:rust
+
+      - name: Run Rust-backed workbook tests
+        run: npm run test:workbook:rust
+
+  app-build:
+    name: App build
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app bundle
+        run: npm run build:app
+
+  build-and-publish-win-release:
+    name: Build and publish Windows release
+    runs-on: windows-latest
+    timeout-minutes: 60
+    needs:
+      - static-checks
+      - workbook-unit-tests
+      - rust-integration-tests
+      - app-build
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Rust parser
+        run: npm run build:rust
+
+      - name: Build app bundle
+        run: npm run build:app
 
       - name: Build and publish Windows installer/update assets
         run: npx tsx scripts/build-win-installer.ts --publish always

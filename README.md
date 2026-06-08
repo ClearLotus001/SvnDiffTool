@@ -99,8 +99,9 @@ npm run dev:app
 | `npm run typecheck` | 执行前端、主进程和脚本三部分类型检查 |
 | `npm run test:workbook` | 检查 Rust 解析器产物并运行仓库测试集，包含工作簿相关回归测试 |
 | `npm run test:workbook:unit` | 运行不直接依赖 Rust 解析器产物的仓库测试，适合没有 Rust 工具链的快速检查 |
+| `npm run test:workbook:rust` | 检查 Rust 解析器产物，并只运行依赖 Rust 解析器的集成测试 |
 | `npm run test:workbook:js` | `test:workbook:unit` 的兼容别名 |
-| `npm run verify:ci` | 本地复现 CI 主验证：lint、typecheck、Rust 构建、测试、应用构建 |
+| `npm run verify:ci` | 本地复现 CI 主验证：静态检查、Rust 构建与 lint、单元测试、Rust 集成测试、应用构建 |
 | `npm run verify:single-instance-cache` | 验证单实例与缓存相关逻辑 |
 | `npm run build` | 构建前端、Electron 主进程与 Rust 产物 |
 | `npm run build:win` | 生成 Windows 原生安装器与自动更新资产 |

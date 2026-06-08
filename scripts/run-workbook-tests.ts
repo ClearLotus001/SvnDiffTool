@@ -7,11 +7,26 @@ const testsDir = path.join(repoRoot, 'tests');
 const rustRequiredTests = new Set([
   'analysis-snapshot-service.test.ts',
   'local-diff-follow-up-loaders.test.ts',
+  'rust-workbook-diff-smoke.test.ts',
 ]);
-const skipRustRequired = process.argv.includes('--skip-rust-required');
+const args = process.argv.slice(2);
+const skipRustRequired = args.includes('--skip-rust-required');
+const onlyRustRequired = args.includes('--only-rust-required');
+
+if (skipRustRequired && onlyRustRequired) {
+  console.error('Use either --skip-rust-required or --only-rust-required, not both.');
+  process.exit(1);
+}
+
+const mode = onlyRustRequired ? 'rust integration' : skipRustRequired ? 'unit' : 'all';
 const testFiles = readdirSync(testsDir)
   .filter((fileName) => /\.test\.tsx?$/.test(fileName))
-  .filter((fileName) => !skipRustRequired || !rustRequiredTests.has(fileName))
+  .filter((fileName) => {
+    const rustRequired = rustRequiredTests.has(fileName);
+    if (skipRustRequired) return !rustRequired;
+    if (onlyRustRequired) return rustRequired;
+    return true;
+  })
   .sort()
   .map((fileName) => path.join('tests', fileName));
 
@@ -21,25 +36,56 @@ if (testFiles.length === 0) {
 }
 
 const tsxCliPath = path.join(repoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
-const result = spawnSync(process.execPath, [tsxCliPath, '--test', ...testFiles], {
-  cwd: repoRoot,
-  stdio: 'inherit',
-  shell: false,
-  env: process.env,
-});
+const failedFiles: string[] = [];
+const useGithubLogGroups = process.env.GITHUB_ACTIONS === 'true';
 
-if (result.error) {
-  console.error(`Failed to run ${tsxCliPath}.`);
-  console.error(result.error.message);
+function beginTestLog(testFile: string) {
+  const title = `[workbook-tests] ${testFile}`;
+  if (useGithubLogGroups) {
+    console.log(`::group::${title}`);
+    return;
+  }
+  console.log(`\n${title}`);
+}
+
+function endTestLog() {
+  if (useGithubLogGroups) {
+    console.log('::endgroup::');
+  }
+}
+
+console.log(`[workbook-tests] Running ${testFiles.length} ${mode} test file(s) in isolated Node test processes.`);
+
+for (const testFile of testFiles) {
+  beginTestLog(testFile);
+  const result = spawnSync(process.execPath, [tsxCliPath, '--test', testFile], {
+    cwd: repoRoot,
+    stdio: 'inherit',
+    shell: false,
+    env: process.env,
+  });
+
+  if (result.error) {
+    console.error(`Failed to run ${tsxCliPath}.`);
+    console.error(result.error.message);
+    endTestLog();
+    process.exit(1);
+  }
+
+  if (result.status !== 0) {
+    failedFiles.push(testFile);
+  }
+
+  if (result.signal) {
+    console.error(`Workbook tests were terminated by signal ${result.signal}.`);
+    failedFiles.push(testFile);
+  }
+
+  endTestLog();
+}
+
+if (failedFiles.length > 0) {
+  console.error('\n[workbook-tests] Failed files:');
+  failedFiles.forEach((fileName) => console.error(`- ${fileName}`));
   process.exit(1);
 }
-
-if (typeof result.status === 'number') {
-  process.exit(result.status);
-}
-
-if (result.signal) {
-  console.error(`Workbook tests were terminated by signal ${result.signal}.`);
-}
-
-process.exit(1);
