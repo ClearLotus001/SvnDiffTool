@@ -34,12 +34,12 @@ test('diff indicator palette maps semantic tones to shared DOM tokens', () => {
     shadow: cssAlpha('delBrd', '55'),
   });
   assert.deepEqual(modifyPalette, {
-    accent: cssVar('chgTx'),
+    accent: cssVar('chgBrd'),
     text: cssVar('chgTx'),
-    border: cssAlpha('chgTx', '66'),
+    border: cssAlpha('chgBrd', '66'),
     background: cssVar('chgBg'),
-    softBackground: cssAlpha('chgTx', '14'),
-    shadow: cssAlpha('chgTx', '55'),
+    softBackground: cssAlpha('chgBrd', '14'),
+    shadow: cssAlpha('chgBrd', '55'),
   });
   assert.deepEqual(neutralPalette, {
     accent: cssVar('acc2'),
@@ -60,13 +60,13 @@ test('workbook section indicator tone normalizes rename into modify semantics', 
 
 test('theme indicator visuals expose shared soft and strong semantic surfaces', () => {
   assert.deepEqual(resolveDiffIndicatorThemeVisual(lightTheme, 'modify', 'soft'), {
-    background: `${lightTheme.chgTx}12`,
-    border: `${lightTheme.chgTx}33`,
+    background: `${lightTheme.chgBrd}12`,
+    border: `${lightTheme.chgBrd}33`,
     textColor: lightTheme.chgTx,
   });
   assert.deepEqual(resolveDiffIndicatorThemeVisual(lightTheme, 'modify', 'strong'), {
     background: lightTheme.chgBg,
-    border: lightTheme.chgTx,
+    border: lightTheme.chgBrd,
     textColor: lightTheme.chgTx,
   });
   assert.deepEqual(resolveDiffIndicatorThemeVisual(lightTheme, 'strict-only', 'strong'), {

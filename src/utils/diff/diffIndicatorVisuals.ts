@@ -47,12 +47,12 @@ export function resolveDiffIndicatorCssPalette(
 
   if (tone === 'modify') {
     return {
-      accent: cssVar('chgTx'),
+      accent: cssVar('chgBrd'),
       text: cssVar('chgTx'),
-      border: cssAlpha('chgTx', '66'),
+      border: cssAlpha('chgBrd', '66'),
       background: cssVar('chgBg'),
-      softBackground: cssAlpha('chgTx', '14'),
-      shadow: cssAlpha('chgTx', '55'),
+      softBackground: cssAlpha('chgBrd', '14'),
+      shadow: cssAlpha('chgBrd', '55'),
     };
   }
 
@@ -117,12 +117,12 @@ export function resolveDiffIndicatorThemeVisual(
     return variant === 'strong'
       ? {
           background: theme.chgBg,
-          border: theme.chgTx,
+          border: theme.chgBrd,
           textColor: theme.chgTx,
         }
       : {
-          background: `${theme.chgTx}12`,
-          border: `${theme.chgTx}33`,
+          background: `${theme.chgBrd}12`,
+          border: `${theme.chgBrd}33`,
           textColor: theme.chgTx,
         };
   }

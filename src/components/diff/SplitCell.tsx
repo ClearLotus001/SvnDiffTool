@@ -1,6 +1,6 @@
 // src/components/SplitCell.tsx
-import { memo, useMemo, type CSSProperties, type MouseEventHandler } from 'react';
-import { FONT_CODE, FONT_SIZE } from '@/constants/typography';
+import { memo, useMemo, type MouseEventHandler } from 'react';
+import { FONT_CODE_STYLE, FONT_SIZE } from '@/constants/typography';
 import { LN_W } from '@/constants/layout';
 import type { DiffLine, Token, WorkbookSelectedCell } from '@/types';
 import { tokenize } from '@/engine/text/tokenizer';
@@ -10,8 +10,12 @@ import type { HorizontalVirtualColumnEntry } from '@/hooks/virtualization/useHor
 import type { WorkbookMergeRange } from '@/utils/workbook/workbookMeta';
 import { buildDiffSelectionSurfaces } from '@/utils/diff/selectionVisuals';
 import {
+  composeTextRowBackground,
   resolveTextDiffCssPalette,
+  resolveTextEmptySideBackground,
+  resolveTextEmptySideBackgroundPosition,
   resolveTextInlineBackground,
+  resolveTextSelectedRowBackground,
   resolveTextDiffVisualTone,
 } from '@/utils/diff/textDiffVisuals';
 import Ln from '@/components/diff/Ln';
@@ -28,6 +32,7 @@ interface SplitCellProps {
   side: 'left' | 'right';
   copySide?: 'base' | 'mine' | 'both';
   lineIdx?: number | null;
+  visualRowIndex?: number | null;
   syntaxTokens?: Token[] | undefined;
   widthMode?: 'fill' | 'content';
   lineNumberLayout?: 'single' | 'paired';
@@ -80,31 +85,12 @@ function renderWithWhitespaceMark(text: string) {
   );
 }
 
-function buildTextSelectionOverlayStyle(
-  range: TextSelectionRange | null | undefined,
-  textLength: number,
-): CSSProperties | null {
-  if (!range || range.end <= range.start) return null;
-  const startsWithinLine = range.start > 0;
-  const endsWithinLine = range.end < textLength;
-
-  return {
-    left: `calc(${range.start} * 1ch)`,
-    width: `calc(${range.end - range.start} * 1ch)`,
-    top: 0,
-    bottom: 0,
-    borderTopLeftRadius: startsWithinLine ? 2 : 0,
-    borderBottomLeftRadius: startsWithinLine ? 2 : 0,
-    borderTopRightRadius: endsWithinLine ? 2 : 0,
-    borderBottomRightRadius: endsWithinLine ? 2 : 0,
-  };
-}
-
 const SplitCell = memo(({
   line,
   side,
   copySide = side === 'left' ? 'base' : 'mine',
   lineIdx,
+  visualRowIndex = lineIdx,
   syntaxTokens,
   widthMode = 'fill',
   lineNumberLayout = 'single',
@@ -146,10 +132,6 @@ const SplitCell = memo(({
     isRangeSelected,
     isActiveSearch,
   });
-  const textSelectionOverlayStyle = useMemo<CSSProperties | null>(
-    () => buildTextSelectionOverlayStyle(textSelectionRange, content.length),
-    [content.length, textSelectionRange],
-  );
 
   const renderLineNumberGutter = (currentLine: DiffLine | null) => (
     <div style={{
@@ -161,7 +143,7 @@ const SplitCell = memo(({
       left: 0,
       zIndex: 4,
       background: currentLine == null && isRangeSelected
-        ? `linear-gradient(180deg,
+        ? `linear-gradient(90deg,
             color-mix(in srgb, ${selectionAccent} 14%, ${cssVar('lnBg')} 86%) 0%,
             color-mix(in srgb, ${selectionAccent} 8%, ${cssVar('bg0')} 92%) 100%)`
         : gutterBackground,
@@ -206,9 +188,19 @@ const SplitCell = memo(({
 
   // Empty padding cell (for alignment when one side has no matching line)
   if (!line) {
+    const emptySideBackground = resolveTextEmptySideBackground({
+      isRangeSelected,
+      selectionAccent,
+    });
+    const emptySideRowBackground = composeTextRowBackground(activeCapsuleSurface, emptySideBackground);
+    const emptySideBackgroundPosition = resolveTextEmptySideBackgroundPosition({
+      visualRowIndex,
+      rowHeight: resolvedRowHeight,
+    });
     return (
       <div
         {...(lineIdx != null ? { 'data-line-idx': lineIdx } : {})}
+        data-empty-side="true"
         data-copy-side={copySide}
         style={{
         flex: isContentWidth ? '1 1 auto' : 1,
@@ -218,25 +210,11 @@ const SplitCell = memo(({
         minWidth: isContentWidth ? 'max-content' : 0,
         isolation: 'isolate',
         position: 'relative',
+        background: emptySideRowBackground,
+        backgroundPosition: emptySideBackgroundPosition,
       }}>
-        <div
-          aria-hidden
-          style={{
-            position: 'absolute',
-            left: 0,
-            top: 2,
-            bottom: 2,
-            width: 3,
-            borderRadius: 999,
-            background: cssVar('bg4'),
-            pointerEvents: 'none',
-            zIndex: 1,
-          }}
-        />
         {renderLineNumberGutter(null)}
-        {!isContentWidth && (
-          <div style={{ flex: 1, background: cssVar('bg2'), minWidth: 0 }} />
-        )}
+        <div style={{ flex: 1, minWidth: 0 }} />
       </div>
     );
   }
@@ -261,7 +239,12 @@ const SplitCell = memo(({
     hasRowSurfaceOverride: Boolean(searchBg),
     hasTextSelection,
   });
-  const effectiveHighlightBackground = hasTextSelection ? undefined : (diffHighlightBackground ?? hlBg);
+  const selectedRowBackground = resolveTextSelectedRowBackground({
+    tone,
+    isRangeSelected,
+  });
+  const rowBackground = composeTextRowBackground(activeCapsuleSurface, selectedRowBackground);
+  const effectiveHighlightBackground = diffHighlightBackground ?? hlBg;
   const contentHighlightBackground = undefined;
 
   return (
@@ -276,8 +259,8 @@ const SplitCell = memo(({
         minWidth: isContentWidth ? 'max-content' : 0,
         isolation: 'isolate',
         position: 'relative',
-        background: activeCapsuleSurface,
-        borderRadius: isActiveSearch ? 999 : isRangeSelected ? 12 : undefined,
+        background: rowBackground,
+        borderRadius: isActiveSearch ? 4 : undefined,
       }}>
       {brd !== 'transparent' && (
         <div
@@ -310,7 +293,7 @@ const SplitCell = memo(({
           color: pfxC, userSelect: 'none',
           fontSize: FONT_SIZE.md, flexShrink: 0,
           lineHeight: `${resolvedRowHeight}px`,
-          fontFamily: FONT_CODE,
+          ...FONT_CODE_STYLE,
           position: 'relative',
           zIndex: 1,
         }}>
@@ -327,19 +310,11 @@ const SplitCell = memo(({
             fontSize,
             lineHeight: `${resolvedRowHeight}px`,
             color: cssVar('t0'),
-            fontFamily: FONT_CODE,
+            ...FONT_CODE_STYLE,
             minWidth: isContentWidth ? 'max-content' : 0,
             position: 'relative',
             zIndex: 1,
           }}>
-          {textSelectionOverlayStyle && (
-            <span
-              aria-hidden
-              data-logical-selection-overlay="true"
-              className="logical-text-selection-overlay"
-              style={textSelectionOverlayStyle}
-            />
-          )}
           <span
             data-selectable-text-content="true"
             style={{
@@ -359,6 +334,8 @@ const SplitCell = memo(({
                   charSpans={charSpans}
                   hlBg={effectiveHighlightBackground}
                   searchRanges={searchRanges}
+                  selectionRanges={textSelectionRange ? [textSelectionRange] : []}
+                  selectionHlBg="color-mix(in srgb, var(--text-selection-bg) 58%, transparent)"
                   searchHlBg={cssAlpha('searchHl', '32')}
                   activeSearchHlBg={cssAlpha('searchHl', '92')}
                 />
@@ -372,7 +349,7 @@ const SplitCell = memo(({
           style={{
             position: 'absolute',
             inset: 0,
-            borderRadius: 999,
+            borderRadius: 4,
             border: `1px solid ${cssAlpha('searchHl', 'de')}`,
             boxSizing: 'border-box',
             boxShadow: `0 6px 18px -16px ${cssAlpha('searchHl', '44')}`,

@@ -70,7 +70,7 @@
 
   /* ── 字体 ── */
   --font-ui: 'Inter', 'Microsoft YaHei UI', 'Segoe UI', 'PingFang SC', system-ui, sans-serif;
-  --font-code: 'JetBrains Mono', 'Cascadia Mono', 'Consolas', 'Monaco', monospace;
+  --font-code: 'Consolas', 'Cascadia Mono', 'Courier New', monospace;
 
   /* ── 字号 (对应 FONT_SIZE 常量，使用 app- 前缀避免覆盖 Tailwind 内置) ── */
   --text-app-2xs: 11px;
@@ -532,8 +532,10 @@ select,
 }
 
 .logical-text-selection-surface mark {
+  color: inherit;
   padding: 0 !important;
   border-radius: 0 !important;
+  background-color: transparent;
   text-shadow: none;
   box-shadow: none;
 }

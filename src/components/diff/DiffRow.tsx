@@ -1,6 +1,6 @@
 // src/components/DiffRow.tsx
-import { memo, useMemo, type CSSProperties, type MouseEventHandler } from 'react';
-import { FONT_CODE, FONT_SIZE } from '@/constants/typography';
+import { memo, useMemo, type MouseEventHandler } from 'react';
+import { FONT_CODE_STYLE, FONT_SIZE } from '@/constants/typography';
 import type { DiffLine, Token } from '@/types';
 import { cssAlpha, cssVar } from '@/theme/cssUtils';
 import { tokenize } from '@/engine/text/tokenizer';
@@ -8,8 +8,10 @@ import { ROW_H } from '@/hooks/virtualization/useVirtual';
 import { LN_W } from '@/constants/layout';
 import { buildDiffSelectionSurfaces } from '@/utils/diff/selectionVisuals';
 import {
+  composeTextRowBackground,
   resolveTextDiffCssPalette,
   resolveTextInlineBackground,
+  resolveTextSelectedRowBackground,
   resolveTextDiffVisualTone,
 } from '@/utils/diff/textDiffVisuals';
 import Ln from '@/components/diff/Ln';
@@ -56,26 +58,6 @@ function renderWithWhitespaceMark(text: string) {
   );
 }
 
-function buildTextSelectionOverlayStyle(
-  range: TextSelectionRange | null | undefined,
-  textLength: number,
-): CSSProperties | null {
-  if (!range || range.end <= range.start) return null;
-  const startsWithinLine = range.start > 0;
-  const endsWithinLine = range.end < textLength;
-
-  return {
-    left: `calc(${range.start} * 1ch)`,
-    width: `calc(${range.end - range.start} * 1ch)`,
-    top: 0,
-    bottom: 0,
-    borderTopLeftRadius: startsWithinLine ? 2 : 0,
-    borderBottomLeftRadius: startsWithinLine ? 2 : 0,
-    borderTopRightRadius: endsWithinLine ? 2 : 0,
-    borderBottomRightRadius: endsWithinLine ? 2 : 0,
-  };
-}
-
 const DiffRow = memo(({
   line,
   copySide = 'both',
@@ -113,10 +95,6 @@ const DiffRow = memo(({
   const charSpans = isDel ? line.baseCharSpans : isAdd ? line.mineCharSpans : null;
   const hasSearchRanges = searchRanges.length > 0;
   const hasTextSelection = Boolean(textSelectionRange && textSelectionRange.end > textSelectionRange.start);
-  const textSelectionOverlayStyle = useMemo<CSSProperties | null>(
-    () => buildTextSelectionOverlayStyle(textSelectionRange, content.length),
-    [content.length, textSelectionRange],
-  );
   const {
     activeCapsuleSurface,
     diffHighlightBackground,
@@ -135,7 +113,12 @@ const DiffRow = memo(({
     isRangeSelected,
     hasTextSelection,
   });
-  const effectiveHighlightBackground = hasTextSelection ? undefined : (diffHighlightBackground ?? hlBg);
+  const selectedRowBackground = resolveTextSelectedRowBackground({
+    tone,
+    isRangeSelected,
+  });
+  const rowBackground = composeTextRowBackground(activeCapsuleSurface, selectedRowBackground);
+  const effectiveHighlightBackground = diffHighlightBackground ?? hlBg;
   const contentHighlightBackground = undefined;
 
   return (
@@ -146,8 +129,8 @@ const DiffRow = memo(({
         height: ROW_H,
         width: isContentWidth ? '100%' : undefined,
         minWidth: isContentWidth ? 'max-content' : undefined,
-        background: activeCapsuleSurface,
-        borderRadius: isActiveSearch ? 999 : isRangeSelected ? 12 : undefined,
+        background: rowBackground,
+        borderRadius: isActiveSearch ? 4 : undefined,
       }}>
       {brdL !== 'transparent' && (
         <div
@@ -204,7 +187,7 @@ const DiffRow = memo(({
             color: pfxTx,
             fontSize: FONT_SIZE.md,
             lineHeight: `${ROW_H}px`,
-            fontFamily: FONT_CODE,
+            ...FONT_CODE_STYLE,
           }}>
           {pfx}
         </span>
@@ -219,17 +202,9 @@ const DiffRow = memo(({
             fontSize,
             lineHeight: `${ROW_H}px`,
             color: cssVar('t0'),
-            fontFamily: FONT_CODE,
+            ...FONT_CODE_STYLE,
             minWidth: isContentWidth ? 'max-content' : 0,
           }}>
-          {textSelectionOverlayStyle && (
-            <span
-              aria-hidden
-              data-logical-selection-overlay="true"
-              className="logical-text-selection-overlay"
-              style={textSelectionOverlayStyle}
-            />
-          )}
           <span
             data-selectable-text-content="true"
             className="relative z-[1] inline-block"
@@ -247,6 +222,8 @@ const DiffRow = memo(({
                   charSpans={charSpans}
                   hlBg={effectiveHighlightBackground}
                   searchRanges={searchRanges}
+                  selectionRanges={textSelectionRange ? [textSelectionRange] : []}
+                  selectionHlBg="color-mix(in srgb, var(--text-selection-bg) 58%, transparent)"
                   searchHlBg={cssAlpha('searchHl', '32')}
                   activeSearchHlBg={cssAlpha('searchHl', '92')}
                 />
@@ -257,7 +234,7 @@ const DiffRow = memo(({
       {isActiveSearch && (
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 rounded-[999px]"
+          className="pointer-events-none absolute inset-0 rounded-[4px]"
           style={{
             zIndex: 5,
             border: `1px solid ${cssAlpha('searchHl', 'de')}`,

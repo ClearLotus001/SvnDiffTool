@@ -1,5 +1,5 @@
 // src/components/TokenText.tsx
-import { memo, useMemo } from 'react';
+import { memo, useMemo, type CSSProperties } from 'react';
 import type { Token } from '@/types';
 import { makeTokenColors } from '@/theme';
 import { useTheme } from '@/context/theme';
@@ -30,6 +30,32 @@ interface AnnotatedSegment {
   searchHighlighted: boolean;
   activeSearch: boolean;
   selectionHighlighted: boolean;
+}
+
+function toBackgroundImageLayer(layer: string) {
+  return /(?:gradient|url)\(/i.test(layer)
+    ? layer
+    : `linear-gradient(180deg, ${layer} 0%, ${layer} 100%)`;
+}
+
+function composeBackgroundLayers(...layers: Array<string | undefined>) {
+  const resolvedLayers = layers.filter((layer): layer is string => Boolean(layer));
+  return resolvedLayers.length > 0
+    ? resolvedLayers.map(toBackgroundImageLayer).join(', ')
+    : undefined;
+}
+
+function buildDiffTextHighlightBackground(highlight: string | undefined) {
+  if (!highlight) return undefined;
+
+  const softFill = `linear-gradient(180deg,
+    ${highlight} 0%,
+    ${highlight} 100%)`;
+  const emphasisEdge = `linear-gradient(180deg,
+    transparent 0 calc(100% - 2px),
+    ${highlight} calc(100% - 2px) 100%)`;
+
+  return `${emphasisEdge}, ${softFill}`;
 }
 
 function resolveFontStyle(fontStyle: number | null | undefined) {
@@ -155,24 +181,35 @@ const TokenText = memo(({
       <>
         {annotatedSegments.map((segment, index) => {
           const isSelectionOnly = segment.selectionHighlighted && !segment.searchHighlighted && !segment.activeSearch;
-          const background = segment.activeSearch
+          const diffBackground = segment.diffHighlighted ? buildDiffTextHighlightBackground(hlBg) : undefined;
+          const selectionBackground = segment.selectionHighlighted ? selectionHlBg : undefined;
+          const searchBackground = segment.activeSearch
             ? activeSearchHlBg
             : segment.searchHighlighted
               ? searchHlBg
-              : segment.selectionHighlighted
-                ? selectionHlBg
-              : segment.diffHighlighted
-                ? hlBg
-                : undefined;
-          const style = {
-            color: isSelectionOnly ? segment.color : segment.selectionHighlighted && selectionTextColor ? selectionTextColor : segment.color,
+              : undefined;
+          const background = composeBackgroundLayers(searchBackground, selectionBackground, diffBackground);
+          const foregroundColor = segment.diffHighlighted || isSelectionOnly
+            ? segment.color
+            : segment.selectionHighlighted && selectionTextColor
+              ? selectionTextColor
+              : segment.color;
+          const style: CSSProperties = {
+            color: foregroundColor,
+            WebkitTextFillColor: foregroundColor,
             borderRadius: background && !isSelectionOnly ? 2 : undefined,
             background,
+            backgroundClip: background ? 'padding-box' : undefined,
+            WebkitBoxDecorationBreak: background ? 'clone' : undefined,
+            boxDecorationBreak: background ? 'clone' : undefined,
             padding: background && !isSelectionOnly ? '0 1px' : undefined,
             ...resolveFontStyle(segment.fontStyle),
           };
           return background ? (
-            <mark key={index} style={style}>
+            <mark
+              key={index}
+              data-diff-char-highlight={segment.diffHighlighted ? 'true' : undefined}
+              style={style}>
               {segment.text}
             </mark>
           ) : (

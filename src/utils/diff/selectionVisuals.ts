@@ -54,9 +54,9 @@ export function buildDiffSelectionSurfaces(
   const hasSelectedGutter = options.isBaseLineSelected || options.isMineLineSelected;
   const rangeSelectionSurface = options.isRangeSelected
     ? `linear-gradient(90deg,
-        color-mix(in srgb, ${cssVar('bg1')} 72%, ${selectionAccent} 28%) 0%,
-        color-mix(in srgb, ${cssVar('bg1')} 84%, ${selectionAccent} 16%) 15%,
-        color-mix(in srgb, ${selectionAccent} 9%, transparent) 100%)`
+        color-mix(in srgb, ${selectionAccent} 20%, transparent) 0%,
+        color-mix(in srgb, ${selectionAccent} 14%, transparent) 18%,
+        color-mix(in srgb, ${selectionAccent} 7%, transparent) 100%)`
     : undefined;
   const activeCapsuleSurface = options.isActiveSearch
     ? `linear-gradient(90deg,
@@ -77,9 +77,7 @@ export function buildDiffSelectionSurfaces(
       ? `inset -1px 0 0 color-mix(in srgb, ${selectionAccent} 18%, transparent),
          8px 0 18px -14px color-mix(in srgb, ${selectionAccent} 30%, transparent)`
       : `8px 0 12px -12px ${cssAlpha('border2', '52')}`;
-  const diffHighlightBackground = options.isRangeSelected
-    ? `color-mix(in srgb, ${selectionAccent} 10%, white 90%)`
-    : undefined;
+  const diffHighlightBackground = undefined;
 
   return {
     selectionAccent,

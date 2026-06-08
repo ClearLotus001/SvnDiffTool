@@ -88,6 +88,22 @@ test('summarizeDiffChanges counts likely replacements as modified', () => {
   assert.deepEqual(summarizeDiffChanges(diffLines), { add: 0, del: 0, chg: 1 });
 });
 
+test('alignTextChangeBlock treats short code token edits as replacements', () => {
+  const pairs = alignTextChangeBlock(
+    ['return a'],
+    ['return b'],
+  );
+
+  assert.deepEqual(
+    pairs.map((pair) => ({
+      deleteIndex: pair.deleteIndex,
+      addIndex: pair.addIndex,
+      isReplacement: pair.isReplacement,
+    })),
+    [{ deleteIndex: 0, addIndex: 0, isReplacement: true }],
+  );
+});
+
 test('buildSplitRows uses replacement-aware alignment inside mixed change blocks', () => {
   const rows = buildSplitRows([
     makeDeleteLine('const alpha = 1;', 10),

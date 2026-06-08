@@ -18,6 +18,21 @@ export interface ResolveTextInlineBackgroundOptions {
   hasTextSelection?: boolean;
 }
 
+export interface ResolveTextSelectedRowBackgroundOptions {
+  tone: TextDiffVisualTone;
+  isRangeSelected: boolean;
+}
+
+export interface ResolveTextEmptySideBackgroundOptions {
+  isRangeSelected: boolean;
+  selectionAccent?: string | undefined;
+}
+
+export interface ResolveTextEmptySideBackgroundPositionOptions {
+  visualRowIndex?: number | null | undefined;
+  rowHeight: number;
+}
+
 export function resolveTextDiffVisualTone(
   line: Pick<DiffLine, 'type'>,
   isReplacementPair = false,
@@ -65,7 +80,7 @@ export function resolveTextDiffCssPalette(
   if (tone === 'modify') {
     return {
       rowBackground: cssVar('chgBg'),
-      accent: cssVar('chgTx'),
+      accent: cssVar('chgBrd'),
       prefix: cssVar('chgTx'),
       inlineHighlight: cssAlpha('chgTx', '40'),
     };
@@ -84,12 +99,56 @@ export function resolveTextInlineBackground(
 ): string | undefined {
   if (
     options.hasRowSurfaceOverride
-    || options.hasSearchRanges
     || options.isRangeSelected
-    || options.hasTextSelection
   ) {
     return undefined;
   }
 
   return resolveTextDiffCssPalette(options.tone).rowBackground;
+}
+
+export function composeTextRowBackground(
+  ...layers: Array<string | undefined>
+): string | undefined {
+  const resolvedLayers = layers.filter((layer): layer is string => Boolean(layer));
+  return resolvedLayers.length > 0 ? resolvedLayers.join(', ') : undefined;
+}
+
+export function resolveTextSelectedRowBackground(
+  options: ResolveTextSelectedRowBackgroundOptions,
+): string | undefined {
+  if (!options.isRangeSelected) return undefined;
+
+  const semanticBackground = resolveTextDiffCssPalette(options.tone).rowBackground;
+  return semanticBackground === 'transparent' ? undefined : semanticBackground;
+}
+
+export function resolveTextEmptySideBackground(
+  options: ResolveTextEmptySideBackgroundOptions,
+): string {
+  const selectionAccent = options.selectionAccent ?? cssVar('acc2');
+  const selectionOverlay = options.isRangeSelected
+    ? `linear-gradient(90deg,
+        color-mix(in srgb, ${selectionAccent} 18%, transparent) 0%,
+        color-mix(in srgb, ${selectionAccent} 9%, transparent) 40%,
+      color-mix(in srgb, ${selectionAccent} 4%, transparent) 100%)`
+    : undefined;
+  const stripeLayer = `repeating-linear-gradient(135deg,
+    color-mix(in srgb, ${cssVar('border2')} 24%, transparent) 0,
+    color-mix(in srgb, ${cssVar('border2')} 24%, transparent) 1px,
+    transparent 1px,
+    transparent 8px)`;
+  const baseLayer = `linear-gradient(90deg,
+    color-mix(in srgb, ${cssVar('bg2')} 94%, transparent) 0%,
+    color-mix(in srgb, ${cssVar('bg2')} 86%, transparent) 52%,
+    color-mix(in srgb, ${cssVar('bg2')} 78%, transparent) 100%)`;
+
+  return composeTextRowBackground(selectionOverlay, stripeLayer, baseLayer)!;
+}
+
+export function resolveTextEmptySideBackgroundPosition(
+  options: ResolveTextEmptySideBackgroundPositionOptions,
+): string | undefined {
+  if (options.visualRowIndex == null) return undefined;
+  return `0 ${-(options.visualRowIndex * options.rowHeight)}px`;
 }

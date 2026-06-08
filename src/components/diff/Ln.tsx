@@ -1,6 +1,6 @@
 // src/components/Ln.tsx
 import { memo, useState, type MouseEventHandler } from 'react';
-import { FONT_CODE, FONT_SIZE } from '@/constants/typography';
+import { FONT_CODE_STYLE, FONT_SIZE } from '@/constants/typography';
 import { LN_W } from '@/constants/layout';
 import { ROW_H } from '@/hooks/virtualization/useVirtual';
 import { resolveLineNumberColor, type LineNumberTone } from '@/utils/diff/lineNumberTone';
@@ -52,7 +52,7 @@ const Ln = memo(({
     lineHeight: `${ROW_H}px`,
     flexShrink: 0,
     background: 'transparent',
-    fontFamily: FONT_CODE,
+    ...FONT_CODE_STYLE,
     position: stickyLeft == null ? 'relative' : 'sticky',
     left: stickyLeft == null ? undefined : stickyLeft,
     zIndex: stickyLeft == null ? 2 : 4,

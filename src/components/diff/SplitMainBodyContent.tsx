@@ -195,6 +195,7 @@ export default function SplitMainBodyContent({
               side="left"
               copySide="base"
               lineIdx={leftLineIdx}
+              visualRowIndex={item.lineIdx}
               syntaxTokens={getSplitLineSyntaxTokens(syntaxPresentation, item.row.left, 'left')}
               widthMode={vertical ? 'content' : 'fill'}
               lineNumberLayout={vertical ? 'paired' : 'single'}
@@ -235,6 +236,7 @@ export default function SplitMainBodyContent({
               side="right"
               copySide="mine"
               lineIdx={rightLineIdx}
+              visualRowIndex={item.lineIdx}
               syntaxTokens={getSplitLineSyntaxTokens(syntaxPresentation, item.row.right, 'right')}
               widthMode={vertical ? 'content' : 'fill'}
               lineNumberLayout={vertical ? 'paired' : 'single'}

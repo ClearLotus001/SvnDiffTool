@@ -157,6 +157,7 @@ export default function SplitHorizontalTextPane({
                   side={side}
                   copySide={side === 'left' ? 'base' : 'mine'}
                   lineIdx={sideLineIdx}
+                  visualRowIndex={item.lineIdx}
                   syntaxTokens={getSplitLineSyntaxTokens(syntaxPresentation, line, side)}
                   widthMode="content"
                   lineNumberLayout="single"

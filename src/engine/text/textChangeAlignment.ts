@@ -260,12 +260,12 @@ function getReplacementScoreFromFeatures(left: TextFeatures, right: TextFeatures
   if (left.kind === 'markdown-structure' || right.kind === 'markdown-structure') return 0;
   if (left.kind === 'code-like' && right.kind === 'code-like') {
     const codeTokenDice = computeCodeTokenDice(left, right);
-    if (codeTokenDice <= 0) return 0;
-    return Math.max(
-      codeTokenDice,
+    const structuralSimilarity = Math.max(
       computeCommonAffixRatio(left.normalized, right.normalized),
       computeShortEditSimilarity(left.normalized, right.normalized),
     );
+    if (codeTokenDice <= 0) return structuralSimilarity;
+    return Math.max(codeTokenDice, structuralSimilarity);
   }
 
   const maxLength = Math.max(left.raw.length, right.raw.length);

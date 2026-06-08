@@ -1,5 +1,11 @@
 export const FONT_UI = "'Inter', 'Microsoft YaHei UI', 'Segoe UI', 'PingFang SC', system-ui, sans-serif";
-export const FONT_CODE = "'JetBrains Mono', 'Cascadia Mono', 'Consolas', 'Monaco', monospace";
+export const FONT_CODE = "'Consolas', 'Cascadia Mono', 'Courier New', monospace";
+export const FONT_CODE_STYLE = {
+  fontFamily: FONT_CODE,
+  fontVariantLigatures: 'none',
+  fontFeatureSettings: "'liga' 0, 'calt' 0",
+  textRendering: 'optimizeLegibility',
+} as const;
 
 export const FONT_SIZE = {
   xs: 11,
