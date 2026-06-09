@@ -1,4 +1,3 @@
-import { app, nativeTheme } from 'electron';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -18,8 +17,82 @@ export interface StartupPalette {
 
 const STARTUP_APPEARANCE_FILE = 'startup-appearance.json';
 
-function resolveAppearanceFilePath(): string {
-  return path.join(app.getPath('userData'), STARTUP_APPEARANCE_FILE);
+interface StartupElectronApp {
+  getPath(name: 'userData'): string;
+  getLocale(): string;
+}
+
+interface StartupElectronRuntime {
+  app: StartupElectronApp;
+  nativeTheme: {
+    shouldUseDarkColors: boolean;
+  };
+}
+
+function isStartupElectronApp(value: unknown): value is {
+  getPath: (name: 'userData') => string;
+  getLocale?: () => string;
+} {
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && typeof (value as { getPath?: unknown }).getPath === 'function',
+  );
+}
+
+function readElectronRuntime(): StartupElectronRuntime | null {
+  try {
+    const electronModule: unknown = require('electron');
+    if (!electronModule || typeof electronModule !== 'object') {
+      return null;
+    }
+
+    const electronRecord = electronModule as {
+      app?: unknown;
+      nativeTheme?: unknown;
+    };
+    const appCandidate = electronRecord.app;
+    const nativeThemeCandidate = electronRecord.nativeTheme;
+    if (!isStartupElectronApp(appCandidate)) {
+      return null;
+    }
+
+    const nativeThemeRecord = nativeThemeCandidate && typeof nativeThemeCandidate === 'object'
+      ? nativeThemeCandidate as { shouldUseDarkColors?: unknown }
+      : {};
+
+    return {
+      app: {
+        getPath: (name) => appCandidate.getPath(name),
+        getLocale: () => (
+          typeof appCandidate.getLocale === 'function'
+            ? appCandidate.getLocale()
+            : ''
+        ),
+      },
+      nativeTheme: {
+        shouldUseDarkColors: Boolean(nativeThemeRecord.shouldUseDarkColors),
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+function resolveStartupLocale(value: string | null | undefined): StartupLocale {
+  return value?.trim().toLowerCase().startsWith('en') ? 'en-US' : 'zh-CN';
+}
+
+function resolveFallbackStartupLocale(): StartupLocale {
+  return resolveStartupLocale(
+    process.env.SVN_DIFF_LOCALE
+    ?? process.env.LANG
+    ?? Intl.DateTimeFormat().resolvedOptions().locale,
+  );
+}
+
+function resolveAppearanceFilePath(runtime: StartupElectronRuntime): string {
+  return path.join(runtime.app.getPath('userData'), STARTUP_APPEARANCE_FILE);
 }
 
 function isThemeKey(value: unknown): value is StartupThemeKey {
@@ -30,34 +103,44 @@ function isLocale(value: unknown): value is StartupLocale {
   return value === 'zh-CN' || value === 'en-US';
 }
 
-function getDefaultStartupAppearance(): StartupAppearance {
+function getDefaultStartupAppearance(runtime: StartupElectronRuntime | null): StartupAppearance {
   return {
-    themeKey: nativeTheme.shouldUseDarkColors ? 'dark' : 'light',
-    locale: app.getLocale().toLowerCase().startsWith('en') ? 'en-US' : 'zh-CN',
+    themeKey: runtime?.nativeTheme.shouldUseDarkColors ? 'dark' : 'light',
+    locale: runtime ? resolveStartupLocale(runtime.app.getLocale()) : resolveFallbackStartupLocale(),
   };
 }
 
 export function readStartupAppearance(): StartupAppearance {
+  const runtime = readElectronRuntime();
+  const fallback = getDefaultStartupAppearance(runtime);
+  if (!runtime) {
+    return fallback;
+  }
+
   try {
-    const filePath = resolveAppearanceFilePath();
+    const filePath = resolveAppearanceFilePath(runtime);
     if (!fs.existsSync(filePath)) {
-      return getDefaultStartupAppearance();
+      return fallback;
     }
 
     const raw = fs.readFileSync(filePath, 'utf8');
     const parsed = JSON.parse(raw) as Partial<StartupAppearance>;
-    const fallback = getDefaultStartupAppearance();
 
     return {
       themeKey: isThemeKey(parsed.themeKey) ? parsed.themeKey : fallback.themeKey,
       locale: isLocale(parsed.locale) ? parsed.locale : fallback.locale,
     };
   } catch {
-    return getDefaultStartupAppearance();
+    return fallback;
   }
 }
 
 export function writeStartupAppearance(next: Partial<StartupAppearance>): void {
+  const runtime = readElectronRuntime();
+  if (!runtime) {
+    return;
+  }
+
   try {
     const current = readStartupAppearance();
     const merged: StartupAppearance = {
@@ -65,8 +148,8 @@ export function writeStartupAppearance(next: Partial<StartupAppearance>): void {
       locale: isLocale(next.locale) ? next.locale : current.locale,
     };
 
-    fs.mkdirSync(app.getPath('userData'), { recursive: true });
-    fs.writeFileSync(resolveAppearanceFilePath(), JSON.stringify(merged), 'utf8');
+    fs.mkdirSync(runtime.app.getPath('userData'), { recursive: true });
+    fs.writeFileSync(resolveAppearanceFilePath(runtime), JSON.stringify(merged), 'utf8');
   } catch {
     // Ignore persistence failures to avoid blocking app startup.
   }

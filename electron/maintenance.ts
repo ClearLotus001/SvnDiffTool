@@ -20,13 +20,17 @@ import {
   cleanupRuntimeArtifactsForUninstall,
   migratePreviousCacheRoot,
 } from './maintenancePaths';
-import {
-  configureSvnDiffViewer,
-  getSvnDiffViewerStatus,
-  restoreSvnDefaultDiffViewerConfiguration,
+import type {
+  SvnDiffViewerScope,
+  SvnDiffViewerStatus,
 } from './svnDiffViewerConfig';
 
 export type MaintenanceMode = 'post-install' | 'prepare-uninstall';
+type SvnDiffViewerConfigModule = {
+  configureSvnDiffViewer: (scope: SvnDiffViewerScope) => Promise<SvnDiffViewerStatus>;
+  getSvnDiffViewerStatus: () => Promise<SvnDiffViewerStatus>;
+  restoreSvnDefaultDiffViewerConfiguration: () => Promise<SvnDiffViewerStatus>;
+};
 
 function isMaintenanceMode(value: string): value is MaintenanceMode {
   return value === 'post-install' || value === 'prepare-uninstall';
@@ -78,6 +82,10 @@ async function applyDesiredDiffViewerMode(config: InstallerBootstrapConfig | nul
   const desiredScope = getDesiredDiffViewerScope(config?.diffViewerMode ?? 'keep');
   if (!desiredScope) return;
 
+  const {
+    configureSvnDiffViewer,
+    getSvnDiffViewerStatus,
+  }: SvnDiffViewerConfigModule = await import('./svnDiffViewerConfig.js');
   const status = await getSvnDiffViewerStatus();
   if (status.currentMode === desiredScope) return;
   await configureSvnDiffViewer(desiredScope);
@@ -129,6 +137,9 @@ export async function runMaintenance(app: App, mode: MaintenanceMode, argv: stri
     return;
   }
 
+  const {
+    restoreSvnDefaultDiffViewerConfiguration,
+  }: SvnDiffViewerConfigModule = await import('./svnDiffViewerConfig.js');
   await restoreSvnDefaultDiffViewerConfiguration();
 
   if (shouldDeleteAppData) {
