@@ -101,8 +101,7 @@ If you launch the app directly instead of letting TortoiseSVN pass file argument
 | `npm run test:workbook:unit` | Runs repository tests that do not directly require the Rust parser artifact, useful for quick checks without a Rust toolchain |
 | `npm run test:workbook:rust` | Checks the Rust parser artifact and runs only the Rust parser integration tests |
 | `npm run test:workbook:js` | Compatibility alias for `test:workbook:unit` |
-| `npm run verify:electron` | Checks Electron binary artifacts and reruns Electron's install script when they are missing |
-| `npm run verify:ci` | Reproduces the main CI gate locally: static checks, Rust build and lint, unit tests, Rust integration tests, Electron artifact checks, and app build |
+| `npm run verify:ci` | Reproduces the main CI gate locally: static checks, Rust build and lint, unit tests, Rust integration tests, and app build |
 | `npm run verify:single-instance-cache` | Verifies single-instance and cache-related behavior |
 | `npm run build` | Builds renderer, Electron, and Rust artifacts |
 | `npm run build:win` | Produces the native Windows installer plus auto-update assets |
@@ -228,6 +227,8 @@ The repository already includes a GitHub Release workflow:
 - Trigger: push a tag matching `v*`
 - CI environment: `windows-latest`
 - Build contents: Node.js dependencies, the Rust parser, the native Windows installer, and auto-update assets
+- Release gates: the tag version must match `package.json`, and static checks, repository tests, Rust integration tests, and app build must pass before packaging
+- Electron handling: regular CI jobs do not download or depend on the Electron runtime binary; the Windows packaging job lets `electron-builder` download and publish through its standard flow
 - Publish flow: `electron-builder` publishes the Windows installer and update metadata directly
 
 A typical release flow looks like this:
@@ -308,4 +309,4 @@ Before committing, at minimum run:
 npm run verify:ci
 ```
 
-That covers lint, TypeScript checks, the Rust parser build, repository tests, and app build output in one pass.
+That covers lint, TypeScript checks, the Rust parser build, repository tests, and app build output in one pass; the Electron runtime binary is only needed when launching Electron locally or building the Windows installer.

@@ -6,7 +6,11 @@ on:
       - 'v*'
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 defaults:
   run:
@@ -18,10 +22,33 @@ env:
   npm_config_fund: 'false'
 
 jobs:
+  validate-release-tag:
+    name: Validate release tag
+    runs-on: windows-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Check tag matches package version
+        run: |
+          $package = Get-Content package.json -Raw | ConvertFrom-Json
+          $expectedTag = "v$($package.version)"
+          $actualTag = "${{ github.ref_name }}"
+          if ($actualTag -ne $expectedTag) {
+            throw "Release tag $actualTag does not match package.json version $expectedTag."
+          }
+          Write-Host "Release tag $actualTag matches package.json version $($package.version)."
+
   static-checks:
     name: Static checks
     runs-on: windows-latest
     timeout-minutes: 20
+    needs:
+      - validate-release-tag
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
     steps:
       - name: Checkout
@@ -32,6 +59,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -43,6 +71,10 @@ jobs:
     name: Workbook unit tests
     runs-on: windows-latest
     timeout-minutes: 25
+    needs:
+      - validate-release-tag
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
     steps:
       - name: Checkout
@@ -53,6 +85,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -64,6 +97,12 @@ jobs:
     name: Rust integration tests
     runs-on: windows-latest
     timeout-minutes: 35
+    needs:
+      - validate-release-tag
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_TERM_COLOR: always
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
     steps:
       - name: Checkout
@@ -74,11 +113,17 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+
+      - name: Cache Rust build output
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust -> target
 
       - name: Install dependencies
         run: npm ci
@@ -93,6 +138,10 @@ jobs:
     name: App build
     runs-on: windows-latest
     timeout-minutes: 20
+    needs:
+      - validate-release-tag
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
     steps:
       - name: Checkout
@@ -103,12 +152,10 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Verify Electron artifacts
-        run: npm run verify:electron
 
       - name: Build app bundle
         run: npm run build:app
@@ -117,11 +164,16 @@ jobs:
     name: Build and publish Windows release
     runs-on: windows-latest
     timeout-minutes: 60
+    permissions:
+      contents: write
     needs:
       - static-checks
       - workbook-unit-tests
       - rust-integration-tests
       - app-build
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_TERM_COLOR: always
 
     steps:
       - name: Checkout
@@ -132,15 +184,26 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust build output
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust -> target
+
+      - name: Cache Electron downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
       - name: Install dependencies
         run: npm ci
-
-      - name: Verify Electron artifacts
-        run: npm run verify:electron
 
       - name: Build Rust parser
         run: npm run build:rust

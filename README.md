@@ -101,8 +101,7 @@ npm run dev:app
 | `npm run test:workbook:unit` | 运行不直接依赖 Rust 解析器产物的仓库测试，适合没有 Rust 工具链的快速检查 |
 | `npm run test:workbook:rust` | 检查 Rust 解析器产物，并只运行依赖 Rust 解析器的集成测试 |
 | `npm run test:workbook:js` | `test:workbook:unit` 的兼容别名 |
-| `npm run verify:electron` | 检查 Electron 二进制产物，缺失时重新执行 Electron 安装脚本 |
-| `npm run verify:ci` | 本地复现 CI 主验证：静态检查、Rust 构建与 lint、单元测试、Rust 集成测试、Electron 产物检查、应用构建 |
+| `npm run verify:ci` | 本地复现 CI 主验证：静态检查、Rust 构建与 lint、单元测试、Rust 集成测试和应用构建 |
 | `npm run verify:single-instance-cache` | 验证单实例与缓存相关逻辑 |
 | `npm run build` | 构建前端、Electron 主进程与 Rust 产物 |
 | `npm run build:win` | 生成 Windows 原生安装器与自动更新资产 |
@@ -228,6 +227,8 @@ release/<package-name>-<version>-x64.nsis.7z
 - 触发条件：推送 `v*` 格式的版本标签
 - 持续集成环境：`windows-latest`
 - 构建内容：Node.js 依赖、Rust 解析器、Windows 原生安装器与自动更新资产
+- 发布门禁：标签版本必须与 `package.json` 版本一致，且静态检查、仓库测试、Rust 集成测试和应用构建全部通过后才打包
+- Electron 处理：普通 CI job 不下载也不依赖 Electron 运行时二进制；Windows 打包 job 交由 `electron-builder` 标准流程下载并发布
 - 发布方式：由 `electron-builder` 直接发布 Windows 安装器和更新元数据
 
 典型发版流程：
@@ -308,4 +309,4 @@ npm run dev:app
 npm run verify:ci
 ```
 
-这样可以同时覆盖 lint、类型检查、Rust 解析器构建、仓库测试和应用构建链路。
+这样可以同时覆盖 lint、类型检查、Rust 解析器构建、仓库测试和应用构建链路；Electron 运行时二进制只在本地运行 Electron 或 Windows 打包时需要。
