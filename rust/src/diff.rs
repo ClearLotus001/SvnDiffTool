@@ -3,11 +3,11 @@ use std::io;
 use std::thread;
 
 use crate::model::{
-    has_workbook_cell_content, normalize_field, workbook_cells_differ, DiffLineJson, WorkbookCellDeltaJson,
-    WorkbookCellSnapshotJson, WorkbookDiffOutputJson, WorkbookMergeRange, WorkbookMetadataMap,
-    WorkbookPrecomputedDeltaJson, WorkbookRowDeltaJson, WorkbookRowEntry, WorkbookSectionDeltaJson,
-    WorkbookSheetDiffEntry, WorkbookTextSheetEntry, WorkbookDiffPerfJson, FORMULA_SEPARATOR,
-    SHEET_PREFIX,
+    has_workbook_cell_content, normalize_field, workbook_cells_differ, DiffLineJson,
+    WorkbookCellDeltaJson, WorkbookCellSnapshotJson, WorkbookDiffOutputJson, WorkbookDiffPerfJson,
+    WorkbookMergeRange, WorkbookMetadataMap, WorkbookPrecomputedDeltaJson, WorkbookRowDeltaJson,
+    WorkbookRowEntry, WorkbookSectionDeltaJson, WorkbookSheetDiffEntry, WorkbookTextSheetEntry,
+    FORMULA_SEPARATOR, SHEET_PREFIX,
 };
 use crate::profile;
 use crate::workbook::{
@@ -639,9 +639,7 @@ fn append_equal_sheet_output(
 
 fn text_cell_has_content(field: &str, compare_mode: &str) -> bool {
     let separator_idx = field.find(FORMULA_SEPARATOR);
-    let value = separator_idx
-        .map(|idx| &field[..idx])
-        .unwrap_or(field);
+    let value = separator_idx.map(|idx| &field[..idx]).unwrap_or(field);
     let formula = separator_idx
         .map(|idx| &field[idx + FORMULA_SEPARATOR.len_utf8()..])
         .unwrap_or("");
@@ -653,7 +651,10 @@ fn text_cell_has_content(field: &str, compare_mode: &str) -> bool {
     !normalized_value.is_empty() || !formula.is_empty()
 }
 
-fn rows_metadata_from_text_rows(rows: &[(String, usize)], compare_mode: &str) -> Vec<(usize, usize, bool)> {
+fn rows_metadata_from_text_rows(
+    rows: &[(String, usize)],
+    compare_mode: &str,
+) -> Vec<(usize, usize, bool)> {
     rows.iter()
         .map(|(raw_line, row_number)| {
             let max_columns = raw_line.split('\t').count().saturating_sub(2);
@@ -667,7 +668,10 @@ fn rows_metadata_from_text_rows(rows: &[(String, usize)], compare_mode: &str) ->
         .collect()
 }
 
-fn rows_metadata_from_diff_rows(rows: &[WorkbookRowEntry], compare_mode: &str) -> Vec<(usize, usize, bool)> {
+fn rows_metadata_from_diff_rows(
+    rows: &[WorkbookRowEntry],
+    compare_mode: &str,
+) -> Vec<(usize, usize, bool)> {
     rows.iter()
         .map(|row| {
             let has_content = row
@@ -704,14 +708,20 @@ fn build_workbook_section_delta_json(
         .chain(mine_rows.iter())
         .map(|(_, max_columns, _)| *max_columns)
         .max();
-    let first_base_data = base_rows
-        .iter()
-        .enumerate()
-        .find_map(|(index, (row_number, _, has_content))| has_content.then_some((index, *row_number)));
-    let first_mine_data = mine_rows
-        .iter()
-        .enumerate()
-        .find_map(|(index, (row_number, _, has_content))| has_content.then_some((index, *row_number)));
+    let first_base_data =
+        base_rows
+            .iter()
+            .enumerate()
+            .find_map(|(index, (row_number, _, has_content))| {
+                has_content.then_some((index, *row_number))
+            });
+    let first_mine_data =
+        mine_rows
+            .iter()
+            .enumerate()
+            .find_map(|(index, (row_number, _, has_content))| {
+                has_content.then_some((index, *row_number))
+            });
     let first_data_row_number = match (first_base_data, first_mine_data) {
         (Some((base_index, base_row_number)), Some((mine_index, mine_row_number))) => {
             if base_index <= mine_index {
@@ -725,18 +735,17 @@ fn build_workbook_section_delta_json(
         (None, None) => None,
     };
     let first_data_line_idx = first_data_row_number.and_then(|target_row_number| {
-        rows.iter()
-            .find_map(|row| {
-                let base_match = row.base_row_number == Some(target_row_number);
-                let mine_match = row.mine_row_number == Some(target_row_number);
-                if base_match {
-                    row.left_line_idx
-                } else if mine_match {
-                    row.right_line_idx
-                } else {
-                    None
-                }
-            })
+        rows.iter().find_map(|row| {
+            let base_match = row.base_row_number == Some(target_row_number);
+            let mine_match = row.mine_row_number == Some(target_row_number);
+            if base_match {
+                row.left_line_idx
+            } else if mine_match {
+                row.right_line_idx
+            } else {
+                None
+            }
+        })
     });
     let start_line_idx = line_indexes.iter().copied().min().unwrap_or(sheet_line_idx);
     let end_line_idx = line_indexes.iter().copied().max().unwrap_or(sheet_line_idx);
@@ -812,12 +821,8 @@ pub fn compute_workbook_diff_output(
             collect_workbook_metadata(base_file_path).unwrap_or(empty_workbook_metadata);
         let metadata_ms = metadata_start.elapsed().as_secs_f64() * 1000.0;
         let sheets = parse_workbook_text_document(base_file_path, None)?;
-        let output = build_equal_workbook_output(
-            sheets,
-            compare_mode,
-            Some(workbook_metadata),
-            metadata_ms,
-        );
+        let output =
+            build_equal_workbook_output(sheets, compare_mode, Some(workbook_metadata), metadata_ms);
         profile::log_elapsed(
             total_start,
             format!(

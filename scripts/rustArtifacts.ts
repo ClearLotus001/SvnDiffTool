@@ -70,7 +70,7 @@ function isPathLike(candidate: string): boolean {
   return path.isAbsolute(candidate) || candidate.includes('/') || candidate.includes('\\');
 }
 
-function buildCargoEnv(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): NodeJS.ProcessEnv {
+export function buildCargoEnv(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): NodeJS.ProcessEnv {
   const homeDir = platform === 'win32' ? env.USERPROFILE : env.HOME;
   const cargoBin = homeDir ? path.join(homeDir, '.cargo', 'bin') : '';
   return {
