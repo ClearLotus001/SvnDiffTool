@@ -16,7 +16,10 @@ import {
   buildWorkbookLinearBodyLayoutBase,
   mapWorkbookProjectedBodyRows,
 } from '@/utils/workbook/workbookBodyLayoutProjection';
+import { buildWorkbookCanvasRuns } from '@/utils/workbook/workbookCanvasRuns';
 import type { WorkbookRowFrame } from '@/utils/workbook/workbookVisibleRowFrames';
+
+const STACKED_BODY_CANVAS_RUN_MAX_HEIGHT = ROW_H * 128;
 
 export type WorkbookCompareStackedBodySegment =
   | { kind: 'rows'; group: WorkbookCanvasRenderGroup; top: number; height: number }
@@ -187,16 +190,17 @@ export function useWorkbookCompareBodyLayout({
 
   const stackedCanvasRuns = useMemo<WorkbookCompareStackedCanvasRun[]>(() => {
     if (mode !== 'stacked') return [];
-    return bodySegments.flatMap((segment) => (
-      segment.kind === 'rows'
-        ? [{
-          key: segment.group.key,
-          groups: [segment.group],
-          top: segment.top,
-          height: segment.height,
-        }]
-        : []
-    ));
+    return buildWorkbookCanvasRuns(
+      bodySegments.flatMap((segment) => (
+        segment.kind === 'rows'
+          ? [{ ...segment.group, top: segment.top }]
+          : []
+      )),
+      {
+        keyPrefix: 'compare:stacked-body-run:v1',
+        maxRunHeight: STACKED_BODY_CANVAS_RUN_MAX_HEIGHT,
+      },
+    );
   }, [bodySegments, mode]);
 
   const stackedVisibleMergeGroupCount = useMemo(() => {

@@ -139,8 +139,42 @@ test('buildWorkbookStackedVisualGroups chunks large plain row runs to keep stack
     startIndex: group.startIndex,
     endIndex: group.endIndex,
   })), [
-    { reason: 'plain', startIndex: 0, endIndex: 255 },
-    { reason: 'plain', startIndex: 256, endIndex: 511 },
-    { reason: 'plain', startIndex: 512, endIndex: 599 },
+    { reason: 'plain', startIndex: 0, endIndex: 63 },
+    { reason: 'plain', startIndex: 64, endIndex: 127 },
+    { reason: 'plain', startIndex: 128, endIndex: 191 },
+    { reason: 'plain', startIndex: 192, endIndex: 255 },
+    { reason: 'plain', startIndex: 256, endIndex: 319 },
+    { reason: 'plain', startIndex: 320, endIndex: 383 },
+    { reason: 'plain', startIndex: 384, endIndex: 447 },
+    { reason: 'plain', startIndex: 448, endIndex: 511 },
+    { reason: 'plain', startIndex: 512, endIndex: 575 },
+    { reason: 'plain', startIndex: 576, endIndex: 599 },
+  ]);
+});
+
+test('buildWorkbookStackedVisualGroups uses rendered row height when chunking double stacked rows', () => {
+  const layoutRows = buildWorkbookStackedLayoutRows({
+    rows: Array.from({ length: 70 }, (_, index) => ({
+      row: buildSplitRow({ lineIdx: index + 1, baseRowNumber: index + 1, mineRowNumber: index + 1 }),
+      renderMode: 'double' as const,
+      height: 48,
+    })),
+  });
+
+  const groups = buildWorkbookStackedVisualGroups({
+    rows: layoutRows,
+    baseMergeRanges: [],
+    mineMergeRanges: [],
+  });
+
+  assert.deepEqual(groups.map((group) => ({
+    reason: group.reason,
+    startIndex: group.startIndex,
+    endIndex: group.endIndex,
+    height: group.rows.reduce((sum, row) => sum + row.height, 0),
+  })), [
+    { reason: 'plain', startIndex: 0, endIndex: 31, height: 1536 },
+    { reason: 'plain', startIndex: 32, endIndex: 63, height: 1536 },
+    { reason: 'plain', startIndex: 64, endIndex: 69, height: 288 },
   ]);
 });

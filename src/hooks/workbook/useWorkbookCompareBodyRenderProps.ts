@@ -44,10 +44,11 @@ interface UseWorkbookCompareBodyRenderPropsParams {
   columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
   baseMergedRanges: ReadonlyArray<WorkbookMergeRange>;
   mineMergedRanges: ReadonlyArray<WorkbookMergeRange>;
-  baseRowEntryByRowNumber: ComponentProps<typeof WorkbookCompareBody>['columnsCanvasProps']['baseRowEntryByRowNumber'];
-  mineRowEntryByRowNumber: ComponentProps<typeof WorkbookCompareBody>['columnsCanvasProps']['mineRowEntryByRowNumber'];
-  baseCompareCellsByRowNumber: ComponentProps<typeof WorkbookCompareBody>['columnsCanvasProps']['baseCompareCellsByRowNumber'];
-  mineCompareCellsByRowNumber: ComponentProps<typeof WorkbookCompareBody>['columnsCanvasProps']['mineCompareCellsByRowNumber'];
+  baseRowEntryByRowNumber: ComponentProps<typeof WorkbookCompareBody>['stackedCanvasProps']['baseRowEntryByRowNumber'];
+  mineRowEntryByRowNumber: ComponentProps<typeof WorkbookCompareBody>['stackedCanvasProps']['mineRowEntryByRowNumber'];
+  compareStateByRow: ComponentProps<typeof WorkbookCompareBody>['stackedCanvasProps']['compareStateByRow'];
+  baseCompareCellsByRowNumber: ComponentProps<typeof WorkbookCompareBody>['stackedCanvasProps']['baseCompareCellsByRowNumber'];
+  mineCompareCellsByRowNumber: ComponentProps<typeof WorkbookCompareBody>['stackedCanvasProps']['mineCompareCellsByRowNumber'];
   compareMode: WorkbookCompareMode;
 }
 
@@ -81,6 +82,7 @@ export function useWorkbookCompareBodyRenderProps({
   mineMergedRanges,
   baseRowEntryByRowNumber,
   mineRowEntryByRowNumber,
+  compareStateByRow,
   baseCompareCellsByRowNumber,
   mineCompareCellsByRowNumber,
   compareMode,
@@ -103,18 +105,28 @@ export function useWorkbookCompareBodyRenderProps({
     columnLayoutByColumn,
     baseMergedRanges,
     mineMergedRanges,
+    baseRowEntryByRowNumber,
+    mineRowEntryByRowNumber,
+    compareStateByRow,
+    baseCompareCellsByRowNumber,
+    mineCompareCellsByRowNumber,
     compareMode,
   }), [
     activeSheetName,
     baseMergedRanges,
+    baseCompareCellsByRowNumber,
+    baseRowEntryByRowNumber,
     baseVersion,
     columnLayoutByColumn,
     compareMode,
+    compareStateByRow,
     fontSize,
     freezeColumnCount,
     headerRowNumber,
     minBodyWidth,
     mineMergedRanges,
+    mineCompareCellsByRowNumber,
+    mineRowEntryByRowNumber,
     mineVersion,
     onHoverChange,
     onSelectionRequest,
@@ -145,6 +157,7 @@ export function useWorkbookCompareBodyRenderProps({
     mineMergedRanges,
     baseRowEntryByRowNumber,
     mineRowEntryByRowNumber,
+    compareStateByRow,
     baseCompareCellsByRowNumber,
     mineCompareCellsByRowNumber,
     compareMode,
@@ -156,6 +169,7 @@ export function useWorkbookCompareBodyRenderProps({
     baseVersion,
     columnLayoutByColumn,
     compareMode,
+    compareStateByRow,
     fontSize,
     freezeColumnCount,
     headerRowNumber,

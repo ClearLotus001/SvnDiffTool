@@ -33,6 +33,7 @@ import {
 import {
   buildWorkbookStackedLayoutRows,
   buildWorkbookStackedVisualGroups,
+  splitWorkbookStackedRowsByHeight,
 } from '@/utils/workbook/workbookStackedMergeGroups';
 import {
   buildWorkbookProtectedLineSignature,
@@ -50,6 +51,7 @@ import {
   WORKBOOK_CONTEXT_LINES as CONTEXT_LINES,
   isEqualWorkbookRow,
 } from '@/utils/workbook/workbookPanelHelpers';
+import { buildWorkbookRenderModel, type WorkbookRenderModel } from '@/utils/workbook/workbookRenderModel';
 import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
 import type { WorkbookCanvasRenderRow } from '@/components/workbook/WorkbookStackedCanvasStrip';
 import { ROW_H } from '@/hooks/virtualization/useVirtual';
@@ -125,8 +127,6 @@ const EMPTY_MEASURED = {
   duration: 0,
   cacheHit: false,
 };
-const STACKED_EQUAL_FAST_PATH_GROUP_SIZE = 256;
-
 const workbookComparePanelCacheObjectIds = new WeakMap<object, number>();
 let nextWorkbookComparePanelCacheObjectId = 1;
 const compareCollapsedItemsSharedCache = new WeakMap<
@@ -245,12 +245,10 @@ function buildEqualPlainStackedVirtualItems(
 ): WorkbookStackedVirtualItem[] {
   const next: WorkbookStackedVirtualItem[] = [];
 
-  for (
-    let chunkStart = 0;
-    chunkStart < rows.length;
-    chunkStart += STACKED_EQUAL_FAST_PATH_GROUP_SIZE
-  ) {
-    const chunkEnd = Math.min(rows.length, chunkStart + STACKED_EQUAL_FAST_PATH_GROUP_SIZE) - 1;
+  splitWorkbookStackedRowsByHeight({
+    rows,
+    getHeight: (item) => item.row.height,
+  }).forEach(({ startIndex: chunkStart, endIndex: chunkEnd }) => {
     const chunkRows = rows.slice(chunkStart, chunkEnd + 1);
     next.push({
       kind: 'rows',
@@ -263,7 +261,7 @@ function buildEqualPlainStackedVirtualItems(
       baseTrack: buildPlainStackedTrack(chunkRows, 'base'),
       mineTrack: buildPlainStackedTrack(chunkRows, 'mine'),
     });
-  }
+  });
 
   return next;
 }
@@ -307,6 +305,7 @@ export interface UseWorkbookCompareDerivedStateResult {
   stackedVirtualHeights: number[];
   stackedVirtualOffsets: number[];
   stackedIndexesMeasured: WorkbookStackedIndexesMeasured;
+  renderModel: WorkbookRenderModel;
 }
 
 export function useWorkbookCompareDerivedState({
@@ -914,6 +913,31 @@ export function useWorkbookCompareDerivedState({
     stackedSharedCacheKey,
     stackedVirtualItems,
   ]);
+  const activeSheetName = activeWorkbookSection?.name ?? '';
+  const renderModel = useMemo(
+    () => buildWorkbookRenderModel({
+      sectionRows,
+      sheetName: activeSheetName,
+      baseVersion,
+      mineVersion,
+      visibleColumns: sheetPresentation.visibleColumns,
+      compareMode,
+      items,
+      renderItemIndexesCacheKey: 'compare:render-items:v1',
+      getRow: (item) => (item.kind === 'row' ? item.row : null),
+      getHiddenRows: (item) => (item.kind === 'hidden-rows' ? item.rows : null),
+      getHiddenRowNumbers: (item) => (item.kind === 'hidden-rows' ? item.rowNumbers : null),
+    }),
+    [
+      activeSheetName,
+      baseVersion,
+      compareMode,
+      items,
+      mineVersion,
+      sectionRows,
+      sheetPresentation.visibleColumns,
+    ],
+  );
 
   return {
     frozenRows,
@@ -934,5 +958,6 @@ export function useWorkbookCompareDerivedState({
     stackedVirtualHeights,
     stackedVirtualOffsets,
     stackedIndexesMeasured,
+    renderModel,
   };
 }

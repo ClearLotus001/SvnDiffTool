@@ -64,6 +64,13 @@ function isEditableActiveElement() {
     && (active.matches('input, textarea, select') || active.isContentEditable);
 }
 
+function clearNativeTextSelection() {
+  const selection = window.getSelection?.();
+  if (selection && selection.rangeCount > 0) {
+    selection.removeAllRanges();
+  }
+}
+
 export function useLogicalTextSelectionState({
   enabled,
   hostRef,
@@ -78,9 +85,14 @@ export function useLogicalTextSelectionState({
   const textSelectionRef = useRef<LogicalTextSelection | null>(null);
   const onSelectionIntentRef = useRef(onSelectionIntent);
 
-  const clearTextSelection = useCallback(() => {
-    setTextSelection(null);
+  const commitTextSelection = useCallback((nextSelection: LogicalTextSelection | null) => {
+    textSelectionRef.current = nextSelection;
+    setTextSelection(nextSelection);
   }, []);
+
+  const clearTextSelection = useCallback(() => {
+    commitTextSelection(null);
+  }, [commitTextSelection]);
 
   useEffect(() => {
     textSelectionRef.current = textSelection;
@@ -104,13 +116,13 @@ export function useLogicalTextSelectionState({
 
   useEffect(() => {
     if (!enabled) {
-      setTextSelection(null);
+      commitTextSelection(null);
     }
-  }, [enabled]);
+  }, [commitTextSelection, enabled]);
 
   useEffect(() => {
-    setTextSelection(null);
-  }, [diffLines]);
+    commitTextSelection(null);
+  }, [commitTextSelection, diffLines]);
 
   useEffect(() => {
     if (!enabled) return undefined;
@@ -122,6 +134,35 @@ export function useLogicalTextSelectionState({
       if (!dragState) return;
       if (pointerId != null && dragState.pointerId !== pointerId) return;
       dragStateRef.current = null;
+    };
+
+    const commitClickCountSelection = (
+      point: LogicalTextSelectionPoint,
+      clickCount: number,
+    ) => {
+      const line = diffLines[point.lineIdx];
+      const content = line ? resolveLogicalTextLineContentForSide(line, point.side) ?? '' : '';
+
+      onSelectionIntentRef.current?.();
+      clearNativeTextSelection();
+
+      if (clickCount >= 3) {
+        const nextFocus = { ...point, column: content.length };
+        commitTextSelection({
+          anchor: { ...point, column: 0 },
+          focus: nextFocus,
+        });
+        lastResolvedPointRef.current = nextFocus;
+        return;
+      }
+
+      const wordRange = expandLogicalTextSelectionToWord(content, point.column);
+      const nextFocus = { ...point, column: wordRange.end };
+      commitTextSelection({
+        anchor: { ...point, column: wordRange.start },
+        focus: nextFocus,
+      });
+      lastResolvedPointRef.current = nextFocus;
     };
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -147,38 +188,9 @@ export function useLogicalTextSelectionState({
       const keepSelectionOnClick = shouldExtendExistingSelection
         || (clickedTextContent && isLogicalTextPointWithinSelection(currentTextSelection, anchorPoint));
 
-      if (clickedTextContent && event.detail >= 3) {
-        const line = diffLines[anchorPoint.lineIdx];
-        const content = line ? resolveLogicalTextLineContentForSide(line, anchorPoint.side) ?? '' : '';
-        onSelectionIntentRef.current?.();
-        setTextSelection({
-          anchor: { ...anchorPoint, column: 0 },
-          focus: { ...anchorPoint, column: content.length },
-        });
-        lastResolvedPointRef.current = { ...anchorPoint, column: content.length };
-        dragStateRef.current = null;
-        event.preventDefault();
-        return;
-      }
-
-      if (clickedTextContent && event.detail === 2) {
-        const line = diffLines[anchorPoint.lineIdx];
-        const content = line ? resolveLogicalTextLineContentForSide(line, anchorPoint.side) ?? '' : '';
-        const wordRange = expandLogicalTextSelectionToWord(content, anchorPoint.column);
-        onSelectionIntentRef.current?.();
-        setTextSelection({
-          anchor: { ...anchorPoint, column: wordRange.start },
-          focus: { ...anchorPoint, column: wordRange.end },
-        });
-        lastResolvedPointRef.current = { ...anchorPoint, column: wordRange.end };
-        dragStateRef.current = null;
-        event.preventDefault();
-        return;
-      }
-
       if (shouldExtendExistingSelection) {
         onSelectionIntentRef.current?.();
-        setTextSelection({
+        commitTextSelection({
           anchor: currentTextSelection.anchor,
           focus: resolvedAnchorPoint,
         });
@@ -193,6 +205,22 @@ export function useLogicalTextSelectionState({
         didDrag: false,
         keepSelectionOnClick,
       };
+      event.preventDefault();
+    };
+
+    const handleClick = (event: MouseEvent) => {
+      if (event.button !== 0 || event.detail < 2) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target?.closest('[data-selectable-text-content="true"]')) return;
+      if (isInteractiveElement(target)) return;
+
+      const resolvedPoint = resolveLogicalTextSelectionPointFromClientPoint(host, event.clientX, event.clientY, null);
+      if (!resolvedPoint) return;
+
+      lastInteractionInHostRef.current = true;
+      lastResolvedPointRef.current = resolvedPoint;
+      clearDragState();
+      commitClickCountSelection(resolvedPoint, event.detail);
       event.preventDefault();
     };
 
@@ -217,7 +245,7 @@ export function useLogicalTextSelectionState({
       dragState.didDrag = true;
       dragStateRef.current = dragState;
       lastResolvedPointRef.current = focusPoint;
-      setTextSelection({
+      commitTextSelection({
         anchor: dragState.anchorPoint,
         focus: focusPoint,
       });
@@ -253,6 +281,7 @@ export function useLogicalTextSelectionState({
     };
 
     host.addEventListener('pointerdown', handlePointerDown, true);
+    host.addEventListener('click', handleClick, true);
     document.addEventListener('pointermove', handlePointerMove);
     document.addEventListener('pointerup', handlePointerUp);
     document.addEventListener('pointercancel', handlePointerCancel);
@@ -261,6 +290,7 @@ export function useLogicalTextSelectionState({
 
     return () => {
       host.removeEventListener('pointerdown', handlePointerDown, true);
+      host.removeEventListener('click', handleClick, true);
       document.removeEventListener('pointermove', handlePointerMove);
       document.removeEventListener('pointerup', handlePointerUp);
       document.removeEventListener('pointercancel', handlePointerCancel);
@@ -268,7 +298,7 @@ export function useLogicalTextSelectionState({
       document.removeEventListener('dragstart', handleDragStart, true);
       dragStateRef.current = null;
     };
-  }, [clearTextSelection, diffLines, enabled, hostRef]);
+  }, [clearTextSelection, commitTextSelection, diffLines, enabled, hostRef]);
 
   useEffect(() => {
     if (!enabled) return undefined;
@@ -282,7 +312,8 @@ export function useLogicalTextSelectionState({
         || event.key === 'ArrowUp'
         || event.key === 'ArrowDown'
       )) {
-        const focusPoint = textSelection?.focus ?? lastResolvedPointRef.current;
+        const currentTextSelection = textSelectionRef.current;
+        const focusPoint = currentTextSelection?.focus ?? lastResolvedPointRef.current;
         if (!focusPoint) return;
 
         const directionMap = {
@@ -295,11 +326,10 @@ export function useLogicalTextSelectionState({
         const nextFocus = moveLogicalTextSelectionPoint(diffLines, focusPoint, direction);
         if (!nextFocus) return;
 
-        const currentTextSelection = textSelectionRef.current;
         const anchorPoint = currentTextSelection?.anchor ?? focusPoint;
         onSelectionIntentRef.current?.();
         lastResolvedPointRef.current = nextFocus;
-        setTextSelection({
+        commitTextSelection({
           anchor: anchorPoint,
           focus: nextFocus,
         });
@@ -314,21 +344,22 @@ export function useLogicalTextSelectionState({
         event.preventDefault();
         onSelectionIntentRef.current?.();
         lastResolvedPointRef.current = nextSelection.focus;
-        setTextSelection(nextSelection);
+        commitTextSelection(nextSelection);
         return;
       }
       if (event.key.toLowerCase() !== 'c') return;
-      if (!textSelectionCopyText) return;
+      const currentCopyText = buildLogicalTextSelectionCopyText(diffLines, textSelectionRef.current, copyMode);
+      if (!currentCopyText) return;
 
       event.preventDefault();
-      void copyText(textSelectionCopyText);
+      void copyText(currentCopyText);
     };
 
     document.addEventListener('keydown', handleKeyDown, true);
     return () => {
       document.removeEventListener('keydown', handleKeyDown, true);
     };
-  }, [copyMode, diffLines, enabled, onSelectionIntent, textSelection, textSelectionCopyText]);
+  }, [commitTextSelection, copyMode, diffLines, enabled]);
 
   return {
     textSelection,

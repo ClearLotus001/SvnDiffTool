@@ -150,6 +150,130 @@ test('prepareWorkbookProjection matches legacy workbook sections and navigation 
   );
 });
 
+test('prepareWorkbookProjection can project unchanged workbook sections from delta metadata', () => {
+  const diffLines: DiffLine[] = [
+    createDiffLine('equal', createWorkbookSheetLine('Sheet1'), createWorkbookSheetLine('Sheet1'), null),
+    createDiffLine('equal', createWorkbookRowLine(1, ['ID', 'Name']), createWorkbookRowLine(1, ['ID', 'Name']), 1),
+    createDiffLine('equal', createWorkbookRowLine(2, ['1001', 'Alice']), createWorkbookRowLine(2, ['1001', 'Alice']), 2),
+  ];
+  const workbookDelta: WorkbookPrecomputedDeltaPayload = {
+    compareMode: 'strict',
+    sections: [
+      {
+        name: 'Sheet1',
+        hasBaseSide: true,
+        hasMineSide: true,
+        startLineIdx: 0,
+        endLineIdx: 2,
+        maxColumns: 2,
+        rowCount: 2,
+        firstDataLineIdx: 1,
+        firstDataRowNumber: 1,
+        rows: [
+          {
+            lineIdx: 1,
+            lineIdxs: [1],
+            leftLineIdx: 1,
+            rightLineIdx: 1,
+            baseRowNumber: 1,
+            mineRowNumber: 1,
+            cellDeltas: [],
+            changedColumns: [],
+            strictOnlyColumns: [],
+            changedCount: 0,
+            hasChanges: false,
+            tone: 'equal',
+          },
+          {
+            lineIdx: 2,
+            lineIdxs: [2],
+            leftLineIdx: 2,
+            rightLineIdx: 2,
+            baseRowNumber: 2,
+            mineRowNumber: 2,
+            cellDeltas: [],
+            changedColumns: [],
+            strictOnlyColumns: [],
+            changedCount: 0,
+            hasChanges: false,
+            tone: 'equal',
+          },
+        ],
+      },
+    ],
+  };
+
+  const projection = prepareWorkbookProjection({
+    diffLines: diffLines as MainDiffLine[],
+    workbookDelta: workbookDelta as MainWorkbookPrecomputedDeltaPayload,
+    compareMode: 'strict',
+    baseWorkbookMetadata: null,
+    mineWorkbookMetadata: null,
+  });
+
+  assert.deepEqual(projection.sections, getWorkbookSections(diffLines, 'strict'));
+  assert.deepEqual(projection.navigationRegions, []);
+});
+
+test('prepareWorkbookProjection projects large workbook sections without overflowing the call stack', () => {
+  const rowCount = 70_000;
+  const diffLines: DiffLine[] = [
+    createDiffLine('equal', createWorkbookSheetLine('Sheet1'), createWorkbookSheetLine('Sheet1'), null),
+  ];
+  const rows: WorkbookPrecomputedDeltaPayload['sections'][number]['rows'] = Array.from(
+    { length: rowCount },
+    (_, index) => {
+      const rowNumber = index + 1;
+      return {
+        lineIdx: index + 1,
+        lineIdxs: [index + 1],
+        leftLineIdx: null,
+        rightLineIdx: null,
+        baseRowNumber: rowNumber,
+        mineRowNumber: rowNumber,
+        cellDeltas: [],
+        changedColumns: [],
+        strictOnlyColumns: [],
+        changedCount: 0,
+        hasChanges: false,
+        tone: 'equal',
+      };
+    },
+  );
+  const workbookDelta: WorkbookPrecomputedDeltaPayload = {
+    compareMode: 'strict',
+    sections: [
+      {
+        name: 'Sheet1',
+        hasBaseSide: true,
+        hasMineSide: true,
+        startLineIdx: 0,
+        endLineIdx: rowCount,
+        maxColumns: 24,
+        rowCount,
+        firstDataLineIdx: 1,
+        firstDataRowNumber: 1,
+        rows,
+      },
+    ],
+  };
+
+  const projection = prepareWorkbookProjection({
+    diffLines: diffLines as MainDiffLine[],
+    workbookDelta: workbookDelta as MainWorkbookPrecomputedDeltaPayload,
+    compareMode: 'strict',
+    baseWorkbookMetadata: null,
+    mineWorkbookMetadata: null,
+  });
+
+  assert.equal(projection.sections.length, 1);
+  assert.equal(projection.sections[0]?.startLineIdx, 0);
+  assert.equal(projection.sections[0]?.endLineIdx, rowCount);
+  assert.equal(projection.sections[0]?.maxColumns, 24);
+  assert.equal(projection.sections[0]?.rowCount, rowCount);
+  assert.deepEqual(projection.navigationRegions, []);
+});
+
 test('applyWorkbookRegionVersionLabels hydrates snapshot-projected anchor selections', () => {
   const projectedPatch = {
     startRowIndex: 1,

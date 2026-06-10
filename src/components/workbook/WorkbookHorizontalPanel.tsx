@@ -176,6 +176,7 @@ const SPLIT_DIVIDER_WIDTH = 12;
 const MIN_WORKBOOK_SCROLLABLE_BODY_ROWS = 8;
 const MIN_WORKBOOK_FROZEN_PANE_ROWS = 4;
 const MAX_WORKBOOK_FROZEN_PANE_VIEWPORT_RATIO = 0.6;
+const WORKBOOK_STABLE_COLUMN_WINDOW_LIMIT = 96;
 const EMPTY_HEIGHTS: number[] = [];
 const EMPTY_MODIFIED_SHEET_NAMES = new Set<string>();
 
@@ -412,9 +413,7 @@ const WorkbookHorizontalPanel = memo(({
     items,
     itemHeights,
     sheetPresentation,
-    rowEntryByRowNumber,
-    compareCellsByRowNumber,
-    renderItemIndexes,
+    renderModel,
   } = useWorkbookHorizontalDerivedState({
     activeWorkbookSection,
     sectionRows,
@@ -435,6 +434,10 @@ const WorkbookHorizontalPanel = memo(({
     showHiddenColumns,
   });
   const rowVirtualHeights = items.length > 0 ? itemHeights : EMPTY_HEIGHTS;
+  const rowEntryByRowNumber = renderModel.rowEntryByRowNumber;
+  const compareStateByRow = renderModel.compareStateByRow;
+  const compareCellsByRowNumber = renderModel.compareCellsByRowNumber;
+  const renderItemIndexes = renderModel.renderItemIndexes;
   const { totalH, startIdx, endIdx, offsetTop: rowWindowOffsetTop, scrollToIndex, debug: rowVirtualDebug } = useVariableVirtual(
     rowVirtualHeights,
     leftScrollRef as RefObject<HTMLDivElement | null>,
@@ -459,6 +462,7 @@ const WorkbookHorizontalPanel = memo(({
     mergedRanges: mergedRangesForVirtualColumns,
     overscanMin: 6,
     overscanFactor: 1.5,
+    disableVirtualizationBelow: WORKBOOK_STABLE_COLUMN_WINDOW_LIMIT,
     syncKey: activeWorkbookSection?.name ?? '',
   });
   const rightVirtualColumns = useHorizontalVirtualColumns({
@@ -471,6 +475,7 @@ const WorkbookHorizontalPanel = memo(({
     mergedRanges: mergedRangesForVirtualColumns,
     overscanMin: 6,
     overscanFactor: 1.5,
+    disableVirtualizationBelow: WORKBOOK_STABLE_COLUMN_WINDOW_LIMIT,
     syncKey: activeWorkbookSection?.name ?? '',
   });
   const paneVirtualColumnsBySide = useMemo(
@@ -1255,6 +1260,7 @@ const WorkbookHorizontalPanel = memo(({
     mineMergedRanges: sheetPresentation.mineMergeRanges,
     baseRowEntryByRowNumber: rowEntryByRowNumber.base,
     mineRowEntryByRowNumber: rowEntryByRowNumber.mine,
+    compareStateByRow,
     baseCompareCellsByRowNumber: compareCellsByRowNumber.base,
     mineCompareCellsByRowNumber: compareCellsByRowNumber.mine,
     compareMode,
@@ -1284,6 +1290,7 @@ const WorkbookHorizontalPanel = memo(({
     mineMergedRanges: sheetPresentation.mineMergeRanges,
     baseRowEntryByRowNumber: rowEntryByRowNumber.base,
     mineRowEntryByRowNumber: rowEntryByRowNumber.mine,
+    compareStateByRow,
     baseCompareCellsByRowNumber: compareCellsByRowNumber.base,
     mineCompareCellsByRowNumber: compareCellsByRowNumber.mine,
     compareMode,

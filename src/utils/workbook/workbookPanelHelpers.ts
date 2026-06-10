@@ -3,6 +3,7 @@ import type {
   SplitRow,
   WorkbookCellDelta,
   WorkbookCompareMode,
+  WorkbookRowDelta,
   WorkbookSelectedCell,
 } from '@/types';
 import type { WorkbookPerfDebugStats } from '@/components/workbook/WorkbookPerfDebugPanel';
@@ -38,8 +39,11 @@ export interface WorkbookCompareCellsMaps {
   mine: Map<number, Map<number, WorkbookCellDelta>>;
 }
 
+export type WorkbookCompareStateByRow = Map<SplitRow, WorkbookRowDelta>;
+
 const workbookRowEntryMapsCache = new WeakMap<SplitRow[], Map<string, WorkbookRowEntryMaps>>();
 const workbookCompareCellsMapsCache = new WeakMap<SplitRow[], Map<string, WorkbookCompareCellsMaps>>();
+const workbookCompareStateByRowCache = new WeakMap<SplitRow[], Map<string, WorkbookCompareStateByRow>>();
 const workbookMiniMapBaseStateCache = new WeakMap<
   object,
   Map<string, { value: WorkbookMiniMapBaseSegment[]; duration: number }>
@@ -166,13 +170,40 @@ export function buildWorkbookCompareCellsMaps(
     mine: new Map<number, Map<number, WorkbookCellDelta>>(),
   };
 
+  const compareStateByRow = buildWorkbookCompareStateByRow(rows, visibleColumns, compareMode);
+
   rows.forEach((row) => {
-    const rowDelta = buildWorkbookSplitRowCompareState(row, visibleColumns, compareMode);
+    const rowDelta = compareStateByRow.get(row);
+    if (!rowDelta) return;
     const baseRowNumber = getWorkbookSideRowNumber(row, 'base');
     if (baseRowNumber != null) next.base.set(baseRowNumber, rowDelta.cellDeltas);
 
     const mineRowNumber = getWorkbookSideRowNumber(row, 'mine');
     if (mineRowNumber != null) next.mine.set(mineRowNumber, rowDelta.cellDeltas);
+  });
+
+  cacheByRows.set(cacheKey, next);
+  return next;
+}
+
+export function buildWorkbookCompareStateByRow(
+  rows: SplitRow[],
+  visibleColumns: number[],
+  compareMode: WorkbookCompareMode,
+): WorkbookCompareStateByRow {
+  let cacheByRows = workbookCompareStateByRowCache.get(rows);
+  if (!cacheByRows) {
+    cacheByRows = new Map();
+    workbookCompareStateByRowCache.set(rows, cacheByRows);
+  }
+
+  const cacheKey = `${compareMode}::${visibleColumns.join(',')}`;
+  const cached = cacheByRows.get(cacheKey);
+  if (cached) return cached;
+
+  const next: WorkbookCompareStateByRow = new Map();
+  rows.forEach((row) => {
+    next.set(row, buildWorkbookSplitRowCompareState(row, visibleColumns, compareMode));
   });
 
   cacheByRows.set(cacheKey, next);

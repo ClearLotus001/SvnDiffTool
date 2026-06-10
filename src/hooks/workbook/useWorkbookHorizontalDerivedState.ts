@@ -38,14 +38,9 @@ import {
 } from '@/utils/workbook/workbookSharedCache';
 import {
   WORKBOOK_CONTEXT_LINES as CONTEXT_LINES,
-  buildWorkbookCompareCellsMaps,
-  buildWorkbookRowEntryMaps,
   isEqualWorkbookRow,
 } from '@/utils/workbook/workbookPanelHelpers';
-import {
-  buildWorkbookRenderItemIndexes,
-  type WorkbookRenderItemIndexes,
-} from '@/utils/workbook/workbookRenderItemIndexes';
+import { buildWorkbookRenderModel, type WorkbookRenderModel } from '@/utils/workbook/workbookRenderModel';
 import { buildWorkbookExpandedBlocksSignature } from '@/utils/workbook/workbookExpandedBlocksSignature';
 import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
 import { ROW_H } from '@/hooks/virtualization/useVirtual';
@@ -88,9 +83,7 @@ export interface UseWorkbookHorizontalDerivedStateResult {
   items: WorkbookHorizontalRenderItem[];
   itemHeights: number[];
   sheetPresentation: WorkbookSheetPresentation;
-  rowEntryByRowNumber: ReturnType<typeof buildWorkbookRowEntryMaps>;
-  compareCellsByRowNumber: ReturnType<typeof buildWorkbookCompareCellsMaps>;
-  renderItemIndexes: WorkbookRenderItemIndexes;
+  renderModel: WorkbookRenderModel;
 }
 
 const horizontalCollapsedItemsSharedCache = new WeakMap<
@@ -444,32 +437,21 @@ export function useWorkbookHorizontalDerivedState({
     ],
   );
   const activeSheetName = activeWorkbookSection?.name ?? '';
-  const rowEntryByRowNumber = useMemo(
-    () => buildWorkbookRowEntryMaps(
+  const renderModel = useMemo(
+    () => buildWorkbookRenderModel({
       sectionRows,
-      activeSheetName,
+      sheetName: activeSheetName,
       baseVersion,
       mineVersion,
-      sheetPresentation.visibleColumns,
-    ),
-    [activeSheetName, baseVersion, mineVersion, sectionRows, sheetPresentation.visibleColumns],
-  );
-  const compareCellsByRowNumber = useMemo(
-    () => buildWorkbookCompareCellsMaps(
-      sectionRows,
-      sheetPresentation.visibleColumns,
+      visibleColumns: sheetPresentation.visibleColumns,
       compareMode,
-    ),
-    [compareMode, sectionRows, sheetPresentation.visibleColumns],
-  );
-  const renderItemIndexes = useMemo(
-    () => buildWorkbookRenderItemIndexes(items, {
-      cacheKey: 'horizontal:split-render-items:v1',
+      items,
+      renderItemIndexesCacheKey: 'horizontal:split-render-items:v1',
       getRow: (item) => (item.kind === 'split-line' ? item.row : null),
       getHiddenRows: (item) => (item.kind === 'hidden-rows' ? item.rows : null),
       getHiddenRowNumbers: (item) => (item.kind === 'hidden-rows' ? item.rowNumbers : null),
     }),
-    [items],
+    [activeSheetName, baseVersion, compareMode, items, mineVersion, sectionRows, sheetPresentation.visibleColumns],
   );
 
   return {
@@ -485,8 +467,6 @@ export function useWorkbookHorizontalDerivedState({
     items,
     itemHeights,
     sheetPresentation,
-    rowEntryByRowNumber,
-    compareCellsByRowNumber,
-    renderItemIndexes,
+    renderModel,
   };
 }

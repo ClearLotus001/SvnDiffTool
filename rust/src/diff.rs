@@ -3,10 +3,11 @@ use std::io;
 use std::thread;
 
 use crate::model::{
-    normalize_field, workbook_cells_differ, DiffLineJson, WorkbookCellDeltaJson,
+    has_workbook_cell_content, normalize_field, workbook_cells_differ, DiffLineJson, WorkbookCellDeltaJson,
     WorkbookCellSnapshotJson, WorkbookDiffOutputJson, WorkbookMergeRange, WorkbookMetadataMap,
     WorkbookPrecomputedDeltaJson, WorkbookRowDeltaJson, WorkbookRowEntry, WorkbookSectionDeltaJson,
-    WorkbookSheetDiffEntry, WorkbookTextSheetEntry, SHEET_PREFIX,
+    WorkbookSheetDiffEntry, WorkbookTextSheetEntry, WorkbookDiffPerfJson, FORMULA_SEPARATOR,
+    SHEET_PREFIX,
 };
 use crate::profile;
 use crate::workbook::{
@@ -322,6 +323,8 @@ fn build_workbook_row_delta_json(
             return WorkbookRowDeltaJson {
                 left_line_idx,
                 right_line_idx,
+                base_row_number: Some(base_row.row_number),
+                mine_row_number: Some(mine_row.row_number),
                 cell_deltas: Vec::new(),
             };
         }
@@ -348,6 +351,8 @@ fn build_workbook_row_delta_json(
     WorkbookRowDeltaJson {
         left_line_idx,
         right_line_idx,
+        base_row_number: base_row.map(|row| row.row_number),
+        mine_row_number: mine_row.map(|row| row.row_number),
         cell_deltas,
     }
 }
@@ -583,8 +588,11 @@ fn append_equal_sheet_output(
     sheet_name: String,
     raw_sheet_line: String,
     rows: Vec<(String, usize)>,
+    compare_mode: &str,
     include_workbook_delta: bool,
 ) {
+    let row_metadata = rows_metadata_from_text_rows(&rows, compare_mode);
+    let sheet_line_idx = diff_lines.len();
     push_diff_line(
         diff_lines,
         "equal",
@@ -609,22 +617,149 @@ fn append_equal_sheet_output(
             section_rows.push(WorkbookRowDeltaJson {
                 left_line_idx: Some(line_idx),
                 right_line_idx: Some(line_idx),
+                base_row_number: Some(row_number),
+                mine_row_number: Some(row_number),
                 cell_deltas: Vec::new(),
             });
         }
     }
 
     if include_workbook_delta {
-        sections.push(WorkbookSectionDeltaJson {
-            name: sheet_name,
-            rows: section_rows,
-        });
+        sections.push(build_workbook_section_delta_json(
+            sheet_name,
+            true,
+            true,
+            sheet_line_idx,
+            section_rows,
+            row_metadata.clone(),
+            row_metadata,
+        ));
+    }
+}
+
+fn text_cell_has_content(field: &str, compare_mode: &str) -> bool {
+    let separator_idx = field.find(FORMULA_SEPARATOR);
+    let value = separator_idx
+        .map(|idx| &field[..idx])
+        .unwrap_or(field);
+    let formula = separator_idx
+        .map(|idx| &field[idx + FORMULA_SEPARATOR.len_utf8()..])
+        .unwrap_or("");
+    let normalized_value = if compare_mode == "content" && value.trim().is_empty() {
+        ""
+    } else {
+        value
+    };
+    !normalized_value.is_empty() || !formula.is_empty()
+}
+
+fn rows_metadata_from_text_rows(rows: &[(String, usize)], compare_mode: &str) -> Vec<(usize, usize, bool)> {
+    rows.iter()
+        .map(|(raw_line, row_number)| {
+            let max_columns = raw_line.split('\t').count().saturating_sub(2);
+            let has_content = max_columns > 0
+                && raw_line
+                    .split('\t')
+                    .skip(2)
+                    .any(|cell| text_cell_has_content(cell, compare_mode));
+            (*row_number, max_columns, has_content)
+        })
+        .collect()
+}
+
+fn rows_metadata_from_diff_rows(rows: &[WorkbookRowEntry], compare_mode: &str) -> Vec<(usize, usize, bool)> {
+    rows.iter()
+        .map(|row| {
+            let has_content = row
+                .cells
+                .iter()
+                .any(|cell| has_workbook_cell_content(cell, compare_mode));
+            (row.row_number, row.cells.len(), has_content)
+        })
+        .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_workbook_section_delta_json(
+    name: String,
+    has_base_side: bool,
+    has_mine_side: bool,
+    sheet_line_idx: usize,
+    rows: Vec<WorkbookRowDeltaJson>,
+    base_rows: Vec<(usize, usize, bool)>,
+    mine_rows: Vec<(usize, usize, bool)>,
+) -> WorkbookSectionDeltaJson {
+    let line_indexes = rows
+        .iter()
+        .flat_map(|row| [row.left_line_idx, row.right_line_idx])
+        .flatten()
+        .collect::<Vec<_>>();
+    let row_count = base_rows
+        .iter()
+        .chain(mine_rows.iter())
+        .map(|(row_number, _, _)| *row_number)
+        .max();
+    let max_columns = base_rows
+        .iter()
+        .chain(mine_rows.iter())
+        .map(|(_, max_columns, _)| *max_columns)
+        .max();
+    let first_base_data = base_rows
+        .iter()
+        .enumerate()
+        .find_map(|(index, (row_number, _, has_content))| has_content.then_some((index, *row_number)));
+    let first_mine_data = mine_rows
+        .iter()
+        .enumerate()
+        .find_map(|(index, (row_number, _, has_content))| has_content.then_some((index, *row_number)));
+    let first_data_row_number = match (first_base_data, first_mine_data) {
+        (Some((base_index, base_row_number)), Some((mine_index, mine_row_number))) => {
+            if base_index <= mine_index {
+                Some(base_row_number)
+            } else {
+                Some(mine_row_number)
+            }
+        }
+        (Some((_, base_row_number)), None) => Some(base_row_number),
+        (None, Some((_, mine_row_number))) => Some(mine_row_number),
+        (None, None) => None,
+    };
+    let first_data_line_idx = first_data_row_number.and_then(|target_row_number| {
+        rows.iter()
+            .find_map(|row| {
+                let base_match = row.base_row_number == Some(target_row_number);
+                let mine_match = row.mine_row_number == Some(target_row_number);
+                if base_match {
+                    row.left_line_idx
+                } else if mine_match {
+                    row.right_line_idx
+                } else {
+                    None
+                }
+            })
+    });
+    let start_line_idx = line_indexes.iter().copied().min().unwrap_or(sheet_line_idx);
+    let end_line_idx = line_indexes.iter().copied().max().unwrap_or(sheet_line_idx);
+
+    WorkbookSectionDeltaJson {
+        name,
+        has_base_side,
+        has_mine_side,
+        start_line_idx: Some(sheet_line_idx.min(start_line_idx)),
+        end_line_idx: Some(end_line_idx.max(sheet_line_idx)),
+        max_columns,
+        row_count,
+        first_data_line_idx,
+        first_data_row_number,
+        rows,
     }
 }
 
 fn build_equal_workbook_output(
     sheets: Vec<WorkbookTextSheetEntry>,
     compare_mode: &str,
+    metadata: Option<WorkbookMetadataMap>,
+    metadata_ms: f64,
 ) -> WorkbookDiffOutputJson {
     let include_workbook_delta = true;
     let mut diff_lines = Vec::new();
@@ -641,6 +776,7 @@ fn build_equal_workbook_output(
                 .into_iter()
                 .map(|row| (row.raw_line, row.row_number))
                 .collect(),
+            compare_mode,
             include_workbook_delta,
         );
     }
@@ -651,6 +787,9 @@ fn build_equal_workbook_output(
             compare_mode: compare_mode.to_string(),
             sections,
         }),
+        base_metadata: metadata.clone(),
+        mine_metadata: metadata,
+        perf: Some(WorkbookDiffPerfJson { metadata_ms }),
     }
 }
 
@@ -665,8 +804,20 @@ pub fn compute_workbook_diff_output(
             "diff_fast_path same_file=true file={} mode={}",
             base_file_path, compare_mode,
         ));
+        let empty_workbook_metadata = WorkbookMetadataMap {
+            sheets: std::collections::BTreeMap::new(),
+        };
+        let metadata_start = std::time::Instant::now();
+        let workbook_metadata =
+            collect_workbook_metadata(base_file_path).unwrap_or(empty_workbook_metadata);
+        let metadata_ms = metadata_start.elapsed().as_secs_f64() * 1000.0;
         let sheets = parse_workbook_text_document(base_file_path, None)?;
-        let output = build_equal_workbook_output(sheets, compare_mode);
+        let output = build_equal_workbook_output(
+            sheets,
+            compare_mode,
+            Some(workbook_metadata),
+            metadata_ms,
+        );
         profile::log_elapsed(
             total_start,
             format!(
@@ -680,10 +831,12 @@ pub fn compute_workbook_diff_output(
     let empty_workbook_metadata = WorkbookMetadataMap {
         sheets: std::collections::BTreeMap::new(),
     };
+    let metadata_start = std::time::Instant::now();
     let base_workbook_metadata = collect_workbook_metadata(base_file_path)
         .unwrap_or_else(|| empty_workbook_metadata.clone());
     let mine_workbook_metadata = collect_workbook_metadata(mine_file_path)
         .unwrap_or_else(|| empty_workbook_metadata.clone());
+    let metadata_ms = metadata_start.elapsed().as_secs_f64() * 1000.0;
 
     let inspect_start = profile::start();
     let mut use_sheet_inspection = false;
@@ -934,6 +1087,7 @@ pub fn compute_workbook_diff_output(
                         .into_iter()
                         .map(|row| (row.raw_line, row.row_number))
                         .collect(),
+                    compare_mode,
                     include_workbook_delta,
                 );
             }
@@ -947,6 +1101,9 @@ pub fn compute_workbook_diff_output(
         if let Some(mine_sheet) = mine_full_by_name.remove(&base_sheet_name) {
             let sheet_start = profile::start();
             let section_name = base_sheet.name.clone();
+            let sheet_line_idx = diff_lines.len();
+            let base_rows_metadata = rows_metadata_from_diff_rows(&base_sheet.rows, compare_mode);
+            let mine_rows_metadata = rows_metadata_from_diff_rows(&mine_sheet.rows, compare_mode);
             let base_merge_ranges = base_workbook_metadata
                 .sheets
                 .get(&base_sheet_name)
@@ -977,10 +1134,15 @@ pub fn compute_workbook_diff_output(
                 include_workbook_delta,
             );
             if include_workbook_delta {
-                sections.push(WorkbookSectionDeltaJson {
-                    name: section_name,
+                sections.push(build_workbook_section_delta_json(
+                    section_name,
+                    true,
+                    true,
+                    sheet_line_idx,
                     rows,
-                });
+                    base_rows_metadata,
+                    mine_rows_metadata,
+                ));
             }
             let section_name_for_log = base_sheet.name.clone();
             let base_row_count = base_sheet.rows.len();
@@ -998,6 +1160,8 @@ pub fn compute_workbook_diff_output(
         let sheet_start = profile::start();
         let section_name = base_sheet.name.clone();
         let deleted_row_count = base_sheet.rows.len();
+        let sheet_line_idx = diff_lines.len();
+        let base_rows_metadata = rows_metadata_from_diff_rows(&base_sheet.rows, compare_mode);
         let base_merge_ranges = base_workbook_metadata
             .sheets
             .get(&base_sheet_name)
@@ -1036,10 +1200,15 @@ pub fn compute_workbook_diff_output(
         }
         let section_name_for_log = section_name.clone();
         if include_workbook_delta {
-            sections.push(WorkbookSectionDeltaJson {
-                name: section_name,
+            sections.push(build_workbook_section_delta_json(
+                section_name,
+                true,
+                false,
+                sheet_line_idx,
                 rows,
-            });
+                base_rows_metadata,
+                Vec::new(),
+            ));
         }
         profile::log_elapsed(
             sheet_start,
@@ -1060,6 +1229,8 @@ pub fn compute_workbook_diff_output(
         let sheet_start = profile::start();
         let section_name = mine_sheet.name.clone();
         let added_row_count = mine_sheet.rows.len();
+        let sheet_line_idx = diff_lines.len();
+        let mine_rows_metadata = rows_metadata_from_diff_rows(&mine_sheet.rows, compare_mode);
         let mine_merge_ranges = mine_workbook_metadata
             .sheets
             .get(&mine_sheet_name)
@@ -1098,10 +1269,15 @@ pub fn compute_workbook_diff_output(
         }
         let section_name_for_log = section_name.clone();
         if include_workbook_delta {
-            sections.push(WorkbookSectionDeltaJson {
-                name: section_name,
+            sections.push(build_workbook_section_delta_json(
+                section_name,
+                false,
+                true,
+                sheet_line_idx,
                 rows,
-            });
+                Vec::new(),
+                mine_rows_metadata,
+            ));
         }
         profile::log_elapsed(
             sheet_start,
@@ -1118,6 +1294,9 @@ pub fn compute_workbook_diff_output(
             compare_mode: compare_mode.to_string(),
             sections,
         }),
+        base_metadata: Some(base_workbook_metadata),
+        mine_metadata: Some(mine_workbook_metadata),
+        perf: Some(WorkbookDiffPerfJson { metadata_ms }),
     };
     profile::log_elapsed(
         total_start,

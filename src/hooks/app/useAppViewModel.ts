@@ -32,10 +32,10 @@ import { resolveWorkbookSearchMatchTarget } from '@/utils/workbook/workbookNavig
 import {
   applyWorkbookRegionVersionLabels,
   getCompareContextLabels,
-  getPreparedWorkbookAnalysisForMode,
   getPreparedTextAnalysisForMode,
   getPreparedWorkbookNavigationRegionsForMode,
   getPreparedWorkbookSectionsForMode,
+  getPreparedWorkbookDeltaForMode,
 } from '@/hooks/app/helpers';
 import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
 import { useAppStore } from '@/store/appStore';
@@ -110,11 +110,6 @@ export default function useAppViewModel({
     () => getPreparedWorkbookNavigationRegionsForMode(currentDiffData, workbookCompareMode),
     [currentDiffData, workbookCompareMode],
   );
-  const preparedWorkbookAnalysis = useMemo(
-    () => getPreparedWorkbookAnalysisForMode(currentDiffData, workbookCompareMode),
-    [currentDiffData, workbookCompareMode],
-  );
-
   // ── Read setters directly from store ──────────────────────────────────
   const setSearchQ = useAppStore((s) => s.setSearchQ);
   const setSearchRx = useAppStore((s) => s.setSearchRx);
@@ -296,12 +291,12 @@ export default function useAppViewModel({
   const workbookSectionRowIndex = useMemo(
     () => {
       if (!isWorkbookMode) return EMPTY_WORKBOOK_SECTION_ROW_INDEX;
-      const snapshotWorkbookDelta = preparedWorkbookAnalysis?.workbookDeltaByMode[workbookCompareMode] ?? null;
+      const snapshotWorkbookDelta = getPreparedWorkbookDeltaForMode(currentDiffData, workbookCompareMode);
       return snapshotWorkbookDelta
         ? buildWorkbookSectionRowIndexFromPrecomputedDelta(diffLines, snapshotWorkbookDelta)
         : buildWorkbookSectionRowIndex(diffLines, workbookSections, workbookCompareMode);
     },
-    [diffLines, isWorkbookMode, preparedWorkbookAnalysis, workbookCompareMode, workbookSections],
+    [currentDiffData, diffLines, isWorkbookMode, workbookCompareMode, workbookSections],
   );
   const searchMatches = useMemo<SearchMatch[]>(() => {
     if (!isWorkbookMode || searchWorkbookScope !== 'sheet' || !activeWorkbookSheetName) {

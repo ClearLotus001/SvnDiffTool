@@ -73,9 +73,16 @@ export function useWorkbookHorizontalViewportSync({
   onResetViewportState,
 }: UseWorkbookHorizontalViewportSyncParams): UseWorkbookHorizontalViewportSyncResult {
   const snapshotEmitRafRef = useRef(0);
+  const snapshotEmitTimeoutRef = useRef<number | null>(null);
   const restoreRafRef = useRef(0);
   const lastRestoredSnapshotKeyRef = useRef('');
   const lastViewportSheetNameRef = useRef<string | null>(activeSheetName);
+  const lastSnapshotScrollRef = useRef({
+    leftScrollTop: 0,
+    leftScrollLeft: 0,
+    rightScrollTop: 0,
+    rightScrollLeft: 0,
+  });
   const userScrollPauseUntilRef = useRef(0);
   const programmaticScrollUntilRef = useRef<{ left: number; right: number }>({ left: 0, right: 0 });
   const lastAutoRowKeyRef = useRef('');
@@ -96,15 +103,24 @@ export function useWorkbookHorizontalViewportSync({
     [],
   );
 
+  const readSnapshotScrollState = useCallback(() => ({
+    leftScrollTop: leftScrollRef.current?.scrollTop ?? 0,
+    leftScrollLeft: leftScrollRef.current?.scrollLeft ?? 0,
+    rightScrollTop: rightScrollRef.current?.scrollTop ?? 0,
+    rightScrollLeft: rightScrollRef.current?.scrollLeft ?? 0,
+  }), [leftScrollRef, rightScrollRef]);
+
   const emitLayoutSnapshot = useCallback(() => {
     if (!active || !onLayoutSnapshotChange) return;
+    const scrollState = readSnapshotScrollState();
+    lastSnapshotScrollRef.current = scrollState;
     onLayoutSnapshotChange(buildWorkbookHorizontalLayoutSnapshot(
       activeSheetName,
       activeRegionId,
-      leftScrollRef.current?.scrollTop ?? 0,
-      leftScrollRef.current?.scrollLeft ?? 0,
-      rightScrollRef.current?.scrollTop ?? 0,
-      rightScrollRef.current?.scrollLeft ?? 0,
+      scrollState.leftScrollTop,
+      scrollState.leftScrollLeft,
+      scrollState.rightScrollTop,
+      scrollState.rightScrollLeft,
       splitRatio,
       expandedBlocks,
     ));
@@ -113,16 +129,28 @@ export function useWorkbookHorizontalViewportSync({
     activeRegionId,
     activeSheetName,
     expandedBlocks,
-    leftScrollRef,
     onLayoutSnapshotChange,
-    rightScrollRef,
+    readSnapshotScrollState,
     splitRatio,
   ]);
 
   const emitLayoutSnapshotRef = useRef(emitLayoutSnapshot);
   emitLayoutSnapshotRef.current = emitLayoutSnapshot;
 
-  const scheduleLayoutSnapshot = useCallback(() => {
+  const scheduleLayoutSnapshot = useCallback((priority: 'frame' | 'deferred' = 'frame') => {
+    if (priority === 'deferred') {
+      if (snapshotEmitRafRef.current || snapshotEmitTimeoutRef.current != null) return;
+      snapshotEmitTimeoutRef.current = window.setTimeout(() => {
+        snapshotEmitTimeoutRef.current = null;
+        emitLayoutSnapshotRef.current();
+      }, 120);
+      return;
+    }
+
+    if (snapshotEmitTimeoutRef.current != null) {
+      window.clearTimeout(snapshotEmitTimeoutRef.current);
+      snapshotEmitTimeoutRef.current = null;
+    }
     if (snapshotEmitRafRef.current) return;
     snapshotEmitRafRef.current = requestAnimationFrame(() => {
       snapshotEmitRafRef.current = 0;
@@ -131,13 +159,20 @@ export function useWorkbookHorizontalViewportSync({
   }, []);
 
   const handlePaneScroll = useCallback((source: 'left' | 'right') => {
-    scheduleLayoutSnapshot();
     const now = getNow();
-    if (now >= programmaticScrollUntilRef.current[source]) {
+    const isProgrammaticTargetScroll = now < programmaticScrollUntilRef.current[source];
+    if (!isProgrammaticTargetScroll) {
       userScrollPauseUntilRef.current = now + 260;
     }
     syncScrollPosition(source);
-  }, [scheduleLayoutSnapshot, syncScrollPosition]);
+    if (isProgrammaticTargetScroll) return;
+
+    const nextScrollState = readSnapshotScrollState();
+    const previousScrollState = lastSnapshotScrollRef.current;
+    const verticalChanged = Math.abs(nextScrollState.leftScrollTop - previousScrollState.leftScrollTop) > 1
+      || Math.abs(nextScrollState.rightScrollTop - previousScrollState.rightScrollTop) > 1;
+    scheduleLayoutSnapshot(verticalChanged ? 'frame' : 'deferred');
+  }, [readSnapshotScrollState, scheduleLayoutSnapshot, syncScrollPosition]);
 
   useEffect(() => {
     scheduleLayoutSnapshot();
@@ -152,6 +187,10 @@ export function useWorkbookHorizontalViewportSync({
     if (snapshotEmitRafRef.current) {
       cancelAnimationFrame(snapshotEmitRafRef.current);
       snapshotEmitRafRef.current = 0;
+    }
+    if (snapshotEmitTimeoutRef.current != null) {
+      window.clearTimeout(snapshotEmitTimeoutRef.current);
+      snapshotEmitTimeoutRef.current = null;
     }
 
     lastRestoredSnapshotKeyRef.current = '';
@@ -279,6 +318,7 @@ export function useWorkbookHorizontalViewportSync({
 
   useEffect(() => () => {
     if (snapshotEmitRafRef.current) cancelAnimationFrame(snapshotEmitRafRef.current);
+    if (snapshotEmitTimeoutRef.current != null) window.clearTimeout(snapshotEmitTimeoutRef.current);
     if (restoreRafRef.current) cancelAnimationFrame(restoreRafRef.current);
   }, []);
 

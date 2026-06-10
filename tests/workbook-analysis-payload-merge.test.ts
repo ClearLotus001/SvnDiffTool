@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  getPreparedWorkbookNavigationRegionsForMode,
+  getPreparedWorkbookSectionsForMode,
+  getPreparedWorkbookDeltaForMode,
   mergeWorkbookCompareModePayload,
   mergeWorkbookMetadataPayload,
 } from '../src/hooks/app/helpers';
@@ -188,4 +191,45 @@ test('mergeWorkbookMetadataPayload enriches all cached workbook snapshots with m
   assert.equal(Object.keys(merged.mineWorkbookMetadata?.sheets ?? {}).length, 1);
   assert.equal(Object.keys(merged.analysisSnapshotsByMode?.strict?.workbookAnalysis?.metadata.base?.sheets ?? {}).length, 1);
   assert.equal(Object.keys(merged.analysisSnapshotsByMode?.content?.workbookAnalysis?.metadata.base?.sheets ?? {}).length, 1);
+});
+
+test('prepared workbook projections are ignored when their diff lines are missing', () => {
+  const initial = createWorkbookDiffData();
+  const metadata = {
+    base: createWorkbookMetadata('Sheet1'),
+    mine: createWorkbookMetadata('Sheet1'),
+  };
+  const data: DiffData = {
+    ...initial,
+    analysisSnapshotsByMode: {
+      strict: {
+        compareMode: 'strict',
+        textAnalysis: null,
+        workbookAnalysis: {
+          diffLinesByMode: {
+            strict: null,
+          },
+          workbookDeltaByMode: {
+            strict: null,
+          },
+          sectionsByMode: {
+            strict: [],
+          },
+          navigationRegionsByMode: {
+            strict: [],
+          },
+          metadata,
+          artifactDiff: null,
+          perf: {
+            metadataMs: 1,
+            rustDiffMs: 0,
+          },
+        },
+      },
+    },
+  };
+
+  assert.equal(getPreparedWorkbookSectionsForMode(data, 'strict'), null);
+  assert.equal(getPreparedWorkbookNavigationRegionsForMode(data, 'strict'), null);
+  assert.equal(getPreparedWorkbookDeltaForMode(data, 'strict'), null);
 });

@@ -93,6 +93,8 @@ const rootDir = path.resolve(__dirname, '..');
 const rendererIndexPath = path.join(rootDir, 'dist', 'index.html');
 const electronMainPath = path.join(rootDir, 'dist-electron', 'electron', 'main.js');
 const electronPreloadPath = path.join(rootDir, 'dist-electron', 'electron', 'preload.js');
+const rustParserName = process.platform === 'win32' ? 'svn_excel_parser.exe' : 'svn_excel_parser';
+const rustParserPath = path.join(rootDir, 'rust', 'target', 'release', rustParserName);
 const layoutTestIds: Record<LayoutMode, string> = {
   unified: 'toolbar-layout-unified',
   'split-h': 'toolbar-layout-split-h',
@@ -186,7 +188,7 @@ function escapeXml(value: string): string {
 }
 
 async function ensureBuiltArtifacts() {
-  const candidates = [rendererIndexPath, electronMainPath, electronPreloadPath];
+  const candidates = [rendererIndexPath, electronMainPath, electronPreloadPath, rustParserPath];
   const available = await Promise.all(candidates.map(async (targetPath) => ({
     targetPath,
     exists: await fileExists(targetPath),
@@ -197,7 +199,7 @@ async function ensureBuiltArtifacts() {
   if (missing.length > 0) {
     throw new Error(
       `Missing built artifacts:\n${missing.map((targetPath) => `- ${targetPath}`).join('\n')}\n` +
-      'Please run "npm run build:renderer && npm run build:electron" first.',
+      'Please run "npm run build:renderer && npm run build:electron && npm run build:rust" first.',
     );
   }
 }
@@ -315,6 +317,24 @@ async function clearPerfEvents(page: import('playwright').Page): Promise<void> {
       __SVN_DIFF_PERF__?: { clearEvents?(): void };
     };
     bridgeHost.__SVN_DIFF_PERF__?.clearEvents?.();
+  });
+}
+
+async function getCompareMenuDiagnostics(page: import('playwright').Page): Promise<Record<string, unknown>> {
+  return page.evaluate(() => {
+    const browserGlobal = globalThis as unknown as {
+      document: {
+        querySelectorAll(selector: string): { length: number };
+        body: { innerText: string };
+      };
+    };
+    const { document: pageDocument } = browserGlobal;
+    return {
+      viewMenuButtons: pageDocument.querySelectorAll('[data-testid="toolbar-view-menu"]').length,
+      contentButtons: pageDocument.querySelectorAll('[data-testid="toolbar-compare-content"]').length,
+      strictButtons: pageDocument.querySelectorAll('[data-testid="toolbar-compare-strict"]').length,
+      bodyTextSample: pageDocument.body.innerText.slice(0, 800),
+    };
   });
 }
 
@@ -508,7 +528,17 @@ async function switchWorkbookCompareMode(
     },
     async () => {
       await page.getByTestId('toolbar-view-menu').click();
-      await page.getByTestId(compareModeTestIds[targetCompareMode]).click();
+      try {
+        await page.getByTestId(compareModeTestIds[targetCompareMode]).click({ timeout: 5_000 });
+      } catch (error) {
+        const currentSnapshot = await getPerfSnapshot(page).catch(() => null);
+        const diagnostics = await getCompareMenuDiagnostics(page).catch(() => null);
+        throw new Error(
+          `Failed to open workbook compare mode '${targetCompareMode}'. ` +
+          `snapshot=${JSON.stringify(currentSnapshot)} diagnostics=${JSON.stringify(diagnostics)} ` +
+          `cause=${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     },
   );
 }

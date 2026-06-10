@@ -47,6 +47,7 @@ interface UseWorkbookHorizontalPaneRenderPropsParams {
   mineMergedRanges: ReadonlyArray<WorkbookMergeRange>;
   baseRowEntryByRowNumber: ComponentProps<typeof WorkbookPaneCanvasStrip>['rowEntryByRowNumber'];
   mineRowEntryByRowNumber: ComponentProps<typeof WorkbookPaneCanvasStrip>['rowEntryByRowNumber'];
+  compareStateByRow: ComponentProps<typeof WorkbookPaneCanvasStrip>['compareStateByRow'];
   baseCompareCellsByRowNumber: ComponentProps<typeof WorkbookPaneCanvasStrip>['compareCellsByRowNumber'];
   mineCompareCellsByRowNumber: ComponentProps<typeof WorkbookPaneCanvasStrip>['compareCellsByRowNumber'];
   compareMode: WorkbookCompareMode;
@@ -77,6 +78,7 @@ export function useWorkbookHorizontalPaneRenderProps({
   mineMergedRanges,
   baseRowEntryByRowNumber,
   mineRowEntryByRowNumber,
+  compareStateByRow,
   baseCompareCellsByRowNumber,
   mineCompareCellsByRowNumber,
   compareMode,
@@ -113,6 +115,7 @@ export function useWorkbookHorizontalPaneRenderProps({
           columnLayoutByColumn: paneVirtualColumns.columnLayoutByColumn,
           mergedRanges: workbookSide === 'base' ? baseMergedRanges : mineMergedRanges,
           rowEntryByRowNumber: workbookSide === 'base' ? baseRowEntryByRowNumber : mineRowEntryByRowNumber,
+          compareStateByRow,
           compareCellsByRowNumber: workbookSide === 'base' ? baseCompareCellsByRowNumber : mineCompareCellsByRowNumber,
           compareMode,
         },
@@ -151,6 +154,7 @@ export function useWorkbookHorizontalPaneRenderProps({
     baseRowEntryByRowNumber,
     baseVersion,
     compareMode,
+    compareStateByRow,
     fontSize,
     freezeColumnCount,
     activeRegionPulseTriggerKey,

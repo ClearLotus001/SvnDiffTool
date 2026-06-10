@@ -8,6 +8,7 @@ import type { FrozenStackedCanvasRun } from '@/hooks/workbook/useWorkbookFrozenP
 import type { CompareMode } from '@/hooks/workbook/useWorkbookCompareDerivedState';
 import type {
   WorkbookCompareCellsMaps,
+  WorkbookCompareStateByRow,
   WorkbookRowEntryMaps,
 } from '@/utils/workbook/workbookPanelHelpers';
 import type {
@@ -54,6 +55,7 @@ interface WorkbookCompareFrozenRowsPaneProps {
   baseMergedRanges: ReadonlyArray<WorkbookMergeRange>;
   mineMergedRanges: ReadonlyArray<WorkbookMergeRange>;
   rowEntryByRowNumber: WorkbookRowEntryMaps;
+  compareStateByRow: WorkbookCompareStateByRow;
   compareCellsByRowNumber: WorkbookCompareCellsMaps;
   compareMode: WorkbookCompareMode;
 }
@@ -91,6 +93,7 @@ export default function WorkbookCompareFrozenRowsPane({
   baseMergedRanges,
   mineMergedRanges,
   rowEntryByRowNumber,
+  compareStateByRow,
   compareCellsByRowNumber,
   compareMode,
 }: WorkbookCompareFrozenRowsPaneProps) {
@@ -184,6 +187,11 @@ export default function WorkbookCompareFrozenRowsPane({
                     columnLayoutByColumn={columnLayoutByColumn}
                     baseMergedRanges={baseMergedRanges}
                     mineMergedRanges={mineMergedRanges}
+                    baseRowEntryByRowNumber={rowEntryByRowNumber.base}
+                    mineRowEntryByRowNumber={rowEntryByRowNumber.mine}
+                    compareStateByRow={compareStateByRow}
+                    baseCompareCellsByRowNumber={compareCellsByRowNumber.base}
+                    mineCompareCellsByRowNumber={compareCellsByRowNumber.mine}
                     compareMode={compareMode}
                   />
                 </div>
@@ -223,6 +231,7 @@ export default function WorkbookCompareFrozenRowsPane({
                   mineMergedRanges={mineMergedRanges}
                   baseRowEntryByRowNumber={rowEntryByRowNumber.base}
                   mineRowEntryByRowNumber={rowEntryByRowNumber.mine}
+                  compareStateByRow={compareStateByRow}
                   baseCompareCellsByRowNumber={compareCellsByRowNumber.base}
                   mineCompareCellsByRowNumber={compareCellsByRowNumber.mine}
                   compareMode={compareMode}

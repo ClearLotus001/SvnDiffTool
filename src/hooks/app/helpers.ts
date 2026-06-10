@@ -90,7 +90,7 @@ export function getPreparedTextAnalysisForMode(
   return getAnalysisSnapshotForMode(data, compareMode)?.textAnalysis ?? null;
 }
 
-export function getPreparedWorkbookAnalysisForMode(
+function getPreparedWorkbookAnalysisForMode(
   data: DiffData | null | undefined,
   compareMode: WorkbookCompareMode,
 ): PreparedWorkbookAnalysis | null {
@@ -101,14 +101,18 @@ export function getPreparedWorkbookSectionsForMode(
   data: DiffData | null | undefined,
   compareMode: WorkbookCompareMode,
 ): WorkbookSection[] | null {
-  return getPreparedWorkbookAnalysisForMode(data, compareMode)?.sectionsByMode?.[compareMode] ?? null;
+  const workbookAnalysis = getPreparedWorkbookAnalysisForMode(data, compareMode);
+  if (!workbookAnalysis?.diffLinesByMode[compareMode]) return null;
+  return workbookAnalysis.sectionsByMode?.[compareMode] ?? null;
 }
 
 export function getPreparedWorkbookNavigationRegionsForMode(
   data: DiffData | null | undefined,
   compareMode: WorkbookCompareMode,
 ): WorkbookDiffRegion[] | null {
-  return getPreparedWorkbookAnalysisForMode(data, compareMode)?.navigationRegionsByMode?.[compareMode] ?? null;
+  const workbookAnalysis = getPreparedWorkbookAnalysisForMode(data, compareMode);
+  if (!workbookAnalysis?.diffLinesByMode[compareMode]) return null;
+  return workbookAnalysis.navigationRegionsByMode?.[compareMode] ?? null;
 }
 
 export function getPreparedDiffLinesForMode(
@@ -124,7 +128,9 @@ export function getPreparedWorkbookDeltaForMode(
   data: DiffData | null | undefined,
   compareMode: WorkbookCompareMode,
 ) {
-  return getPreparedWorkbookAnalysisForMode(data, compareMode)?.workbookDeltaByMode[compareMode] ?? null;
+  const workbookAnalysis = getPreparedWorkbookAnalysisForMode(data, compareMode);
+  if (!workbookAnalysis?.diffLinesByMode[compareMode]) return null;
+  return workbookAnalysis.workbookDeltaByMode[compareMode] ?? null;
 }
 
 export function applyWorkbookRegionVersionLabels(

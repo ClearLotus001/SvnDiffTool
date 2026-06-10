@@ -209,11 +209,21 @@ export interface WorkbookRowDeltaPayload extends Omit<WorkbookRowDelta, 'cellDel
   lineIdxs: number[];
   leftLineIdx: number | null;
   rightLineIdx: number | null;
+  baseRowNumber?: number | null;
+  mineRowNumber?: number | null;
   cellDeltas: WorkbookCellDeltaPayload[];
 }
 
 export interface WorkbookSectionDeltaPayload {
   name: string;
+  hasBaseSide?: boolean;
+  hasMineSide?: boolean;
+  startLineIdx?: number | null;
+  endLineIdx?: number | null;
+  maxColumns?: number | null;
+  rowCount?: number | null;
+  firstDataLineIdx?: number | null;
+  firstDataRowNumber?: number | null;
   rows: WorkbookRowDeltaPayload[];
 }
 

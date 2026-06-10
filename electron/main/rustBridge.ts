@@ -439,10 +439,16 @@ function normalizeWorkbookRowDeltaPayload(input: unknown): WorkbookRowDeltaPaylo
   const rightLineIdx = payload.rightLineIdx == null && payload.r == null
     ? null
     : Number(payload.rightLineIdx ?? payload.r);
+  const baseRowNumber = payload.baseRowNumber == null && payload.br == null
+    ? null
+    : Number(payload.baseRowNumber ?? payload.br);
+  const mineRowNumber = payload.mineRowNumber == null && payload.mr == null
+    ? null
+    : Number(payload.mineRowNumber ?? payload.mr);
   const rawLineIdxs = Array.isArray(payload.lineIdxs) ? payload.lineIdxs : null;
   const lineIdxs = rawLineIdxs
-    ? rawLineIdxs.map((value: unknown) => Number(value)).filter((value) => Number.isFinite(value))
-    : [leftLineIdx, rightLineIdx].filter((value): value is number => Number.isFinite(value));
+    ? Array.from(new Set(rawLineIdxs.map((value: unknown) => Number(value)).filter((value) => Number.isFinite(value))))
+    : Array.from(new Set([leftLineIdx, rightLineIdx].filter((value): value is number => Number.isFinite(value))));
   const rawCellDeltas = Array.isArray(payload.cellDeltas ?? payload.c)
     ? ((payload.cellDeltas ?? payload.c) as unknown[])
     : null;
@@ -493,6 +499,8 @@ function normalizeWorkbookRowDeltaPayload(input: unknown): WorkbookRowDeltaPaylo
     lineIdxs,
     leftLineIdx: Number.isFinite(leftLineIdx) ? leftLineIdx : null,
     rightLineIdx: Number.isFinite(rightLineIdx) ? rightLineIdx : null,
+    baseRowNumber: Number.isFinite(baseRowNumber) ? baseRowNumber : null,
+    mineRowNumber: Number.isFinite(mineRowNumber) ? mineRowNumber : null,
     cellDeltas,
     changedColumns,
     strictOnlyColumns,
@@ -530,7 +538,27 @@ function normalizeWorkbookPrecomputedDeltaPayload(
               .map(normalizeWorkbookRowDeltaPayload)
               .filter((value): value is WorkbookRowDeltaPayload => value != null)
           : [];
-        return [{ name, rows }];
+        const normalizedSection = {
+          name,
+          rows,
+        } as WorkbookPrecomputedDeltaPayload['sections'][number];
+        const hasBaseSide = raw.hasBaseSide ?? raw.b;
+        if (hasBaseSide != null) normalizedSection.hasBaseSide = Boolean(hasBaseSide);
+        const hasMineSide = raw.hasMineSide ?? raw.e;
+        if (hasMineSide != null) normalizedSection.hasMineSide = Boolean(hasMineSide);
+        const startLineIdx = Number(raw.startLineIdx ?? raw.sl);
+        if (Number.isFinite(startLineIdx)) normalizedSection.startLineIdx = startLineIdx;
+        const endLineIdx = Number(raw.endLineIdx ?? raw.el);
+        if (Number.isFinite(endLineIdx)) normalizedSection.endLineIdx = endLineIdx;
+        const maxColumns = Number(raw.maxColumns ?? raw.mc);
+        if (Number.isFinite(maxColumns)) normalizedSection.maxColumns = maxColumns;
+        const rowCount = Number(raw.rowCount ?? raw.rc);
+        if (Number.isFinite(rowCount)) normalizedSection.rowCount = rowCount;
+        const firstDataLineIdx = Number(raw.firstDataLineIdx ?? raw.fdl);
+        if (Number.isFinite(firstDataLineIdx)) normalizedSection.firstDataLineIdx = firstDataLineIdx;
+        const firstDataRowNumber = Number(raw.firstDataRowNumber ?? raw.fdr);
+        if (Number.isFinite(firstDataRowNumber)) normalizedSection.firstDataRowNumber = firstDataRowNumber;
+        return [normalizedSection];
       })
     : [];
 
@@ -539,22 +567,42 @@ function normalizeWorkbookPrecomputedDeltaPayload(
 
 function normalizeRustWorkbookDiffPayload(
   input: unknown,
-): { diffLines: DiffLine[] | null; workbookDelta: WorkbookPrecomputedDeltaPayload | null } {
+): {
+  diffLines: DiffLine[] | null;
+  workbookDelta: WorkbookPrecomputedDeltaPayload | null;
+  baseMetadata: WorkbookMetadataMap | null;
+  mineMetadata: WorkbookMetadataMap | null;
+  metadataMs: number | null;
+} {
   if (Array.isArray(input)) {
     return {
       diffLines: normalizeRustDiffLines(input),
       workbookDelta: null,
+      baseMetadata: null,
+      mineMetadata: null,
+      metadataMs: null,
     };
   }
 
   if (!input || typeof input !== 'object') {
-    return { diffLines: null, workbookDelta: null };
+    return {
+      diffLines: null,
+      workbookDelta: null,
+      baseMetadata: null,
+      mineMetadata: null,
+      metadataMs: null,
+    };
   }
 
   const payload = input as RustWorkbookDiffPayload;
+  const perf = (payload.perf ?? payload.p) as { metadataMs?: unknown; md?: unknown } | null | undefined;
+  const metadataMs = Number(perf?.metadataMs ?? perf?.md);
   return {
     diffLines: normalizeRustDiffLines(payload.diffLines ?? payload.d),
     workbookDelta: normalizeWorkbookPrecomputedDeltaPayload(payload.workbookDelta ?? payload.w),
+    baseMetadata: normalizeWorkbookMetadata(payload.baseMetadata ?? payload.mb),
+    mineMetadata: normalizeWorkbookMetadata(payload.mineMetadata ?? payload.mm),
+    metadataMs: Number.isFinite(metadataMs) ? metadataMs : null,
   };
 }
 
@@ -565,10 +613,22 @@ export async function tryResolveWorkbookDiffWithRust(
 ): Promise<{
   diffLines: DiffLine[] | null;
   workbookDelta: WorkbookPrecomputedDeltaPayload | null;
+  baseMetadata: WorkbookMetadataMap | null;
+  mineMetadata: WorkbookMetadataMap | null;
+  metadataMs: number | null;
   parseMs: number;
 }> {
   const parserPath = resolveRustParserPath();
-  if (!parserPath) return { diffLines: null, workbookDelta: null, parseMs: 0 };
+  if (!parserPath) {
+    return {
+      diffLines: null,
+      workbookDelta: null,
+      baseMetadata: null,
+      mineMetadata: null,
+      metadataMs: null,
+      parseMs: 0,
+    };
+  }
 
   const parseStart = performance.now();
   try {
@@ -581,7 +641,14 @@ export async function tryResolveWorkbookDiffWithRust(
     logRustDebugStderr('rust-parser-diff', result.stderr);
     if (!result.ok || !result.stdout.trim()) {
       if (result.stderr.trim()) logMainWarn('rust-parser-diff', result.stderr.trim());
-      return { diffLines: null, workbookDelta: null, parseMs };
+      return {
+        diffLines: null,
+        workbookDelta: null,
+        baseMetadata: null,
+        mineMetadata: null,
+        metadataMs: null,
+        parseMs,
+      };
     }
 
     const parsed = JSON.parse(result.stdout) as unknown;
@@ -589,12 +656,22 @@ export async function tryResolveWorkbookDiffWithRust(
     return {
       diffLines: normalized.diffLines,
       workbookDelta: normalized.workbookDelta,
+      baseMetadata: normalized.baseMetadata,
+      mineMetadata: normalized.mineMetadata,
+      metadataMs: normalized.metadataMs,
       parseMs,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logMainWarn('rust-parser-diff', message);
-    return { diffLines: null, workbookDelta: null, parseMs: performance.now() - parseStart };
+    return {
+      diffLines: null,
+      workbookDelta: null,
+      baseMetadata: null,
+      mineMetadata: null,
+      metadataMs: null,
+      parseMs: performance.now() - parseStart,
+    };
   }
 }
 

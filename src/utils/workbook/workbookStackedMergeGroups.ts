@@ -1,4 +1,5 @@
 import type { SplitRow, WorkbookMergeRange } from '@/types';
+import { ROW_H } from '@/hooks/virtualization/useVirtual';
 import {
   getWorkbookSideRowNumber,
 } from '@/utils/workbook/workbookNavigation';
@@ -51,7 +52,47 @@ export interface WorkbookStackedVisualGroup {
   mergeWindows: WorkbookStackedMergeCoverageWindow[];
 }
 
-const MAX_PLAIN_ROWS_PER_GROUP = 256;
+export const WORKBOOK_STACKED_PLAIN_GROUP_MAX_HEIGHT = ROW_H * 64;
+
+export function splitWorkbookStackedRowsByHeight<T>(params: {
+  rows: readonly T[];
+  getHeight: (row: T) => number;
+  startIndex?: number;
+  endIndex?: number;
+  maxHeight?: number;
+}): Array<{ startIndex: number; endIndex: number }> {
+  const {
+    rows,
+    getHeight,
+    startIndex: rawStartIndex = 0,
+    endIndex: rawEndIndex = rows.length - 1,
+    maxHeight = WORKBOOK_STACKED_PLAIN_GROUP_MAX_HEIGHT,
+  } = params;
+  if (rows.length === 0) return [];
+
+  const startIndex = Math.max(0, rawStartIndex);
+  const endIndex = Math.min(rows.length - 1, rawEndIndex);
+  if (startIndex > endIndex) return [];
+
+  const heightBudget = Math.max(1, maxHeight);
+  const chunks: Array<{ startIndex: number; endIndex: number }> = [];
+  let chunkStart = startIndex;
+  let chunkHeight = 0;
+
+  for (let index = startIndex; index <= endIndex; index += 1) {
+    const row = rows[index]!;
+    const rowHeight = Math.max(0, getHeight(row));
+    if (index > chunkStart && chunkHeight + rowHeight > heightBudget) {
+      chunks.push({ startIndex: chunkStart, endIndex: index - 1 });
+      chunkStart = index;
+      chunkHeight = 0;
+    }
+    chunkHeight += rowHeight;
+  }
+
+  chunks.push({ startIndex: chunkStart, endIndex });
+  return chunks;
+}
 
 function buildMergeWindowKey(
   side: 'base' | 'mine',
@@ -216,10 +257,14 @@ export function buildWorkbookStackedVisualGroups(params: {
 
   const pushPlainGroups = (startIndex: number, endIndex: number) => {
     if (startIndex > endIndex) return;
-    for (let chunkStart = startIndex; chunkStart <= endIndex; chunkStart += MAX_PLAIN_ROWS_PER_GROUP) {
-      const chunkEnd = Math.min(endIndex, chunkStart + MAX_PLAIN_ROWS_PER_GROUP - 1);
-      pushGroup(chunkStart, chunkEnd, 'plain', []);
-    }
+    splitWorkbookStackedRowsByHeight({
+      rows,
+      startIndex,
+      endIndex,
+      getHeight: (row) => row.height,
+    }).forEach((chunk) => {
+      pushGroup(chunk.startIndex, chunk.endIndex, 'plain', []);
+    });
   };
 
   let cursor = 0;

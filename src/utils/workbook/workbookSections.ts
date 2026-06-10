@@ -23,6 +23,11 @@ const workbookLineSheetContextsCache = new WeakMap<DiffLine[], WorkbookLineSheet
 const workbookLineSheetContextLookupCache = new WeakMap<DiffLine[], WorkbookLineSheetContextLookup>();
 const workbookSectionsCache = new WeakMap<DiffLine[], Map<WorkbookCompareMode, WorkbookSection[]>>();
 
+function parseWorkbookSheetDisplayLine(line: string | null | undefined): string | null {
+  if (typeof line !== 'string' || !line.startsWith('@@sheet\t')) return null;
+  return line.slice('@@sheet\t'.length).trim();
+}
+
 export function resolveWorkbookSheetNameForLineContext(params: {
   line: DiffLine | null | undefined;
   context: WorkbookLineSheetContext | null | undefined;
@@ -311,11 +316,11 @@ export function buildWorkbookLineSheetContextLookup(
 
     for (let index = builtThroughIndex + 1; index <= targetIndex; index += 1) {
       const line = diffLines[index];
-      const parsedBase = line?.base ? parseWorkbookDisplayLine(line.base) : null;
-      const parsedMine = line?.mine ? parseWorkbookDisplayLine(line.mine) : null;
+      const baseSheetName = parseWorkbookSheetDisplayLine(line?.base);
+      const mineSheetName = parseWorkbookSheetDisplayLine(line?.mine);
 
-      if (parsedBase?.kind === 'sheet') currentBaseSheetName = parsedBase.sheetName;
-      if (parsedMine?.kind === 'sheet') currentMineSheetName = parsedMine.sheetName;
+      if (baseSheetName != null) currentBaseSheetName = baseSheetName;
+      if (mineSheetName != null) currentMineSheetName = mineSheetName;
 
       contexts[index] = {
         baseSheetName: currentBaseSheetName,

@@ -4,12 +4,14 @@ import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { getRustArtifactPaths, runRustReleaseBuild } from './rustArtifacts';
 
 const rootDir = path.resolve(__dirname, '..');
 const devServerHost = '127.0.0.1';
 const viteCliPath = path.join(rootDir, 'node_modules', 'vite', 'bin', 'vite.js');
 const tscCliPath = path.join(rootDir, 'node_modules', 'typescript', 'bin', 'tsc');
 const tsxCliPath = path.join(rootDir, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+const rustArtifactPaths = getRustArtifactPaths(rootDir);
 const devAppLockHash = createHash('sha1').update(rootDir).digest('hex').slice(0, 10);
 const devAppLockDir = path.join(os.tmpdir(), 'SvnDiffTool-dev');
 const devAppLockPath = path.join(devAppLockDir, `dev-app-${devAppLockHash}.lock.json`);
@@ -90,6 +92,40 @@ function startChild(command: string, args: string[], label: string, env: NodeJS.
   });
 }
 
+function warnRustFallback(message: string) {
+  console.warn(`[dev-app] ${message}`);
+  console.warn(
+    '[dev-app] Continuing without the Rust workbook parser. ' +
+    'Workbook diff still works through the JS fallback, but large workbook loading will be slower.',
+  );
+  console.warn('[dev-app] Install Rust and run "npm run build:rust" to restore the fast workbook path.');
+}
+
+function ensureRustArtifacts() {
+  if (fs.existsSync(rustArtifactPaths.parserPath)) return;
+
+  const requireRust = process.env.SVN_DIFF_REQUIRE_RUST === '1';
+  if (process.env.SVN_DIFF_SKIP_RUST_BUILD === '1') {
+    const message = `Rust workbook parser is missing: ${rustArtifactPaths.parserPath}`;
+    if (requireRust) throw new Error(message);
+    warnRustFallback(message);
+    return;
+  }
+
+  console.log('[dev-app] Rust workbook parser is missing; building it before Electron starts.');
+  const result = runRustReleaseBuild({ repoRoot: rootDir, stdio: 'inherit' });
+  if (result.ok && fs.existsSync(rustArtifactPaths.parserPath)) {
+    console.log('[dev-app] Rust workbook parser is ready.');
+    return;
+  }
+
+  const message = result.ok
+    ? `Rust build completed but parser artifact was not found: ${rustArtifactPaths.parserPath}`
+    : result.message;
+  if (requireRust) throw new Error(message);
+  warnRustFallback(message);
+}
+
 function shutdown(exitCode = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
@@ -113,6 +149,13 @@ process.on('SIGTERM', () => shutdown(0));
 
 async function main() {
   acquireDevAppLock();
+  ensureRustArtifacts();
+  if (process.env.SVN_DIFF_DEV_RUST_CHECK_ONLY === '1') {
+    console.log('[dev-app] Rust artifact check completed.');
+    releaseDevAppLock();
+    return;
+  }
+
   const devServerPort = await findAvailablePort(5173);
   const devServerUrl = `http://${devServerHost}:${devServerPort}`;
   const childEnv: NodeJS.ProcessEnv = {

@@ -135,11 +135,23 @@ async function buildWorkbookSnapshot(
   input: ResolveAnalysisSnapshotInput,
 ): Promise<DiffAnalysisSnapshot> {
   const diffStart = performance.now();
-  const resolveMetadataState = async (): Promise<{
+  const resolveMetadataState = async (hints?: {
+    baseWorkbookMetadata?: FilePayload['metadata'];
+    mineWorkbookMetadata?: FilePayload['metadata'];
+    metadataMs?: number;
+  }): Promise<{
     baseWorkbookMetadata: FilePayload['metadata'];
     mineWorkbookMetadata: FilePayload['metadata'];
     metadataMs: number;
   }> => {
+    if (hints?.baseWorkbookMetadata && hints.mineWorkbookMetadata) {
+      return {
+        baseWorkbookMetadata: hints.baseWorkbookMetadata,
+        mineWorkbookMetadata: hints.mineWorkbookMetadata,
+        metadataMs: hints.metadataMs ?? 0,
+      };
+    }
+
     const shouldPreferPairPayload = Boolean(
       input.baseLocalPath
       && input.mineLocalPath
@@ -187,17 +199,26 @@ async function buildWorkbookSnapshot(
       metadataMs: (baseMetadataPayload.perf.metadataMs ?? 0) + (mineMetadataPayload.perf.metadataMs ?? 0),
     };
   };
-  const [workbookComparePayload, metadataState] = await Promise.all([
-    resolveWorkbookCompareModePayload(
-      input.baseLocalPath,
-      input.basePayload.bytes,
-      input.mineLocalPath,
-      input.minePayload.bytes,
-      input.fileName,
-      input.compareMode,
-    ),
-    resolveMetadataState(),
-  ]);
+  const workbookComparePayload = await resolveWorkbookCompareModePayload(
+    input.baseLocalPath,
+    input.basePayload.bytes,
+    input.mineLocalPath,
+    input.minePayload.bytes,
+    input.fileName,
+    input.compareMode,
+  );
+  const hasComparePayloadMetadata = Boolean(
+    workbookComparePayload?.baseMetadata && workbookComparePayload.mineMetadata,
+  );
+  const metadataState = await resolveMetadataState(
+    hasComparePayloadMetadata
+      ? {
+          baseWorkbookMetadata: workbookComparePayload?.baseMetadata ?? null,
+          mineWorkbookMetadata: workbookComparePayload?.mineMetadata ?? null,
+          metadataMs: workbookComparePayload?.perf?.metadataMs ?? 0,
+        }
+      : undefined,
+  );
   const {
     baseWorkbookMetadata,
     mineWorkbookMetadata,

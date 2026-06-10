@@ -75,6 +75,7 @@ function renderCompareStickyCanvas(): string {
               base: new Map(),
               mine: new Map(),
             },
+            compareStateByRow: new Map(),
             compareCellsByRowNumber: {
               base: new Map(),
               mine: new Map(),

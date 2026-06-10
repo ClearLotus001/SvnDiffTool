@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { computeVirtualWindow } from '../src/hooks/virtualization/useVirtual';
 import {
   computeHorizontalWindow,
+  createFullHorizontalWindow,
   preparePositionedMergedColumnRanges,
   resolveStableHorizontalColumnEntries,
 } from '../src/hooks/virtualization/useHorizontalVirtualColumns';
@@ -61,6 +62,15 @@ test('computeHorizontalWindow uses prefix sums for variable column widths', () =
   assert.equal(window.startIndex, 1);
   assert.equal(window.endIndex, 2);
   assert.equal(window.visibleColumnCount, 1);
+});
+
+test('createFullHorizontalWindow returns a stable all-column window for narrow workbooks', () => {
+  assert.deepEqual(createFullHorizontalWindow(46), {
+    startIndex: 0,
+    endIndex: 46,
+    visibleColumnCount: 46,
+    overscan: 46,
+  });
 });
 
 test('resolveStableHorizontalColumnEntries invalidates cached entries when layout identity changes', () => {

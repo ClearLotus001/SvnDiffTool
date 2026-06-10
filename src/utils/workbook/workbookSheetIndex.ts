@@ -6,7 +6,7 @@ import type {
 } from '@/types';
 import type { WorkbookSection } from '@/utils/workbook/workbookSections';
 import { parseWorkbookDisplayLine } from '@/utils/workbook/workbookDisplay';
-import { buildWorkbookLineSheetContexts } from '@/utils/workbook/workbookSections';
+import { buildWorkbookLineSheetContextLookup } from '@/utils/workbook/workbookSections';
 import {
   buildWorkbookRowSignature,
   alignWorkbookEntries,
@@ -226,7 +226,7 @@ export function buildWorkbookSectionRowIndex(
     return EMPTY_WORKBOOK_SECTION_ROW_INDEX;
   }
 
-  const lineSheetContexts = buildWorkbookLineSheetContexts(diffLines);
+  const lineSheetContextLookup = buildWorkbookLineSheetContextLookup(diffLines);
   const sectionByName = new Map(
     sections.map((section) => [section.name, section] as const),
   );
@@ -239,7 +239,7 @@ export function buildWorkbookSectionRowIndex(
       .slice(contentStartIdx, section.endLineIdx + 1)
       .flatMap((line, localIndex) => {
         const lineIdx = contentStartIdx + localIndex;
-        const context = lineSheetContexts[lineIdx];
+        const context = lineSheetContextLookup.get(lineIdx);
         const parsedBase = line.base ? parseWorkbookDisplayLine(line.base) : null;
         const parsedMine = line.mine ? parseWorkbookDisplayLine(line.mine) : null;
         const keepBase = parsedBase?.kind === 'row' && context?.baseSheetName === section.name;
@@ -303,7 +303,7 @@ export function buildWorkbookSectionRowIndexFromPrecomputedDelta(
   const cached = payloadCache.get(payload);
   if (cached) return cached;
 
-  const lineSheetContexts = buildWorkbookLineSheetContexts(diffLines);
+  const lineSheetContextLookup = buildWorkbookLineSheetContextLookup(diffLines);
   const sectionPayloadByName = new Map(
     payload.sections.map((section) => [section.name, section] as const),
   );
@@ -314,8 +314,8 @@ export function buildWorkbookSectionRowIndexFromPrecomputedDelta(
     const rows: SplitRow[] = section.rows.flatMap((row) => {
       const leftLine = row.leftLineIdx != null ? (diffLines[row.leftLineIdx] ?? null) : null;
       const rightLine = row.rightLineIdx != null ? (diffLines[row.rightLineIdx] ?? null) : null;
-      const leftContext = row.leftLineIdx != null ? lineSheetContexts[row.leftLineIdx] : null;
-      const rightContext = row.rightLineIdx != null ? lineSheetContexts[row.rightLineIdx] : null;
+      const leftContext = row.leftLineIdx != null ? lineSheetContextLookup.get(row.leftLineIdx) : null;
+      const rightContext = row.rightLineIdx != null ? lineSheetContextLookup.get(row.rightLineIdx) : null;
       const keepLeft = Boolean(leftLine && leftContext?.baseSheetName === section.name);
       const keepRight = Boolean(rightLine && rightContext?.mineSheetName === section.name);
       if (!keepLeft && !keepRight) return [];

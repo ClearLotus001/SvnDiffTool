@@ -23,6 +23,10 @@ pub struct WorkbookSheetMetadata {
     pub hidden_columns: Vec<usize>,
     #[serde(rename = "m", default, skip_serializing_if = "Vec::is_empty")]
     pub merge_ranges: Vec<WorkbookMergeRange>,
+    #[serde(rename = "r", skip_serializing_if = "Option::is_none")]
+    pub row_count: Option<usize>,
+    #[serde(rename = "c", skip_serializing_if = "Option::is_none")]
+    pub max_columns: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -83,6 +87,10 @@ pub struct WorkbookRowDeltaJson {
     pub left_line_idx: Option<usize>,
     #[serde(rename = "r", skip_serializing_if = "Option::is_none")]
     pub right_line_idx: Option<usize>,
+    #[serde(rename = "br", skip_serializing_if = "Option::is_none")]
+    pub base_row_number: Option<usize>,
+    #[serde(rename = "mr", skip_serializing_if = "Option::is_none")]
+    pub mine_row_number: Option<usize>,
     #[serde(rename = "c", default, skip_serializing_if = "Vec::is_empty")]
     pub cell_deltas: Vec<WorkbookCellDeltaJson>,
 }
@@ -91,6 +99,22 @@ pub struct WorkbookRowDeltaJson {
 pub struct WorkbookSectionDeltaJson {
     #[serde(rename = "n")]
     pub name: String,
+    #[serde(rename = "b")]
+    pub has_base_side: bool,
+    #[serde(rename = "e")]
+    pub has_mine_side: bool,
+    #[serde(rename = "sl", skip_serializing_if = "Option::is_none")]
+    pub start_line_idx: Option<usize>,
+    #[serde(rename = "el", skip_serializing_if = "Option::is_none")]
+    pub end_line_idx: Option<usize>,
+    #[serde(rename = "mc", skip_serializing_if = "Option::is_none")]
+    pub max_columns: Option<usize>,
+    #[serde(rename = "rc", skip_serializing_if = "Option::is_none")]
+    pub row_count: Option<usize>,
+    #[serde(rename = "fdl", skip_serializing_if = "Option::is_none")]
+    pub first_data_line_idx: Option<usize>,
+    #[serde(rename = "fdr", skip_serializing_if = "Option::is_none")]
+    pub first_data_row_number: Option<usize>,
     #[serde(rename = "r")]
     pub rows: Vec<WorkbookRowDeltaJson>,
 }
@@ -123,6 +147,18 @@ pub struct WorkbookDiffOutputJson {
     pub diff_lines: Vec<DiffLineJson>,
     #[serde(rename = "w", skip_serializing_if = "Option::is_none")]
     pub workbook_delta: Option<WorkbookPrecomputedDeltaJson>,
+    #[serde(rename = "mb", skip_serializing_if = "Option::is_none")]
+    pub base_metadata: Option<WorkbookMetadataMap>,
+    #[serde(rename = "mm", skip_serializing_if = "Option::is_none")]
+    pub mine_metadata: Option<WorkbookMetadataMap>,
+    #[serde(rename = "p", skip_serializing_if = "Option::is_none")]
+    pub perf: Option<WorkbookDiffPerfJson>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkbookDiffPerfJson {
+    #[serde(rename = "md")]
+    pub metadata_ms: f64,
 }
 
 pub fn normalize_field(value: &str) -> String {

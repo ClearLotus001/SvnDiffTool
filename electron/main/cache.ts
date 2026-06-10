@@ -83,7 +83,9 @@ export function estimateWorkbookComparePayloadMemoryBytes(
     total + estimateDiffLineBytes(line)
   ), 0) ?? 0;
   const workbookDeltaBytes = estimateWorkbookDeltaMemoryBytes(payload.workbookDelta);
-  return diffLinesBytes + workbookDeltaBytes + 128;
+  const metadataBytes = estimateWorkbookMetadataMapMemoryBytes(payload.baseMetadata ?? null)
+    + estimateWorkbookMetadataMapMemoryBytes(payload.mineMetadata ?? null);
+  return diffLinesBytes + workbookDeltaBytes + metadataBytes + 128;
 }
 
 function createInlineWorkbookCompareCachePayload(
@@ -123,6 +125,23 @@ export async function storeWorkbookCompareCachePayload(
     payload: createCompressedWorkbookCompareCachePayload(compressedBytes),
     memoryBytes: compressedBytes.byteLength,
   };
+}
+
+export function storeWorkbookCompareCachePayloadInline(
+  payload: ResolvedWorkbookCompareModePayload,
+): { payload: StoredWorkbookCompareCachePayload; memoryBytes: number; estimatedMemoryBytes: number } {
+  const estimatedMemoryBytes = estimateWorkbookComparePayloadMemoryBytes(payload);
+  return {
+    payload: createInlineWorkbookCompareCachePayload(payload),
+    memoryBytes: estimatedMemoryBytes,
+    estimatedMemoryBytes,
+  };
+}
+
+export function shouldCompressWorkbookCompareCachePayload(
+  estimatedMemoryBytes: number,
+): boolean {
+  return estimatedMemoryBytes >= WORKBOOK_COMPARE_CACHE_COMPRESS_MIN_BYTES;
 }
 
 export async function readWorkbookCompareCachePayload(

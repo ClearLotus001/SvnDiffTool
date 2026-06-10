@@ -86,6 +86,7 @@ const EMPTY_FILE_PAYLOAD: FilePayload = {
     byteLength: 0,
   },
 };
+const WORKBOOK_ALTERNATE_SNAPSHOT_WARMUP_DELAY_MS = 2_000;
 
 function createWorkbookPayloadOptions(
   isWorkbook: boolean,
@@ -418,26 +419,31 @@ function scheduleWorkbookAlternateSnapshotWarmup(
   if (!context) return;
 
   const targetMode = getAlternateWorkbookCompareMode(currentMode);
-  const warmupStart = performance.now();
-  void warmWorkbookAnalysisSnapshot(context, targetMode, payloadHints)
-    .then((status) => {
-      logDebugTiming('workbook-analysis-warmup:done', {
-        fileName: context.resolvedFileName,
-        sourceIdentity: context.sourceIdentity,
-        compareMode: targetMode,
-        status,
-        durationMs: Number((performance.now() - warmupStart).toFixed(1)),
+  const timer = setTimeout(() => {
+    const warmupStart = performance.now();
+    void warmWorkbookAnalysisSnapshot(context, targetMode, payloadHints)
+      .then((status) => {
+        logDebugTiming('workbook-analysis-warmup:done', {
+          fileName: context.resolvedFileName,
+          sourceIdentity: context.sourceIdentity,
+          compareMode: targetMode,
+          status,
+          delayMs: WORKBOOK_ALTERNATE_SNAPSHOT_WARMUP_DELAY_MS,
+          durationMs: Number((performance.now() - warmupStart).toFixed(1)),
+        });
+      })
+      .catch((error) => {
+        logDebugTiming('workbook-analysis-warmup:failed', {
+          fileName: context.resolvedFileName,
+          sourceIdentity: context.sourceIdentity,
+          compareMode: targetMode,
+          delayMs: WORKBOOK_ALTERNATE_SNAPSHOT_WARMUP_DELAY_MS,
+          durationMs: Number((performance.now() - warmupStart).toFixed(1)),
+          message: error instanceof Error ? error.message : String(error),
+        });
       });
-    })
-    .catch((error) => {
-      logDebugTiming('workbook-analysis-warmup:failed', {
-        fileName: context.resolvedFileName,
-        sourceIdentity: context.sourceIdentity,
-        compareMode: targetMode,
-        durationMs: Number((performance.now() - warmupStart).toFixed(1)),
-        message: error instanceof Error ? error.message : String(error),
-      });
-    });
+  }, WORKBOOK_ALTERNATE_SNAPSHOT_WARMUP_DELAY_MS);
+  timer.unref?.();
 }
 
 async function resolveWorkbookMetadataBundle(

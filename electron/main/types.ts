@@ -159,7 +159,9 @@ export interface ResolvedWorkbookCompareModePayload {
   compareMode: WorkbookCompareMode;
   diffLines: DiffLine[] | null;
   workbookDelta: WorkbookPrecomputedDeltaPayload | null;
-  perf: Pick<DiffPerformanceMetrics, 'rustDiffMs'> | null;
+  baseMetadata?: WorkbookMetadataMap | null;
+  mineMetadata?: WorkbookMetadataMap | null;
+  perf: Pick<DiffPerformanceMetrics, 'rustDiffMs' | 'metadataMs'> | null;
 }
 
 export interface WorkbookMetadataPayload {
@@ -251,6 +253,8 @@ export interface WorkbookRowDeltaPayload {
   lineIdxs: number[];
   leftLineIdx: number | null;
   rightLineIdx: number | null;
+  baseRowNumber?: number | null;
+  mineRowNumber?: number | null;
   cellDeltas: WorkbookCellDeltaPayload[];
   changedColumns: number[];
   strictOnlyColumns: number[];
@@ -263,6 +267,14 @@ export interface WorkbookRowDeltaPayload {
 
 export interface WorkbookSectionDeltaPayload {
   name: string;
+  hasBaseSide?: boolean;
+  hasMineSide?: boolean;
+  startLineIdx?: number | null;
+  endLineIdx?: number | null;
+  maxColumns?: number | null;
+  rowCount?: number | null;
+  firstDataLineIdx?: number | null;
+  firstDataRowNumber?: number | null;
   rows: WorkbookRowDeltaPayload[];
 }
 
@@ -374,6 +386,12 @@ export interface RustWorkbookDiffPayload {
   d?: unknown;
   workbookDelta?: unknown;
   w?: unknown;
+  baseMetadata?: unknown;
+  mb?: unknown;
+  mineMetadata?: unknown;
+  mm?: unknown;
+  perf?: unknown;
+  p?: unknown;
 }
 
 export type XmlNode = Record<string, unknown>;

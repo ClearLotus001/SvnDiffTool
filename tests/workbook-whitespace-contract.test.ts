@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { zipSync, strToU8 } from 'fflate';
 
 import { computeWorkbookDiff } from '../src/engine/workbook/workbookDiff';
-import { workbookBytesToText } from '../src/utils/diff/diffSource';
+import { resolveDiffTexts, workbookBytesToText } from '../src/utils/diff/diffSource';
 import { getWorkbookCellChangeKind, isWorkbookStrictOnlyDifference } from '../src/utils/workbook/workbookCellContract';
 import { parseWorkbookDisplayLine } from '../src/utils/workbook/workbookDisplay';
 import { getWorkbookSections } from '../src/utils/workbook/workbookSections';
@@ -74,6 +74,29 @@ function buildSharedStringWorkbook(flagValue: string | null) {
   });
 }
 
+function buildSharedFormulaWorkbook() {
+  return zipSync({
+    'xl/workbook.xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+      <workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+        <sheets>
+          <sheet name="Formula" sheetId="1" r:id="rId1" />
+        </sheets>
+      </workbook>`),
+    'xl/_rels/workbook.xml.rels': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+      <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+        <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml" />
+      </Relationships>`),
+    'xl/worksheets/sheet1.xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+      <worksheet>
+        <sheetData>
+          <row r="1">
+            <c r="A1"><f t="shared" si="0" /><v>42</v></c>
+          </row>
+        </sheetData>
+      </worksheet>`),
+  });
+}
+
 test('workbookBytesToText preserves shared-string whitespace instead of XML attribute text', () => {
   const text = workbookBytesToText(buildSharedStringWorkbook(' '), 'strict-space.xlsx');
   const row = text
@@ -84,6 +107,34 @@ test('workbookBytesToText preserves shared-string whitespace instead of XML attr
   assert.ok(row && row.kind === 'row');
   assert.equal(row.cells[1]?.value, ' ');
   assert.doesNotMatch(text, /preserve/);
+});
+
+test('workbookBytesToText preserves empty shared-formula markers from OpenXML attributes', () => {
+  const text = workbookBytesToText(buildSharedFormulaWorkbook(), 'shared-formula.xlsx');
+  const row = text
+    .split('\n')
+    .map(parseWorkbookDisplayLine)
+    .find((line) => line?.kind === 'row');
+
+  assert.ok(row && row.kind === 'row');
+  assert.equal(row.cells[0]?.value, '42');
+  assert.equal(row.cells[0]?.formula, '=shared');
+});
+
+test('resolveDiffTexts reuses workbook text for identical byte payloads', () => {
+  const bytes = buildSharedFormulaWorkbook();
+  const { baseText, mineText } = resolveDiffTexts({
+    baseName: 'same.xlsx',
+    mineName: 'same.xlsx',
+    fileName: 'same.xlsx',
+    baseContent: null,
+    mineContent: null,
+    baseBytes: bytes,
+    mineBytes: bytes,
+  });
+
+  assert.equal(baseText, mineText);
+  assert.match(baseText, /^@@sheet\tFormula/m);
 });
 
 test('js workbook fallback keeps shared-string whitespace-only cells as strict diffs', () => {

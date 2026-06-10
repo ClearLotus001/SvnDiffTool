@@ -35,11 +35,13 @@ import {
   collectWorkbookRowFramesByKey,
   type WorkbookRowFrame,
 } from '@/utils/workbook/workbookVisibleRowFrames';
+import { buildWorkbookCanvasRuns } from '@/utils/workbook/workbookCanvasRuns';
 
 const EMPTY_HEIGHTS: number[] = [];
 const MIN_WORKBOOK_SCROLLABLE_BODY_ROWS = 8;
 const MIN_WORKBOOK_FROZEN_PANE_ROWS = 4;
 const MAX_WORKBOOK_FROZEN_PANE_VIEWPORT_RATIO = 0.6;
+const STACKED_FROZEN_CANVAS_RUN_MAX_HEIGHT = ROW_H * 96;
 
 interface UseWorkbookFrozenPaneStateParams {
   mode: CompareMode;
@@ -269,16 +271,9 @@ export function useWorkbookFrozenPaneState({
 
   const visibleFrozenStackedCanvasRuns = useMemo<FrozenStackedCanvasRun[]>(() => {
     if (mode !== 'stacked') return [];
-    let cursorTop = 0;
-    return visibleFrozenStackedCanvasGroups.map((group) => {
-      const top = cursorTop;
-      cursorTop += group.height;
-      return {
-        key: group.key,
-        groups: [group],
-        top,
-        height: group.height,
-      };
+    return buildWorkbookCanvasRuns(visibleFrozenStackedCanvasGroups, {
+      keyPrefix: 'compare:frozen-stacked-run:v1',
+      maxRunHeight: STACKED_FROZEN_CANVAS_RUN_MAX_HEIGHT,
     });
   }, [mode, visibleFrozenStackedCanvasGroups]);
 

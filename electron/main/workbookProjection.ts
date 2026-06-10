@@ -430,6 +430,108 @@ function getWorkbookSections(
   return sections;
 }
 
+function hasWorkbookSectionDeltaDeletionOrAddition(
+  workbookDelta: WorkbookPrecomputedDeltaPayload,
+): boolean {
+  return workbookDelta.sections.some((section) => section.hasBaseSide === false || section.hasMineSide === false);
+}
+
+function hasWorkbookSectionProjectionMetadata(
+  workbookDelta: WorkbookPrecomputedDeltaPayload,
+): boolean {
+  return workbookDelta.sections.every((section) => (
+    section.startLineIdx != null
+    && section.endLineIdx != null
+    && section.maxColumns != null
+    && section.rowCount != null
+  ));
+}
+
+function buildWorkbookSectionsFromDelta(
+  workbookDelta: WorkbookPrecomputedDeltaPayload | null,
+  baseWorkbookMetadata: WorkbookMetadataMap | null,
+  mineWorkbookMetadata: WorkbookMetadataMap | null,
+): WorkbookSection[] | null {
+  if (!workbookDelta || workbookDelta.sections.length === 0) return null;
+  if (!hasWorkbookSectionProjectionMetadata(workbookDelta)) return null;
+  if (hasWorkbookSectionDeltaDeletionOrAddition(workbookDelta)) return null;
+
+  const sections: WorkbookSection[] = [];
+
+  for (const deltaSection of workbookDelta.sections) {
+    const metadataMaxColumns = Math.max(
+      baseWorkbookMetadata?.sheets[deltaSection.name]?.maxColumns ?? 0,
+      mineWorkbookMetadata?.sheets[deltaSection.name]?.maxColumns ?? 0,
+    );
+
+    let startLineIdxFromRows: number | null = null;
+    let endLineIdxFromRows: number | null = null;
+    let maxColumns = Math.max(deltaSection.maxColumns ?? 0, metadataMaxColumns);
+    let rowCount = Math.max(
+      deltaSection.rowCount ?? 0,
+      baseWorkbookMetadata?.sheets[deltaSection.name]?.rowCount ?? 0,
+      mineWorkbookMetadata?.sheets[deltaSection.name]?.rowCount ?? 0,
+    );
+
+    let firstDataLineIdx = deltaSection.firstDataLineIdx ?? null;
+    let firstDataRowNumber = deltaSection.firstDataRowNumber ?? null;
+
+    const includeLineIdx = (lineIdx: number | null | undefined) => {
+      if (lineIdx == null) return;
+      startLineIdxFromRows = startLineIdxFromRows == null ? lineIdx : Math.min(startLineIdxFromRows, lineIdx);
+      endLineIdxFromRows = endLineIdxFromRows == null ? lineIdx : Math.max(endLineIdxFromRows, lineIdx);
+    };
+
+    for (const row of deltaSection.rows) {
+      if (row.lineIdxs.length > 0) {
+        for (const lineIdx of row.lineIdxs) {
+          includeLineIdx(lineIdx);
+        }
+      } else {
+        includeLineIdx(row.leftLineIdx);
+        includeLineIdx(row.rightLineIdx);
+      }
+
+      if (row.baseRowNumber != null) rowCount = Math.max(rowCount, row.baseRowNumber);
+      if (row.mineRowNumber != null) rowCount = Math.max(rowCount, row.mineRowNumber);
+
+      let rowHasContent = false;
+      for (const cellDelta of row.cellDeltas) {
+        maxColumns = Math.max(maxColumns, cellDelta.column + 1);
+        rowHasContent ||= cellDelta.hasContent;
+      }
+      if ((firstDataLineIdx == null || firstDataRowNumber == null) && rowHasContent) {
+        firstDataLineIdx ??= row.lineIdx;
+        firstDataRowNumber ??= row.baseRowNumber ?? row.mineRowNumber ?? null;
+      }
+    }
+
+    const startLineIdx = deltaSection.startLineIdx ?? startLineIdxFromRows;
+    const endLineIdx = deltaSection.endLineIdx ?? endLineIdxFromRows;
+    if (startLineIdx == null || endLineIdx == null) return null;
+
+    sections.push({
+      name: deltaSection.name,
+      displayName: deltaSection.name,
+      changeType: 'equal',
+      hasBaseSide: deltaSection.hasBaseSide ?? true,
+      hasMineSide: deltaSection.hasMineSide ?? true,
+      renamePeerName: null,
+      renameRole: null,
+      startLineIdx,
+      endLineIdx,
+      maxColumns,
+      rowCount,
+      firstDataLineIdx,
+      firstDataRowNumber,
+    });
+  }
+
+  if (sections.length !== workbookDelta.sections.length) return null;
+  annotateWorkbookSectionChanges(sections, new Map());
+  return sections;
+}
+
 function getWorkbookColumnLabel(index: number): string {
   let value = index + 1;
   let label = '';
@@ -844,24 +946,56 @@ function buildWorkbookSectionNavigationRegions(params: {
 
   const baseMergeRanges = baseWorkbookMetadata?.sheets[section.name]?.mergeRanges ?? [];
   const mineMergeRanges = mineWorkbookMetadata?.sheets[section.name]?.mergeRanges ?? [];
-  const rowInfos = sectionRows.map((row) => {
+  const changedSectionRows = sectionRows.filter((row) => (
+    row.changedColumns.length > 0
+    || row.cellDeltas.some((delta) => delta.changed)
+  ));
+  if (changedSectionRows.length === 0) return [];
+
+  const sectionRowIndexByRow = new Map(sectionRows.map((row, rowIndex) => [row, rowIndex]));
+  const changedLineIdxs = new Set(
+    changedSectionRows.flatMap((row) => (
+      row.lineIdxs.length > 0
+        ? row.lineIdxs
+        : [row.leftLineIdx, row.rightLineIdx].filter((value): value is number => value != null)
+    )),
+  );
+  const parsedRowsByLineIdx = new Map<number, { baseRow: WorkbookRowDisplayLine | null; mineRow: WorkbookRowDisplayLine | null }>();
+  const getParsedChangedRows = (lineIdx: number) => {
+    const cached = parsedRowsByLineIdx.get(lineIdx);
+    if (cached) return cached;
+    const line = diffLines[lineIdx] ?? null;
+    const value = {
+      baseRow: (() => {
+        if (!changedLineIdxs.has(lineIdx)) return null;
+        const parsed = parseWorkbookDisplayLine(line?.base ?? null);
+        return parsed?.kind === 'row' ? parsed : null;
+      })(),
+      mineRow: (() => {
+        if (!changedLineIdxs.has(lineIdx)) return null;
+        const parsed = parseWorkbookDisplayLine(line?.mine ?? null);
+        return parsed?.kind === 'row' ? parsed : null;
+      })(),
+    };
+    parsedRowsByLineIdx.set(lineIdx, value);
+    return value;
+  };
+
+  const rowInfos = changedSectionRows.map((row) => {
     const leftLine = row.leftLineIdx != null ? (diffLines[row.leftLineIdx] ?? null) : null;
     const rightLine = row.rightLineIdx != null ? (diffLines[row.rightLineIdx] ?? null) : null;
-    const baseRow = (() => {
-      const parsed = parseWorkbookDisplayLine(leftLine?.base ?? rightLine?.base ?? null);
-      return parsed?.kind === 'row' ? parsed : null;
-    })();
-    const mineRow = (() => {
-      const parsed = parseWorkbookDisplayLine(rightLine?.mine ?? leftLine?.mine ?? null);
-      return parsed?.kind === 'row' ? parsed : null;
-    })();
+    const parsedLeftRows = row.leftLineIdx != null ? getParsedChangedRows(row.leftLineIdx) : null;
+    const parsedRightRows = row.rightLineIdx != null ? getParsedChangedRows(row.rightLineIdx) : null;
+    const baseRow = parsedLeftRows?.baseRow ?? parsedRightRows?.baseRow ?? null;
+    const mineRow = parsedRightRows?.mineRow ?? parsedLeftRows?.mineRow ?? null;
 
     return {
       row,
+      rowIndex: sectionRowIndexByRow.get(row) ?? 0,
       baseRow,
       mineRow,
-      baseRowNumber: baseRow?.rowNumber ?? null,
-      mineRowNumber: mineRow?.rowNumber ?? null,
+      baseRowNumber: row.baseRowNumber ?? baseRow?.rowNumber ?? null,
+      mineRowNumber: row.mineRowNumber ?? mineRow?.rowNumber ?? null,
       leftLineType: leftLine?.type ?? null,
       rightLineType: rightLine?.type ?? null,
     };
@@ -869,14 +1003,14 @@ function buildWorkbookSectionNavigationRegions(params: {
 
   const baseRowIndexByNumber = new Map<number, number>();
   const mineRowIndexByNumber = new Map<number, number>();
-  rowInfos.forEach((entry, rowIndex) => {
-    if (entry.baseRowNumber != null) baseRowIndexByNumber.set(entry.baseRowNumber, rowIndex);
-    if (entry.mineRowNumber != null) mineRowIndexByNumber.set(entry.mineRowNumber, rowIndex);
+  sectionRows.forEach((row, rowIndex) => {
+    if (row.baseRowNumber != null) baseRowIndexByNumber.set(row.baseRowNumber, rowIndex);
+    if (row.mineRowNumber != null) mineRowIndexByNumber.set(row.mineRowNumber, rowIndex);
   });
 
   const nodes: WorkbookDiffRegionNode[] = [];
 
-  rowInfos.forEach((entry, rowIndex) => {
+  rowInfos.forEach((entry) => {
     const changedColumns = entry.row.changedColumns.length > 0
       ? entry.row.changedColumns
       : entry.row.cellDeltas.filter((delta) => delta.changed).map((delta) => delta.column);
@@ -902,14 +1036,14 @@ function buildWorkbookSectionNavigationRegions(params: {
       const mineRowStart = mineRange?.startRow ?? entry.mineRowNumber;
       const mineRowEnd = mineRange?.endRow ?? entry.mineRowNumber;
       const startRowIndex = Math.min(
-        rowIndex,
-        resolveWorkbookRowIndex(baseRowStart, rowIndex, baseRowIndexByNumber),
-        resolveWorkbookRowIndex(mineRowStart, rowIndex, mineRowIndexByNumber),
+        entry.rowIndex,
+        resolveWorkbookRowIndex(baseRowStart, entry.rowIndex, baseRowIndexByNumber),
+        resolveWorkbookRowIndex(mineRowStart, entry.rowIndex, mineRowIndexByNumber),
       );
       const endRowIndex = Math.max(
-        rowIndex,
-        resolveWorkbookRowIndex(baseRowEnd, rowIndex, baseRowIndexByNumber),
-        resolveWorkbookRowIndex(mineRowEnd, rowIndex, mineRowIndexByNumber),
+        entry.rowIndex,
+        resolveWorkbookRowIndex(baseRowEnd, entry.rowIndex, baseRowIndexByNumber),
+        resolveWorkbookRowIndex(mineRowEnd, entry.rowIndex, mineRowIndexByNumber),
       );
       const hasBaseSide = Boolean(entry.baseRow && cellDelta.kind !== 'add');
       const hasMineSide = Boolean(entry.mineRow && cellDelta.kind !== 'delete');
@@ -1028,7 +1162,11 @@ export function prepareWorkbookProjection({
     };
   }
 
-  const sections = getWorkbookSections(diffLines, compareMode);
+  const sections = buildWorkbookSectionsFromDelta(
+    workbookDelta,
+    baseWorkbookMetadata,
+    mineWorkbookMetadata,
+  ) ?? getWorkbookSections(diffLines, compareMode);
   if (!workbookDelta) {
     return {
       sections,

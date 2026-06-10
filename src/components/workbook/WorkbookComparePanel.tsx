@@ -1,7 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject, startTransition } from 'react';
 import { FONT_SIZE, FONT_UI } from '@/constants/typography';
 import type {
-    WorkbookCellDelta,
     DiffLine,
     Hunk,
     SearchMatch,
@@ -60,7 +59,6 @@ import {
 } from '@/utils/workbook/workbookFreeze';
 import {
   buildWorkbookSearchSelectionFromTarget,
-  type WorkbookRowEntry,
   findWorkbookSectionIndexByName,
   getWorkbookSplitRowNumber,
   moveWorkbookSelection,
@@ -109,28 +107,17 @@ import {
   workbookRowHasLineIdx as compareRowHasLineIdx,
   workbookRowTouchesOrAfter as compareRowTouchesOrAfter,
   buildSelectionAutoScrollKey,
-  buildWorkbookRowEntryMaps,
-  buildWorkbookCompareCellsMaps,
 } from '@/utils/workbook/workbookPanelHelpers';
 import {
-  buildWorkbookRenderItemIndexes,
   findNearestWorkbookVisibleItemIndex,
 } from '@/utils/workbook/workbookRenderItemIndexes';
 import { buildWorkbookRenderIdentity } from '@/utils/workbook/workbookRenderIdentity';
 
 type CompareMode = 'stacked' | 'columns';
 
-const EMPTY_WORKBOOK_ROW_ENTRY_MAPS = {
-  base: new Map<number, WorkbookRowEntry>(),
-  mine: new Map<number, WorkbookRowEntry>(),
-};
-
-const EMPTY_WORKBOOK_COMPARE_CELLS_MAPS = {
-  base: new Map<number, Map<number, WorkbookCellDelta>>(),
-  mine: new Map<number, Map<number, WorkbookCellDelta>>(),
-};
 const EMPTY_HEIGHTS: number[] = [];
 const EMPTY_MODIFIED_SHEET_NAMES = new Set<string>();
+const WORKBOOK_STABLE_COLUMN_WINDOW_LIMIT = 96;
 
 export interface WorkbookComparePanelProps {
   diffLines: DiffLine[];
@@ -352,6 +339,7 @@ const WorkbookComparePanel = memo(({
     stackedVirtualHeights,
     stackedVirtualOffsets,
     stackedIndexesMeasured,
+    renderModel,
   } = useWorkbookCompareDerivedState({
     activeWorkbookSection,
     sectionRows,
@@ -388,15 +376,7 @@ const WorkbookComparePanel = memo(({
   const stackedRowScrollTargetsBySide = stackedIndexesMeasured.rowScrollTargetsBySide;
   const stackedLineScrollTargets = stackedIndexesMeasured.lineScrollTargets;
   const stackedVisibleRowItemIndexByLineIdx = stackedIndexesMeasured.visibleRowItemIndexByLineIdx;
-  const rawRenderItemIndexes = useMemo(
-    () => buildWorkbookRenderItemIndexes(items, {
-      cacheKey: 'compare:render-items:v1',
-      getRow: (item) => (item.kind === 'row' ? item.row : null),
-      getHiddenRows: (item) => (item.kind === 'hidden-rows' ? item.rows : null),
-      getHiddenRowNumbers: (item) => (item.kind === 'hidden-rows' ? item.rowNumbers : null),
-    }),
-    [items],
-  );
+  const rawRenderItemIndexes = renderModel.renderItemIndexes;
   const columnVisibleRowItemIndexByLineIdx = rawRenderItemIndexes.visibleRowItemIndexByLineIdx;
   const visibleRowItemIndexByLineIdx = mode === 'stacked'
     ? stackedVisibleRowItemIndexByLineIdx
@@ -646,6 +626,7 @@ const WorkbookComparePanel = memo(({
       : [],
     overscanMin: 6,
     overscanFactor: 1.5,
+    disableVirtualizationBelow: WORKBOOK_STABLE_COLUMN_WINDOW_LIMIT,
     syncKey: activeWorkbookSection?.name ?? '',
   });
   const focusWorkbookCell = useCallback((
@@ -805,33 +786,9 @@ const WorkbookComparePanel = memo(({
   ]);
   const showColumnHeader = true;
   const headerRowNumber = activeWorkbookSection?.firstDataRowNumber ?? 0;
-  const needsWorkbookRowEntryMaps = mode === 'columns' || Boolean(activeSearchMatch?.workbookTarget);
-  const rowEntryByRowNumber = useMemo(
-    () => (
-        needsWorkbookRowEntryMaps
-        ? buildWorkbookRowEntryMaps(
-            sectionRows,
-            activeSheetName,
-            baseVersion,
-            mineVersion,
-            sheetPresentation.visibleColumns,
-        )
-        : EMPTY_WORKBOOK_ROW_ENTRY_MAPS
-    ),
-    [activeSheetName, baseVersion, mineVersion, needsWorkbookRowEntryMaps, sectionRows, sheetPresentation.visibleColumns],
-  );
-  const compareCellsByRowNumber = useMemo(
-    () => (
-        mode === 'columns'
-        ? buildWorkbookCompareCellsMaps(
-            sectionRows,
-            sheetPresentation.visibleColumns,
-            compareMode,
-        )
-        : EMPTY_WORKBOOK_COMPARE_CELLS_MAPS
-    ),
-    [compareMode, mode, sectionRows, sheetPresentation.visibleColumns],
-  );
+  const rowEntryByRowNumber = renderModel.rowEntryByRowNumber;
+  const compareStateByRow = renderModel.compareStateByRow;
+  const compareCellsByRowNumber = renderModel.compareCellsByRowNumber;
   const rowItemIndexBySide = mode === 'stacked'
     ? stackedIndexesMeasured.rowItemIndexBySide
     : rawRenderItemIndexes.rowItemIndexBySide;
@@ -1385,6 +1342,7 @@ const WorkbookComparePanel = memo(({
     baseMergedRanges: sheetPresentation.baseMergeRanges,
     mineMergedRanges: sheetPresentation.mineMergeRanges,
     rowEntryByRowNumber,
+    compareStateByRow,
     compareCellsByRowNumber,
     compareMode,
   });
@@ -1438,6 +1396,7 @@ const WorkbookComparePanel = memo(({
     mineMergedRanges: sheetPresentation.mineMergeRanges,
     baseRowEntryByRowNumber: rowEntryByRowNumber.base,
     mineRowEntryByRowNumber: rowEntryByRowNumber.mine,
+    compareStateByRow,
     baseCompareCellsByRowNumber: compareCellsByRowNumber.base,
     mineCompareCellsByRowNumber: compareCellsByRowNumber.mine,
     compareMode,

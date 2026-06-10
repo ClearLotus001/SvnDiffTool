@@ -22,6 +22,10 @@ const xmlParser = new XMLParser({
 });
 
 type XmlNode = Record<string, unknown>;
+interface ScannedXmlElement {
+  startTag: string;
+  body: string;
+}
 
 function asXmlNode(value: unknown): XmlNode | null {
   return value != null && typeof value === 'object' ? value as XmlNode : null;
@@ -56,24 +60,13 @@ function decodeUtf8(bytes: Uint8Array): string {
   return textDecoder.decode(bytes);
 }
 
-function collectOpenXmlText(node: unknown): string {
-  if (node == null) return '';
-  if (typeof node === 'string' || typeof node === 'number' || typeof node === 'boolean') {
-    return String(node);
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left === right) return true;
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) return false;
   }
-  if (Array.isArray(node)) return node.map(collectOpenXmlText).join('');
-  if (typeof node === 'object') {
-    const record = node as Record<string, unknown>;
-    if ('#text' in record) {
-      return collectOpenXmlText(record['#text']);
-    }
-    return [
-      record.t,
-      record.r,
-      record.is,
-    ].map(collectOpenXmlText).join('');
-  }
-  return '';
+  return true;
 }
 
 function getZipEntry(zip: Record<string, Uint8Array>, entryPath: string): Uint8Array | null {
@@ -104,6 +97,226 @@ function normalizeCellValue(value: string): string {
     .replace(/\t/g, '    ');
 }
 
+function isXmlNameBoundary(char: string): boolean {
+  return char === ''
+    || char === ' '
+    || char === '\n'
+    || char === '\r'
+    || char === '\t'
+    || char === '/'
+    || char === '>';
+}
+
+function isXmlWhitespace(char: string): boolean {
+  return char === ' ' || char === '\n' || char === '\r' || char === '\t';
+}
+
+function findXmlTagStart(xml: string, tagName: string, fromIndex: number): number {
+  const needle = `<${tagName}`;
+  let cursor = Math.max(0, fromIndex);
+
+  while (cursor < xml.length) {
+    const index = xml.indexOf(needle, cursor);
+    if (index < 0) return -1;
+    if (isXmlNameBoundary(xml[index + needle.length] ?? '')) {
+      return index;
+    }
+    cursor = index + needle.length;
+  }
+
+  return -1;
+}
+
+function findXmlTagEnd(xml: string, startIndex: number): number {
+  let quote: '"' | '\'' | null = null;
+
+  for (let index = startIndex; index < xml.length; index += 1) {
+    const char = xml[index];
+    if (quote) {
+      if (char === quote) quote = null;
+      continue;
+    }
+    if (char === '"' || char === '\'') {
+      quote = char;
+      continue;
+    }
+    if (char === '>') return index;
+  }
+
+  return -1;
+}
+
+function isSelfClosingXmlStartTag(startTag: string): boolean {
+  return startTag.replace(/\s+$/, '').endsWith('/>');
+}
+
+function scanXmlElements(
+  xml: string,
+  tagName: string,
+  visit: (element: ScannedXmlElement) => void,
+): void {
+  const closeNeedle = `</${tagName}>`;
+  let cursor = 0;
+
+  while (cursor < xml.length) {
+    const start = findXmlTagStart(xml, tagName, cursor);
+    if (start < 0) return;
+
+    const tagEnd = findXmlTagEnd(xml, start);
+    if (tagEnd < 0) return;
+
+    const startTag = xml.slice(start, tagEnd + 1);
+    if (isSelfClosingXmlStartTag(startTag)) {
+      visit({ startTag, body: '' });
+      cursor = tagEnd + 1;
+      continue;
+    }
+
+    const bodyStart = tagEnd + 1;
+    const close = xml.indexOf(closeNeedle, bodyStart);
+    if (close < 0) return;
+
+    visit({
+      startTag,
+      body: xml.slice(bodyStart, close),
+    });
+    cursor = close + closeNeedle.length;
+  }
+}
+
+function getFirstXmlElementBody(xml: string, tagName: string): string {
+  const element = getFirstXmlElement(xml, tagName);
+  return element?.body ?? '';
+}
+
+function getFirstXmlElement(xml: string, tagName: string): ScannedXmlElement | null {
+  const start = findXmlTagStart(xml, tagName, 0);
+  if (start < 0) return null;
+
+  const tagEnd = findXmlTagEnd(xml, start);
+  if (tagEnd < 0) return null;
+
+  const startTag = xml.slice(start, tagEnd + 1);
+  if (isSelfClosingXmlStartTag(startTag)) {
+    return { startTag, body: '' };
+  }
+
+  const close = xml.indexOf(`</${tagName}>`, tagEnd + 1);
+  if (close < 0) return null;
+  return {
+    startTag,
+    body: xml.slice(tagEnd + 1, close),
+  };
+}
+
+function visitXmlAttributes(
+  startTag: string,
+  visit: (name: string, value: string) => boolean | void,
+): void {
+  let cursor = 1;
+
+  while (cursor < startTag.length) {
+    while (cursor < startTag.length && isXmlWhitespace(startTag[cursor] ?? '')) {
+      cursor += 1;
+    }
+    if (cursor >= startTag.length || startTag[cursor] === '/' || startTag[cursor] === '>') {
+      return;
+    }
+
+    const nameStart = cursor;
+    while (
+      cursor < startTag.length
+      && !isXmlWhitespace(startTag[cursor] ?? '')
+      && startTag[cursor] !== '='
+      && startTag[cursor] !== '/'
+      && startTag[cursor] !== '>'
+    ) {
+      cursor += 1;
+    }
+
+    const name = startTag.slice(nameStart, cursor);
+    while (cursor < startTag.length && isXmlWhitespace(startTag[cursor] ?? '')) {
+      cursor += 1;
+    }
+
+    if (startTag[cursor] !== '=') {
+      continue;
+    }
+    cursor += 1;
+
+    while (cursor < startTag.length && isXmlWhitespace(startTag[cursor] ?? '')) {
+      cursor += 1;
+    }
+
+    const quote = startTag[cursor];
+    let value = '';
+    if (quote === '"' || quote === '\'') {
+      cursor += 1;
+      const valueStart = cursor;
+      while (cursor < startTag.length && startTag[cursor] !== quote) {
+        cursor += 1;
+      }
+      value = startTag.slice(valueStart, cursor);
+      if (startTag[cursor] === quote) cursor += 1;
+    } else {
+      const valueStart = cursor;
+      while (
+        cursor < startTag.length
+        && !isXmlWhitespace(startTag[cursor] ?? '')
+        && startTag[cursor] !== '/'
+        && startTag[cursor] !== '>'
+      ) {
+        cursor += 1;
+      }
+      value = startTag.slice(valueStart, cursor);
+    }
+
+    if (visit(name, value)) return;
+  }
+}
+
+function getXmlAttribute(startTag: string, attributeName: string): string {
+  let matchedValue = '';
+
+  visitXmlAttributes(startTag, (name, value) => {
+    if (name !== attributeName) return false;
+    matchedValue = value;
+    return true;
+  });
+
+  return matchedValue;
+}
+
+function getCellXmlAttributes(startTag: string): { ref: string; type: string } {
+  let ref = '';
+  let type = '';
+
+  visitXmlAttributes(startTag, (name, value) => {
+    if (name === 'r') ref = value;
+    if (name === 't') type = value;
+    return Boolean(ref && type);
+  });
+
+  return { ref, type };
+}
+
+function collectOpenXmlTextFromTextRuns(xml: string): string {
+  let output = '';
+
+  scanXmlElements(xml, 't', ({ body }) => {
+    output += body;
+  });
+
+  return output;
+}
+
+function collectFormulaTextFromScannedCell(cellBody: string): string {
+  const formulaElement = getFirstXmlElement(cellBody, 'f');
+  if (!formulaElement) return '';
+  if (formulaElement.body !== '') return formulaElement.body;
+  return getXmlAttribute(formulaElement.startTag, 't');
+}
+
 function buildUnsupportedWorkbookMessage(fileName: string, locale: Locale): string {
   const ext = getFileExtension(fileName) || translate(locale, 'commonUnknown');
   return [
@@ -125,23 +338,32 @@ function buildWorkbookErrorMessage(fileName: string, error: unknown, locale: Loc
 }
 
 function parseSharedStrings(zip: Record<string, Uint8Array>): string[] {
-  const xml = parseXml(zip, 'xl/sharedStrings.xml');
-  const items = asXmlNodeArray(asXmlNode(xml?.sst)?.si);
-  return items.map(item => normalizeCellValue(collectOpenXmlText(item)));
+  const entry = getZipEntry(zip, 'xl/sharedStrings.xml');
+  if (!entry) return [];
+
+  const sharedStrings: string[] = [];
+  scanXmlElements(strFromU8(entry), 'si', ({ body }) => {
+    sharedStrings.push(normalizeCellValue(collectOpenXmlTextFromTextRuns(body)));
+  });
+  return sharedStrings;
 }
 
-function parseCellValue(cell: XmlNode, sharedStrings: string[]): WorkbookCellDisplay {
-  const type = getXmlString(cell, 't');
-  const rawValue = normalizeCellValue(collectOpenXmlText(cell.v));
-  const formula = normalizeCellValue(collectOpenXmlText(cell.f));
+function parseScannedCellValue(
+  cellStartTag: string,
+  cellBody: string,
+  sharedStrings: string[],
+): WorkbookCellDisplay {
+  const { type } = getCellXmlAttributes(cellStartTag);
+  const rawValue = normalizeCellValue(getFirstXmlElementBody(cellBody, 'v'));
+  const formula = normalizeCellValue(collectFormulaTextFromScannedCell(cellBody));
 
   const value = type === 's'
     ? (() => {
-    const index = Number(rawValue.trim());
+      const index = Number(rawValue.trim());
       return Number.isFinite(index) ? normalizeCellValue(sharedStrings[index] ?? '') : rawValue;
     })()
     : type === 'inlineStr'
-      ? normalizeCellValue(collectOpenXmlText(cell.is))
+      ? normalizeCellValue(collectOpenXmlTextFromTextRuns(getFirstXmlElementBody(cellBody, 'is')))
       : type === 'b'
         ? (rawValue === '1' ? 'TRUE' : 'FALSE')
         : type === 'e'
@@ -191,41 +413,45 @@ function serializeWorkbookSheet(
   sheetPath: string,
   sharedStrings: string[],
 ): string[] {
-  const sheetXml = parseXml(zip, sheetPath);
-  const rows = asXmlNodeArray(asXmlNode(asXmlNode(sheetXml?.worksheet)?.sheetData)?.row);
   const output: string[] = [createWorkbookSheetLine(sheetName)];
+  const sheetEntry = getZipEntry(zip, sheetPath);
+  if (!sheetEntry) return output;
 
-  if (rows.length === 0) {
+  const sheetData = getFirstXmlElementBody(strFromU8(sheetEntry), 'sheetData');
+  if (!sheetData) {
     return output;
   }
 
-  rows.forEach((row, index) => {
-    const rowNumber = normalizeWorkbookRowNumber(row.r, index + 1);
+  let rowIndex = 0;
+  scanXmlElements(sheetData, 'row', (row) => {
+    rowIndex += 1;
+    const rowNumber = normalizeWorkbookRowNumber(getXmlAttribute(row.startTag, 'r'), rowIndex);
     let fallbackColumnIndex = 0;
-    const cells = asXmlNodeArray(row.c)
-      .map((cell) => {
-        const ref = getXmlString(cell, 'r');
-        const colIndex = ref
-          ? parseWorkbookColumnIndexFromCellRef(ref)
-          : fallbackColumnIndex;
-        if (colIndex == null) return null;
+    const cells: Array<{ colIndex: number; value: WorkbookCellDisplay }> = [];
 
-        fallbackColumnIndex = colIndex + 1;
-        const value = parseCellValue(cell, sharedStrings);
-        return { colIndex, value };
-      })
-      .filter((cell): cell is { colIndex: number; value: WorkbookCellDisplay } => (
-        cell != null && (cell.value.value !== '' || cell.value.formula !== '')
-      ))
-      .sort((left, right) => left.colIndex - right.colIndex);
+    scanXmlElements(row.body, 'c', (cell) => {
+      const { ref } = getCellXmlAttributes(cell.startTag);
+      const colIndex = ref
+        ? parseWorkbookColumnIndexFromCellRef(ref)
+        : fallbackColumnIndex;
+      if (colIndex == null) return;
+
+      fallbackColumnIndex = colIndex + 1;
+      const value = parseScannedCellValue(cell.startTag, cell.body, sharedStrings);
+      if (value.value !== '' || value.formula !== '') {
+        cells.push({ colIndex, value });
+      }
+    });
+
+    cells.sort((left, right) => left.colIndex - right.colIndex);
 
     const maxCol = (cells[cells.length - 1]?.colIndex ?? -1) + 1;
-    const rowValues: WorkbookCellDisplay[] = Array.from(
-      { length: Math.max(0, maxCol) },
-      () => ({ value: '', formula: '' }),
-    );
+    const rowValues: Array<string | WorkbookCellDisplay> = [];
+    for (let columnIndex = 0; columnIndex < Math.max(0, maxCol); columnIndex += 1) {
+      rowValues.push('');
+    }
     cells.forEach(cell => {
-      rowValues[cell.colIndex] = cell.value;
+      rowValues[cell.colIndex] = cell.value.formula ? cell.value : cell.value.value;
     });
     output.push(createWorkbookRowLine(rowNumber, rowValues));
   });
@@ -294,15 +520,38 @@ function normalizeSideText(
   return content ?? '';
 }
 
+function canReuseBaseTextForMine(data: DiffTextSourceInput): boolean {
+  const baseName = data.baseName || data.fileName;
+  const mineName = data.mineName || data.fileName;
+  if (baseName !== mineName) return false;
+
+  const hasBaseInlineContent = data.baseContent != null && data.baseContent !== '';
+  const hasMineInlineContent = data.mineContent != null && data.mineContent !== '';
+  if (hasBaseInlineContent || hasMineInlineContent) {
+    return data.baseContent === data.mineContent;
+  }
+
+  if (!data.baseBytes || !data.mineBytes) return data.baseBytes === data.mineBytes;
+  return bytesEqual(data.baseBytes, data.mineBytes);
+}
+
 export function resolveDiffTexts(data: DiffTextSourceInput, locale: Locale = getRuntimeLocale()): { baseText: string; mineText: string } {
+  const baseText = normalizeSideText(
+    data.baseName,
+    data.fileName,
+    data.baseContent,
+    data.baseBytes,
+    locale,
+  );
+  if (canReuseBaseTextForMine(data)) {
+    return {
+      baseText,
+      mineText: baseText,
+    };
+  }
+
   return {
-    baseText: normalizeSideText(
-      data.baseName,
-      data.fileName,
-      data.baseContent,
-      data.baseBytes,
-      locale,
-    ),
+    baseText,
     mineText: normalizeSideText(
       data.mineName,
       data.fileName,

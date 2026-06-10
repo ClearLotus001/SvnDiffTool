@@ -21,7 +21,9 @@ import {
   projectWorkbookPayloadForOptions,
   readWorkbookCompareCachePayload,
   rememberCacheEntry,
+  shouldCompressWorkbookCompareCachePayload,
   storeWorkbookCompareCachePayload,
+  storeWorkbookCompareCachePayloadInline,
 } from './cache.js';
 import { logMainWarn } from '../logging.js';
 import { logDebugTiming, writeExternalDiffDebugLog } from './logger.js';
@@ -574,21 +576,55 @@ export async function resolveWorkbookCompareModePayload(
       compareMode,
       diffLines: directResult.diffLines,
       workbookDelta: directResult.workbookDelta,
+      baseMetadata: directResult.baseMetadata,
+      mineMetadata: directResult.mineMetadata,
       perf: {
         rustDiffMs: directResult.parseMs,
+        metadataMs: directResult.metadataMs ?? 0,
       },
     };
 
     if (cacheContext) {
-      const storedPayload = await storeWorkbookCompareCachePayload(payload);
+      const inlineStoredPayload = storeWorkbookCompareCachePayloadInline(payload);
       rememberCacheEntry(workbookCompareCache, cacheContext.key, {
         leftMtimeMs: cacheContext.leftMtimeMs,
         rightMtimeMs: cacheContext.rightMtimeMs,
         leftSize: cacheContext.leftSize,
         rightSize: cacheContext.rightSize,
-        payload: storedPayload.payload,
-        memoryBytes: storedPayload.memoryBytes,
+        payload: inlineStoredPayload.payload,
+        memoryBytes: inlineStoredPayload.memoryBytes,
       }, WORKBOOK_COMPARE_CACHE_LIMIT, WORKBOOK_COMPARE_CACHE_MAX_BYTES);
+
+      if (shouldCompressWorkbookCompareCachePayload(inlineStoredPayload.estimatedMemoryBytes)) {
+        void storeWorkbookCompareCachePayload(payload)
+          .then((storedPayload) => {
+            const current = workbookCompareCache.get(cacheContext.key);
+            if (
+              !current
+              || current.leftMtimeMs !== cacheContext.leftMtimeMs
+              || current.rightMtimeMs !== cacheContext.rightMtimeMs
+              || current.leftSize !== cacheContext.leftSize
+              || current.rightSize !== cacheContext.rightSize
+            ) {
+              return;
+            }
+            rememberCacheEntry(workbookCompareCache, cacheContext.key, {
+              leftMtimeMs: cacheContext.leftMtimeMs,
+              rightMtimeMs: cacheContext.rightMtimeMs,
+              leftSize: cacheContext.leftSize,
+              rightSize: cacheContext.rightSize,
+              payload: storedPayload.payload,
+              memoryBytes: storedPayload.memoryBytes,
+            }, WORKBOOK_COMPARE_CACHE_LIMIT, WORKBOOK_COMPARE_CACHE_MAX_BYTES);
+          })
+          .catch((error) => {
+            logMainWarn(
+              'workbook-compare-cache',
+              'background compression failed:',
+              error instanceof Error ? error.message : String(error),
+            );
+          });
+      }
     }
 
     return payload;

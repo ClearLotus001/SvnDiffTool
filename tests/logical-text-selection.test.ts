@@ -52,6 +52,18 @@ const DIFF_LINES: DiffLine[] = [
   },
 ];
 
+const DIFF_LINES_WITH_SPACES: DiffLine[] = [
+  {
+    type: 'equal',
+    base: 'alpha beta gamma',
+    mine: 'alpha beta gamma',
+    baseLineNo: 1,
+    mineLineNo: 1,
+    baseCharSpans: null,
+    mineCharSpans: null,
+  },
+];
+
 test('getLogicalTextSelectionRangeForLine selects only one side when the anchor/focus stay in the same split lane', () => {
   const selection: LogicalTextSelection = {
     anchor: { lineIdx: 0, side: 'base', column: 1 },
@@ -101,6 +113,27 @@ test('expandLogicalTextSelectionToWord expands identifier-like words and punctua
   assert.deepEqual(expandLogicalTextSelectionToWord('print(value)', 2), { start: 0, end: 5 });
   assert.deepEqual(expandLogicalTextSelectionToWord('print(value)', 5), { start: 5, end: 6 });
   assert.deepEqual(expandLogicalTextSelectionToWord('print(value)', 7), { start: 6, end: 11 });
+});
+
+test('expanded word selections can be extended by one logical character', () => {
+  const wordRange = expandLogicalTextSelectionToWord('alpha beta gamma', 7);
+  assert.deepEqual(wordRange, { start: 6, end: 10 });
+
+  const selection: LogicalTextSelection = {
+    anchor: { lineIdx: 0, side: 'both', column: wordRange.start },
+    focus: { lineIdx: 0, side: 'both', column: wordRange.end },
+  };
+  const nextFocus = moveLogicalTextSelectionPoint(DIFF_LINES_WITH_SPACES, selection.focus, 'right');
+
+  assert.deepEqual(nextFocus, { lineIdx: 0, side: 'both', column: 11 });
+  assert.equal(
+    buildLogicalTextSelectionCopyText(
+      DIFF_LINES_WITH_SPACES,
+      { anchor: selection.anchor, focus: nextFocus! },
+      'display',
+    ),
+    'beta ',
+  );
 });
 
 test('resolveLogicalTextLineContentForSide returns the visible lane content for each side', () => {

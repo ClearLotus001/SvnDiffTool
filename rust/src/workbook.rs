@@ -11,7 +11,8 @@ use quick_xml::Reader as XmlReader;
 use zip::ZipArchive;
 
 use crate::model::{
-    encode_cell, encode_cell_owned, format_cell, get_formula_for_position,
+    encode_cell, encode_cell_owned, format_cell, get_column_index, get_formula_for_position,
+    get_row_number,
     has_workbook_cell_content, is_truthy_flag, normalize_field, parse_merge_range,
     WorkbookCellSnapshotJson, WorkbookMetadataMap, WorkbookRowEntry, WorkbookSheetDiffEntry,
     WorkbookSheetMetadata, WorkbookTextRowEntry, WorkbookTextSheetEntry, FORMULA_SEPARATOR,

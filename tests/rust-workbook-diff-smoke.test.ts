@@ -29,16 +29,35 @@ interface RustWorkbookDiffOutput {
     compareMode: 'strict' | 'content';
     sections: Array<{
       name: string;
+      hasBaseSide?: boolean;
+      hasMineSide?: boolean;
+      startLineIdx?: number;
+      endLineIdx?: number;
+      maxColumns?: number;
+      rowCount?: number;
+      firstDataLineIdx?: number;
+      firstDataRowNumber?: number;
       rows: Array<{
         lineIdx: number;
         lineIdxs: number[];
         leftLineIdx: number | null;
         rightLineIdx: number | null;
+        baseRowNumber?: number | null;
+        mineRowNumber?: number | null;
+        cellDeltas?: unknown[];
+        strictOnlyColumns?: number[];
+        changedCount?: number;
+        hasChanges?: boolean;
+        tone?: string;
+        miniMapTone?: string;
+        miniMapPaintTones?: string[];
         changedColumns: number[];
       }>;
     }>;
   } | null;
 }
+
+type RustWorkbookDelta = NonNullable<RustWorkbookDiffOutput['workbookDelta']>;
 
 function normalizeRustDiffLines(input: unknown): DiffLine[] {
   if (!Array.isArray(input)) return [];
@@ -91,13 +110,15 @@ function normalizeWorkbookDelta(input: unknown): RustWorkbookDiffOutput['workboo
       const rawRows = Array.isArray(rawSection.rows ?? rawSection.r)
         ? ((rawSection.rows ?? rawSection.r) as unknown[])
         : [];
-      return [{
+      const section = {
         name,
         rows: rawRows.flatMap((rowEntry) => {
           if (!rowEntry || typeof rowEntry !== 'object') return [];
           const rawRow = rowEntry as Record<string, unknown>;
           const leftLineIdx = rawRow.leftLineIdx == null && rawRow.l == null ? null : Number(rawRow.leftLineIdx ?? rawRow.l);
           const rightLineIdx = rawRow.rightLineIdx == null && rawRow.r == null ? null : Number(rawRow.rightLineIdx ?? rawRow.r);
+          const baseRowNumber = rawRow.baseRowNumber == null && rawRow.br == null ? null : Number(rawRow.baseRowNumber ?? rawRow.br);
+          const mineRowNumber = rawRow.mineRowNumber == null && rawRow.mr == null ? null : Number(rawRow.mineRowNumber ?? rawRow.mr);
           const rawCellDeltas = Array.isArray(rawRow.cellDeltas ?? rawRow.c)
             ? ((rawRow.cellDeltas ?? rawRow.c) as unknown[])
             : [];
@@ -111,16 +132,43 @@ function normalizeWorkbookDelta(input: unknown): RustWorkbookDiffOutput['workboo
                   return Number.isFinite(column) ? column : null;
                 })
                 .filter((value): value is number => value != null);
-          const lineIdxs = [leftLineIdx, rightLineIdx].filter((value): value is number => Number.isFinite(value));
-          return [{
+          const lineIdxs = Array.from(new Set([leftLineIdx, rightLineIdx].filter((value): value is number => Number.isFinite(value))));
+          const normalizedRow = {
             lineIdx: lineIdxs[0] ?? 0,
             lineIdxs,
             leftLineIdx: Number.isFinite(leftLineIdx) ? leftLineIdx : null,
             rightLineIdx: Number.isFinite(rightLineIdx) ? rightLineIdx : null,
+            baseRowNumber: Number.isFinite(baseRowNumber) ? baseRowNumber : null,
+            mineRowNumber: Number.isFinite(mineRowNumber) ? mineRowNumber : null,
+            cellDeltas: rawCellDeltas,
             changedColumns,
-          }];
+            strictOnlyColumns: [],
+            changedCount: changedColumns.length,
+            hasChanges: changedColumns.length > 0,
+            tone: changedColumns.length > 0 ? 'mixed' : 'equal',
+            miniMapTone: changedColumns.length > 0 ? 'mixed' : 'equal',
+            miniMapPaintTones: [],
+          };
+          return [normalizedRow];
         }),
-      }];
+      } as RustWorkbookDelta['sections'][number];
+      const hasBaseSide = rawSection.hasBaseSide ?? rawSection.b;
+      if (hasBaseSide != null) section.hasBaseSide = Boolean(hasBaseSide);
+      const hasMineSide = rawSection.hasMineSide ?? rawSection.e;
+      if (hasMineSide != null) section.hasMineSide = Boolean(hasMineSide);
+      const startLineIdx = Number(rawSection.startLineIdx ?? rawSection.sl);
+      if (Number.isFinite(startLineIdx)) section.startLineIdx = startLineIdx;
+      const endLineIdx = Number(rawSection.endLineIdx ?? rawSection.el);
+      if (Number.isFinite(endLineIdx)) section.endLineIdx = endLineIdx;
+      const maxColumns = Number(rawSection.maxColumns ?? rawSection.mc);
+      if (Number.isFinite(maxColumns)) section.maxColumns = maxColumns;
+      const rowCount = Number(rawSection.rowCount ?? rawSection.rc);
+      if (Number.isFinite(rowCount)) section.rowCount = rowCount;
+      const firstDataLineIdx = Number(rawSection.firstDataLineIdx ?? rawSection.fdl);
+      if (Number.isFinite(firstDataLineIdx)) section.firstDataLineIdx = firstDataLineIdx;
+      const firstDataRowNumber = Number(rawSection.firstDataRowNumber ?? rawSection.fdr);
+      if (Number.isFinite(firstDataRowNumber)) section.firstDataRowNumber = firstDataRowNumber;
+      return [section];
     }),
   };
 }
@@ -487,6 +535,51 @@ test('rust workbook diff keeps semantic equality when shared-string tables diffe
 
   assert.equal(diffOutput.diffLines.every((line) => line.type === 'equal'), true);
   assert.equal(diffOutput.workbookDelta?.compareMode, 'strict');
+  assert.deepEqual(diffOutput.workbookDelta?.sections[0], {
+    name: 'Thing',
+    hasBaseSide: true,
+    hasMineSide: true,
+    startLineIdx: 0,
+    endLineIdx: 2,
+    maxColumns: 2,
+    rowCount: 2,
+    firstDataLineIdx: 1,
+    firstDataRowNumber: 1,
+    rows: [
+      {
+        lineIdx: 1,
+        lineIdxs: [1],
+        leftLineIdx: 1,
+        rightLineIdx: 1,
+        baseRowNumber: 1,
+        mineRowNumber: 1,
+        cellDeltas: [],
+        changedColumns: [],
+        strictOnlyColumns: [],
+        changedCount: 0,
+        hasChanges: false,
+        tone: 'equal',
+        miniMapTone: 'equal',
+        miniMapPaintTones: [],
+      },
+      {
+        lineIdx: 2,
+        lineIdxs: [2],
+        leftLineIdx: 2,
+        rightLineIdx: 2,
+        baseRowNumber: 2,
+        mineRowNumber: 2,
+        cellDeltas: [],
+        changedColumns: [],
+        strictOnlyColumns: [],
+        changedCount: 0,
+        hasChanges: false,
+        tone: 'equal',
+        miniMapTone: 'equal',
+        miniMapPaintTones: [],
+      },
+    ],
+  });
 });
 
 test('rust workbook diff reports merged-cell structural changes in strict and content modes', async (t) => {

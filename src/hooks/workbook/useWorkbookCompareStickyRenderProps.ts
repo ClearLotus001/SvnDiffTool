@@ -5,6 +5,7 @@ import type { FrozenStackedCanvasRun } from '@/hooks/workbook/useWorkbookFrozenP
 import type { CompareMode } from '@/hooks/workbook/useWorkbookCompareDerivedState';
 import type {
   WorkbookCompareCellsMaps,
+  WorkbookCompareStateByRow,
   WorkbookRowEntryMaps,
 } from '@/utils/workbook/workbookPanelHelpers';
 import type {
@@ -63,6 +64,7 @@ interface UseWorkbookCompareStickyRenderPropsParams {
   baseMergedRanges: ReadonlyArray<WorkbookMergeRange>;
   mineMergedRanges: ReadonlyArray<WorkbookMergeRange>;
   rowEntryByRowNumber: WorkbookRowEntryMaps;
+  compareStateByRow: WorkbookCompareStateByRow;
   compareCellsByRowNumber: WorkbookCompareCellsMaps;
   compareMode: WorkbookCompareMode;
 }
@@ -113,6 +115,7 @@ export function useWorkbookCompareStickyRenderProps({
   baseMergedRanges,
   mineMergedRanges,
   rowEntryByRowNumber,
+  compareStateByRow,
   compareCellsByRowNumber,
   compareMode,
 }: UseWorkbookCompareStickyRenderPropsParams): ComponentProps<typeof WorkbookCompareStickyCanvas> {
@@ -185,6 +188,7 @@ export function useWorkbookCompareStickyRenderProps({
         baseMergedRanges,
         mineMergedRanges,
         rowEntryByRowNumber,
+        compareStateByRow,
         compareCellsByRowNumber,
         compareMode,
       }
@@ -194,6 +198,7 @@ export function useWorkbookCompareStickyRenderProps({
     baseMergedRanges,
     baseVersion,
     columnLayoutByColumn,
+    compareStateByRow,
     compareCellsByRowNumber,
     compareMode,
     fontSize,
@@ -253,6 +258,7 @@ export function useWorkbookCompareStickyRenderProps({
     baseMergedRanges,
     mineMergedRanges,
     rowEntryByRowNumber,
+    compareStateByRow,
     compareCellsByRowNumber,
     compareMode,
   }), [
@@ -260,6 +266,7 @@ export function useWorkbookCompareStickyRenderProps({
     baseMergedRanges,
     baseVersion,
     columnLayoutByColumn,
+    compareStateByRow,
     compareCellsByRowNumber,
     compareMode,
     fontSize,

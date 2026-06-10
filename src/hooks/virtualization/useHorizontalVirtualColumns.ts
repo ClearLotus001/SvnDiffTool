@@ -33,6 +33,7 @@ interface UseHorizontalVirtualColumnsOptions {
   minScrollableViewport?: number;
   maxFrozenViewportRatio?: number;
   minFrozenViewport?: number;
+  disableVirtualizationBelow?: number;
 }
 
 interface HorizontalVirtualColumnsResult {
@@ -71,6 +72,16 @@ interface HorizontalWindow {
   endIndex: number;
   visibleColumnCount: number;
   overscan: number;
+}
+
+export function createFullHorizontalWindow(columnCount: number): HorizontalWindow {
+  const count = Math.max(0, columnCount);
+  return {
+    startIndex: 0,
+    endIndex: count,
+    visibleColumnCount: count,
+    overscan: count,
+  };
 }
 
 function shouldRetainHorizontalWindow(
@@ -278,6 +289,7 @@ export function useHorizontalVirtualColumns({
   minScrollableViewport = DEFAULT_MIN_SCROLLABLE_VIEWPORT,
   maxFrozenViewportRatio = DEFAULT_MAX_FROZEN_VIEWPORT_RATIO,
   minFrozenViewport,
+  disableVirtualizationBelow = 0,
 }: UseHorizontalVirtualColumnsOptions): HorizontalVirtualColumnsResult {
   const [viewportWidth, setViewportWidth] = useState(1200);
   const [windowRange, setWindowRange] = useState<HorizontalWindow>({
@@ -340,6 +352,8 @@ export function useHorizontalVirtualColumns({
 
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
+  const shouldRenderAllColumns = disableVirtualizationBelow > 0
+    && columns.length <= disableVirtualizationBelow;
 
   const overscanMinRef = useRef(overscanMin);
   overscanMinRef.current = overscanMin;
@@ -380,17 +394,19 @@ export function useHorizontalVirtualColumns({
       }
 
       const calcStart = getNow();
-      const nextRange = computeHorizontalWindow(
-        currentLayout.nonFrozenDisplayWidths,
-        currentLayout.clampedFrozenCount,
-        scrollLeft,
-        nextViewportWidth,
-        paneState.visibleFrozenWidth,
-        currentLayout.positionedMergedRanges,
-        overscanMinRef.current,
-        overscanFactorRef.current,
-        currentLayout.nonFrozenPrefixSums,
-      );
+      const nextRange = shouldRenderAllColumns
+        ? createFullHorizontalWindow(currentLayout.nonFrozenEntries.length)
+        : computeHorizontalWindow(
+            currentLayout.nonFrozenDisplayWidths,
+            currentLayout.clampedFrozenCount,
+            scrollLeft,
+            nextViewportWidth,
+            paneState.visibleFrozenWidth,
+            currentLayout.positionedMergedRanges,
+            overscanMinRef.current,
+            overscanFactorRef.current,
+            currentLayout.nonFrozenPrefixSums,
+          );
       lastCalcMsRef.current = getNow() - calcStart;
 
       if (
@@ -406,7 +422,7 @@ export function useHorizontalVirtualColumns({
       rangeUpdateCountRef.current += 1;
       setWindowRange(nextRange);
     },
-    [resolvePaneState],
+    [resolvePaneState, shouldRenderAllColumns],
   );
 
   useEffect(() => {
@@ -500,24 +516,28 @@ export function useHorizontalVirtualColumns({
     setFrozenScrollLeftState(0);
     const paneState = resolvePaneState(viewportWidthRef.current);
     const currentLayout = layoutRef.current;
-    const nextRange = computeHorizontalWindow(
-      currentLayout.nonFrozenDisplayWidths,
-      currentLayout.clampedFrozenCount,
-      0,
-      viewportWidthRef.current,
-      paneState.visibleFrozenWidth,
-      currentLayout.positionedMergedRanges,
-      overscanMinRef.current,
-      overscanFactorRef.current,
-      currentLayout.nonFrozenPrefixSums,
-    );
+    const nextRange = shouldRenderAllColumns
+      ? createFullHorizontalWindow(currentLayout.nonFrozenEntries.length)
+      : computeHorizontalWindow(
+          currentLayout.nonFrozenDisplayWidths,
+          currentLayout.clampedFrozenCount,
+          0,
+          viewportWidthRef.current,
+          paneState.visibleFrozenWidth,
+          currentLayout.positionedMergedRanges,
+          overscanMinRef.current,
+          overscanFactorRef.current,
+          currentLayout.nonFrozenPrefixSums,
+        );
     windowRangeRef.current = nextRange;
     setWindowRange(nextRange);
-  }, [frozenScrollRef, resolvePaneState, scrollRef, syncKey]);
+  }, [frozenScrollRef, resolvePaneState, scrollRef, shouldRenderAllColumns, syncKey]);
 
   const paneState = resolvePaneState(viewportWidth);
   const effectiveWindowRange = useMemo(() => (
-    syncKeyRef.current !== syncKey
+    shouldRenderAllColumns
+      ? createFullHorizontalWindow(layout.nonFrozenEntries.length)
+      : syncKeyRef.current !== syncKey
       ? computeHorizontalWindow(
         layout.nonFrozenDisplayWidths,
         layout.clampedFrozenCount,
@@ -530,19 +550,23 @@ export function useHorizontalVirtualColumns({
         layout.nonFrozenPrefixSums,
       )
       : windowRange
-  ), [layout, overscanFactor, overscanMin, paneState.visibleFrozenWidth, syncKey, windowRange]);
+  ), [layout, overscanFactor, overscanMin, paneState.visibleFrozenWidth, shouldRenderAllColumns, syncKey, windowRange]);
 
-  const effectiveFrozenWindowRange = useMemo(() => computeHorizontalWindow(
-    layout.frozenDisplayWidths,
-    0,
-    paneState.clampedFrozenScrollLeft,
-    paneState.visibleFrozenWidth,
-    0,
-    layout.positionedMergedRanges,
-    overscanMin,
-    overscanFactor,
-    buildPrefixSums(layout.frozenDisplayWidths),
-  ), [layout.frozenDisplayWidths, layout.positionedMergedRanges, overscanFactor, overscanMin, paneState.clampedFrozenScrollLeft, paneState.visibleFrozenWidth]);
+  const effectiveFrozenWindowRange = useMemo(() => (
+    shouldRenderAllColumns
+      ? createFullHorizontalWindow(layout.frozenEntries.length)
+      : computeHorizontalWindow(
+          layout.frozenDisplayWidths,
+          0,
+          paneState.clampedFrozenScrollLeft,
+          paneState.visibleFrozenWidth,
+          0,
+          layout.positionedMergedRanges,
+          overscanMin,
+          overscanFactor,
+          buildPrefixSums(layout.frozenDisplayWidths),
+        )
+  ), [layout.frozenDisplayWidths, layout.frozenEntries.length, layout.positionedMergedRanges, overscanFactor, overscanMin, paneState.clampedFrozenScrollLeft, paneState.visibleFrozenWidth, shouldRenderAllColumns]);
 
   const columnEntriesCacheRef = useRef<HorizontalVirtualColumnEntriesCache>({
     key: '',
