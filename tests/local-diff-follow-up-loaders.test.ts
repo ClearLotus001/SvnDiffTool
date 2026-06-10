@@ -8,7 +8,6 @@ import { strToU8, zipSync } from 'fflate';
 import { EMPTY_CLI_ARGS } from '../electron/cliArgs';
 import {
   clearAnalysisSnapshotCache,
-  getInFlightAnalysisSnapshot,
   peekAnalysisSnapshot,
 } from '../electron/main/analysisSnapshotService';
 import {
@@ -88,28 +87,23 @@ test('local diff keeps compare-mode and metadata loaders usable after initial lo
     await fs.writeFile(minePath, Buffer.from(buildWorkbookZip('Thing', [['ID', 'Name'], ['10001', 'Bravo']])));
 
     const initial = await buildLocalDiffData(basePath, minePath, 'strict');
-    const warmedOrInFlightContentSnapshot = peekAnalysisSnapshot({
-      sourceIdentity: initial.sourceIdentity,
-      compareMode: 'content',
-      baseRevisionId: undefined,
-      mineRevisionId: undefined,
-    }) ?? await getInFlightAnalysisSnapshot({
-      sourceIdentity: initial.sourceIdentity,
-      compareMode: 'content',
-      baseRevisionId: undefined,
-      mineRevisionId: undefined,
-    });
     const strictPayload = await loadWorkbookCompareModeData('strict');
     const contentPayload = await loadWorkbookCompareModeData('content');
     const metadataPayload = await loadWorkbookMetadataData();
     const strictSnapshot = initial.analysisSnapshotsByMode?.strict ?? null;
+    const contentSnapshot = contentPayload.analysisSnapshot ?? null;
 
     assert.ok((initial.analysisSnapshotsByMode?.strict?.workbookAnalysis?.diffLinesByMode.strict?.length ?? 0) > 0);
     assert.equal(Object.keys(initial.analysisSnapshotsByMode?.strict?.workbookAnalysis?.metadata.base?.sheets ?? {}).length, 1);
     assert.equal(Object.keys(initial.analysisSnapshotsByMode?.strict?.workbookAnalysis?.metadata.mine?.sheets ?? {}).length, 1);
-    assert.ok(warmedOrInFlightContentSnapshot);
     assert.equal(strictPayload.analysisSnapshot, strictSnapshot);
-    assert.ok((contentPayload.analysisSnapshot?.workbookAnalysis?.diffLinesByMode.content?.length ?? 0) > 0);
+    assert.ok((contentSnapshot?.workbookAnalysis?.diffLinesByMode.content?.length ?? 0) > 0);
+    assert.equal(peekAnalysisSnapshot({
+      sourceIdentity: initial.sourceIdentity,
+      compareMode: 'content',
+      baseRevisionId: undefined,
+      mineRevisionId: undefined,
+    }), contentSnapshot);
     assert.equal(metadataPayload.analysisSnapshot, strictSnapshot);
     assert.equal(Object.keys(metadataPayload.base?.sheets ?? {}).length, 1);
     assert.equal(Object.keys(metadataPayload.mine?.sheets ?? {}).length, 1);
