@@ -52,7 +52,7 @@ export interface WorkbookStackedVisualGroup {
   mergeWindows: WorkbookStackedMergeCoverageWindow[];
 }
 
-export const WORKBOOK_STACKED_PLAIN_GROUP_MAX_HEIGHT = ROW_H * 64;
+const WORKBOOK_STACKED_PLAIN_GROUP_MAX_HEIGHT = ROW_H * 64;
 
 export function splitWorkbookStackedRowsByHeight<T>(params: {
   rows: readonly T[];
