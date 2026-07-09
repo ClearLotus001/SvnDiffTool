@@ -250,7 +250,7 @@ const SvnConfigDialog = memo(({
           <button
             type="button"
             onClick={onClose}
-            className="h-[38px] min-w-[98px] px-4 rounded-xl border-none bg-[var(--acc2)] text-[var(--btn-active-text)] font-ui text-[13px] font-extrabold cursor-pointer hover:-translate-y-px hover:brightness-[1.03] active:scale-[0.97] transition-all duration-150"
+            className="svn-config-dialog__complete-action h-[38px] min-w-[98px] px-4 rounded-xl border-none bg-[var(--acc2)] text-[var(--btn-active-text)] font-ui text-[13px] font-extrabold cursor-pointer hover:-translate-y-px hover:brightness-[1.03] active:scale-[0.97] transition-all duration-150"
             style={{ boxShadow: `0 16px 30px -24px var(--acc2)` }}>
             {t('svnConfigClose')}
           </button>

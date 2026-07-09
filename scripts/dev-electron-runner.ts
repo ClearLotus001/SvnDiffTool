@@ -151,7 +151,7 @@ function startElectron(resourceSignature: string) {
       console.warn(
         '[dev-electron-runner] Electron kept exiting immediately. ' +
         'A previous SvnDiffTool dev instance may still be running in the background. ' +
-        'Close old Electron windows/processes, then save a file or restart `pnpm dev:app`.',
+        'Close old Electron windows/processes, then save a file or restart `npm run dev:app`.',
       );
       return;
     }

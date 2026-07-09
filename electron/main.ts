@@ -5,9 +5,8 @@ import { resolveLaunchCliArgsFromArgv } from './externalDiffRequest';
 import { readInstallerBootstrapSync } from './installerBootstrap';
 import {
   getMaintenanceModeFromArgv,
-  hasPendingPostInstallMaintenance,
   runMaintenance,
-  runPendingPostInstallMaintenance,
+  runStartupSvnDiffViewerMaintenance,
 } from './maintenance';
 import {
   cleanupManagedTempFilesOnExitSync,
@@ -93,12 +92,11 @@ function clearDeferredStartupHousekeepingTimer() {
 
 function schedulePendingPostInstallMaintenance() {
   if (maintenanceMode || pendingPostInstallMaintenanceTimer || !app.isPackaged) return;
-  if (!hasPendingPostInstallMaintenance(process.execPath)) return;
 
   pendingPostInstallMaintenanceTimer = setTimeout(() => {
     pendingPostInstallMaintenanceTimer = null;
-    void runPendingPostInstallMaintenance(app).catch((error) => {
-      logMainWarn('maintenance', 'deferred post-install maintenance failed', error);
+    void runStartupSvnDiffViewerMaintenance(app).catch((error) => {
+      logMainWarn('maintenance', 'deferred startup maintenance failed', error);
     });
   }, POST_INSTALL_MAINTENANCE_DELAY_MS);
 }

@@ -24,6 +24,8 @@ Var ExistingDiffViewerMode
 Var ExistingCacheRoot
 Var ExistingInstallDir
 Var IsUpgradeInstall
+Var InstallOptionsInstallDirText
+Var InstallOptionsInstallBrowseButton
 Var InstallOptionsDiffKeepRadio
 Var InstallOptionsDiffTextRadio
 Var InstallOptionsDiffWorkbookRadio
@@ -44,8 +46,22 @@ LangString INSTALL_WELCOME_POINT3 2052 "• 可自定义缓存目录与桌面快
 LangString INSTALL_WELCOME_HINT 1033 "Click Next to continue."
 LangString INSTALL_WELCOME_HINT 2052 "单击“下一步”继续。"
 
-LangString INSTALL_OPTIONS_TITLE 1033 "Choose how SvnDiffTool should integrate after installation."
-LangString INSTALL_OPTIONS_TITLE 2052 "选择安装完成后的 SvnDiffTool 默认集成方式。"
+LangString INSTALL_OPTIONS_TITLE 1033 "Installation options"
+LangString INSTALL_OPTIONS_TITLE 2052 "安装选项"
+LangString INSTALL_OPTIONS_DESC 1033 "Choose the install location, SVN integration mode, and managed cache location."
+LangString INSTALL_OPTIONS_DESC 2052 "配置安装位置、SVN 接入方式与受控缓存目录。"
+LangString INSTALL_OPTIONS_INSTALL_DIR 1033 "Install location"
+LangString INSTALL_OPTIONS_INSTALL_DIR 2052 "安装位置"
+LangString INSTALL_OPTIONS_INSTALL_HELP 1033 "Choose a parent folder or the final app folder; SvnDiffTool is added automatically when needed."
+LangString INSTALL_OPTIONS_INSTALL_HELP 2052 "可选择父级文件夹或最终安装目录；需要时会自动追加 SvnDiffTool。"
+LangString INSTALL_OPTIONS_INSTALL_BROWSE 1033 "Browse..."
+LangString INSTALL_OPTIONS_INSTALL_BROWSE 2052 "浏览..."
+LangString INSTALL_OPTIONS_INSTALL_BROWSE_TITLE 1033 "Select where SvnDiffTool should be installed"
+LangString INSTALL_OPTIONS_INSTALL_BROWSE_TITLE 2052 "选择 SvnDiffTool 的安装位置"
+LangString INSTALL_OPTIONS_INSTALL_REQUIRED 1033 "Please choose an install location."
+LangString INSTALL_OPTIONS_INSTALL_REQUIRED 2052 "请选择安装位置。"
+LangString INSTALL_OPTIONS_DIFF_GROUP 1033 "TortoiseSVN Diff Viewer integration"
+LangString INSTALL_OPTIONS_DIFF_GROUP 2052 "TortoiseSVN Diff Viewer 接入"
 LangString INSTALL_OPTIONS_DIFF_KEEP 1033 "Keep the current TortoiseSVN Diff Viewer configuration"
 LangString INSTALL_OPTIONS_DIFF_KEEP 2052 "保持当前 TortoiseSVN Diff Viewer 配置"
 LangString INSTALL_OPTIONS_DIFF_TEXT 1033 "Use SvnDiffTool only for text diffs"
@@ -54,8 +70,12 @@ LangString INSTALL_OPTIONS_DIFF_WORKBOOK 1033 "Use SvnDiffTool only for workbook
 LangString INSTALL_OPTIONS_DIFF_WORKBOOK 2052 "仅让工作簿 / 表格差异使用 SvnDiffTool"
 LangString INSTALL_OPTIONS_DIFF_ALL 1033 "Use SvnDiffTool for all file diffs"
 LangString INSTALL_OPTIONS_DIFF_ALL 2052 "让全部文件差异使用 SvnDiffTool"
+LangString INSTALL_OPTIONS_CACHE_GROUP 1033 "Runtime data"
+LangString INSTALL_OPTIONS_CACHE_GROUP 2052 "运行数据"
 LangString INSTALL_OPTIONS_CACHE_PARENT 1033 "Parent folder for managed session/cache data"
 LangString INSTALL_OPTIONS_CACHE_PARENT 2052 "受控会话 / 缓存目录的父级文件夹"
+LangString INSTALL_OPTIONS_CACHE_HELP 1033 "The actual cache folder will be <selected folder>\SvnDiffTool\Cache."
+LangString INSTALL_OPTIONS_CACHE_HELP 2052 "实际缓存目录为：<所选文件夹>\SvnDiffTool\Cache。"
 LangString INSTALL_OPTIONS_CACHE_BROWSE 1033 "Browse..."
 LangString INSTALL_OPTIONS_CACHE_BROWSE 2052 "浏览..."
 LangString INSTALL_OPTIONS_CACHE_BROWSE_TITLE 1033 "Select the parent folder for SvnDiffTool managed cache data"
@@ -121,6 +141,7 @@ Function CapturePreviousInstallerBootstrap
 
   mark_upgrade:
     StrCpy $IsUpgradeInstall "1"
+    StrCpy $INSTDIR $ExistingInstallDir
 
   capture_previous_bootstrap:
     IfFileExists "$ExistingInstallDir\${INSTALLER_BOOTSTRAP_FILE}" 0 +3
@@ -131,6 +152,34 @@ Function CapturePreviousInstallerBootstrap
   IfFileExists "$INSTDIR\${INSTALLER_BOOTSTRAP_FILE}" 0 done
     CopyFiles /SILENT "$INSTDIR\${INSTALLER_BOOTSTRAP_FILE}" "$PLUGINSDIR\${INSTALLER_BOOTSTRAP_PREVIOUS_FILE}"
   done:
+FunctionEnd
+
+Function NormalizeSelectedInstallDir
+  ${If} $INSTDIR == ""
+    Return
+  ${EndIf}
+
+  trim_trailing_slash:
+    StrLen $1 "$INSTDIR"
+    ${If} $1 <= 3
+      Goto append_app_dir
+    ${EndIf}
+    StrCpy $0 "$INSTDIR" 1 -1
+    ${If} $0 == "\"
+      StrCpy $INSTDIR "$INSTDIR" -1
+      Goto trim_trailing_slash
+    ${EndIf}
+
+  append_app_dir:
+  ${GetFileName} "$INSTDIR" $0
+  ${If} $0 != "${APP_FILENAME}"
+    StrCpy $0 "$INSTDIR" 1 -1
+    ${If} $0 == "\"
+      StrCpy $INSTDIR "$INSTDIR${APP_FILENAME}"
+    ${Else}
+      StrCpy $INSTDIR "$INSTDIR\${APP_FILENAME}"
+    ${EndIf}
+  ${EndIf}
 FunctionEnd
 
 Function EnsureSelectedInstallDefaults
@@ -221,6 +270,22 @@ Function InstallerOptionsBrowseCacheParent
   ${NSD_SetText} $InstallOptionsCacheParentText $SelectedCacheParent
 FunctionEnd
 
+Function InstallerOptionsBrowseInstallDir
+  nsDialogs::SelectFolderDialog "$(INSTALL_OPTIONS_INSTALL_BROWSE_TITLE)" "$INSTDIR"
+  Pop $0
+
+  ${If} $0 == error
+    Return
+  ${EndIf}
+  ${If} $0 == ""
+    Return
+  ${EndIf}
+
+  StrCpy $INSTDIR $0
+  Call NormalizeSelectedInstallDir
+  ${NSD_SetText} $InstallOptionsInstallDirText $INSTDIR
+FunctionEnd
+
 Function InstallerWelcomePageCreate
   ${If} $IsUpgradeInstall == "1"
     Abort
@@ -257,6 +322,8 @@ Function InstallerOptionsPageCreate
     Abort
   ${EndIf}
 
+  Call NormalizeSelectedInstallDir
+
   nsDialogs::Create 1018
   Pop $0
 
@@ -264,16 +331,33 @@ Function InstallerOptionsPageCreate
     Abort
   ${EndIf}
 
-  ${NSD_CreateLabel} 0 0 100% 18u "$(INSTALL_OPTIONS_TITLE)"
+  ${NSD_CreateLabel} 0 0 100% 16u "$(INSTALL_OPTIONS_TITLE)"
+  Pop $0
+  CreateFont $2 "$(^Font)" "12" "700"
+  SendMessage $0 ${WM_SETFONT} $2 1
+
+  ${NSD_CreateLabel} 0 18u 100% 13u "$(INSTALL_OPTIONS_DESC)"
   Pop $0
 
-  ${NSD_CreateRadioButton} 0 24u 100% 12u "$(INSTALL_OPTIONS_DIFF_KEEP)"
+  ${NSD_CreateGroupBox} 0 38u 100% 44u "$(INSTALL_OPTIONS_INSTALL_DIR)"
+  Pop $0
+  ${NSD_CreateText} 10u 53u 76% 12u "$INSTDIR"
+  Pop $InstallOptionsInstallDirText
+  ${NSD_CreateButton} 80% 52u 18% 14u "$(INSTALL_OPTIONS_INSTALL_BROWSE)"
+  Pop $InstallOptionsInstallBrowseButton
+  ${NSD_OnClick} $InstallOptionsInstallBrowseButton InstallerOptionsBrowseInstallDir
+  ${NSD_CreateLabel} 10u 68u 88% 10u "$(INSTALL_OPTIONS_INSTALL_HELP)"
+  Pop $0
+
+  ${NSD_CreateGroupBox} 0 88u 100% 68u "$(INSTALL_OPTIONS_DIFF_GROUP)"
+  Pop $0
+  ${NSD_CreateRadioButton} 10u 103u 88% 10u "$(INSTALL_OPTIONS_DIFF_KEEP)"
   Pop $InstallOptionsDiffKeepRadio
-  ${NSD_CreateRadioButton} 0 42u 100% 12u "$(INSTALL_OPTIONS_DIFF_TEXT)"
+  ${NSD_CreateRadioButton} 10u 116u 88% 10u "$(INSTALL_OPTIONS_DIFF_TEXT)"
   Pop $InstallOptionsDiffTextRadio
-  ${NSD_CreateRadioButton} 0 60u 100% 12u "$(INSTALL_OPTIONS_DIFF_WORKBOOK)"
+  ${NSD_CreateRadioButton} 10u 129u 88% 10u "$(INSTALL_OPTIONS_DIFF_WORKBOOK)"
   Pop $InstallOptionsDiffWorkbookRadio
-  ${NSD_CreateRadioButton} 0 78u 100% 12u "$(INSTALL_OPTIONS_DIFF_ALL)"
+  ${NSD_CreateRadioButton} 10u 142u 88% 10u "$(INSTALL_OPTIONS_DIFF_ALL)"
   Pop $InstallOptionsDiffAllRadio
 
   ${If} $SelectedDiffViewerMode == "text-only"
@@ -286,15 +370,19 @@ Function InstallerOptionsPageCreate
     ${NSD_SetState} $InstallOptionsDiffKeepRadio ${BST_CHECKED}
   ${EndIf}
 
-  ${NSD_CreateLabel} 0 108u 100% 12u "$(INSTALL_OPTIONS_CACHE_PARENT)"
+  ${NSD_CreateGroupBox} 0 162u 100% 54u "$(INSTALL_OPTIONS_CACHE_GROUP)"
   Pop $0
-  ${NSD_CreateText} 0 122u 78% 12u "$SelectedCacheParent"
+  ${NSD_CreateLabel} 10u 176u 88% 10u "$(INSTALL_OPTIONS_CACHE_PARENT)"
+  Pop $0
+  ${NSD_CreateText} 10u 188u 76% 12u "$SelectedCacheParent"
   Pop $InstallOptionsCacheParentText
-  ${NSD_CreateButton} 82% 121u 18% 14u "$(INSTALL_OPTIONS_CACHE_BROWSE)"
+  ${NSD_CreateButton} 80% 187u 18% 14u "$(INSTALL_OPTIONS_CACHE_BROWSE)"
   Pop $1
   ${NSD_OnClick} $1 InstallerOptionsBrowseCacheParent
+  ${NSD_CreateLabel} 10u 203u 88% 10u "$(INSTALL_OPTIONS_CACHE_HELP)"
+  Pop $0
 
-  ${NSD_CreateCheckbox} 0 148u 100% 12u "$(INSTALL_OPTIONS_DESKTOP_SHORTCUT)"
+  ${NSD_CreateCheckbox} 0 222u 100% 12u "$(INSTALL_OPTIONS_DESKTOP_SHORTCUT)"
   Pop $InstallOptionsDesktopShortcutCheckbox
   ${If} $ShouldCreateDesktopShortcut == "0"
     ${NSD_SetState} $InstallOptionsDesktopShortcutCheckbox ${BST_UNCHECKED}
@@ -306,6 +394,13 @@ Function InstallerOptionsPageCreate
 FunctionEnd
 
 Function InstallerOptionsPageLeave
+  ${NSD_GetText} $InstallOptionsInstallDirText $INSTDIR
+  ${If} $INSTDIR == ""
+    MessageBox MB_ICONEXCLAMATION|MB_OK "$(INSTALL_OPTIONS_INSTALL_REQUIRED)"
+    Abort
+  ${EndIf}
+  Call NormalizeSelectedInstallDir
+
   ${NSD_GetText} $InstallOptionsCacheParentText $SelectedCacheParent
   ${If} $SelectedCacheParent == ""
     MessageBox MB_ICONEXCLAMATION|MB_OK "$(INSTALL_OPTIONS_CACHE_REQUIRED)"
@@ -340,6 +435,9 @@ FunctionEnd
 !macro customInit
   StrCpy $ShouldCreateDesktopShortcut "1"
   Call CapturePreviousInstallerBootstrap
+  ${If} $IsUpgradeInstall != "1"
+    Call NormalizeSelectedInstallDir
+  ${EndIf}
   Call EnsureSelectedInstallDefaults
   Call ApplyInstallerArgumentOverrides
 !macroend
@@ -364,13 +462,16 @@ FunctionEnd
 
   Call WriteInstallerBootstrap
 
+  StrCpy $launchLink "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
+
   Delete "$INSTDIR\${INSTALLER_MAINTENANCE_PENDING_FILE}"
   FileOpen $0 "$INSTDIR\${INSTALLER_MAINTENANCE_PENDING_FILE}" w
   FileClose $0
 
   IfFileExists "$INSTDIR\${APP_EXECUTABLE_FILENAME}" 0 done
-    DetailPrint "Starting post-install maintenance in the background..."
-    Exec '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" "--maintenance=post-install"'
+    DetailPrint "Running post-install maintenance..."
+    ExecWait '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" "--maintenance=post-install"' $0
+    DetailPrint "Post-install maintenance exit code: $0"
   done:
 !macroend
 
@@ -476,7 +577,8 @@ FunctionEnd
       DetailPrint "Pre-uninstall maintenance exit code: $0"
   ${endif}
 
-  RMDir /r $INSTDIR
+  SetOutPath "$TEMP"
+  RMDir /r "$INSTDIR"
 !macroend
 
 !endif

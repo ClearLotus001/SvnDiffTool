@@ -8,16 +8,28 @@ export interface OwnedSvnDiffRegistryEntries {
   ownedDiffToolKeys: string[];
 }
 
+export type SvnDiffViewerScope = 'all-files' | 'text-only' | 'workbook-only';
+
 export type ResolvedSvnDiffViewerMode =
-  | 'all-files'
-  | 'text-only'
-  | 'workbook-only'
+  | SvnDiffViewerScope
   | 'mixed'
   | 'unconfigured'
   | 'unsupported';
 
 function normalizeKeyName(value: string) {
   return value.trim().toLowerCase();
+}
+
+export function normalizeSvnDiffViewerScope(value: string | null | undefined): SvnDiffViewerScope | null {
+  switch (value) {
+    case 'workbook-only':
+      return 'workbook-only';
+    case 'all-files':
+    case 'text-only':
+      return value;
+    default:
+      return null;
+  }
 }
 
 export function normalizeSvnDiffViewerCommand(value: string | null | undefined) {

@@ -23,6 +23,16 @@ import {
   wasLaunchedAfterUpdateFromArgv,
 } from '../electron/maintenance';
 
+function readInstallerScript(): string {
+  return fs.readFileSync(path.join(process.cwd(), 'build', 'installer.nsh'), 'utf-8');
+}
+
+function readPackageJson(): { build?: { nsis?: { allowToChangeInstallationDirectory?: boolean } } } {
+  return JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf-8')) as {
+    build?: { nsis?: { allowToChangeInstallationDirectory?: boolean } };
+  };
+}
+
 test('normalizeInstallerBootstrapConfig falls back to safe defaults', () => {
   const normalized = normalizeInstallerBootstrapConfig({
     version: Number.NaN,
@@ -127,4 +137,43 @@ test('post-install maintenance markers are detected and can be cleared', () => {
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
+});
+
+test('installer script normalizes fresh custom install directories before install', () => {
+  const script = readInstallerScript();
+
+  assert.match(script, /Function NormalizeSelectedInstallDir/);
+  assert.match(script, /\$\{GetFileName\} "\$INSTDIR" \$0/);
+  assert.match(script, /StrCpy \$INSTDIR "\$INSTDIR\\\$\{APP_FILENAME\}"/);
+  assert.match(script, /Function InstallerOptionsBrowseInstallDir[\s\S]*Call NormalizeSelectedInstallDir/);
+  assert.match(script, /Call NormalizeSelectedInstallDir[\s\S]*Call EnsureSelectedInstallDefaults/);
+  assert.match(script, /Function InstallerOptionsPageCreate[\s\S]*Call NormalizeSelectedInstallDir/);
+});
+
+test('installer uses the custom options page instead of the default directory page', () => {
+  const packageJson = readPackageJson();
+  const script = readInstallerScript();
+
+  assert.equal(packageJson.build?.nsis?.allowToChangeInstallationDirectory, false);
+  assert.match(script, /\$\{NSD_CreateGroupBox\} 0 38u 100% 44u "\$\(INSTALL_OPTIONS_INSTALL_DIR\)"/);
+  assert.match(script, /\$\{NSD_CreateButton\} 80% 52u 18% 14u "\$\(INSTALL_OPTIONS_INSTALL_BROWSE\)"/);
+});
+
+test('installer script keeps upgrade installs in the existing install directory', () => {
+  const script = readInstallerScript();
+
+  assert.match(script, /StrCpy \$IsUpgradeInstall "1"\s+StrCpy \$INSTDIR \$ExistingInstallDir/);
+});
+
+test('installer script waits for post-install maintenance before relaunching after update', () => {
+  const script = readInstallerScript();
+
+  assert.match(script, /StrCpy \$launchLink "\$INSTDIR\\\$\{APP_EXECUTABLE_FILENAME\}"/);
+  assert.match(script, /ExecWait '"\$INSTDIR\\\$\{APP_EXECUTABLE_FILENAME\}" "--maintenance=post-install"' \$0/);
+});
+
+test('installer script leaves the install directory before overwrite cleanup removes it', () => {
+  const script = readInstallerScript();
+
+  assert.match(script, /SetOutPath "\$TEMP"\s+RMDir \/r "\$INSTDIR"/);
 });

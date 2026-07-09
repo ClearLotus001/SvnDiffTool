@@ -1,5 +1,5 @@
 // src/components/MiniMap.tsx
-import { memo, useEffect, useRef, useState, type RefObject } from 'react';
+import { memo, useEffect, useRef, useState, type MouseEvent, type PointerEvent, type RefObject, type WheelEvent } from 'react';
 import type { DiffLine, RenderItem, SplitRenderItem, SplitRow } from '@/types';
 import { useThemeTokens } from '@/context/theme';
 import { TEXT_DIFF_MINIMAP_WIDTH } from '@/constants/layout';
@@ -10,6 +10,13 @@ import {
   type MiniMapOverlayMarker,
 } from '@/utils/diff/minimapOverlayMarkers';
 import { resolveDiffMiniMapPaint } from '@/utils/diff/minimapColors';
+import {
+  computeMiniMapDragScrollTop,
+  computeMiniMapViewportMetrics,
+  computeMiniMapWheelScrollTop,
+  resolveMiniMapContentHeight,
+  resolveMiniMapTrackHeight,
+} from '@/utils/diff/minimapInteraction';
 import {
   resolveTextDiffVisualTone,
   resolveTextSplitRowVisualTone,
@@ -40,6 +47,14 @@ const WIDTH = TEXT_DIFF_MINIMAP_WIDTH;
 const SEARCH_MARKER_WIDTH = 8;
 const MIN_DIFF_MARKER_HEIGHT = DEFAULT_MINIMAP_OVERLAY_MARKER_HEIGHT;
 const TEXT_MINIMAP_TONE_ORDER: readonly MiniMapPaintTone[] = ['delete', 'modify', 'add'] as const;
+
+interface MiniMapDragState {
+  pointerId: number;
+  startClientY: number;
+  startScrollTop: number;
+  maxScrollTop: number;
+  trackHeight: number;
+}
 
 function resolveMiniMapSegments(
   segments: readonly MiniMapSegment[],
@@ -233,13 +248,28 @@ const MiniMap = memo(({ segments, scrollRef, contentHeight }: MiniMapProps) => {
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const contRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const dragStateRef = useRef<MiniMapDragState | null>(null);
+  const dragScrollFrameRef = useRef(0);
+  const pendingDragScrollTopRef = useRef<number | null>(null);
   const [contHeight, setContHeight] = useState(400);
+  const [isDragging, setIsDragging] = useState(false);
 
   const applyViewport = (top: number, height: number) => {
     const viewport = viewportRef.current;
     if (!viewport) return;
     viewport.style.transform = `translate3d(0, ${top}px, 0)`;
     viewport.style.height = `${height}px`;
+  };
+
+  const flushPendingDragScroll = () => {
+    dragScrollFrameRef.current = 0;
+    const nextScrollTop = pendingDragScrollTopRef.current;
+    pendingDragScrollTopRef.current = null;
+    const el = scrollRef.current;
+    if (!el || nextScrollTop == null) return;
+    if (Math.abs(el.scrollTop - nextScrollTop) >= 0.5) {
+      el.scrollTop = nextScrollTop;
+    }
   };
 
   useEffect(() => {
@@ -328,11 +358,14 @@ const MiniMap = memo(({ segments, scrollRef, contentHeight }: MiniMapProps) => {
     const cont = contRef.current;
     if (!el || !cont) return;
     const update = () => {
-      const H = Math.max(1, cont.clientHeight || contHeight);
-      const ratio = H / Math.max(contentHeight, 1);
-      const nextHeight = Math.max(el.clientHeight * ratio, 20);
-      const maxTop = Math.max(0, H - nextHeight);
-      applyViewport(Math.min(el.scrollTop * ratio, maxTop), nextHeight);
+      const H = resolveMiniMapTrackHeight(cont.clientHeight || contHeight, el.clientHeight);
+      const metrics = computeMiniMapViewportMetrics({
+        scrollTop: el.scrollTop,
+        viewportHeight: el.clientHeight,
+        contentHeight: resolveMiniMapContentHeight(contentHeight, el.scrollHeight, el.clientHeight),
+        minimapHeight: H,
+      });
+      applyViewport(metrics.top, metrics.height);
     };
     const onScroll = () => update();
     const ro = new ResizeObserver(() => update());
@@ -346,39 +379,143 @@ const MiniMap = memo(({ segments, scrollRef, contentHeight }: MiniMapProps) => {
     };
   }, [contentHeight, contHeight, scrollRef]);
 
-  const handleClick = (e: React.MouseEvent) => {
+  useEffect(() => () => {
+    if (dragScrollFrameRef.current) {
+      cancelAnimationFrame(dragScrollFrameRef.current);
+    }
+  }, []);
+
+  const handleClick = (e: MouseEvent<HTMLDivElement>) => {
     const cont = contRef.current;
     const el = scrollRef.current;
     if (!cont || !el) return;
     const rect = cont.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (e.clientY - rect.top) / Math.max(cont.clientHeight, 1)));
-    el.scrollTop = ratio * contentHeight;
+    const H = resolveMiniMapTrackHeight(cont.clientHeight || contHeight, el.clientHeight);
+    const ratio = Math.max(0, Math.min(1, (e.clientY - rect.top) / H));
+    const contentExtent = resolveMiniMapContentHeight(contentHeight, el.scrollHeight, el.clientHeight);
+    const maxScrollTop = Math.max(0, contentExtent - el.clientHeight);
+    el.scrollTop = Math.max(0, Math.min(maxScrollTop, ratio * contentExtent));
+  };
+
+  const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
+    const el = scrollRef.current;
+    if (!el || event.deltaY === 0) return;
+
+    const contentExtent = resolveMiniMapContentHeight(contentHeight, el.scrollHeight, el.clientHeight);
+    const maxScrollTop = Math.max(0, contentExtent - el.clientHeight);
+    if (maxScrollTop <= 0) return;
+
+    const nextScrollTop = computeMiniMapWheelScrollTop({
+      deltaY: event.deltaY,
+      deltaMode: event.deltaMode,
+      currentScrollTop: el.scrollTop,
+      maxScrollTop,
+      viewportHeight: el.clientHeight,
+    });
+
+    if (Math.abs(el.scrollTop - nextScrollTop) >= 0.5) {
+      el.scrollTop = nextScrollTop;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const handleViewportPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    const cont = contRef.current;
+    const el = scrollRef.current;
+    if (!cont || !el) return;
+
+    const H = resolveMiniMapTrackHeight(cont.clientHeight || contHeight, el.clientHeight);
+    const metrics = computeMiniMapViewportMetrics({
+      scrollTop: el.scrollTop,
+      viewportHeight: el.clientHeight,
+      contentHeight: resolveMiniMapContentHeight(contentHeight, el.scrollHeight, el.clientHeight),
+      minimapHeight: H,
+    });
+
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      startClientY: event.clientY,
+      startScrollTop: el.scrollTop,
+      maxScrollTop: metrics.maxScrollTop,
+      trackHeight: metrics.trackHeight,
+    };
+    setIsDragging(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const handleViewportPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    const dragState = dragStateRef.current;
+    const el = scrollRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId || !el) return;
+
+    pendingDragScrollTopRef.current = computeMiniMapDragScrollTop({
+      pointerDeltaY: event.clientY - dragState.startClientY,
+      startScrollTop: dragState.startScrollTop,
+      maxScrollTop: dragState.maxScrollTop,
+      trackHeight: dragState.trackHeight,
+    });
+    if (!dragScrollFrameRef.current) {
+      dragScrollFrameRef.current = requestAnimationFrame(flushPendingDragScroll);
+    }
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const finishViewportDrag = (event: PointerEvent<HTMLDivElement>) => {
+    const dragState = dragStateRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) return;
+    if (dragScrollFrameRef.current) {
+      cancelAnimationFrame(dragScrollFrameRef.current);
+      flushPendingDragScroll();
+    }
+    dragStateRef.current = null;
+    setIsDragging(false);
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    event.preventDefault();
+    event.stopPropagation();
   };
 
   return (
     <div
       ref={contRef}
       onClick={handleClick}
+      onWheel={handleWheel}
       className="relative overflow-hidden cursor-pointer shrink-0 self-stretch border-l border-border-default"
       style={{ width: WIDTH, background: T.bg1 }}>
       <canvas
         ref={canvasRef}
         className="absolute top-0 left-0 w-full h-full"
-        style={{ imageRendering: 'pixelated' }}
+        style={{ imageRendering: 'pixelated', zIndex: 0 }}
       />
       <div
         ref={viewportRef}
-        className="minimap-viewport-frosted absolute pointer-events-none"
+        data-dragging={isDragging ? 'true' : undefined}
+        onPointerDown={handleViewportPointerDown}
+        onPointerMove={handleViewportPointerMove}
+        onPointerUp={finishViewportDrag}
+        onPointerCancel={finishViewportDrag}
+        onClick={(event) => event.stopPropagation()}
+        className={`minimap-viewport-frosted absolute ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
         style={{
           top: 0,
           height: 40,
           transform: 'translate3d(0, 0px, 0)',
+          touchAction: 'none',
+          userSelect: 'none',
+          contain: 'layout paint style',
+          zIndex: 3,
         }}
       />
       <canvas
         ref={overlayCanvasRef}
         className="absolute top-0 left-0 w-full h-full pointer-events-none"
-        style={{ imageRendering: 'pixelated' }}
+        style={{ imageRendering: 'pixelated', zIndex: 1 }}
       />
     </div>
   );

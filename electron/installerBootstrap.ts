@@ -153,3 +153,28 @@ export function toInstallerBootstrapContent(config: InstallerBootstrapConfig): s
     '',
   ].join('\n');
 }
+
+export async function writeInstallerBootstrapConfig(
+  config: InstallerBootstrapConfig,
+  execPath: string = process.execPath,
+) {
+  const bootstrapPath = getInstallerBootstrapPath(execPath);
+  await fs.promises.mkdir(path.dirname(bootstrapPath), { recursive: true });
+  await fs.promises.writeFile(bootstrapPath, toInstallerBootstrapContent(config), 'utf-8');
+}
+
+export async function updateInstallerBootstrapDiffViewerMode(
+  diffViewerMode: InstallerDiffViewerMode,
+  execPath: string = process.execPath,
+) {
+  const currentConfig = readInstallerBootstrapSync(execPath)
+    ?? normalizeInstallerBootstrapConfig({
+      diffViewerMode,
+      cacheRoot: getDefaultInstallerCacheRoot(),
+    });
+
+  await writeInstallerBootstrapConfig({
+    ...currentConfig,
+    diffViewerMode,
+  }, execPath);
+}

@@ -656,12 +656,16 @@ export default function App() {
 
   // ── Render ─────────────────────────────────────────────────────────────
 
+  const isHomeSurfaceVisible = !hasLoadedDiff && loadPhase !== 'loading' && loadPhase !== 'bootstrapping';
   const windowFrameClassName = isElectron && !isWindowMaximized
     ? 'app-window-frame app-window-frame--floating'
     : 'app-window-frame app-window-frame--flush';
-  const windowSurfaceClassName = isElectron && !isWindowMaximized
+  const windowSurfaceBaseClassName = isElectron && !isWindowMaximized
     ? 'app-window-surface app-window-surface--floating app-shell-no-select font-ui text-text-title flex flex-col relative flex-auto w-full h-full overflow-hidden min-w-0 min-h-0'
     : 'app-window-surface app-window-surface--flush app-shell-no-select font-ui text-text-title flex flex-col relative flex-auto w-full h-full overflow-hidden min-w-0 min-h-0';
+  const windowSurfaceClassName = isHomeSurfaceVisible
+    ? `${windowSurfaceBaseClassName} app-window-surface--home`
+    : windowSurfaceBaseClassName;
 
   return (
     <ThemeContext.Provider value={themeKey}>
@@ -669,6 +673,7 @@ export default function App() {
         <div className={windowSurfaceClassName}>
           <Toolbar
             fileName={displayFileName}
+            isHome={isHomeSurfaceVisible}
             themeKey={themeKey}         setThemeKey={setThemeKey}
             layout={layout}             setLayout={handleLayoutChange}
             hunkIdx={hunkIdx}           totalHunks={navigationCount}
@@ -698,7 +703,7 @@ export default function App() {
 
           {isDevMode && <PerfBar metrics={loadPerfMetrics} />}
 
-          {showSearch && (
+          {!isHomeSurfaceVisible && showSearch && (
             <SearchBar
               query={searchQ}
               isRegex={searchRx}
@@ -835,22 +840,24 @@ export default function App() {
             onInitialVisualReady={handleInitialVisualReady}
           />
 
-          <StatsBar
-            textDiffPresentation={textDiffPresentation}
-            baseName={displayBaseName}
-            mineName={displayMineName}
-            baseTitle={baseStatsTitle}
-            mineTitle={mineStatsTitle}
-            fileName={displayFileName}
-            totalLines={totalLines}
-          baseVersionLabel={baseVersionLabel}
-          mineVersionLabel={mineVersionLabel}
-          isWorkbookMode={isWorkbookMode}
-          workbookCompareMode={workbookCompareMode}
-          workbookArtifactDiff={workbookArtifactDiff}
-          workbookSections={workbookSections}
-          lineSelectionSummary={!isWorkbookMode ? textLineSelectionSummary : null}
-        />
+          {hasLoadedDiff && (
+            <StatsBar
+              textDiffPresentation={textDiffPresentation}
+              baseName={displayBaseName}
+              mineName={displayMineName}
+              baseTitle={baseStatsTitle}
+              mineTitle={mineStatsTitle}
+              fileName={displayFileName}
+              totalLines={totalLines}
+              baseVersionLabel={baseVersionLabel}
+              mineVersionLabel={mineVersionLabel}
+              isWorkbookMode={isWorkbookMode}
+              workbookCompareMode={workbookCompareMode}
+              workbookArtifactDiff={workbookArtifactDiff}
+              workbookSections={workbookSections}
+              lineSelectionSummary={!isWorkbookMode ? textLineSelectionSummary : null}
+            />
+          )}
 
           <AppDialogs
             showGoto={showGoto}

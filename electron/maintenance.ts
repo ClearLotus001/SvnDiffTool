@@ -4,12 +4,12 @@ import * as fs from 'node:fs';
 import {
   clearInstallerMaintenancePendingSync,
   type InstallerBootstrapConfig,
-  type InstallerDiffViewerMode,
   getInstallerBootstrapPath,
   getPreviousInstallerBootstrapPath,
   hasInstallerMaintenancePendingSync,
   readInstallerBootstrapSync,
   readPreviousInstallerBootstrapSync,
+  updateInstallerBootstrapDiffViewerMode,
 } from './installerBootstrap';
 import {
   cleanupStaleManagedTempFilesSync,
@@ -24,12 +24,18 @@ import type {
   SvnDiffViewerScope,
   SvnDiffViewerStatus,
 } from './svnDiffViewerConfig';
+import {
+  resolveEffectiveSvnDiffViewerPreference,
+  resolveInstallerDiffViewerScope,
+  writeSvnDiffViewerPreference,
+} from './svnDiffViewerPreferences';
+import { normalizeSvnDiffViewerScope } from './svnDiffViewerConfigShared';
 
 export type MaintenanceMode = 'post-install' | 'prepare-uninstall';
 type SvnDiffViewerConfigModule = {
   configureSvnDiffViewer: (scope: SvnDiffViewerScope) => Promise<SvnDiffViewerStatus>;
   getSvnDiffViewerStatus: () => Promise<SvnDiffViewerStatus>;
-  restoreSvnDefaultDiffViewerConfiguration: () => Promise<SvnDiffViewerStatus>;
+  restoreSvnDefaultDiffViewerConfiguration: (options?: { rememberPreference?: boolean }) => Promise<SvnDiffViewerStatus>;
 };
 
 function isMaintenanceMode(value: string): value is MaintenanceMode {
@@ -71,24 +77,53 @@ function deleteFileSync(targetPath: string) {
   }
 }
 
-function getDesiredDiffViewerScope(diffViewerMode: InstallerDiffViewerMode) {
-  if (diffViewerMode === 'workbook-only' || diffViewerMode === 'text-only' || diffViewerMode === 'all-files') {
-    return diffViewerMode;
+async function rememberDesiredDiffViewerScope(app: App, scope: SvnDiffViewerScope) {
+  await writeSvnDiffViewerPreference(app.getPath('userData'), scope);
+
+  try {
+    await updateInstallerBootstrapDiffViewerMode(scope, app.getPath('exe'));
+  } catch {
+    // The userData preference is enough for future startup reconciliation.
   }
-  return null;
 }
 
-async function applyDesiredDiffViewerMode(config: InstallerBootstrapConfig | null) {
-  const desiredScope = getDesiredDiffViewerScope(config?.diffViewerMode ?? 'keep');
-  if (!desiredScope) return;
-
+async function applyDesiredDiffViewerMode(
+  app: App,
+  config: InstallerBootstrapConfig | null,
+  options: { allowInstallerOverride?: boolean } = {},
+) {
   const {
     configureSvnDiffViewer,
     getSvnDiffViewerStatus,
   }: SvnDiffViewerConfigModule = await import('./svnDiffViewerConfig.js');
+
+  const installerOverrideScope = options.allowInstallerOverride
+    ? resolveInstallerDiffViewerScope(config?.diffViewerMode ?? null)
+    : null;
+  const preference = installerOverrideScope
+    ? {
+      desiredScope: installerOverrideScope,
+      source: 'installer-bootstrap' as const,
+    }
+    : resolveEffectiveSvnDiffViewerPreference(app.getPath('userData'), config);
+  if (!preference.desiredScope) {
+    if (preference.source !== 'none') return;
+
+    const currentStatus = await getSvnDiffViewerStatus();
+    const currentScope = normalizeSvnDiffViewerScope(currentStatus.currentMode);
+    if (currentStatus.available && currentScope) {
+      await rememberDesiredDiffViewerScope(app, currentScope);
+    }
+    return;
+  }
+
+  if (preference.source === 'installer-bootstrap') {
+    await rememberDesiredDiffViewerScope(app, preference.desiredScope);
+  }
+
   const status = await getSvnDiffViewerStatus();
-  if (status.currentMode === desiredScope) return;
-  await configureSvnDiffViewer(desiredScope);
+  if (status.currentMode === preference.desiredScope) return;
+  await configureSvnDiffViewer(preference.desiredScope);
 }
 
 function clearBootstrapArtifacts(app: App) {
@@ -105,7 +140,9 @@ async function runPostInstallMaintenance(
   cleanupStaleManagedTempFilesSync(Date.now(), { force: true });
   migratePreviousCacheRoot(previousInstallerBootstrap, installerBootstrap);
   cleanupPreviousCacheRoot(previousInstallerBootstrap, installerBootstrap);
-  await applyDesiredDiffViewerMode(installerBootstrap);
+  await applyDesiredDiffViewerMode(app, installerBootstrap, {
+    allowInstallerOverride: previousInstallerBootstrap == null,
+  });
   deleteFileSync(getPreviousInstallerBootstrapPath(app.getPath('exe')));
   clearInstallerMaintenancePendingSync(app.getPath('exe'));
 }
@@ -127,6 +164,14 @@ export async function runPendingPostInstallMaintenance(app: App): Promise<boolea
   return true;
 }
 
+export async function runStartupSvnDiffViewerMaintenance(app: App): Promise<boolean> {
+  const didRunPostInstallMaintenance = await runPendingPostInstallMaintenance(app);
+  if (didRunPostInstallMaintenance) return true;
+
+  await applyDesiredDiffViewerMode(app, readInstallerBootstrapSync(app.getPath('exe')));
+  return true;
+}
+
 export async function runMaintenance(app: App, mode: MaintenanceMode, argv: string[] = process.argv): Promise<void> {
   const installerBootstrap = readInstallerBootstrapSync(app.getPath('exe'));
   const previousInstallerBootstrap = readPreviousInstallerBootstrapSync(app.getPath('exe'));
@@ -140,7 +185,7 @@ export async function runMaintenance(app: App, mode: MaintenanceMode, argv: stri
   const {
     restoreSvnDefaultDiffViewerConfiguration,
   }: SvnDiffViewerConfigModule = await import('./svnDiffViewerConfig.js');
-  await restoreSvnDefaultDiffViewerConfiguration();
+  await restoreSvnDefaultDiffViewerConfiguration({ rememberPreference: false });
 
   if (shouldDeleteAppData) {
     const runtimePathState = getRuntimePathState();

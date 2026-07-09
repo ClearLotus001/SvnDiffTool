@@ -363,7 +363,7 @@ const SplitHeader = memo(({
 
   return horizontalSplitHeader ? (
     <div
-      className="grid gap-0 p-0 w-full min-w-0 border-b border-border-default shrink-0 bg-bg-surface"
+      className="relative z-40 grid gap-0 p-0 w-full min-w-0 border-b border-border-default shrink-0 overflow-visible bg-bg-surface"
       style={{ gridTemplateColumns: `minmax(0, 1fr) ${TEXT_DIFF_MINIMAP_WIDTH}px` }}>
       <div className="min-w-0">
         {pairedHeader}
@@ -371,7 +371,7 @@ const SplitHeader = memo(({
       <div aria-hidden="true" className="min-w-0 border-l border-border-default bg-bg-surface" />
     </div>
   ) : (
-    <div className="grid gap-0 p-0 w-full min-w-0 border-b border-border-default shrink-0 bg-bg-surface">
+    <div className="relative z-40 grid gap-0 p-0 w-full min-w-0 border-b border-border-default shrink-0 overflow-visible bg-bg-surface">
       {pairedHeader}
     </div>
   );

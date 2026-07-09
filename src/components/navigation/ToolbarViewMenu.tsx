@@ -16,6 +16,40 @@ const DEFAULT_VIEW_STATE = {
 const MENU_WIDTH = 292;
 const MENU_GAP = 8;
 const VIEWPORT_PADDING = 12;
+const MENU_ITEM_RADIUS = 12;
+const FONT_CONTROL_RADIUS = 11;
+const SECTION_TITLE_CLASS = 'h-5 px-1 flex items-center font-ui text-[11px] font-extrabold text-text-secondary tracking-wide';
+const DIVIDER_CLASS = 'h-px bg-border-default opacity-70';
+
+const createMenuButtonStyle = (active: boolean, interactiveStyle: CSSProperties): CSSProperties => ({
+  ...interactiveStyle,
+  borderRadius: MENU_ITEM_RADIUS,
+  borderColor: active ? cssAlpha('acc', '66') : 'var(--liquid-glass-border, var(--border-color))',
+  background: active
+    ? `linear-gradient(180deg, ${cssAlpha('acc', '24')} 0%, color-mix(in srgb, var(--liquid-control-fill, var(--bg-surface-hover)) 76%, var(--accent) 12%) 100%)`
+    : 'linear-gradient(180deg, color-mix(in srgb, var(--liquid-glass-highlight, white) 18%, transparent) 0%, var(--liquid-control-fill, var(--bg-surface-hover)) 100%)',
+  boxShadow: active
+    ? `inset 0 1px 0 var(--liquid-glass-highlight, rgba(255,255,255,0.18)), 0 10px 24px -20px ${cssAlpha('acc', '66')}`
+    : 'inset 0 1px 0 var(--liquid-glass-highlight, rgba(255,255,255,0.14)), 0 8px 20px -20px var(--liquid-glass-shadow, rgba(0,0,0,0.28))',
+});
+
+const createSwitchTrackStyle = (checked: boolean): CSSProperties => ({
+  borderRadius: 999,
+  border: `1px solid ${checked ? cssAlpha('acc', '88') : 'var(--liquid-glass-border, var(--border-color))'}`,
+  background: checked
+    ? `linear-gradient(180deg, ${cssVar('acc')} 0%, color-mix(in srgb, ${cssVar('acc')} 78%, black 10%) 100%)`
+    : 'color-mix(in srgb, var(--text-secondary) 16%, var(--liquid-control-fill, var(--bg-surface-hover)) 84%)',
+  boxShadow: checked
+    ? `0 0 0 3px ${cssAlpha('acc', '18')}, inset 0 1px 0 color-mix(in srgb, white 34%, transparent)`
+    : 'inset 0 1px 0 var(--liquid-glass-highlight, rgba(255,255,255,0.14))',
+});
+
+const createSwitchKnobStyle = (checked: boolean): CSSProperties => ({
+  borderRadius: 999,
+  transform: checked ? 'translateX(16px)' : 'translateX(0)',
+  background: checked ? 'var(--btn-active-text)' : 'var(--text-secondary)',
+  boxShadow: '0 2px 6px color-mix(in srgb, black 24%, transparent)',
+});
 
 interface ToolbarViewMenuProps {
   collapseCtx: boolean;
@@ -49,6 +83,10 @@ const ToolbarViewMenu = memo(({
   const [open, setOpen] = useState(false);
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
   const interactiveStyle = noDragStyle ?? {};
+  const menuTooltipAnchorStyle = useMemo<CSSProperties>(
+    () => ({ ...anchorStyle, width: '100%' }),
+    [anchorStyle],
+  );
 
   const updateAnchorRect = () => {
     const nextRect = rootRef.current?.getBoundingClientRect();
@@ -93,28 +131,29 @@ const ToolbarViewMenu = memo(({
   }: {
     checked: boolean; label: string; onClick: () => void; tooltip: string;
   }) => (
-    <Tooltip content={tooltip} anchorStyle={anchorStyle}>
+    <Tooltip content={tooltip} placement="left" anchorStyle={menuTooltipAnchorStyle} sideBoundaryRef={menuRef}>
       <button
         type="button"
         role="menuitemcheckbox"
         aria-checked={checked}
         onClick={onClick}
         className={`
-          min-h-[38px] px-3 rounded-xl border font-ui text-[13px] font-semibold
-          flex items-center justify-between gap-3 cursor-pointer text-left
-          transition-all duration-150
-          ${checked
-            ? 'border-accent/25 bg-[var(--accent)]/[0.07] text-accent'
-            : 'border-border-default bg-bg-base text-text-title'
-          }
-          hover:border-accent/40
+          toolbar-view-menu__item
+          w-full h-9 px-3 border font-ui text-[13px] font-semibold
+          grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2.5 cursor-pointer text-left
+          transition-all duration-150 hover:-translate-y-px active:translate-y-0
+          ${checked ? 'text-accent' : 'text-text-title'}
         `}
-        style={interactiveStyle}>
-        <span>{label}</span>
+        style={createMenuButtonStyle(checked, interactiveStyle)}>
+        <span className="min-w-0 truncate leading-none">{label}</span>
         <span
           aria-hidden="true"
-          className={`w-[30px] h-[18px] p-0.5 rounded-full inline-flex items-center shrink-0 transition-all duration-150 ${checked ? 'justify-end bg-accent' : 'justify-start bg-bg-elevated'}`}>
-          <span className={`size-3 rounded-full ${checked ? 'bg-btn-active-text' : 'bg-text-secondary'}`} />
+          className="toolbar-view-menu__switch relative w-[34px] h-[18px] shrink-0 transition-all duration-150"
+          style={createSwitchTrackStyle(checked)}>
+          <span
+            className="toolbar-view-menu__switch-knob absolute left-[2px] top-[2px] size-[14px] transition-transform duration-150 ease-out"
+            style={createSwitchKnobStyle(checked)}
+          />
         </span>
       </button>
     </Tooltip>
@@ -125,7 +164,7 @@ const ToolbarViewMenu = memo(({
   }: {
     active: boolean; label: string; onClick: () => void; tooltip: string; testId?: string;
   }) => (
-    <Tooltip content={tooltip} anchorStyle={anchorStyle}>
+    <Tooltip content={tooltip} placement="left" anchorStyle={menuTooltipAnchorStyle} sideBoundaryRef={menuRef}>
       <button
         type="button"
         role="menuitemradio"
@@ -133,15 +172,19 @@ const ToolbarViewMenu = memo(({
         data-testid={testId}
         onClick={onClick}
         className={`
-          min-h-[42px] px-3 rounded-xl border font-ui text-[13px] font-bold
-          cursor-pointer transition-all duration-150
-          ${active
-            ? 'border-accent/25 bg-[var(--accent)]/[0.07] text-accent'
-            : 'border-border-default bg-bg-base text-text-title hover:border-accent/40'
-          }
+          toolbar-view-menu__item
+          w-full h-10 px-3 border font-ui text-[13px] font-bold
+          inline-flex items-center justify-center gap-2 cursor-pointer text-center
+          transition-all duration-150 hover:-translate-y-px active:translate-y-0
+          ${active ? 'text-accent' : 'text-text-title'}
         `}
-        style={interactiveStyle}>
-        {label}
+        style={createMenuButtonStyle(active, interactiveStyle)}>
+        <span
+          aria-hidden="true"
+          className="size-[6px] shrink-0 transition-opacity duration-150"
+          style={{ borderRadius: 999, background: active ? cssVar('acc') : 'var(--text-secondary)', opacity: active ? 1 : 0.35 }}
+        />
+        <span className="min-w-0 truncate">{label}</span>
       </button>
     </Tooltip>
   );
@@ -160,16 +203,16 @@ const ToolbarViewMenu = memo(({
       <div
         ref={menuRef}
         role="menu"
-        className="motion-floating-panel fixed p-2 rounded-2xl border border-border-default bg-bg-surface-solid grid gap-2.5 z-[120]"
+        className="toolbar-view-menu motion-floating-panel fixed p-2.5 rounded-[18px] border border-border-default bg-bg-surface-solid grid gap-2 z-[220] glass"
         style={{
           top: menuLayout.top,
           left: menuLayout.left,
           width: MENU_WIDTH,
-          boxShadow: `0 18px 44px -26px var(--border-strong)`,
+          boxShadow: `inset 0 1px 0 var(--liquid-glass-highlight, rgba(255,255,255,0.18)), 0 22px 54px -34px var(--liquid-glass-shadow, var(--border-strong))`,
           ...interactiveStyle,
         }}>
         <div className="grid gap-1.5">
-          <div className="text-[11px] font-ui font-bold text-text-secondary tracking-wider uppercase">{t('toolbarSectionDisplay')}</div>
+          <div className={SECTION_TITLE_CLASS}>{t('toolbarSectionDisplay')}</div>
           <ToggleRow checked={collapseCtx} onClick={() => setCollapseCtx((v) => !v)} label={collapseCtx ? t('toolbarExpandAllLabel') : t('toolbarCollapseLabel')} tooltip={t('toolbarCollapseTitle')} />
           <ToggleRow checked={showWhitespace} onClick={() => setShowWhitespace((v) => !v)} label={t('toolbarWhitespaceLabel')} tooltip={t('toolbarWhitespaceTitle')} />
           {isWorkbookMode && (
@@ -179,10 +222,10 @@ const ToolbarViewMenu = memo(({
 
         {isWorkbookMode && (
           <>
-            <div className="h-px bg-border-default" />
+            <div className={DIVIDER_CLASS} />
             <div className="grid gap-1.5">
-              <div className="text-[11px] font-ui font-bold text-text-secondary tracking-wider uppercase">{t('toolbarSectionCompare')}</div>
-              <div className="grid grid-cols-2 gap-1.5">
+              <div className={SECTION_TITLE_CLASS}>{t('toolbarSectionCompare')}</div>
+              <div className="grid grid-cols-2 gap-2">
                 <CompareModeButton
                   active={workbookCompareMode === 'content'}
                   label={t('toolbarCompareModeContent')}
@@ -202,29 +245,36 @@ const ToolbarViewMenu = memo(({
           </>
         )}
 
-        <div className="h-px bg-border-default" />
+        <div className={DIVIDER_CLASS} />
 
         <div className="grid gap-2">
-          <div className="text-[11px] font-ui font-bold text-text-secondary tracking-wider uppercase">{t('toolbarSectionFont')}</div>
-          <div className="flex items-center justify-between gap-3">
-            <div className="inline-flex items-center gap-1 p-0.5 rounded-xl border border-border-default bg-bg-surface-hover" style={interactiveStyle}>
+          <div className={SECTION_TITLE_CLASS}>{t('toolbarSectionFont')}</div>
+          <div className="flex items-center justify-between gap-3 px-0.5">
+            <div
+              className="toolbar-view-menu__font-control inline-grid grid-cols-[32px_36px_32px] items-center h-9 overflow-hidden border border-border-default"
+              style={{
+                ...interactiveStyle,
+                borderRadius: FONT_CONTROL_RADIUS,
+                background: 'var(--liquid-control-fill, var(--bg-surface-hover))',
+                borderColor: 'var(--liquid-glass-border, var(--border-color))',
+              }}>
               <button
                 type="button"
                 onClick={() => setFontSize((s) => Math.max(10, s - 1))}
-                className="min-w-7 h-7 rounded-lg border-none bg-transparent text-text-title font-ui text-[13px] font-bold cursor-pointer hover:bg-bg-elevated active:scale-95 transition-all duration-150"
-                style={interactiveStyle}>
+                className="toolbar-view-menu__font-button h-full border-none bg-transparent text-text-title font-ui text-[13px] font-bold cursor-pointer hover:bg-bg-elevated active:scale-95 transition-all duration-150"
+                style={{ ...interactiveStyle, boxShadow: 'none' }}>
                 A-
               </button>
-              <span className="min-w-7 text-center text-text-primary font-code text-[13px]">{fontSize}</span>
+              <span className="text-center text-text-primary font-code text-[13px] font-semibold tabular-nums">{fontSize}</span>
               <button
                 type="button"
                 onClick={() => setFontSize((s) => Math.min(20, s + 1))}
-                className="min-w-7 h-7 rounded-lg border-none bg-transparent text-text-title font-ui text-[13px] font-bold cursor-pointer hover:bg-bg-elevated active:scale-95 transition-all duration-150"
-                style={interactiveStyle}>
+                className="toolbar-view-menu__font-button h-full border-none bg-transparent text-text-title font-ui text-[13px] font-bold cursor-pointer hover:bg-bg-elevated active:scale-95 transition-all duration-150"
+                style={{ ...interactiveStyle, boxShadow: 'none' }}>
                 A+
               </button>
             </div>
-            <span className="text-[11px] text-text-secondary font-ui whitespace-nowrap">10px - 20px</span>
+            <span className="text-[12px] text-text-secondary font-code whitespace-nowrap tabular-nums">10px - 20px</span>
           </div>
         </div>
       </div>,

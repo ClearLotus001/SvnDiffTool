@@ -26,7 +26,6 @@ import {
 import { useI18n } from '@/context/i18n';
 import type { AppUpdateState, ThemeKey, LayoutMode, WorkbookCompareMode } from '@/types';
 import { THEME_KEYS } from '@/theme';
-import { cssVar } from '@/theme/cssUtils';
 import Tooltip from '@/components/shared/Tooltip';
 import ToolbarViewMenu from '@/components/navigation/ToolbarViewMenu';
 
@@ -66,6 +65,17 @@ function Icon({ name, size = 14 }: { name: IconName; size?: number }) {
   return LucideIcon ? <LucideIcon size={size} className="shrink-0" /> : null;
 }
 
+function ThemeSwatch({ theme, active = true }: { theme: ThemeKey; active?: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      data-theme={theme}
+      data-active={active ? 'true' : 'false'}
+      className="app-toolbar__theme-indicator shrink-0"
+    />
+  );
+}
+
 const LAYOUT_OPTIONS: { id: LayoutMode }[] = [
   { id: 'unified' },
   { id: 'split-h' },
@@ -90,6 +100,7 @@ function getLayoutIconName(layout: LayoutMode, isWorkbookMode: boolean): IconNam
 
 interface ToolbarProps {
   fileName: string;
+  isHome?: boolean;
   themeKey: ThemeKey;
   setThemeKey: (k: ThemeKey) => void;
   layout: LayoutMode;
@@ -127,6 +138,7 @@ interface ToolbarProps {
 
 const Toolbar = memo((props: ToolbarProps) => {
   const {
+    isHome = false,
     fileName,
     themeKey, setThemeKey, layout, setLayout,
     hunkIdx, totalHunks, hunkTargetLabel = '', onPrev, onNext,
@@ -193,6 +205,7 @@ const Toolbar = memo((props: ToolbarProps) => {
   const showThemeLabel = responsiveMode === 'regular' || responsiveMode === 'condensed';
   const showLanguageText = responsiveMode === 'regular' || responsiveMode === 'condensed';
   const showUpdateLabel = responsiveMode !== 'tight';
+  const showDiffControls = !isHome;
   const nativeWindowControlsInset = usesNativeWindowControls ? 138 : 0;
   const windowMaximizeTooltip = isWindowMaximized ? t('toolbarWindowRestoreTitle') : t('toolbarWindowMaximizeTitle');
   const fileActionLabel = fileName ? t('toolbarSwitchFileLabel') : t('toolbarPickFileLabel');
@@ -229,6 +242,7 @@ const Toolbar = memo((props: ToolbarProps) => {
         data-testid={testId}
         aria-label={tooltip || undefined}
         className={`
+          app-toolbar__button
           inline-flex items-center justify-center gap-1.5
           h-7 rounded-lg text-[13px] font-ui font-semibold
           whitespace-nowrap leading-none
@@ -256,6 +270,7 @@ const Toolbar = memo((props: ToolbarProps) => {
   const Group = ({ children }: { children: React.ReactNode }) => (
     <div
       className={`
+        app-toolbar__group
         flex items-center rounded-xl shrink-0
         bg-bg-surface-hover border border-border-default
         ${responsiveMode === 'tight' ? 'gap-0.5 p-px' : 'gap-0.5 p-0.5'}
@@ -274,6 +289,7 @@ const Toolbar = memo((props: ToolbarProps) => {
           aria-expanded={themeMenuOpen}
           onClick={() => setThemeMenuOpen((open) => !open)}
           className="
+            app-toolbar__theme-button
             h-8 rounded-[10px] border border-border-default
             bg-bg-surface-hover text-text-title
             font-ui text-[13px] font-bold
@@ -285,14 +301,7 @@ const Toolbar = memo((props: ToolbarProps) => {
             padding: showThemeLabel ? '0 10px 0 12px' : '0 10px',
             ...noDragStyle,
           }}>
-          <span
-            aria-hidden="true"
-            className="size-2 rounded-full shrink-0"
-            style={{
-              background: themeKey === 'dark' ? cssVar('t0') : themeKey === 'light' ? cssVar('acc') : cssVar('acc2'),
-              boxShadow: `0 0 0 3px var(--bg-surface-solid)`,
-            }}
-          />
+          <ThemeSwatch theme={themeKey} />
           {showThemeLabel && <span>{getThemeLabel(themeKey)}</span>}
           <Icon name="chevronDown" size={12} />
         </button>
@@ -329,14 +338,7 @@ const Toolbar = memo((props: ToolbarProps) => {
                 `}
                 style={noDragStyle}>
                 <span>{getThemeLabel(k)}</span>
-                <span
-                  aria-hidden="true"
-                  className="size-2 rounded-full shrink-0"
-                  style={{
-                    background: k === 'dark' ? cssVar('t0') : k === 'light' ? cssVar('acc') : cssVar('acc2'),
-                    opacity: active ? 1 : 0.55,
-                  }}
-                />
+                <ThemeSwatch theme={k} active={active} />
               </button>
             );
           })}
@@ -348,12 +350,14 @@ const Toolbar = memo((props: ToolbarProps) => {
   return (
     <div
       ref={rootRef}
-      className="
+      className={`
+        app-toolbar
+        ${isHome ? 'app-toolbar--home' : ''}
         flex items-center flex-nowrap gap-2
         min-h-[44px] shrink-0 min-w-0 overflow-visible
-        relative z-20 border-b border-border-default
+        relative z-50 border-b border-border-default
         bg-bg-surface glass
-      "
+      `}
       style={{
         padding: `6px ${8 + nativeWindowControlsInset}px 6px 8px`,
         ...(isElectron ? { WebkitAppRegion: 'drag' as const } : {}),
@@ -371,7 +375,7 @@ const Toolbar = memo((props: ToolbarProps) => {
         </div>
 
         {/* File chip */}
-        {showFileChip && fileName && (
+        {showDiffControls && showFileChip && fileName && (
           <Tooltip content={fileName} maxWidth={320} anchorStyle={noDragAnchorStyle}>
             <div
               className="
@@ -399,7 +403,7 @@ const Toolbar = memo((props: ToolbarProps) => {
           </Tooltip>
         )}
 
-        {isElectron && Boolean(fileName) && (
+        {showDiffControls && isElectron && Boolean(fileName) && (
           <Group>
             <Btn onClick={onPickFile} tooltip={fileActionTooltip}>
               <Icon name="file" />
@@ -409,26 +413,29 @@ const Toolbar = memo((props: ToolbarProps) => {
         )}
 
         {/* Layout group */}
-        <Group>
-          {LAYOUT_OPTIONS.map((option) => {
-            const labelKey = getLayoutLabelKey(option.id, isWorkbookMode);
-            const iconName = getLayoutIconName(option.id, isWorkbookMode);
-            return (
-              <Btn
-                key={option.id}
-                active={layout === option.id}
-                onClick={() => setLayout(option.id)}
-                tooltip={t(labelKey)}
-                testId={`toolbar-layout-${option.id}`}>
-                <Icon name={iconName} />
-                {showLayoutText && <span>{t(labelKey)}</span>}
-              </Btn>
-            );
-          })}
-        </Group>
+        {showDiffControls && (
+          <Group>
+            {LAYOUT_OPTIONS.map((option) => {
+              const labelKey = getLayoutLabelKey(option.id, isWorkbookMode);
+              const iconName = getLayoutIconName(option.id, isWorkbookMode);
+              return (
+                <Btn
+                  key={option.id}
+                  active={layout === option.id}
+                  onClick={() => setLayout(option.id)}
+                  tooltip={t(labelKey)}
+                  testId={`toolbar-layout-${option.id}`}>
+                  <Icon name={iconName} />
+                  {showLayoutText && <span>{t(labelKey)}</span>}
+                </Btn>
+              );
+            })}
+          </Group>
+        )}
 
         {/* Hunk navigation */}
-        <Group>
+        {showDiffControls && (
+          <Group>
           <Btn onClick={onPrev} tooltip={t('toolbarPrevHunkTitle')} compact>
             <Icon name="prev" />
           </Btn>
@@ -458,10 +465,12 @@ const Toolbar = memo((props: ToolbarProps) => {
           <Btn onClick={onNext} tooltip={t('toolbarNextHunkTitle')} compact>
             <Icon name="next" />
           </Btn>
-        </Group>
+          </Group>
+        )}
 
         {/* Search & Goto */}
-        <Group>
+        {showDiffControls && (
+          <Group>
           <Btn active={showSearch} onClick={() => setShowSearch(v => !v)} tooltip={t('toolbarSearchTitle')}>
             <Icon name="search" />
             {showActionText && <span>{t('toolbarSearchLabel')}</span>}
@@ -470,24 +479,27 @@ const Toolbar = memo((props: ToolbarProps) => {
             <Icon name="goto" />
             {showActionText && <span>{t('toolbarGotoLabel')}</span>}
           </Btn>
-        </Group>
+          </Group>
+        )}
 
-        <ToolbarViewMenu
-          collapseCtx={collapseCtx}
-          setCollapseCtx={setCollapseCtx}
-          showWhitespace={showWhitespace}
-          setShowWhitespace={setShowWhitespace}
-          showHiddenColumns={showHiddenColumns}
-          setShowHiddenColumns={setShowHiddenColumns}
-          workbookCompareMode={workbookCompareMode}
-          setWorkbookCompareMode={setWorkbookCompareMode}
-          fontSize={fontSize}
-          setFontSize={setFontSize}
-          isWorkbookMode={isWorkbookMode}
-          showLabel
-          noDragStyle={noDragStyle}
-          anchorStyle={noDragAnchorStyle}
-      />
+        {showDiffControls && (
+          <ToolbarViewMenu
+            collapseCtx={collapseCtx}
+            setCollapseCtx={setCollapseCtx}
+            showWhitespace={showWhitespace}
+            setShowWhitespace={setShowWhitespace}
+            showHiddenColumns={showHiddenColumns}
+            setShowHiddenColumns={setShowHiddenColumns}
+            workbookCompareMode={workbookCompareMode}
+            setWorkbookCompareMode={setWorkbookCompareMode}
+            fontSize={fontSize}
+            setFontSize={setFontSize}
+            isWorkbookMode={isWorkbookMode}
+            showLabel
+            noDragStyle={noDragStyle}
+            anchorStyle={noDragAnchorStyle}
+          />
+        )}
       </div>
 
       {/* ── Right Section ── */}

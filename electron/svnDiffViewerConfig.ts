@@ -3,14 +3,18 @@ import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { promisify } from 'node:util';
+import { updateInstallerBootstrapDiffViewerMode } from './installerBootstrap';
 import {
   canRestoreSvnDefaultDiffViewer,
   getOwnedSvnDiffRegistryEntries,
   normalizeSvnDiffViewerCommand,
+  normalizeSvnDiffViewerScope as normalizeSvnDiffViewerScopeValue,
   resolveSvnDiffViewerMode,
+  type SvnDiffViewerScope,
 } from './svnDiffViewerConfigShared';
+import { writeSvnDiffViewerPreference } from './svnDiffViewerPreferences';
 
-export type SvnDiffViewerScope = 'all-files' | 'text-only' | 'workbook-only';
+export type { SvnDiffViewerScope } from './svnDiffViewerConfigShared';
 export type SvnDiffViewerMode = SvnDiffViewerScope | 'mixed' | 'unconfigured' | 'unsupported';
 export type SvnDiffViewerAvailabilityReason = 'ready' | 'windows-only' | 'packaged-only';
 
@@ -26,6 +30,10 @@ export interface SvnDiffViewerStatus {
   workbookExtensions: string[];
 }
 
+export interface RestoreSvnDefaultDiffViewerOptions {
+  rememberPreference?: boolean;
+}
+
 interface SvnDiffViewerBackup {
   globalDiffCommand?: string | null;
   diffToolCommands?: Record<string, string | null>;
@@ -39,17 +47,7 @@ const WORKBOOK_EXTENSIONS = ['.xls', '.xlsx', '.xlsm', '.xlsb', '.xltx', '.xltm'
 const WORKBOOK_EXTENSION_SET = new Set<string>(WORKBOOK_EXTENSIONS);
 const DIFF_COMMAND_ARGUMENTS = ['%base', '%mine', '%bname', '%yname', '%burl', '%yurl', '%brev', '%yrev', '%peg', '%fname'];
 
-export function normalizeSvnDiffViewerScope(value: string | null | undefined): SvnDiffViewerScope | null {
-  switch (value) {
-    case 'workbook-only':
-      return 'workbook-only';
-    case 'all-files':
-    case 'text-only':
-      return value;
-    default:
-      return null;
-  }
-}
+export const normalizeSvnDiffViewerScope = normalizeSvnDiffViewerScopeValue;
 
 function getBackupFilePath() {
   return path.join(app.getPath('userData'), 'svn-diff-viewer-backup.json');
@@ -216,6 +214,16 @@ async function clearBackupEntries(options: {
   await writeBackup(nextBackup);
 }
 
+async function rememberDesiredSvnDiffViewerScope(scope: SvnDiffViewerScope | null) {
+  await writeSvnDiffViewerPreference(app.getPath('userData'), scope);
+
+  try {
+    await updateInstallerBootstrapDiffViewerMode(scope ?? 'keep', app.getPath('exe'));
+  } catch {
+    // The userData preference is authoritative; the install directory mirror is best effort.
+  }
+}
+
 async function rememberBackupIfNeeded(
   currentGlobalDiffCommand: string | null,
   currentDiffToolCommands: Record<string, string>,
@@ -339,6 +347,7 @@ export async function configureSvnDiffViewer(scope: SvnDiffViewerScope): Promise
     for (const key of keysToRemember) {
       await writeRegistryStringValue(TORTOISE_DIFF_TOOLS_REG_PATH, key, command);
     }
+    await rememberDesiredSvnDiffViewerScope(scope);
     return getSvnDiffViewerStatus();
   }
 
@@ -347,6 +356,7 @@ export async function configureSvnDiffViewer(scope: SvnDiffViewerScope): Promise
   if (scope === 'text-only') {
     await writeRegistryStringValue(TORTOISE_REG_PATH, 'Diff', command);
     await restoreOwnedDiffToolCommands(diffToolCommands, backup, command);
+    await rememberDesiredSvnDiffViewerScope(scope);
     return getSvnDiffViewerStatus();
   }
 
@@ -359,11 +369,14 @@ export async function configureSvnDiffViewer(scope: SvnDiffViewerScope): Promise
   }
 
   await restoreOwnedDiffToolCommands(diffToolCommands, backup, command, (key) => !isWorkbookKey(key));
+  await rememberDesiredSvnDiffViewerScope(scope);
 
   return getSvnDiffViewerStatus();
 }
 
-export async function restoreSvnDefaultDiffViewerConfiguration(): Promise<SvnDiffViewerStatus> {
+export async function restoreSvnDefaultDiffViewerConfiguration(
+  options: RestoreSvnDefaultDiffViewerOptions = {},
+): Promise<SvnDiffViewerStatus> {
   const command = buildDiffCommand();
   if (!command) {
     return getSvnDiffViewerStatus();
@@ -387,6 +400,9 @@ export async function restoreSvnDefaultDiffViewerConfiguration(): Promise<SvnDif
     clearGlobal: ownsGlobalDiffCommand,
     keys: ownedDiffToolKeys,
   });
+  if (options.rememberPreference !== false) {
+    await rememberDesiredSvnDiffViewerScope(null);
+  }
 
   return getSvnDiffViewerStatus();
 }
