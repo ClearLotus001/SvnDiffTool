@@ -154,7 +154,7 @@ export function toInstallerBootstrapContent(config: InstallerBootstrapConfig): s
   ].join('\n');
 }
 
-export async function writeInstallerBootstrapConfig(
+async function writeInstallerBootstrapConfig(
   config: InstallerBootstrapConfig,
   execPath: string = process.execPath,
 ) {

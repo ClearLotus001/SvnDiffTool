@@ -152,7 +152,7 @@ export function hasPendingPostInstallMaintenance(execPath: string = process.exec
     || fs.existsSync(getPreviousInstallerBootstrapPath(execPath));
 }
 
-export async function runPendingPostInstallMaintenance(app: App): Promise<boolean> {
+async function runPendingPostInstallMaintenance(app: App): Promise<boolean> {
   const execPath = app.getPath('exe');
   if (!hasPendingPostInstallMaintenance(execPath)) {
     return false;
