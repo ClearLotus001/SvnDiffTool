@@ -16,9 +16,8 @@ import {
   getRuntimePathState,
 } from './runtimePaths';
 import {
-  cleanupPreviousCacheRoot,
   cleanupRuntimeArtifactsForUninstall,
-  migratePreviousCacheRoot,
+  migrateAndCleanupPreviousCacheRoot,
 } from './maintenancePaths';
 import type {
   SvnDiffViewerScope,
@@ -138,8 +137,9 @@ async function runPostInstallMaintenance(
   previousInstallerBootstrap: InstallerBootstrapConfig | null,
 ) {
   cleanupStaleManagedTempFilesSync(Date.now(), { force: true });
-  migratePreviousCacheRoot(previousInstallerBootstrap, installerBootstrap);
-  cleanupPreviousCacheRoot(previousInstallerBootstrap, installerBootstrap);
+  if (!migrateAndCleanupPreviousCacheRoot(previousInstallerBootstrap, installerBootstrap)) {
+    throw new Error('Unable to safely migrate the previous managed cache root.');
+  }
   await applyDesiredDiffViewerMode(app, installerBootstrap, {
     allowInstallerOverride: previousInstallerBootstrap == null,
   });
@@ -152,7 +152,7 @@ export function hasPendingPostInstallMaintenance(execPath: string = process.exec
     || fs.existsSync(getPreviousInstallerBootstrapPath(execPath));
 }
 
-async function runPendingPostInstallMaintenance(app: App): Promise<boolean> {
+export async function runPendingPostInstallMaintenance(app: App): Promise<boolean> {
   const execPath = app.getPath('exe');
   if (!hasPendingPostInstallMaintenance(execPath)) {
     return false;

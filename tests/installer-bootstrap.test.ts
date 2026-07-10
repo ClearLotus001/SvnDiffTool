@@ -27,9 +27,15 @@ function readInstallerScript(): string {
   return fs.readFileSync(path.join(process.cwd(), 'build', 'installer.nsh'), 'utf-8');
 }
 
-function readPackageJson(): { build?: { nsis?: { allowToChangeInstallationDirectory?: boolean } } } {
+function readWindowsUpdaterSource(): string {
+  return fs.readFileSync(path.join(process.cwd(), 'electron', 'updater', 'windowsUpdater.ts'), 'utf-8');
+}
+
+function readPackageJson(): {
+  build?: { nsis?: { allowToChangeInstallationDirectory?: boolean; installerHeader?: string | null } };
+} {
   return JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf-8')) as {
-    build?: { nsis?: { allowToChangeInstallationDirectory?: boolean } };
+    build?: { nsis?: { allowToChangeInstallationDirectory?: boolean; installerHeader?: string | null } };
   };
 }
 
@@ -147,16 +153,30 @@ test('installer script normalizes fresh custom install directories before instal
   assert.match(script, /StrCpy \$INSTDIR "\$INSTDIR\\\$\{APP_FILENAME\}"/);
   assert.match(script, /Function InstallerOptionsBrowseInstallDir[\s\S]*Call NormalizeSelectedInstallDir/);
   assert.match(script, /Call NormalizeSelectedInstallDir[\s\S]*Call EnsureSelectedInstallDefaults/);
-  assert.match(script, /Function InstallerOptionsPageCreate[\s\S]*Call NormalizeSelectedInstallDir/);
+  assert.match(script, /Function InstallerLocationPageCreate[\s\S]*Call NormalizeSelectedInstallDir/);
 });
 
-test('installer uses the custom options page instead of the default directory page', () => {
+test('installer splits location and integration settings into compact custom pages', () => {
   const packageJson = readPackageJson();
   const script = readInstallerScript();
 
   assert.equal(packageJson.build?.nsis?.allowToChangeInstallationDirectory, false);
-  assert.match(script, /\$\{NSD_CreateGroupBox\} 0 38u 100% 44u "\$\(INSTALL_OPTIONS_INSTALL_DIR\)"/);
-  assert.match(script, /\$\{NSD_CreateButton\} 80% 52u 18% 14u "\$\(INSTALL_OPTIONS_INSTALL_BROWSE\)"/);
+  assert.equal(packageJson.build?.nsis?.installerHeader, null);
+  assert.match(script, /Page custom InstallerLocationPageCreate InstallerLocationPageLeave/);
+  assert.match(script, /Page custom InstallerIntegrationPageCreate InstallerIntegrationPageLeave/);
+  assert.match(script, /Function InstallerLocationPageCreate[\s\S]*\$\{NSD_CreateButton\} 81% 35u 19% 18u/);
+  assert.match(script, /Function InstallerIntegrationPageCreate[\s\S]*\$\{NSD_CreateRadioButton\}/);
+});
+
+test('installer enlarges and anchors every native page without a header image gap', () => {
+  const script = readInstallerScript();
+
+  assert.match(script, /!define MUI_CUSTOMFUNCTION_GUIINIT InstallerGuiInit/);
+  assert.match(script, /IntOp \$7 \$5 \* 420[\s\S]*IntOp \$8 \$6 \* 265/);
+  assert.match(script, /GetDlgItem \$0 \$HWNDPARENT 1018[\s\S]*\$InstallerWidthDelta \$InstallerHeightDelta/);
+  assert.match(script, /GetDlgItem \$0 \$HWNDPARENT 1[\s\S]*\$InstallerWidthDelta \$InstallerHeightDelta 0 0/);
+  assert.match(script, /!define MUI_PAGE_CUSTOMFUNCTION_SHOW InstallerProgressPageShow/);
+  assert.match(script, /Function InstallerProgressPageShow[\s\S]*GetDlgItem \$1 \$0 1004/);
 });
 
 test('installer script keeps upgrade installs in the existing install directory', () => {
@@ -170,6 +190,33 @@ test('installer script waits for post-install maintenance before relaunching aft
 
   assert.match(script, /StrCpy \$launchLink "\$INSTDIR\\\$\{APP_EXECUTABLE_FILENAME\}"/);
   assert.match(script, /ExecWait '"\$INSTDIR\\\$\{APP_EXECUTABLE_FILENAME\}" "--maintenance=post-install"' \$0/);
+  assert.match(script, /SetDetailsPrint textonly\s+DetailPrint "\$\(INSTALL_PROGRESS_FINALIZING\)"/);
+  assert.match(script, /\$\{If\} \$0 != 0[\s\S]*SetErrorLevel 2\s+Abort/);
+});
+
+test('in-app updates open the visible installer and never force an automatic relaunch', () => {
+  const source = readWindowsUpdaterSource();
+
+  assert.match(source, /autoUpdater\.autoRunAppAfterInstall = false;/);
+  assert.match(source, /autoUpdater\.quitAndInstall\(false, false\);/);
+  assert.doesNotMatch(source, /autoUpdater\.quitAndInstall\(true, true\);/);
+});
+
+test('installer uses a visible manual-overwrite summary without double-confirming in-app updates', () => {
+  const script = readInstallerScript();
+
+  assert.match(script, /\$\{If\} \$IsUpgradeInstall == "1"\s+\$\{AndIf\} \$IsInAppUpdate == "1"\s+Abort/);
+  assert.match(script, /\$\{GetOptions\} \$0 "--updated" \$1[\s\S]*StrCpy \$IsInAppUpdate "1"/);
+  assert.match(script, /\$\{If\} \$IsUpgradeInstall == "1"[\s\S]*INSTALL_UPGRADE_TITLE/);
+  assert.match(script, /!macro customInstallMode[\s\S]*StrCpy \$isForceMachineInstall "1"[\s\S]*StrCpy \$isForceCurrentInstall "1"/);
+});
+
+test('finish page requires an explicit choice before opening the app', () => {
+  const script = readInstallerScript();
+
+  assert.match(script, /Page custom InstallerFinishPageCreate InstallerFinishPageLeave/);
+  assert.match(script, /\$\{NSD_SetState\} \$InstallerFinishRunCheckbox \$\{BST_UNCHECKED\}/);
+  assert.match(script, /Function InstallerFinishPageLeave[\s\S]*\$\{If\} \$0 == \$\{BST_CHECKED\}[\s\S]*Call StartApp/);
 });
 
 test('installer script leaves the install directory before overwrite cleanup removes it', () => {

@@ -217,7 +217,7 @@ What it is not currently trying to be:
 - The app checks GitHub Releases for new stable versions
 - When an update is found, it prompts before download
 - Once the download finishes, installation can be triggered from inside the app
-- The first install shows the setup wizard; later upgrades are applied as silent in-place installs without walking through setup again
+- The first install shows the setup wizard; in-app upgrades close the current window, show in-place installation progress, and let you choose whether to reopen the app when finished
 - Upgrades keep the current install directory, managed cache location, and integration settings; only uninstalling and installing again is treated as a fresh install
 
 ## Release Flow

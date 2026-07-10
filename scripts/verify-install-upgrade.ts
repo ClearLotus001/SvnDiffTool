@@ -6,9 +6,8 @@ import * as path from 'node:path';
 
 import type { InstallerBootstrapConfig } from '../electron/installerBootstrap';
 import {
-  cleanupPreviousCacheRoot,
   cleanupRuntimeArtifactsForUninstall,
-  migratePreviousCacheRoot,
+  migrateAndCleanupPreviousCacheRoot,
 } from '../electron/maintenancePaths';
 
 function createBootstrapConfig(cacheRoot: string): InstallerBootstrapConfig {
@@ -55,14 +54,12 @@ async function scenarioUpgradeMigratesReusableCache() {
     const previousConfig = createBootstrapConfig(previousCacheRoot);
     const currentConfig = createBootstrapConfig(currentCacheRoot);
 
-    migratePreviousCacheRoot(previousConfig, currentConfig);
+    assert.equal(migrateAndCleanupPreviousCacheRoot(previousConfig, currentConfig), true);
 
     assert.equal(exists(path.join(currentCacheRoot, 'session-data', 'Local Storage', 'leveldb', '000003.log')), true);
     assert.equal(exists(path.join(currentCacheRoot, 'disk-cache', 'index')), true);
     assert.equal(exists(path.join(currentCacheRoot, 'temp', 'stale.bin')), false);
     assert.equal(exists(currentSessionMarker), true);
-
-    cleanupPreviousCacheRoot(previousConfig, currentConfig);
     assert.equal(exists(previousCacheRoot), false);
 
     return [
@@ -80,8 +77,7 @@ async function scenarioUpgradeWithSameCacheRootIsNoOp() {
     await writeFile(sessionMarker, 'session payload');
 
     const config = createBootstrapConfig(cacheRoot);
-    migratePreviousCacheRoot(config, config);
-    cleanupPreviousCacheRoot(config, config);
+    assert.equal(migrateAndCleanupPreviousCacheRoot(config, config), true);
 
     assert.equal(exists(sessionMarker), true);
     assert.equal(exists(cacheRoot), true);

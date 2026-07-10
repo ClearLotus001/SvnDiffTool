@@ -35,6 +35,7 @@ let runtimePathState: RuntimePathState = {
   userDataPath: null,
 };
 let lastManagedTempCleanupAt = Number.NEGATIVE_INFINITY;
+let managedCleanupRootPath: string | null = null;
 
 function ensureDirectorySync(targetPath: string) {
   fs.mkdirSync(targetPath, { recursive: true });
@@ -50,12 +51,20 @@ function createCacheSubpaths(cacheRoot: string) {
 }
 
 function tryPrepareCacheRoot(cacheRoot: string) {
+  if (!isSafeControlledCacheRootPath(cacheRoot)) return null;
   const nextPaths = createCacheSubpaths(cacheRoot);
   try {
     ensureDirectorySync(nextPaths.cacheRoot);
     ensureDirectorySync(nextPaths.sessionDataPath);
     ensureDirectorySync(nextPaths.diskCachePath);
     ensureDirectorySync(nextPaths.tempRootPath);
+    if (
+      !isSafePathWithinRoot(nextPaths.cacheRoot, nextPaths.sessionDataPath)
+      || !isSafePathWithinRoot(nextPaths.cacheRoot, nextPaths.diskCachePath)
+      || !isSafePathWithinRoot(nextPaths.cacheRoot, nextPaths.tempRootPath)
+    ) {
+      return null;
+    }
     return nextPaths;
   } catch (error) {
     logMainDebug('runtime-paths', 'failed to prepare cache root:', cacheRoot, error instanceof Error ? error.message : String(error));
@@ -64,7 +73,7 @@ function tryPrepareCacheRoot(cacheRoot: string) {
 }
 
 function resolveConfiguredCacheRoot(installerBootstrap: InstallerBootstrapConfig | null): string {
-  if (installerBootstrap?.cacheRoot && isControlledCacheRoot(installerBootstrap.cacheRoot)) {
+  if (installerBootstrap?.cacheRoot && isSafeControlledCacheRootPath(installerBootstrap.cacheRoot)) {
     return path.resolve(installerBootstrap.cacheRoot);
   }
   return getDefaultInstallerCacheRoot();
@@ -73,8 +82,8 @@ function resolveConfiguredCacheRoot(installerBootstrap: InstallerBootstrapConfig
 function cleanupEmptyDirectoriesSync(targetPath: string, stopAtPath: string) {
   let currentPath = targetPath;
 
-  while (currentPath.startsWith(stopAtPath)) {
-    if (currentPath === stopAtPath) break;
+  while (isSafePathWithinRoot(stopAtPath, currentPath)) {
+    if (toComparablePath(currentPath) === toComparablePath(stopAtPath)) break;
 
     try {
       const entries = fs.readdirSync(currentPath);
@@ -147,7 +156,7 @@ function removeFileEntrySync(filePath: string, stopAtPath: string) {
 
 function enforceTempBudgetSync() {
   const tempRootPath = runtimePathState.tempRootPath;
-  if (!tempRootPath || !fs.existsSync(tempRootPath)) return;
+  if (!isManagedTempRootSafe(tempRootPath) || !fs.existsSync(tempRootPath)) return;
 
   const fileEntries = collectFileEntriesSync(tempRootPath)
     .filter((entry) => !trackedTempPaths.has(entry.filePath))
@@ -168,7 +177,7 @@ export function cleanupStaleManagedTempFilesSync(
   options: { force?: boolean } = {},
 ) {
   const tempRootPath = runtimePathState.tempRootPath;
-  if (!tempRootPath || !fs.existsSync(tempRootPath)) return;
+  if (!isManagedTempRootSafe(tempRootPath) || !fs.existsSync(tempRootPath)) return;
   if (
     !options.force
     && Number.isFinite(lastManagedTempCleanupAt)
@@ -194,6 +203,7 @@ export function configureRuntimePaths(
   installerBootstrap: InstallerBootstrapConfig | null,
 ): RuntimePathState {
   lastManagedTempCleanupAt = Number.NEGATIVE_INFINITY;
+  managedCleanupRootPath = null;
 
   if (devProfileRoot) {
     const userDataPath = path.join(devProfileRoot, 'user-data');
@@ -203,6 +213,9 @@ export function configureRuntimePaths(
     const tempRootPath = path.join(devProfileRoot, 'temp');
 
     [userDataPath, sessionDataPath, logsPath, diskCachePath, tempRootPath].forEach(ensureDirectorySync);
+    if (isSafePathWithinRoot(devProfileRoot, tempRootPath)) {
+      managedCleanupRootPath = devProfileRoot;
+    }
 
     app.setPath('userData', userDataPath);
     app.setPath('sessionData', sessionDataPath);
@@ -249,6 +262,7 @@ export function configureRuntimePaths(
     logsPath: app.getPath('logs'),
     userDataPath: app.getPath('userData'),
   };
+  managedCleanupRootPath = preparedPaths.cacheRoot;
 
   return runtimePathState;
 }
@@ -271,6 +285,9 @@ export async function writeManagedTempFile(
   if (!tempRootPath) {
     throw new Error('Managed temp root is not configured.');
   }
+  if (!isManagedTempRootSafe(tempRootPath)) {
+    throw new Error('Managed temp root failed its path safety check.');
+  }
 
   ensureDirectorySync(tempRootPath);
   cleanupStaleManagedTempFilesSync();
@@ -287,17 +304,19 @@ export async function writeManagedTempFile(
 
 export async function removeManagedTempFile(tempFilePath: string) {
   trackedTempPaths.delete(tempFilePath);
-  await fs.promises.rm(tempFilePath, { force: true });
-
   const tempRootPath = runtimePathState.tempRootPath;
-  if (tempRootPath) {
-    cleanupEmptyDirectoriesSync(path.dirname(tempFilePath), tempRootPath);
-  }
+  if (!isManagedTempRootSafe(tempRootPath) || !isSafePathWithinRoot(tempRootPath, tempFilePath)) return;
+
+  await fs.promises.rm(tempFilePath, { force: true });
+  cleanupEmptyDirectoriesSync(path.dirname(tempFilePath), tempRootPath);
 }
 
 export function cleanupManagedTempFilesOnExitSync() {
   const tempRootPath = runtimePathState.tempRootPath;
-  if (!tempRootPath || !fs.existsSync(tempRootPath)) {
+  if (
+    !isManagedTempRootSafe(tempRootPath)
+    || !fs.existsSync(tempRootPath)
+  ) {
     trackedTempPaths.clear();
     return;
   }
@@ -321,9 +340,86 @@ export function cleanupManagedTempFilesOnExitSync() {
   }
 }
 
-export function removeControlledDirectorySync(targetPath: string | null | undefined): boolean {
+function hasSymbolicLinkPathSegment(targetPath: string): boolean {
+  const rootPath = path.parse(targetPath).root;
+  const segments = path.relative(rootPath, targetPath).split(path.sep).filter(Boolean);
+  let currentPath = rootPath;
+
+  for (const segment of segments) {
+    currentPath = path.join(currentPath, segment);
+    try {
+      if (fs.lstatSync(currentPath).isSymbolicLink()) return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+      return true;
+    }
+  }
+  return false;
+}
+
+function toComparablePath(targetPath: string): string {
+  const resolvedPath = path.resolve(targetPath);
+  const missingSegments: string[] = [];
+  let existingAncestor = resolvedPath;
+  let canonicalPath = resolvedPath;
+
+  while (true) {
+    try {
+      canonicalPath = path.join(fs.realpathSync.native(existingAncestor), ...missingSegments);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') break;
+      const parentPath = path.dirname(existingAncestor);
+      if (parentPath === existingAncestor) break;
+      missingSegments.unshift(path.basename(existingAncestor));
+      existingAncestor = parentPath;
+    }
+  }
+
+  const normalizedPath = path.normalize(canonicalPath);
+  return process.platform === 'win32' ? normalizedPath.toLowerCase() : normalizedPath;
+}
+
+function isSameOrInsidePath(parentPath: string, candidatePath: string): boolean {
+  const relativePath = path.relative(parentPath, candidatePath);
+  return relativePath === '' || (
+    relativePath !== '..'
+    && !relativePath.startsWith(`..${path.sep}`)
+    && !path.isAbsolute(relativePath)
+  );
+}
+
+export function isSafePathWithinRoot(rootPath: string, candidatePath: string): boolean {
+  const normalizedRoot = path.resolve(rootPath);
+  const normalizedCandidate = path.resolve(candidatePath);
+  if (!isSameOrInsidePath(toComparablePath(normalizedRoot), toComparablePath(normalizedCandidate))) return false;
+  return !hasSymbolicLinkPathSegment(normalizedRoot)
+    && !hasSymbolicLinkPathSegment(normalizedCandidate);
+}
+
+function isManagedTempRootSafe(tempRootPath: string | null): tempRootPath is string {
+  return Boolean(
+    tempRootPath
+    && managedCleanupRootPath
+    && isSafePathWithinRoot(managedCleanupRootPath, tempRootPath),
+  );
+}
+
+export function isSafeControlledCacheRootPath(targetPath: string | null | undefined): boolean {
   const normalized = targetPath?.trim() ? path.resolve(targetPath) : '';
   if (!normalized || !isControlledCacheRoot(normalized)) return false;
+  if (hasSymbolicLinkPathSegment(normalized)) return false;
+
+  try {
+    return isControlledCacheRoot(fs.realpathSync.native(normalized));
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT';
+  }
+}
+
+export function removeControlledDirectorySync(targetPath: string | null | undefined): boolean {
+  const normalized = targetPath?.trim() ? path.resolve(targetPath) : '';
+  if (!isSafeControlledCacheRootPath(normalized)) return false;
 
   try {
     fs.rmSync(normalized, { recursive: true, force: true });

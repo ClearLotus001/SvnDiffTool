@@ -79,6 +79,7 @@ export class WindowsUpdater implements PlatformUpdater {
 
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
+    autoUpdater.autoRunAppAfterInstall = false;
 
     autoUpdater.on('checking-for-update', () => {
       this.clearIdleResetTimer();
@@ -216,7 +217,7 @@ export class WindowsUpdater implements PlatformUpdater {
   async installUpdate(): Promise<void> {
     this.initialize();
     if (this.state.status !== 'downloaded') return;
-    autoUpdater.quitAndInstall(true, true);
+    autoUpdater.quitAndInstall(false, false);
   }
 
   subscribe(listener: AppUpdateListener): () => void {

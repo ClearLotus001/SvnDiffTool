@@ -1,6 +1,6 @@
 {
   "name": "svn-diff-tool",
-  "version": "1.0.19",
+  "version": "1.0.20",
   "description": "SvnDiffTool — TortoiseSVN external diff viewer for text and workbook files",
   "author": "ClearLotus",
   "main": "dist-electron/electron/main.js",
@@ -30,7 +30,7 @@
     "build:electron": "tsc -p tsconfig.electron.json",
     "build:rust": "tsx scripts/build-rust.ts",
     "benchmark:perf": "tsx scripts/benchmark-diff-performance.ts",
-    "build:win:installer": "npm run build && tsx scripts/build-win-installer.ts",
+    "build:win:installer": "npm run generate:installer-assets && npm run build && tsx scripts/build-win-installer.ts",
     "build:win": "npm run build:win:installer",
     "build:win:release": "npm run build:win",
     "typecheck": "npm run typecheck:renderer && npm run typecheck:electron && npm run typecheck:scripts && npm run typecheck:tests",
@@ -110,7 +110,7 @@
       "allowElevation": true,
       "allowToChangeInstallationDirectory": false,
       "deleteAppDataOnUninstall": false,
-      "installerHeader": "installerHeader.bmp",
+      "installerHeader": null,
       "installerSidebar": "installerSidebar.bmp",
       "installerLanguages": [
         "en_US",

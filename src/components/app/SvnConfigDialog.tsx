@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, type CSSProperties } from 'react';
 import { Settings, X } from 'lucide-react';
 import { useI18n } from '@/context/i18n';
 import { cssAlpha, cssAlphaRaw, cssVar } from '@/theme/cssUtils';
@@ -78,6 +78,9 @@ const SvnConfigDialog = memo(({
     const current = status?.currentMode === scope;
     const busy = applyingScope === scope;
     const isDisabled = !status?.available || loading || isBusy;
+    const actionStyle = {
+      '--svn-config-scope-accent': `var(${accent})`,
+    } as CSSProperties;
 
     const applyLabel = (() => {
       if (busy) return t('svnConfigApplying');
@@ -117,17 +120,14 @@ const SvnConfigDialog = memo(({
           disabled={isDisabled}
           onClick={() => onApply(scope)}
           className={`
-            h-11 rounded-[14px] border-none font-ui text-[13px] font-extrabold
+            svn-config-dialog__scope-action h-11 rounded-[14px] border-none font-ui text-[13px] font-extrabold
             transition-all duration-150
             ${isDisabled
               ? 'bg-bg-elevated text-text-secondary cursor-not-allowed shadow-none'
               : 'text-[var(--btn-active-text)] cursor-pointer hover:-translate-y-px hover:brightness-[1.03] active:scale-[0.97]'
             }
           `}
-          style={isDisabled ? undefined : {
-            background: `linear-gradient(135deg, var(${accent}) 0%, ${cssAlphaRaw(accent, 'dd')} 100%)`,
-            boxShadow: `0 18px 34px -26px var(${accent})`,
-          }}>
+          style={actionStyle}>
           {applyLabel}
         </button>
       </div>

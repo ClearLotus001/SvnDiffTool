@@ -140,14 +140,14 @@ class Raster {
 
 const rootDir = path.resolve(__dirname, '..');
 
-const ink = hex('#24211d');
-const paper = hex('#f7f1e7');
-const paperBright = hex('#fffaf1');
-const cream = hex('#fff6e6');
-const coral = hex('#df7957');
-const coralDeep = hex('#c96447');
-const blue = hex('#72a7d4');
-const blueDeep = hex('#4f82b6');
+const ink = hex('#17212b');
+const paper = hex('#edf2f4');
+const paperBright = hex('#ffffff');
+const cream = hex('#f7fafb');
+const coral = hex('#d65a50');
+const coralDeep = hex('#b8453d');
+const blue = hex('#3aa6a8');
+const blueDeep = hex('#208b8d');
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
@@ -246,33 +246,34 @@ function verticalGradient(top: Color, bottom: Color): (nx: number, ny: number) =
 
 function drawInstallerHeader(): Raster {
   const canvas = new Raster(300, 114, paperBright);
-  canvas.fillRect(0, 0, canvas.width, 8, coral);
-  canvas.fillRect(0, 8, canvas.width, 4, withAlpha(coralDeep, 80));
-  drawCapsule(canvas, 22, 38, 52, 8, withAlpha(blueDeep, 145));
-  drawCapsule(canvas, 22, 56, 78, 8, withAlpha(coral, 130));
-  drawCapsule(canvas, 22, 74, 44, 8, withAlpha(blueDeep, 130));
-  canvas.fillCircle(252, 58, 37, withAlpha(ink, 12));
-  drawAppMark(canvas, 227, 33, 50);
   return downsample(canvas, 2);
 }
 
 function drawInstallerSidebar(): Raster {
-  const canvas = new Raster(328, 628, paper);
-  canvas.fillRect(0, 0, canvas.width, 12, coral);
-  canvas.fillRect(0, 12, canvas.width, 8, withAlpha(coralDeep, 70));
-  canvas.fillRect(0, 44, 13, 584, blue);
-  canvas.fillRect(13, 44, 7, 584, withAlpha(blueDeep, 115));
+  const canvas = new Raster(328, 628, ink);
+  canvas.fillRect(0, 0, canvas.width / 2, 12, coral);
+  canvas.fillRect(canvas.width / 2, 0, canvas.width / 2, 12, blueDeep);
+  canvas.fillRect(0, 12, canvas.width, 2, withAlpha(paperBright, 34));
 
-  canvas.fillCircle(166, 110, 54, withAlpha(ink, 12));
-  drawAppMark(canvas, 111, 55, 110);
+  drawAppMark(canvas, 109, 54, 110);
+  canvas.fillRect(46, 210, 236, 2, withAlpha(paperBright, 30));
 
-  canvas.fillRoundedRect(42, 238, 244, 118, 24, withAlpha(paperBright, 238));
-  drawCapsule(canvas, 74, 282, 170, 10, withAlpha(coralDeep, 118));
-  drawCapsule(canvas, 74, 310, 112, 10, withAlpha(blueDeep, 105));
+  drawCapsule(canvas, 48, 254, 90, 12, withAlpha(coral, 235));
+  drawCapsule(canvas, 174, 254, 104, 12, withAlpha(blue, 220));
+  drawCapsule(canvas, 66, 286, 126, 10, withAlpha(paperBright, 92));
+  drawCapsule(canvas, 204, 286, 56, 10, withAlpha(blue, 165));
 
-  canvas.fillRoundedRect(42, 398, 244, 94, 24, withAlpha(paperBright, 218));
-  drawCapsule(canvas, 83, 436, 70, 16, withAlpha(coral, 150));
-  drawCapsule(canvas, 176, 436, 70, 16, withAlpha(blueDeep, 140));
+  canvas.fillRect(46, 338, 236, 2, withAlpha(paperBright, 30));
+  drawCapsule(canvas, 48, 382, 132, 12, withAlpha(coral, 205));
+  drawCapsule(canvas, 194, 382, 84, 12, withAlpha(blue, 235));
+  drawCapsule(canvas, 78, 414, 60, 10, withAlpha(coral, 145));
+  drawCapsule(canvas, 152, 414, 108, 10, withAlpha(paperBright, 88));
+
+  canvas.fillRect(46, 466, 236, 2, withAlpha(paperBright, 30));
+  drawCapsule(canvas, 48, 510, 78, 12, withAlpha(coral, 225));
+  drawCapsule(canvas, 160, 510, 118, 12, withAlpha(blue, 205));
+  drawCapsule(canvas, 64, 542, 112, 10, withAlpha(paperBright, 84));
+  drawCapsule(canvas, 190, 542, 70, 10, withAlpha(coral, 145));
   return downsample(canvas, 2);
 }
 

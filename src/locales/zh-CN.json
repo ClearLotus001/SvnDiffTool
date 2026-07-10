@@ -60,7 +60,7 @@
   "toolbarUpdateRetry": "重试更新",
   "toolbarUpdateDisabled": "更新不可用",
   "toolbarUpdateUnsupported": "仅支持 Windows",
-  "toolbarUpdateInstallConfirm": "安装更新会关闭当前对比窗口，执行覆盖安装，并在完成后自动重新打开应用。是否继续？",
+  "toolbarUpdateInstallConfirm": "安装更新会关闭当前对比窗口并打开可见的覆盖安装进度。完成后可自行选择是否重新打开应用。是否继续？",
   "toolbarAboutTitle": "关于 SvnDiffTool",
   "toolbarShortcutsTitle": "快捷键 (F1)",
   "toolbarWindowMinimizeTitle": "最小化窗口",

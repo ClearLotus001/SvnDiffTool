@@ -145,3 +145,83 @@ test('cleanupStaleManagedTempFilesSync throttles repeated scans unless forced', 
     assert.equal(fs.existsSync(staleFileB), false);
   });
 });
+
+test('runtime paths reject a managed cache reached through a directory link', async (t) => {
+  await withSandbox('svn-diff-runtime-root-link-', async (sandboxDir) => {
+    const previousLocalAppData = process.env.LOCALAPPDATA;
+    const defaultLocalAppData = path.join(sandboxDir, 'default-local-app-data');
+    const externalContainer = path.join(sandboxDir, 'external', 'SvnDiffTool');
+    const externalMarkerPath = path.join(externalContainer, 'Cache', 'temp', 'external.bin');
+    const linkedContainer = path.join(sandboxDir, 'linked-parent', 'SvnDiffTool');
+    const unsafeCacheRoot = path.join(linkedContainer, 'Cache');
+
+    await fsp.mkdir(path.dirname(linkedContainer), { recursive: true });
+    await fsp.mkdir(path.dirname(externalMarkerPath), { recursive: true });
+    await fsp.writeFile(externalMarkerPath, 'external', 'utf8');
+    try {
+      fs.symlinkSync(externalContainer, linkedContainer, process.platform === 'win32' ? 'junction' : 'dir');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EPERM') {
+        t.skip('Directory links are not available in this environment.');
+        return;
+      }
+      throw error;
+    }
+
+    process.env.LOCALAPPDATA = defaultLocalAppData;
+    try {
+      const runtimePaths = configureRuntimePaths(createMockApp(sandboxDir), '', {
+        version: 1,
+        diffViewerMode: 'keep',
+        cacheRoot: unsafeCacheRoot,
+      });
+
+      assert.equal(runtimePaths.cacheRoot, path.join(defaultLocalAppData, 'SvnDiffTool', 'Cache'));
+      cleanupStaleManagedTempFilesSync(Date.now(), { force: true });
+      cleanupManagedTempFilesOnExitSync();
+      assert.equal(fs.existsSync(externalMarkerPath), true);
+    } finally {
+      restoreEnvVar('LOCALAPPDATA', previousLocalAppData);
+    }
+  });
+});
+
+test('runtime paths reject linked managed cache subdirectories', async (t) => {
+  await withSandbox('svn-diff-runtime-temp-link-', async (sandboxDir) => {
+    const previousLocalAppData = process.env.LOCALAPPDATA;
+    const defaultLocalAppData = path.join(sandboxDir, 'default-local-app-data');
+    const configuredCacheRoot = path.join(sandboxDir, 'configured-parent', 'SvnDiffTool', 'Cache');
+    const externalTempRoot = path.join(sandboxDir, 'external-temp');
+    const externalMarkerPath = path.join(externalTempRoot, 'external.bin');
+    const linkedTempRoot = path.join(configuredCacheRoot, 'temp');
+
+    await fsp.mkdir(configuredCacheRoot, { recursive: true });
+    await fsp.mkdir(externalTempRoot, { recursive: true });
+    await fsp.writeFile(externalMarkerPath, 'external', 'utf8');
+    try {
+      fs.symlinkSync(externalTempRoot, linkedTempRoot, process.platform === 'win32' ? 'junction' : 'dir');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EPERM') {
+        t.skip('Directory links are not available in this environment.');
+        return;
+      }
+      throw error;
+    }
+
+    process.env.LOCALAPPDATA = defaultLocalAppData;
+    try {
+      const runtimePaths = configureRuntimePaths(createMockApp(sandboxDir), '', {
+        version: 1,
+        diffViewerMode: 'keep',
+        cacheRoot: configuredCacheRoot,
+      });
+
+      assert.equal(runtimePaths.cacheRoot, path.join(defaultLocalAppData, 'SvnDiffTool', 'Cache'));
+      cleanupStaleManagedTempFilesSync(Date.now(), { force: true });
+      cleanupManagedTempFilesOnExitSync();
+      assert.equal(fs.existsSync(externalMarkerPath), true);
+    } finally {
+      restoreEnvVar('LOCALAPPDATA', previousLocalAppData);
+    }
+  });
+});

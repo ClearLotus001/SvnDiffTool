@@ -6,6 +6,7 @@ import { readInstallerBootstrapSync } from './installerBootstrap';
 import {
   getMaintenanceModeFromArgv,
   runMaintenance,
+  runPendingPostInstallMaintenance,
   runStartupSvnDiffViewerMaintenance,
 } from './maintenance';
 import {
@@ -170,10 +171,10 @@ if (maintenanceMode) {
   void app.whenReady().then(async () => {
     try {
       await runMaintenance(app, maintenanceMode, process.argv);
-      app.quit();
+      app.exit(0);
     } catch (error) {
       logMainError('maintenance', 'failed', error);
-      app.quit();
+      app.exit(1);
     }
   });
 } else if (!gotSingleInstanceLock) {
@@ -197,18 +198,29 @@ if (maintenanceMode) {
     focusMainWindow();
   });
 
-  void app.whenReady().then(() => {
+  void app.whenReady().then(async () => {
     writeExternalDiffDebugLog('app-ready', {
       logsPath: getRuntimePathState().logsPath,
       userDataPath: getRuntimePathState().userDataPath,
     });
+
+    let pendingMaintenanceFailed = false;
+    try {
+      await runPendingPostInstallMaintenance(app);
+    } catch (error) {
+      pendingMaintenanceFailed = true;
+      logMainWarn('maintenance', 'pending startup maintenance failed', error);
+    }
+
     const updater = initAppUpdater(app);
     updater.subscribe((state) => {
       notifyAppUpdateState(state);
     });
     updater.initialize();
     createWindow();
-    schedulePendingPostInstallMaintenance();
+    if (!pendingMaintenanceFailed) {
+      schedulePendingPostInstallMaintenance();
+    }
     scheduleDeferredStartupHousekeeping();
   });
 }

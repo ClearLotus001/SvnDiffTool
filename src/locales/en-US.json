@@ -60,7 +60,7 @@
   "toolbarUpdateRetry": "Retry update",
   "toolbarUpdateDisabled": "Update unavailable",
   "toolbarUpdateUnsupported": "Windows only",
-  "toolbarUpdateInstallConfirm": "Installing the update will close the current comparison window, run the in-place installer, and reopen the app automatically after it finishes. Continue?",
+  "toolbarUpdateInstallConfirm": "Installing the update will close the current comparison window and show the in-place installation progress. When it finishes, you can choose whether to reopen the app. Continue?",
   "toolbarAboutTitle": "About SvnDiffTool",
   "toolbarShortcutsTitle": "Keyboard shortcuts (F1)",
   "toolbarWindowMinimizeTitle": "Minimize window",
