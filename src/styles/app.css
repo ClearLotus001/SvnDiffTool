@@ -2652,7 +2652,7 @@ select:focus {
 
 .theme-hc .minimap-viewport-frosted {
   border-color: var(--text-primary) !important;
-  background: color-mix(in srgb, var(--text-primary) 8%, transparent) !important;
+  background: transparent !important;
   box-shadow:
     inset 2px 0 0 color-mix(in srgb, var(--text-primary) 44%, transparent),
     inset -2px 0 0 color-mix(in srgb, var(--text-primary) 44%, transparent) !important;
@@ -2661,9 +2661,13 @@ select:focus {
   opacity: 1;
 }
 
+.theme-hc .minimap-viewport-frosted::before {
+  display: none;
+}
+
 .theme-hc .minimap-viewport-frosted[data-dragging="true"] {
   border-color: var(--acc2) !important;
-  background: color-mix(in srgb, var(--text-primary) 16%, transparent) !important;
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent) !important;
 }
 
 ::-webkit-scrollbar-thumb {

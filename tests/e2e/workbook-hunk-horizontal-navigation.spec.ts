@@ -143,9 +143,8 @@ test('workbook minimap viewport remains transparent in high contrast mode', asyn
     };
   });
 
-  expect(alphas.idle).toBeGreaterThan(0);
-  expect(alphas.idle).toBeLessThanOrEqual(0.1);
+  expect(alphas.idle).toBe(0);
   expect(alphas.dragging).toBeGreaterThan(alphas.idle);
-  expect(alphas.dragging).toBeLessThanOrEqual(0.2);
+  expect(alphas.dragging).toBeLessThanOrEqual(0.1);
   expect(alphas.backdropFilter).toBe('none');
 });
