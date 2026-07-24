@@ -119,6 +119,7 @@ export default function App() {
   // Navigation (needed by JSX: Toolbar, panelProps, handlers)
   const hunkIdx = useAppStore((s) => s.hunkIdx);
   const setHunkIdx = useAppStore((s) => s.setHunkIdx);
+  const setGuidedPulseNonce = useAppStore((s) => s.setGuidedPulseNonce);
 
   // Electron Environment (needed by JSX: Toolbar, SplitHeader, AppContent)
   const isElectron = useAppStore((s) => s.isElectron);
@@ -552,6 +553,10 @@ export default function App() {
   ]);
 
   const handleNavigationStep = useCallback((direction: -1 | 1) => startTransition(() => {
+    // A cyclic navigation can resolve to the current index (most notably for
+    // a single diff). Keep a separate activation nonce so clicking the button
+    // still re-focuses an off-screen workbook cell.
+    setGuidedPulseNonce((currentNonce: number) => currentNonce + 1);
     setHunkIdx((currentIndex: number) => {
       if (!isWorkbookMode) {
         return cycleHunkIndex(currentIndex, navigationCount, direction);
@@ -569,6 +574,7 @@ export default function App() {
     activeWorkbookSheetName,
     isWorkbookMode,
     navigationCount,
+    setGuidedPulseNonce,
     setHunkIdx,
     workbookDiffRegions,
     workbookSections,

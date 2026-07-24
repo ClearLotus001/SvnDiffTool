@@ -37,6 +37,7 @@ interface UseWorkbookHorizontalNavigationEffectsParams {
   activeDiffRegion: WorkbookDiffRegion | null;
   navigationTargetCell: WorkbookSelectedCell | null;
   selectedCell: WorkbookSelectedCell | null;
+  guidedPulseNonce: number;
   frozenRows: SplitRow[];
   rowItemIndexBySide: {
     base: Map<number, number>;
@@ -77,6 +78,7 @@ export function useWorkbookHorizontalNavigationEffects({
   activeDiffRegion,
   navigationTargetCell,
   selectedCell,
+  guidedPulseNonce,
   frozenRows,
   rowItemIndexBySide,
   scrollFrozenRowsToIndex,
@@ -187,7 +189,7 @@ export function useWorkbookHorizontalNavigationEffects({
     if (!activeDiffRegion || !activeWorkbookSection) return;
     if (activeDiffRegion.sheetName !== activeWorkbookSection.name) return;
     if (getNow() < suppressGuidedNavigationUntilRef.current) return;
-    const navigationKey = activeDiffRegion.id;
+    const navigationKey = `${guidedPulseNonce}:${activeDiffRegion.id}`;
     if (lastGuidedNavigationKeyRef.current === navigationKey) return;
 
     lastGuidedNavigationKeyRef.current = navigationKey;
@@ -225,6 +227,7 @@ export function useWorkbookHorizontalNavigationEffects({
     activeDiffRegion,
     activeWorkbookSection,
     focusWorkbookDiffRegion,
+    guidedPulseNonce,
     markProgrammaticScroll,
     rowItemIndexBySide,
     scrollToIndex,

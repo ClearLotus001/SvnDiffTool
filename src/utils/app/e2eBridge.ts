@@ -12,6 +12,16 @@ export interface E2ELoadTextDiffPayload {
   collapseCtx?: boolean;
 }
 
+export interface E2ELoadWorkbookDiffPayload {
+  fileName?: string;
+  baseName?: string;
+  mineName?: string;
+  baseContent: string;
+  mineContent: string;
+  layout?: LayoutMode;
+  collapseCtx?: boolean;
+}
+
 export interface E2EBridgeSnapshot {
   hasLoadedDiff: boolean;
   layout: LayoutMode;
@@ -21,6 +31,7 @@ export interface E2EBridgeSnapshot {
 
 export interface E2EBridge {
   loadTextDiff(payload: E2ELoadTextDiffPayload): Promise<void>;
+  loadWorkbookDiff(payload: E2ELoadWorkbookDiffPayload): Promise<void>;
   getSnapshot(): E2EBridgeSnapshot;
 }
 
@@ -59,6 +70,35 @@ export function buildE2EDiffData(payload: E2ELoadTextDiffPayload): DiffData {
         workbookAnalysis: null,
       },
     },
+    revisionOptions: null,
+    baseRevisionInfo: null,
+    mineRevisionInfo: null,
+    canSwitchRevisions: false,
+    workbookArtifactDiff: null,
+    sourceNoticeCode: null,
+    perf: {
+      source: 'local-dev',
+    },
+  };
+}
+
+export function buildE2EWorkbookDiffData(payload: E2ELoadWorkbookDiffPayload): DiffData {
+  const fileName = payload.fileName?.trim() || 'workbook-sample.xlsx';
+  const baseName = payload.baseName?.trim() || 'workbook-base.xlsx';
+  const mineName = payload.mineName?.trim() || 'workbook-mine.xlsx';
+  return {
+    svnUrl: '',
+    fileName,
+    baseName,
+    mineName,
+    launchBaseName: baseName,
+    launchMineName: mineName,
+    compareContext: 'literal_two_file_compare',
+    baseContent: payload.baseContent,
+    mineContent: payload.mineContent,
+    baseBytes: null,
+    mineBytes: null,
+    analysisSnapshotsByMode: null,
     revisionOptions: null,
     baseRevisionInfo: null,
     mineRevisionInfo: null,

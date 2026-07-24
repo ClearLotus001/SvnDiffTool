@@ -40,6 +40,7 @@ interface UseWorkbookCompareNavigationEffectsParams {
   navigationTargetCell: WorkbookSelectedCell | null;
   selectedCell: WorkbookSelectedCell | null;
   activeHunkIdx: number;
+  guidedPulseNonce: number;
   mode: CompareMode;
   frozenRows: SplitRow[];
   rowItemIndexBySide: {
@@ -92,6 +93,7 @@ export function useWorkbookCompareNavigationEffects({
   navigationTargetCell,
   selectedCell,
   activeHunkIdx,
+  guidedPulseNonce,
   mode,
   frozenRows,
   rowItemIndexBySide,
@@ -202,7 +204,7 @@ export function useWorkbookCompareNavigationEffects({
     if (!activeDiffRegion || !activeWorkbookSection) return;
     if (activeDiffRegion.sheetName !== activeWorkbookSection.name) return;
     if (getNow() < suppressGuidedNavigationUntilRef.current) return;
-    const navigationKey = `${activeHunkIdx}:${activeDiffRegion.id}`;
+    const navigationKey = `${guidedPulseNonce}:${activeHunkIdx}:${activeDiffRegion.id}`;
     if (lastGuidedNavigationKeyRef.current === navigationKey) return;
 
     lastGuidedNavigationKeyRef.current = navigationKey;
@@ -254,6 +256,7 @@ export function useWorkbookCompareNavigationEffects({
     activeHunkIdx,
     activeWorkbookSection,
     focusWorkbookDiffRegion,
+    guidedPulseNonce,
     lastForcedRevealHunkIdxRef,
     markProgrammaticScroll,
     mode,

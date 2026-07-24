@@ -218,6 +218,7 @@ const WorkbookComparePanel = memo(({
   const T = useThemeTokens();
   const modifyIndicatorPalette = resolveDiffIndicatorCssPalette('modify');
   const searchJumpNonce = useAppStore((s) => s.searchJumpNonce);
+  const guidedPulseNonce = useAppStore((s) => s.guidedPulseNonce);
   const selectedCell = selection.primary;
   const resolvedActiveWorkbookSectionIdx = activeWorkbookSheetName
     ? findWorkbookSectionIndexByName(workbookSections, activeWorkbookSheetName)
@@ -258,9 +259,9 @@ const WorkbookComparePanel = memo(({
     : -1;
   const activeRegionPulseTriggerKey = useMemo(() => (
     active && activeDiffRegion && activeDiffRegion.sheetName === activeWorkbookSection?.name
-      ? `${activeHunkIdx}:${activeDiffRegion.id}`
+      ? `${guidedPulseNonce}:${activeHunkIdx}:${activeDiffRegion.id}`
       : null
-  ), [active, activeDiffRegion, activeHunkIdx, activeWorkbookSection?.name]);
+  ), [active, activeDiffRegion, activeHunkIdx, activeWorkbookSection?.name, guidedPulseNonce]);
   const sectionRows = useMemo(
     () => (activeWorkbookSection ? (workbookSectionRowIndex.get(activeWorkbookSection.name)?.rows ?? []) : []),
     [activeWorkbookSection, workbookSectionRowIndex],
@@ -927,6 +928,7 @@ const WorkbookComparePanel = memo(({
     navigationTargetCell,
     selectedCell,
     activeHunkIdx,
+    guidedPulseNonce,
     mode,
     frozenRows: paneFrozenRows,
     rowItemIndexBySide,

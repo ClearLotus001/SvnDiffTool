@@ -227,6 +227,7 @@ const WorkbookHorizontalPanel = memo(({
   const themeKey = useTheme();
   const T = useThemeTokens();
   const searchJumpNonce = useAppStore((s) => s.searchJumpNonce);
+  const guidedPulseNonce = useAppStore((s) => s.guidedPulseNonce);
   const selectedCell = selection.primary;
   const initialSplitRatio = clampSplitRatio(
     layoutSnapshot?.splitRatio ?? DEFAULT_SPLIT_RATIO,
@@ -324,9 +325,9 @@ const WorkbookHorizontalPanel = memo(({
   const mineVersion = useMemo(() => mineVersionLabel.trim(), [mineVersionLabel]);
   const activeRegionPulseTriggerKey = useMemo(() => (
     active && activeDiffRegion && activeDiffRegion.sheetName === activeWorkbookSection?.name
-      ? `${activeHunkIdx}:${activeDiffRegion.id}`
+      ? `${guidedPulseNonce}:${activeHunkIdx}:${activeDiffRegion.id}`
       : null
-  ), [active, activeDiffRegion, activeHunkIdx, activeWorkbookSection?.name]);
+  ), [active, activeDiffRegion, activeHunkIdx, activeWorkbookSection?.name, guidedPulseNonce]);
 
   const searchMatchSet = useMemo(() => new Set(searchMatches.map(match => match.lineIdx)), [searchMatches]);
   const activeSearchMatch = activeSearchIdx >= 0
@@ -880,6 +881,7 @@ const WorkbookHorizontalPanel = memo(({
     activeDiffRegion,
     navigationTargetCell,
     selectedCell,
+    guidedPulseNonce,
     frozenRows,
     rowItemIndexBySide,
     scrollFrozenRowsToIndex,

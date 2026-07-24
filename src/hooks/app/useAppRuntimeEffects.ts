@@ -18,7 +18,11 @@ import type {
 } from '@/types';
 import type { LoadPhase } from '@/hooks/app/types';
 import { debugLog } from '@/hooks/app/helpers';
-import { buildE2EDiffData, shouldEnableE2EBridge } from '@/utils/app/e2eBridge';
+import {
+  buildE2EDiffData,
+  buildE2EWorkbookDiffData,
+  shouldEnableE2EBridge,
+} from '@/utils/app/e2eBridge';
 import {
   clearPerfBridgeEvents,
   getPerfBridgeEvents,
@@ -112,6 +116,11 @@ export default function useAppRuntimeEffects({
         if (payload.layout) setLayout(payload.layout);
         if (typeof payload.collapseCtx === 'boolean') setCollapseCtx(payload.collapseCtx);
         await applyDiffData(buildE2EDiffData(payload));
+      },
+      loadWorkbookDiff: async (payload) => {
+        if (payload.layout) setLayout(payload.layout);
+        if (typeof payload.collapseCtx === 'boolean') setCollapseCtx(payload.collapseCtx);
+        await applyDiffData(buildE2EWorkbookDiffData(payload));
       },
       getSnapshot: () => ({
         hasLoadedDiff,
