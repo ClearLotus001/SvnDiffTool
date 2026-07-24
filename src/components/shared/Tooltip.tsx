@@ -160,6 +160,10 @@ const Tooltip = memo(({
   const [sideBoundaryRect, setSideBoundaryRect] = useState<DOMRect | null>(null);
   const [bubbleSize, setBubbleSize] = useState({ width: maxWidth, height: 40 });
 
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
+
   const updateRect = useCallback(() => {
     const nextRect = anchorRef.current?.getBoundingClientRect();
     if (nextRect) setRect(nextRect);

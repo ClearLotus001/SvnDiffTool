@@ -20,6 +20,7 @@ import {
 } from '@/utils/navigation/revisionPickerUtils';
 import RevisionDatePicker from '@/components/navigation/RevisionDatePicker';
 import RevisionOptionRow from '@/components/navigation/RevisionOptionRow';
+import Tooltip from '@/components/shared/Tooltip';
 
 interface RevisionPickerProps {
   align: 'left' | 'right';
@@ -82,6 +83,28 @@ const RevisionPicker = memo(({
   const activeDateFilter = draftDate || (queryDateTime ? queryDateTime.slice(0, 10) : '');
   const selectedDescription = useMemo(() => (value ? (value.message.trim() || (value.title && value.title !== value.revision ? value.title.trim() : '')) : ''), [value]);
   const triggerTitleText = selectedDescription || title;
+  const triggerTooltipContent = value ? (
+    <div className="grid min-w-[180px] max-w-full gap-1.5 text-left">
+      <div className="flex min-w-0 items-center justify-between gap-4">
+        <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] font-bold uppercase tracking-wider" style={{ color: `var(${accent})` }}>
+          {title}
+        </span>
+        <span className="shrink-0 whitespace-nowrap font-code text-[11px] font-bold tabular-nums text-text-secondary">
+          {formatDisplayRevision(value.revision)}
+        </span>
+      </div>
+      {selectedDescription && (
+        <div className="whitespace-pre-wrap break-words text-[13px] font-semibold leading-relaxed text-text-title">
+          {selectedDescription}
+        </div>
+      )}
+      {(value.author || value.date) && (
+        <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[10px] tabular-nums text-text-secondary">
+          {[value.author, value.date].filter(Boolean).join(' · ')}
+        </div>
+      )}
+    </div>
+  ) : triggerTitleText;
 
   useEffect(() => {
     const next = parseDateTimeDraft(queryDateTime);
@@ -178,32 +201,37 @@ const RevisionPicker = memo(({
   return (
     <div ref={wrapperRef} className="relative" style={{ flex: '1 1 312px', minWidth: 220, maxWidth: 408 }}>
       {/* ── Trigger ── */}
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-label={title}
-        title={triggerTitleText}
-        disabled={disabled}
-        onClick={handleToggleOpen}
-        className="flex items-center justify-between gap-1.5 w-full min-w-0 rounded-full text-left"
-        style={{
-          height: RP_UI.triggerHeight,
-          padding: RP_UI.triggerPadding,
-          border: `1px solid ${open ? cssAlphaRaw(accent, '55') : cssVar('border')}`,
-          background: disabled ? cssVar('bg1') : `linear-gradient(180deg, ${cssVar('bg2')} 0%, ${cssVar('bg1')} 100%)`,
-          color: cssVar('t0'),
-          boxShadow: open ? `0 14px 28px -24px ${cssAlphaRaw(accent, '66')}, inset 0 0 0 1px ${cssAlphaRaw(accent, '22')}` : 'none',
-          cursor: disabled ? 'default' : 'pointer',
-        }}>
-        <div className="flex items-center gap-1.5 min-w-0 flex-1">
-          <span className="inline-flex items-center h-full shrink-0 font-ui text-[11px] font-semibold leading-none tracking-[-0.01em] whitespace-nowrap overflow-hidden text-ellipsis" style={{ color: `var(${accent})` }}>
-            {value ? formatDisplayRevision(value.revision) : t('splitHeaderVersionUnknown')}
+      <Tooltip
+        content={triggerTooltipContent}
+        maxWidth={420}
+        disabled={open}
+        anchorStyle={{ display: 'flex', width: '100%', minWidth: 0 }}>
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-label={title}
+          disabled={disabled}
+          onClick={handleToggleOpen}
+          className="flex items-center justify-between gap-1.5 w-full min-w-0 rounded-full text-left"
+          style={{
+            height: RP_UI.triggerHeight,
+            padding: RP_UI.triggerPadding,
+            border: `1px solid ${open ? cssAlphaRaw(accent, '55') : cssVar('border')}`,
+            background: disabled ? cssVar('bg1') : `linear-gradient(180deg, ${cssVar('bg2')} 0%, ${cssVar('bg1')} 100%)`,
+            color: cssVar('t0'),
+            boxShadow: open ? `0 14px 28px -24px ${cssAlphaRaw(accent, '66')}, inset 0 0 0 1px ${cssAlphaRaw(accent, '22')}` : 'none',
+            cursor: disabled ? 'default' : 'pointer',
+          }}>
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            <span className="inline-flex items-center h-full shrink-0 font-ui text-[11px] font-semibold leading-none tracking-[-0.01em] whitespace-nowrap overflow-hidden text-ellipsis" style={{ color: `var(${accent})` }}>
+              {value ? formatDisplayRevision(value.revision) : t('splitHeaderVersionUnknown')}
+            </span>
+          </div>
+          <span aria-hidden="true" className="shrink-0 text-[8px] font-ui leading-none" style={{ color: open ? `var(${accent})` : cssVar('t2') }}>
+            {open ? '▲' : '▼'}
           </span>
-        </div>
-        <span aria-hidden="true" className="shrink-0 text-[8px] font-ui leading-none" style={{ color: open ? `var(${accent})` : cssVar('t2') }}>
-          {open ? '▲' : '▼'}
-        </span>
-      </button>
+        </button>
+      </Tooltip>
 
       {/* ── Dropdown Panel ── */}
       {open && (

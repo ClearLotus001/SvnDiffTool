@@ -173,6 +173,13 @@ export function computeMiniMapTargetScrollTop(
   return Math.max(0, Math.min(maxScrollTop, targetCenter - (viewportHeight / 2)));
 }
 
+export function resolveWorkbookMiniMapProjectionHeight(
+  contentHeight: number,
+  viewportHeight: number,
+): number {
+  return Math.max(1, contentHeight, viewportHeight);
+}
+
 export function buildWorkbookMiniMapDiffMarkers(
   segments: readonly WorkbookMiniMapSegment[],
   contentHeight: number,
@@ -181,7 +188,7 @@ export function buildWorkbookMiniMapDiffMarkers(
 ): WorkbookMiniMapDiffMarker[] {
   return buildMiniMapOverlayMarkers<WorkbookMiniMapTone, WorkbookMiniMapSegment, { tones: WorkbookMiniMapPaintTone[] }>({
     segments,
-    contentHeight,
+    contentHeight: resolveWorkbookMiniMapProjectionHeight(contentHeight, canvasHeight),
     canvasHeight,
     emptyTone: 'equal',
     minMarkerHeight,
@@ -260,7 +267,10 @@ const WorkbookMiniMap = memo(({
     if (!ctx) return;
 
     const resolvedSegments = resolveWorkbookMiniMapSegments(segments, contentHeight);
-    const total = Math.max(contentHeight, resolvedSegments.reduce((sum, segment) => sum + segment.height, 0), 1);
+    const total = Math.max(
+      resolveWorkbookMiniMapProjectionHeight(contentHeight, H),
+      resolvedSegments.reduce((sum, segment) => sum + segment.height, 0),
+    );
     const scale = H / total;
 
     ctx.clearRect(0, 0, WIDTH, H);

@@ -4,12 +4,32 @@ import assert from 'node:assert/strict';
 import {
   buildWorkbookMiniMapDiffMarkers,
   computeMiniMapTargetScrollTop,
+  resolveWorkbookMiniMapProjectionHeight,
 } from '../src/components/workbook/WorkbookMiniMap';
 
 test('computeMiniMapTargetScrollTop centers the clicked position and clamps bounds', () => {
   assert.equal(computeMiniMapTargetScrollTop(0, 1000, 200), 0);
   assert.equal(computeMiniMapTargetScrollTop(0.5, 1000, 200), 400);
   assert.equal(computeMiniMapTargetScrollTop(1, 1000, 200), 800);
+});
+
+test('workbook minimap preserves bottom whitespace when content is shorter than the viewport', () => {
+  const canvasHeight = 240;
+  const contentHeight = 96;
+  const markers = buildWorkbookMiniMapDiffMarkers(
+    [
+      { tone: 'equal', height: 72 },
+      { tone: 'modify', tones: ['modify'], height: 24 },
+    ],
+    contentHeight,
+    canvasHeight,
+  );
+
+  assert.equal(resolveWorkbookMiniMapProjectionHeight(contentHeight, canvasHeight), canvasHeight);
+  assert.equal(markers.length, 1);
+  assert.equal(markers[0]?.top, 72);
+  assert.equal(markers[0]?.height, 24);
+  assert.ok((markers[0]?.top ?? 0) + (markers[0]?.height ?? 0) < canvasHeight);
 });
 
 test('workbook minimap expands tiny trailing diff markers so ultra-long sheets remain visible', () => {

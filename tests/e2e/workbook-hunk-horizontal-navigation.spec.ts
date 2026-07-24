@@ -62,3 +62,90 @@ test('clicking a single workbook hunk again scrolls both panes to its off-screen
   ));
   expect(Math.abs((scrollLefts[0] ?? 0) - (scrollLefts[1] ?? 0))).toBeLessThanOrEqual(1);
 });
+
+test('workbook minimap markers stay aligned when the table leaves bottom whitespace', async ({ page }) => {
+  await loadWideWorkbookDiff(page);
+
+  const thumb = page.locator('.minimap-viewport-frosted');
+  await expect(thumb).toBeVisible();
+
+  const metrics = await thumb.evaluate((element) => {
+    const rail = element.parentElement;
+    const scroller = document.querySelector('.overflow-auto.relative');
+    const content = scroller?.firstElementChild;
+    const overlay = rail?.querySelectorAll('canvas')[1];
+    if (!(rail instanceof HTMLElement) || !(scroller instanceof HTMLElement) || !(content instanceof HTMLElement) || !(overlay instanceof HTMLCanvasElement)) {
+      throw new Error('workbook minimap elements are unavailable');
+    }
+
+    const context = overlay.getContext('2d');
+    if (!context) throw new Error('workbook minimap overlay context is unavailable');
+    const pixels = context.getImageData(0, 0, overlay.width, overlay.height).data;
+    let markerTop = -1;
+    let markerBottom = -1;
+    for (let y = 0; y < overlay.height; y += 1) {
+      let hasPaint = false;
+      for (let x = 0; x < overlay.width; x += 1) {
+        if ((pixels[((y * overlay.width) + x) * 4 + 3] ?? 0) > 0) {
+          hasPaint = true;
+          break;
+        }
+      }
+      if (!hasPaint) continue;
+      if (markerTop < 0) markerTop = y;
+      markerBottom = y + 1;
+    }
+
+    return {
+      contentHeight: content.getBoundingClientRect().height,
+      viewportHeight: scroller.clientHeight,
+      railHeight: rail.clientHeight,
+      markerTop,
+      markerBottom,
+    };
+  });
+
+  expect(metrics.contentHeight).toBeLessThan(metrics.viewportHeight);
+  expect(metrics.railHeight).toBeGreaterThan(metrics.contentHeight);
+  expect(metrics.markerTop).toBeGreaterThanOrEqual(0);
+  expect(metrics.markerBottom).toBeLessThanOrEqual(metrics.contentHeight + 2);
+});
+
+test('workbook minimap viewport remains transparent in high contrast mode', async ({ page }) => {
+  await loadWideWorkbookDiff(page);
+
+  await page.evaluate(() => {
+    document.documentElement.classList.remove('theme-light', 'theme-dark', 'theme-hc');
+    document.documentElement.classList.add('theme-hc');
+  });
+
+  const thumb = page.locator('.minimap-viewport-frosted');
+  await expect(thumb).toBeVisible();
+
+  const alphas = await thumb.evaluate((element) => {
+    const readAlpha = () => {
+      const backgroundColor = getComputedStyle(element).backgroundColor;
+      const colorAlpha = backgroundColor.match(/\/\s*([\d.]+)\s*\)$/)?.[1];
+      if (colorAlpha) return Number(colorAlpha);
+      const rgbaAlpha = backgroundColor.match(/rgba\([^,]+,[^,]+,[^,]+,\s*([\d.]+)\s*\)/)?.[1];
+      if (rgbaAlpha) return Number(rgbaAlpha);
+      return backgroundColor === 'transparent' ? 0 : 1;
+    };
+
+    const idle = readAlpha();
+    element.setAttribute('data-dragging', 'true');
+    const dragging = readAlpha();
+    element.removeAttribute('data-dragging');
+    return {
+      idle,
+      dragging,
+      backdropFilter: getComputedStyle(element).backdropFilter,
+    };
+  });
+
+  expect(alphas.idle).toBeGreaterThan(0);
+  expect(alphas.idle).toBeLessThanOrEqual(0.1);
+  expect(alphas.dragging).toBeGreaterThan(alphas.idle);
+  expect(alphas.dragging).toBeLessThanOrEqual(0.2);
+  expect(alphas.backdropFilter).toBe('none');
+});

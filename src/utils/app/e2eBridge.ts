@@ -1,8 +1,15 @@
 import { computeDiff } from '@/engine/text/diff';
 import { prepareTextDiffAnalysisFromDiffLines } from '@/utils/diff/preparedTextAnalysis';
-import type { DiffData, LayoutMode } from '@/types';
+import type { DiffData, LayoutMode, SvnRevisionInfo } from '@/types';
 
-export interface E2ELoadTextDiffPayload {
+interface E2ERevisionPayload {
+  revisionOptions?: SvnRevisionInfo[] | null;
+  baseRevisionInfo?: SvnRevisionInfo | null;
+  mineRevisionInfo?: SvnRevisionInfo | null;
+  canSwitchRevisions?: boolean;
+}
+
+export interface E2ELoadTextDiffPayload extends E2ERevisionPayload {
   fileName?: string;
   baseName?: string;
   mineName?: string;
@@ -12,7 +19,7 @@ export interface E2ELoadTextDiffPayload {
   collapseCtx?: boolean;
 }
 
-export interface E2ELoadWorkbookDiffPayload {
+export interface E2ELoadWorkbookDiffPayload extends E2ERevisionPayload {
   fileName?: string;
   baseName?: string;
   mineName?: string;
@@ -70,10 +77,10 @@ export function buildE2EDiffData(payload: E2ELoadTextDiffPayload): DiffData {
         workbookAnalysis: null,
       },
     },
-    revisionOptions: null,
-    baseRevisionInfo: null,
-    mineRevisionInfo: null,
-    canSwitchRevisions: false,
+    revisionOptions: payload.revisionOptions ?? null,
+    baseRevisionInfo: payload.baseRevisionInfo ?? null,
+    mineRevisionInfo: payload.mineRevisionInfo ?? null,
+    canSwitchRevisions: payload.canSwitchRevisions ?? false,
     workbookArtifactDiff: null,
     sourceNoticeCode: null,
     perf: {
@@ -99,10 +106,10 @@ export function buildE2EWorkbookDiffData(payload: E2ELoadWorkbookDiffPayload): D
     baseBytes: null,
     mineBytes: null,
     analysisSnapshotsByMode: null,
-    revisionOptions: null,
-    baseRevisionInfo: null,
-    mineRevisionInfo: null,
-    canSwitchRevisions: false,
+    revisionOptions: payload.revisionOptions ?? null,
+    baseRevisionInfo: payload.baseRevisionInfo ?? null,
+    mineRevisionInfo: payload.mineRevisionInfo ?? null,
+    canSwitchRevisions: payload.canSwitchRevisions ?? false,
     workbookArtifactDiff: null,
     sourceNoticeCode: null,
     perf: {
