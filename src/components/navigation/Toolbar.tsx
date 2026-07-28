@@ -405,7 +405,7 @@ const Toolbar = memo((props: ToolbarProps) => {
 
         {showDiffControls && isElectron && Boolean(fileName) && (
           <Group>
-            <Btn onClick={onPickFile} tooltip={fileActionTooltip}>
+            <Btn onClick={onPickFile} tooltip={fileActionTooltip} testId="toolbar-pick-file">
               <Icon name="file" />
               {showFileActionText && <span>{fileActionLabel}</span>}
             </Btn>

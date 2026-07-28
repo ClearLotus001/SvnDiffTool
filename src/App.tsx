@@ -104,6 +104,7 @@ export default function App() {
   const diffSourceNoticeCode = useAppStore((s) => s.diffSourceNoticeCode);
   const diffSourceNoticeDismissed = useAppStore((s) => s.diffSourceNoticeDismissed);
   const workbookArtifactDiff = useAppStore((s) => s.workbookArtifactDiff);
+  const compareContext = useAppStore((s) => s.compareContext);
   const artifactNoticeDismissed = useAppStore((s) => s.artifactNoticeDismissed);
   const setArtifactNoticeDismissed = useAppStore((s) => s.setArtifactNoticeDismissed);
   const setDiffSourceNoticeDismissed = useAppStore((s) => s.setDiffSourceNoticeDismissed);
@@ -177,7 +178,6 @@ export default function App() {
   const workbookSharedExpandedBlocksRef = useRef<Map<string, CollapseExpansionState>>(new Map());
   const revisionOptionsRef = useRef<SvnRevisionInfo[]>([]);
   const revisionQuerySeqRef = useRef(0);
-  const updateAutoCheckRequestedRef = useRef(false);
   const scrollToIndexRef = useRef<((idx: number, align?: 'start' | 'center') => void) | null>(null);
   const workbookMoveRef = useRef<((direction: WorkbookMoveDirection) => void) | null>(null);
   const collapseNavigationRef = useRef<((direction: 'prev' | 'next') => void) | null>(null);
@@ -191,6 +191,7 @@ export default function App() {
     showHelp,
     showAbout,
     showSvnConfig,
+    showLocalFileCompare,
   } = dialogState;
   const setShowSearch = useCallback((value: SetStateAction<boolean>) => {
     dialogActions.set('search', value);
@@ -206,6 +207,9 @@ export default function App() {
   }, [dialogActions]);
   const setShowSvnConfig = useCallback((value: SetStateAction<boolean>) => {
     dialogActions.set('svnConfig', value);
+  }, [dialogActions]);
+  const setShowLocalFileCompare = useCallback((value: SetStateAction<boolean>) => {
+    dialogActions.set('localFileCompare', value);
   }, [dialogActions]);
   const closeAllDialogs = dialogActions.closeAll;
   const previousShowSearchRef = useRef(showSearch);
@@ -274,6 +278,8 @@ export default function App() {
   const {
     displayBaseName,
     displayMineName,
+    twoFileBasePath,
+    twoFileMinePath,
     displayFileName,
     selectedCell,
     baseVersionLabel,
@@ -358,6 +364,8 @@ export default function App() {
     applyDiffData,
     handleWorkbookCompareModeChange,
     handlePickWorkingCopyFile,
+    pickComparableFile,
+    handleCompareLocalFiles,
     loadSvnDiffViewerStatus,
     handleOpenSvnConfig,
     handleApplySvnDiffViewerScope,
@@ -406,7 +414,6 @@ export default function App() {
     workbookCompareModeRef,
     loadSeqRef,
     revisionQuerySeqRef,
-    updateAutoCheckRequestedRef,
     diffLoad,
     revisionQuery,
   });
@@ -591,9 +598,16 @@ export default function App() {
   const handleCopyMineVersion = useCallback(async () => (
     copyText(buildVersionCopyText(diffLines, 'mine'))
   ), [diffLines]);
+  const handleOpenLocalFileCompare = useCallback(() => {
+    setShowLocalFileCompare(true);
+  }, [setShowLocalFileCompare]);
   const handlePickFile = useCallback(() => {
+    if (compareContext === 'literal_two_file_compare') {
+      handleOpenLocalFileCompare();
+      return;
+    }
     void handlePickWorkingCopyFile();
-  }, [handlePickWorkingCopyFile]);
+  }, [compareContext, handleOpenLocalFileCompare, handlePickWorkingCopyFile]);
   const handleInitialVisualReady = useCallback(() => {
     if (startupRevealRequestedRef.current) return;
     startupRevealRequestedRef.current = true;
@@ -744,6 +758,7 @@ export default function App() {
               mineTitle={mineRoleTitle}
               baseValueLabel={baseVersionLabel}
               mineValueLabel={mineVersionLabel}
+              isTwoFileCompare={compareContext === 'literal_two_file_compare'}
               layout={layout}
               isWorkbookMode={isWorkbookMode}
               baseRevisionInfo={baseRevisionInfo}
@@ -841,6 +856,7 @@ export default function App() {
             onPickWorkingCopyFile={() => {
               void handlePickWorkingCopyFile();
             }}
+            onOpenLocalFileCompare={handleOpenLocalFileCompare}
             onOpenSvnConfig={handleOpenSvnConfig}
             setWorkbookHiddenStateBySheet={setWorkbookHiddenStateBySheet}
             onInitialVisualReady={handleInitialVisualReady}
@@ -870,12 +886,18 @@ export default function App() {
             showHelp={showHelp}
             showAbout={showAbout}
             showSvnConfig={showSvnConfig}
+            showLocalFileCompare={showLocalFileCompare}
+            localFileCompareLoading={isLoadingDiff}
+            localFileCompareError={loadError}
+            localFileCompareBasePath={twoFileBasePath}
+            localFileCompareMinePath={twoFileMinePath}
             totalLines={totalLines}
             onGoto={handleGoto}
             onCloseGoto={() => setShowGoto(false)}
             onCloseHelp={() => setShowHelp(false)}
             onCloseAbout={() => setShowAbout(false)}
             onCloseSvnConfig={() => setShowSvnConfig(false)}
+            onCloseLocalFileCompare={() => setShowLocalFileCompare(false)}
             onCloseAll={closeAllDialogs}
             appUpdateState={appUpdateState}
             canLaunchUninstaller={canLaunchUninstaller}
@@ -899,6 +921,8 @@ export default function App() {
             onRefreshSvnDiffViewerStatus={() => {
               void loadSvnDiffViewerStatus();
             }}
+            onPickComparableFile={pickComparableFile}
+            onCompareLocalFiles={handleCompareLocalFiles}
           />
         </div>
       </div>

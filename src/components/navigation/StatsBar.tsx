@@ -4,6 +4,7 @@ import { useI18n } from '@/context/i18n';
 import type { TextDiffPresentation, TextLineSelectionSummary, WorkbookArtifactDiff, WorkbookCompareMode } from '@/types';
 import { cssAlpha, cssVar } from '@/theme/cssUtils';
 import Tooltip from '@/components/shared/Tooltip';
+import PathTooltip from '@/components/shared/PathTooltip';
 import {
   resolveDiffIndicatorCssPalette,
   type DiffIndicatorCssPalette,
@@ -176,8 +177,8 @@ const StatsBar = memo(({
     accent: string,
     tooltip?: string,
     side?: 'base' | 'mine',
-  ) => (
-    <Tooltip content={tooltip ?? value} maxWidth={360}>
+  ) => {
+    const node = (
       <div
         className="app-stats-chip app-stats-chip--meta shrink-0"
         style={makeChipStyle({
@@ -197,8 +198,12 @@ const StatsBar = memo(({
           {value}
         </span>
       </div>
-    </Tooltip>
-  );
+    );
+    const resolvedTooltip = tooltip ?? value;
+    return tooltip && /[\\/]/.test(tooltip)
+      ? <PathTooltip path={tooltip}>{node}</PathTooltip>
+      : <Tooltip content={resolvedTooltip} maxWidth={360}>{node}</Tooltip>;
+  };
 
   return (
     <div

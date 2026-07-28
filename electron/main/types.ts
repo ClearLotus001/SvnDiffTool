@@ -93,6 +93,8 @@ export interface PreparedTextAnalysis {
 export interface DiffData {
   baseName: string;
   mineName: string;
+  basePath?: string;
+  minePath?: string;
   svnUrl: string;
   fileName: string;
   sourceIdentity: string;

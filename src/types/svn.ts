@@ -60,6 +60,8 @@ export interface DiffAnalysisSnapshot {
 
 export interface DiffData extends DiffMeta {
   sourceIdentity?: string;
+  basePath?: string;
+  minePath?: string;
   compareContext?: CompareContext;
   timelineTargetUrl?: string | null;
   workingCopyAvailable?: boolean;
@@ -87,6 +89,8 @@ export interface LocalDiffFilePickResult {
   path: string;
   name: string;
 }
+
+export type LocalFilePickSide = 'base' | 'mine';
 
 export type SvnDiffViewerScope = 'all-files' | 'text-only' | 'workbook-only';
 export type SvnDiffViewerMode = SvnDiffViewerScope | 'mixed' | 'unconfigured' | 'unsupported';

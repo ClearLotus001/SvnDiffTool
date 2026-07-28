@@ -214,7 +214,7 @@ release/<package-name>-<version>-x64.nsis.7z
 
 - 当前只有 Windows 安装版支持自动更新
 - 下载的 `SvnDiffTool-<version>.exe` 为 Windows 原生安装器，会联网拉取主程序包
-- 应用会从 GitHub 发布页检查稳定版更新
+- 每次启动 Windows 安装版时，应用都会从 GitHub 发布页检查一次稳定版更新
 - 发现新版本后会提示你手动下载
 - 下载完成后可以从应用内触发安装
 - 首次安装会进入安装向导；应用内升级会关闭当前窗口并显示覆盖安装进度，完成后由你选择是否重新打开应用

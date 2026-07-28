@@ -63,3 +63,36 @@ test('SplitHeader keeps revision picker compact and shows the revision log as a 
   assert.doesNotMatch(html, /winxzhang · 2026-03-24 23:33/);
   assert.doesNotMatch(html, /\stitle="/);
 });
+
+test('SplitHeader shows distinct labels and full paths for a two-file comparison', () => {
+  const basePath = 'E:\\QSM_TDRS\\Publish\\Tools\\TDR_res\\Excel\\[1]新物品表.xlsm';
+  const minePath = 'E:\\QSM_TDRS\\Trunk\\Tools\\TDR_res\\Excel\\[1]新物品表.xlsm';
+  const html = renderToStaticMarkup(
+    React.createElement(
+      ThemeContext.Provider,
+      { value: 'light' },
+      React.createElement(
+        I18nProvider,
+        { initialLocale: 'zh-CN' },
+        React.createElement(SplitHeader, {
+          baseName: basePath,
+          mineName: minePath,
+          baseTitle: '基准文件',
+          mineTitle: '对比文件',
+          baseValueLabel: 'Publish · [1]新物品表.xlsm',
+          mineValueLabel: 'Trunk · [1]新物品表.xlsm',
+          isTwoFileCompare: true,
+          layout: 'split-h',
+          isWorkbookMode: true,
+        }),
+      ),
+    ),
+  );
+
+  assert.match(html, /Publish · \[1\]新物品表\.xlsm/);
+  assert.match(html, /Trunk · \[1\]新物品表\.xlsm/);
+  assert.match(html, /E:\\QSM_TDRS\\Publish\\Tools\\TDR_res\\Excel\\\[1\]新物品表\.xlsm/);
+  assert.match(html, /E:\\QSM_TDRS\\Trunk\\Tools\\TDR_res\\Excel\\\[1\]新物品表\.xlsm/);
+  assert.match(html, />文件</);
+  assert.doesNotMatch(html, />版本号</);
+});

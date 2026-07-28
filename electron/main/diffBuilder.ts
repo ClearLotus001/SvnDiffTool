@@ -982,6 +982,8 @@ export async function buildLocalDiffData(
   return {
     svnUrl: '',
     fileName: resolvedFileName,
+    basePath: resolvedBasePath,
+    minePath: resolvedMinePath,
     sourceIdentity,
     compareContext: 'literal_two_file_compare',
     timelineTargetUrl: null,

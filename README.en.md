@@ -214,7 +214,7 @@ What it is not currently trying to be:
 
 - Auto update is currently available only for the Windows installer build
 - The downloadable `SvnDiffTool-<version>.exe` is the native Windows installer and downloads the main app package on first install
-- The app checks GitHub Releases for new stable versions
+- The Windows installer build checks GitHub Releases for a new stable version on every app startup
 - When an update is found, it prompts before download
 - Once the download finishes, installation can be triggered from inside the app
 - The first install shows the setup wizard; in-app upgrades close the current window, show in-place installation progress, and let you choose whether to reopen the app when finished

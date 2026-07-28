@@ -36,10 +36,22 @@ const STORAGE_PREFIX = 'svn-diff-tool.collapse-jump-position';
 const EDGE_PADDING = 8;
 const SNAP_THRESHOLD = 24;
 const DEFAULT_POSITION: FloatingPosition = { right: 10, bottom: 10 };
-const BADGE_SIZE = 24;
+const BADGE_HEIGHT = 24;
+const MIN_BADGE_WIDTH = 24;
 const DOCK_HANG_OFFSET = 10;
 const PANEL_GAP = 18;
 const COLLAPSE_DELAY_MS = 120;
+
+export function getCollapseJumpBadgeWidth(text: string, isDockCollapsed: boolean): number {
+  if (text.length <= 3) return MIN_BADGE_WIDTH;
+
+  const estimatedGlyphWidth = isDockCollapsed ? 6 : 5.5;
+  const horizontalSpace = isDockCollapsed ? 10 : 12;
+  return Math.max(
+    MIN_BADGE_WIDTH,
+    Math.ceil(text.length * estimatedGlyphWidth + horizontalSpace),
+  );
+}
 
 const CollapseJumpButton = memo(({
   onPrev,
@@ -59,37 +71,44 @@ const CollapseJumpButton = memo(({
   const [snapPreview, setSnapPreview] = useState<SnapPreview>({ horizontal: null, vertical: null });
   const [snapPulseNonce, setSnapPulseNonce] = useState(0);
   const hasCollapses = totalCount > 0;
+  const isDockCollapsed = Boolean(dockedHorizontal && !isHovered && !isDragging);
+  const badgeText = isDockCollapsed
+    ? (currentIndex > 0 ? String(currentIndex) : String(totalCount))
+    : currentIndex > 0
+    ? `${currentIndex}/${totalCount}`
+    : `${totalCount}`;
+  const badgeWidth = getCollapseJumpBadgeWidth(badgeText, isDockCollapsed);
 
   const clampPosition = useCallback((
     next: FloatingPosition,
     parentWidth: number,
     parentHeight: number,
   ): FloatingPosition => {
-    const maxRight = Math.max(EDGE_PADDING, parentWidth - BADGE_SIZE - EDGE_PADDING);
-    const maxBottom = Math.max(EDGE_PADDING, parentHeight - BADGE_SIZE - EDGE_PADDING);
+    const maxRight = Math.max(EDGE_PADDING, parentWidth - badgeWidth - EDGE_PADDING);
+    const maxBottom = Math.max(EDGE_PADDING, parentHeight - BADGE_HEIGHT - EDGE_PADDING);
     return {
       right: Math.max(EDGE_PADDING, Math.min(next.right, maxRight)),
       bottom: Math.max(EDGE_PADDING, Math.min(next.bottom, maxBottom)),
     };
-  }, []);
+  }, [badgeWidth]);
 
   const resolveDockedHorizontal = useCallback((
     next: FloatingPosition,
     parentWidth: number,
   ): SnapPreview['horizontal'] => {
-    const maxRight = Math.max(EDGE_PADDING, parentWidth - BADGE_SIZE - EDGE_PADDING);
+    const maxRight = Math.max(EDGE_PADDING, parentWidth - badgeWidth - EDGE_PADDING);
     if (Math.abs(next.right - maxRight) <= 1) return 'left';
     if (Math.abs(next.right - EDGE_PADDING) <= 1) return 'right';
     return null;
-  }, []);
+  }, [badgeWidth]);
 
   const applySnap = useCallback((
     next: FloatingPosition,
     parentWidth: number,
     parentHeight: number,
   ) => {
-    const maxRight = Math.max(EDGE_PADDING, parentWidth - BADGE_SIZE - EDGE_PADDING);
-    const maxBottom = Math.max(EDGE_PADDING, parentHeight - BADGE_SIZE - EDGE_PADDING);
+    const maxRight = Math.max(EDGE_PADDING, parentWidth - badgeWidth - EDGE_PADDING);
+    const maxBottom = Math.max(EDGE_PADDING, parentHeight - BADGE_HEIGHT - EDGE_PADDING);
     const clamped = clampPosition(next, parentWidth, parentHeight);
     const leftDistance = Math.abs(maxRight - clamped.right);
     const rightDistance = Math.abs(clamped.right - EDGE_PADDING);
@@ -122,7 +141,7 @@ const CollapseJumpButton = memo(({
       },
       preview: { horizontal, vertical },
     };
-  }, [clampPosition]);
+  }, [badgeWidth, clampPosition]);
 
   const startDrag = (event: ReactPointerEvent<HTMLElement>) => {
     const anchor = anchorRef.current;
@@ -175,7 +194,7 @@ const CollapseJumpButton = memo(({
           return {
             ...clamped,
             right: dockedHorizontal === 'left'
-              ? Math.max(EDGE_PADDING, parent.clientWidth - BADGE_SIZE - EDGE_PADDING)
+              ? Math.max(EDGE_PADDING, parent.clientWidth - badgeWidth - EDGE_PADDING)
               : EDGE_PADDING,
           };
         }
@@ -193,7 +212,7 @@ const CollapseJumpButton = memo(({
       observer?.disconnect();
       window.removeEventListener('resize', updatePosition);
     };
-  }, [clampPosition, dockedHorizontal]);
+  }, [badgeWidth, clampPosition, dockedHorizontal]);
 
   useEffect(() => {
     if (!isDragging) return;
@@ -248,20 +267,14 @@ const CollapseJumpButton = memo(({
     ? t('collapseJumpStatus', { current: currentIndex, total: totalCount })
     : t('collapseJumpStatus', { current: 1, total: totalCount });
   const activeDockSide = snapPreview.horizontal ?? dockedHorizontal;
-  const isDockCollapsed = Boolean(dockedHorizontal && !isHovered && !isDragging);
-  const badgeText = isDockCollapsed
-    ? (currentIndex > 0 ? String(currentIndex) : String(totalCount))
-    : currentIndex > 0
-    ? `${currentIndex}/${totalCount}`
-    : `${totalCount}`;
 
   const anchorStyle = {
     position: 'absolute',
     zIndex: 34,
     right: position.right,
     bottom: position.bottom,
-    width: BADGE_SIZE,
-    height: BADGE_SIZE,
+    width: badgeWidth,
+    height: BADGE_HEIGHT,
     transform: activeDockSide === 'left'
       ? `translateX(${-DOCK_HANG_OFFSET}px)`
       : activeDockSide === 'right'
@@ -278,8 +291,11 @@ const CollapseJumpButton = memo(({
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: BADGE_SIZE,
-    height: BADGE_SIZE,
+    boxSizing: 'border-box',
+    width: badgeWidth,
+    minWidth: MIN_BADGE_WIDTH,
+    height: BADGE_HEIGHT,
+    paddingInline: isDockCollapsed ? 4 : 6,
     borderRadius: 999,
     background: isDockCollapsed ? cssVar('acc2') : cssAlpha('acc2', '16'),
     color: isDockCollapsed ? cssVar('bg0') : cssVar('acc2'),
@@ -290,6 +306,10 @@ const CollapseJumpButton = memo(({
     fontSize: isDockCollapsed ? 10 : 9,
     fontWeight: 800,
     fontFamily: FONT_UI,
+    fontVariantNumeric: 'tabular-nums',
+    lineHeight: 1,
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
     userSelect: 'none',
     backdropFilter: 'blur(6px)',
     transition: isDragging ? 'none' : 'all 160ms ease',
@@ -300,7 +320,7 @@ const CollapseJumpButton = memo(({
       return {
         position: 'absolute' as const,
         left: '50%',
-        bottom: BADGE_SIZE + PANEL_GAP,
+        bottom: BADGE_HEIGHT + PANEL_GAP,
         transform: 'translateX(-50%)',
         opacity: 1,
       };
@@ -317,12 +337,12 @@ const CollapseJumpButton = memo(({
     return dockedHorizontal === 'left'
       ? {
           ...base,
-          left: BADGE_SIZE + 8,
+          left: badgeWidth + 8,
           transform: `translateX(${isDockCollapsed ? -10 : 0}px)`,
         }
       : {
           ...base,
-          right: BADGE_SIZE + 8,
+          right: badgeWidth + 8,
           transform: `translateX(${isDockCollapsed ? 10 : 0}px)`,
         };
   })();

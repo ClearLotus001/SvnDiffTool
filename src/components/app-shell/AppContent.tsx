@@ -96,6 +96,7 @@ interface AppContentProps {
   workbookContextMenuSections: WorkbookContextMenuSection[];
   onCloseWorkbookContextMenu: () => void;
   onPickWorkingCopyFile: () => void;
+  onOpenLocalFileCompare: () => void;
   onOpenSvnConfig: () => void;
   setWorkbookHiddenStateBySheet: Dispatch<SetStateAction<WorkbookHiddenStateBySheet>>;
   onInitialVisualReady?: () => void;
@@ -177,7 +178,7 @@ export default function AppContent({
   isDevMode, showHiddenColumns,
   workbookLayoutSnapshots, onWorkbookLayoutSnapshotChange,
   workbookContextMenu, workbookContextMenuSections, onCloseWorkbookContextMenu,
-  onPickWorkingCopyFile, onOpenSvnConfig, setWorkbookHiddenStateBySheet,
+  onPickWorkingCopyFile, onOpenLocalFileCompare, onOpenSvnConfig, setWorkbookHiddenStateBySheet,
   onInitialVisualReady,
 }: AppContentProps) {
   const handleRevealHiddenRows = (sheetName: string, rowNumbers: number[]) => {
@@ -202,6 +203,7 @@ export default function AppContent({
           error={loadError}
           isElectron={isElectron}
           onPickWorkingCopy={onPickWorkingCopyFile}
+          onOpenLocalFileCompare={onOpenLocalFileCompare}
           onOpenSvnConfig={onOpenSvnConfig}
         />
       </>

@@ -31,6 +31,17 @@ function readWindowsUpdaterSource(): string {
   return fs.readFileSync(path.join(process.cwd(), 'electron', 'updater', 'windowsUpdater.ts'), 'utf-8');
 }
 
+function readElectronMainSource(): string {
+  return fs.readFileSync(path.join(process.cwd(), 'electron', 'main.ts'), 'utf-8');
+}
+
+function readElectronLifecycleSource(): string {
+  return fs.readFileSync(
+    path.join(process.cwd(), 'src', 'hooks', 'app', 'useElectronLifecycleEffects.ts'),
+    'utf-8',
+  );
+}
+
 function readPackageJson(): {
   build?: { nsis?: { allowToChangeInstallationDirectory?: boolean; installerHeader?: string | null } };
 } {
@@ -200,6 +211,19 @@ test('in-app updates open the visible installer and never force an automatic rel
   assert.match(source, /autoUpdater\.autoRunAppAfterInstall = false;/);
   assert.match(source, /autoUpdater\.quitAndInstall\(false, false\);/);
   assert.doesNotMatch(source, /autoUpdater\.quitAndInstall\(true, true\);/);
+});
+
+test('every packaged app startup checks for updates once from the main process', () => {
+  const mainSource = readElectronMainSource();
+  const updaterSource = readWindowsUpdaterSource();
+  const lifecycleSource = readElectronLifecycleSource();
+
+  assert.match(
+    mainSource,
+    /updater\.initialize\(\);\s+createWindow\(\);\s+void updater\.checkForUpdates\(\{ manual: false \}\);/,
+  );
+  assert.doesNotMatch(updaterSource, /AUTO_CHECK_INTERVAL_MS|wasCheckedRecently/);
+  assert.doesNotMatch(lifecycleSource, /checkForAppUpdate\?\.\(\{ manual: false \}\)/);
 });
 
 test('installer uses a visible manual-overwrite summary without double-confirming in-app updates', () => {

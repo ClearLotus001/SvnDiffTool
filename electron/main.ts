@@ -218,6 +218,7 @@ if (maintenanceMode) {
     });
     updater.initialize();
     createWindow();
+    void updater.checkForUpdates({ manual: false });
     if (!pendingMaintenanceFailed) {
       schedulePendingPostInstallMaintenance();
     }

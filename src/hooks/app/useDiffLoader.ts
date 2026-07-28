@@ -3,6 +3,8 @@ import { useCallback, useRef, type MutableRefObject } from 'react';
 import type {
   DiffData,
   DiffLine,
+  LocalDiffFilePickResult,
+  LocalFilePickSide,
   SvnDiffViewerScope,
   WorkbookCompareMode,
   WorkbookMetadataSource,
@@ -66,6 +68,11 @@ export interface UseDiffLoaderResult {
   ) => Promise<void>;
   handleWorkbookCompareModeChange: (nextMode: WorkbookCompareMode) => Promise<void>;
   handlePickWorkingCopyFile: () => Promise<void>;
+  pickComparableFile: (
+    side: LocalFilePickSide,
+    requiredExtension?: string,
+  ) => Promise<LocalDiffFilePickResult | null>;
+  handleCompareLocalFiles: (basePath: string, minePath: string) => Promise<boolean>;
   loadSvnDiffViewerStatus: () => Promise<void>;
   handleOpenSvnConfig: () => void;
   handleApplySvnDiffViewerScope: (scope: SvnDiffViewerScope) => Promise<void>;
@@ -639,6 +646,38 @@ export default function useDiffLoader({
     }
   }, [loadElectronWorkingCopyDiff]);
 
+  const pickComparableFile = useCallback(async (
+    side: LocalFilePickSide,
+    requiredExtension?: string,
+  ) => {
+    if (!window.svnDiff?.pickComparableFile) return null;
+    return window.svnDiff.pickComparableFile(side, requiredExtension);
+  }, []);
+
+  const handleCompareLocalFiles = useCallback(async (
+    basePath: string,
+    minePath: string,
+  ) => {
+    if (!window.svnDiff?.loadLocalFileDiff) return false;
+    const seq = await beginDiffLoad();
+    try {
+      const nextData = await window.svnDiff.loadLocalFileDiff(
+        basePath,
+        minePath,
+        workbookCompareModeRef.current,
+      );
+      if (seq !== loadSeqRef.current) return false;
+      await applyDiffData(nextData, {
+        seq,
+        loadingAlreadyStarted: true,
+      });
+      return true;
+    } catch (error) {
+      failDiffLoad(seq, error);
+      return false;
+    }
+  }, [applyDiffData, beginDiffLoad, failDiffLoad, loadSeqRef, workbookCompareModeRef]);
+
   const loadSvnDiffViewerStatus = useCallback(async () => {
     if (!window.svnDiff?.getSvnDiffViewerStatus) return;
     setIsLoadingSvnDiffViewerStatus(true);
@@ -707,6 +746,8 @@ export default function useDiffLoader({
     applyDiffData,
     handleWorkbookCompareModeChange,
     handlePickWorkingCopyFile,
+    pickComparableFile,
+    handleCompareLocalFiles,
     loadSvnDiffViewerStatus,
     handleOpenSvnConfig,
     handleApplySvnDiffViewerScope,

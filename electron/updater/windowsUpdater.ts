@@ -15,7 +15,6 @@ interface PersistedUpdaterState {
   lastCheckedAt: string | null;
 }
 
-const AUTO_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const UP_TO_DATE_TO_IDLE_MS = 4_000;
 
 function normalizeReleaseNotes(value: unknown): string | null {
@@ -38,12 +37,6 @@ function normalizeReleaseNotes(value: unknown): string | null {
 
 function toIsoString(value: number): string {
   return new Date(value).toISOString();
-}
-
-function parseIsoTimestamp(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function toErrorMessage(error: unknown): string {
@@ -149,9 +142,6 @@ export class WindowsUpdater implements PlatformUpdater {
     this.initialize();
 
     const manual = options.manual ?? false;
-    if (!manual && this.wasCheckedRecently()) {
-      return;
-    }
     if (this.checkPromise) {
       return this.checkPromise;
     }
@@ -225,12 +215,6 @@ export class WindowsUpdater implements PlatformUpdater {
     return () => {
       this.listeners.delete(listener);
     };
-  }
-
-  private wasCheckedRecently(): boolean {
-    const lastCheckedAtMs = parseIsoTimestamp(this.state.lastCheckedAt);
-    if (lastCheckedAtMs == null) return false;
-    return (Date.now() - lastCheckedAtMs) < AUTO_CHECK_INTERVAL_MS;
   }
 
   private loadPersistedState() {

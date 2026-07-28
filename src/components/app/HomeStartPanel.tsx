@@ -4,7 +4,7 @@ import {
   useRef,
   type CSSProperties,
 } from 'react';
-import { ArrowRight, FileText, Settings } from 'lucide-react';
+import { ArrowRight, Files, FileText, Settings } from 'lucide-react';
 import { useI18n } from '@/context/i18n';
 import { cssAlpha, cssAlphaRaw } from '@/theme/cssUtils';
 import { debugLog } from '@/hooks/app/helpers';
@@ -14,10 +14,11 @@ interface HomeStartPanelProps {
   error: string;
   isElectron: boolean;
   onPickWorkingCopy: () => void;
+  onOpenLocalFileCompare: () => void;
   onOpenSvnConfig: () => void;
 }
 
-type HomeIconKind = 'file' | 'gear';
+type HomeIconKind = 'file' | 'compare' | 'gear';
 
 type PixelAnimationName = 'appear' | 'disappear';
 
@@ -28,7 +29,7 @@ interface ActionCardProps {
   body: string;
   actionLabel: string;
   onClick: () => void;
-  tone: 'primary' | 'svn';
+  tone: 'primary' | 'compare' | 'svn';
   disabled?: boolean;
 }
 
@@ -250,6 +251,7 @@ class HomePixel {
 
 function HomeIcon({ kind }: { kind: HomeIconKind }) {
   if (kind === 'gear') return <Settings size={18} />;
+  if (kind === 'compare') return <Files size={18} />;
   return <FileText size={18} />;
 }
 
@@ -788,7 +790,7 @@ function ActionCard({
 }
 
 const HomeStartPanel = memo(({
-  error, isElectron, onPickWorkingCopy, onOpenSvnConfig,
+  error, isElectron, onPickWorkingCopy, onOpenLocalFileCompare, onOpenSvnConfig,
 }: HomeStartPanelProps) => {
   const { t } = useI18n();
   useEffect(() => {
@@ -801,7 +803,7 @@ const HomeStartPanel = memo(({
   return (
     <div className="home-stage flex-1 w-full min-w-0 min-h-0 flex items-center justify-center p-[34px_24px_44px] overflow-auto">
       <HomeAmbientCanvas />
-      <div className="relative z-[1] w-[min(860px,100%)] grid gap-5">
+      <div className="relative z-[1] w-[min(1120px,100%)] grid gap-5">
         {error && (
           <div
             className="relative rounded-[8px] p-[14px_16px] border border-diff-remove-border text-diff-remove-text text-[13px] leading-relaxed font-bold"
@@ -839,6 +841,16 @@ const HomeStartPanel = memo(({
         <div className="home-action-grid grid gap-5 sm:grid-cols-2 items-stretch">
           <ActionCard
             accent="--acc2"
+            icon="compare"
+            title={t('homeStartLocalFileCompareTitle')}
+            body={t('homeStartLocalFileCompareBody')}
+            actionLabel={t('homeStartLocalFileCompareAction')}
+            onClick={onOpenLocalFileCompare}
+            tone="compare"
+            disabled={!isElectron}
+          />
+          <ActionCard
+            accent="--accent-hover"
             icon="file"
             title={t('homeStartPickTitle')}
             body={t('homeStartPickBody')}

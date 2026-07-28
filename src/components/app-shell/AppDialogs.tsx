@@ -1,5 +1,7 @@
 import type {
   AppUpdateState,
+  LocalDiffFilePickResult,
+  LocalFilePickSide,
   SvnDiffViewerScope,
   SvnDiffViewerStatus,
 } from '@/types';
@@ -8,18 +10,25 @@ import GotoLine from '@/components/diff/GotoLine';
 import AboutDialog from '@/components/app/AboutDialog';
 import ShortcutsPanel from '@/components/app/ShortcutsPanel';
 import SvnConfigDialog from '@/components/app/SvnConfigDialog';
+import LocalFileCompareDialog from '@/components/app/LocalFileCompareDialog';
 
 interface AppDialogsProps {
   showGoto: boolean;
   showHelp: boolean;
   showAbout: boolean;
   showSvnConfig: boolean;
+  showLocalFileCompare: boolean;
+  localFileCompareLoading: boolean;
+  localFileCompareError: string;
+  localFileCompareBasePath: string;
+  localFileCompareMinePath: string;
   totalLines: number;
   onGoto: (lineNo: number) => void;
   onCloseGoto: () => void;
   onCloseHelp: () => void;
   onCloseAbout: () => void;
   onCloseSvnConfig: () => void;
+  onCloseLocalFileCompare: () => void;
   onCloseAll: () => void;
   appUpdateState: AppUpdateState | null;
   canLaunchUninstaller: boolean;
@@ -35,6 +44,11 @@ interface AppDialogsProps {
   onApplySvnDiffViewerScope: (scope: SvnDiffViewerScope) => void;
   onRestoreSvnDiffViewerDefault: () => void;
   onRefreshSvnDiffViewerStatus: () => void;
+  onPickComparableFile: (
+    side: LocalFilePickSide,
+    requiredExtension?: string,
+  ) => Promise<LocalDiffFilePickResult | null>;
+  onCompareLocalFiles: (basePath: string, minePath: string) => Promise<boolean>;
 }
 
 export default function AppDialogs({
@@ -42,12 +56,18 @@ export default function AppDialogs({
   showHelp,
   showAbout,
   showSvnConfig,
+  showLocalFileCompare,
+  localFileCompareLoading,
+  localFileCompareError,
+  localFileCompareBasePath,
+  localFileCompareMinePath,
   totalLines,
   onGoto,
   onCloseGoto,
   onCloseHelp,
   onCloseAbout,
   onCloseSvnConfig,
+  onCloseLocalFileCompare,
   onCloseAll,
   appUpdateState,
   canLaunchUninstaller,
@@ -63,13 +83,16 @@ export default function AppDialogs({
   onApplySvnDiffViewerScope,
   onRestoreSvnDiffViewerDefault,
   onRefreshSvnDiffViewerStatus,
+  onPickComparableFile,
+  onCompareLocalFiles,
 }: AppDialogsProps) {
-  const anyDialogOpen = showGoto || showHelp || showAbout || showSvnConfig;
+  const anyDialogOpen = showGoto || showHelp || showAbout || showSvnConfig || showLocalFileCompare;
   const overlayMotion = useAnimatedVisibility(anyDialogOpen, { exitDurationMs: 150 });
   const gotoMotion = useAnimatedVisibility(showGoto);
   const helpMotion = useAnimatedVisibility(showHelp);
   const aboutMotion = useAnimatedVisibility(showAbout);
   const svnConfigMotion = useAnimatedVisibility(showSvnConfig, { exitDurationMs: 190 });
+  const localFileCompareMotion = useAnimatedVisibility(showLocalFileCompare, { exitDurationMs: 190 });
 
   return (
     <>
@@ -119,6 +142,18 @@ export default function AppDialogs({
           onRestoreDefault={onRestoreSvnDiffViewerDefault}
           onRefresh={onRefreshSvnDiffViewerStatus}
           onClose={onCloseSvnConfig}
+        />
+      )}
+      {localFileCompareMotion.shouldRender && (
+        <LocalFileCompareDialog
+          animationState={localFileCompareMotion.state}
+          loading={localFileCompareLoading}
+          error={localFileCompareError}
+          initialBasePath={localFileCompareBasePath}
+          initialMinePath={localFileCompareMinePath}
+          onPickFile={onPickComparableFile}
+          onCompare={onCompareLocalFiles}
+          onClose={onCloseLocalFileCompare}
         />
       )}
     </>

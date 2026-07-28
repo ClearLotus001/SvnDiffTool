@@ -29,6 +29,10 @@ import {
 import {
   projectTransportDiffData,
 } from './transportProjection.js';
+import {
+  getLocalFileCompareValidationIssue,
+  resolveLocalFileComparePaths,
+} from './localFileCompare.js';
 import type {
   LaunchContextPayload,
   LaunchStatePayload,
@@ -192,6 +196,32 @@ export function registerIpcHandlers(): void {
     };
   });
 
+  safeHandle('pick-comparable-file', async (_, ...args: unknown[]) => {
+    const win = getMainWindow();
+    if (!win) return null;
+    const payload = args[0] as { side?: string; requiredExtension?: string } | undefined;
+    const side = payload?.side === 'mine' ? 'mine' : 'base';
+    const requiredExtension = (payload?.requiredExtension ?? '')
+      .trim()
+      .replace(/^\./, '')
+      .toLocaleLowerCase('en-US');
+    const filters = /^[a-z0-9][a-z0-9+_-]*$/i.test(requiredExtension)
+      ? [{ name: electronT('dialogMatchingFileTypeFilterName'), extensions: [requiredExtension] }]
+      : undefined;
+    const result = await dialog.showOpenDialog(win, {
+      title: electronT(side === 'base' ? 'dialogPickBaseCompareFileTitle' : 'dialogPickMineCompareFileTitle'),
+      properties: ['openFile'],
+      ...(filters ? { filters } : {}),
+    });
+
+    const selectedPath = result.canceled ? '' : (result.filePaths[0] ?? '');
+    if (!selectedPath) return null;
+    return {
+      path: selectedPath,
+      name: path.basename(selectedPath),
+    };
+  });
+
   safeHandle('load-dev-working-copy-diff', async (_, ...args: unknown[]) => {
     const payload = args[0] as {
       filePath?: string;
@@ -207,6 +237,33 @@ export function registerIpcHandlers(): void {
       compareMode?: WorkbookCompareMode;
     } | undefined;
     return projectTransportDiffData(await buildLocalDiffData(payload?.basePath ?? '', payload?.minePath ?? '', payload?.compareMode ?? 'strict'));
+  });
+
+  safeHandle('load-local-file-diff', async (_, ...args: unknown[]) => {
+    const payload = args[0] as {
+      basePath?: string;
+      minePath?: string;
+      compareMode?: WorkbookCompareMode;
+    } | undefined;
+    const paths = resolveLocalFileComparePaths(
+      payload?.basePath ?? '',
+      payload?.minePath ?? '',
+    );
+    const issue = getLocalFileCompareValidationIssue(paths);
+    if (issue === 'missing-files') {
+      throw new Error(electronT('localFileCompareMissingFiles'));
+    }
+    if (issue === 'same-file') {
+      throw new Error(electronT('localFileCompareSameFile'));
+    }
+    if (issue === 'type-mismatch') {
+      throw new Error(electronT('localFileCompareTypeMismatch'));
+    }
+    return projectTransportDiffData(await buildLocalDiffData(
+      paths.basePath,
+      paths.minePath,
+      payload?.compareMode ?? 'strict',
+    ));
   });
 
   safeHandle('get-svn-diff-viewer-status', async () => getSvnDiffViewerStatus());

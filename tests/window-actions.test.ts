@@ -61,6 +61,7 @@ test('HomeStartPanel shows retry and close actions when an error is present', ()
         error: '文件加载失败：boom',
         isElectron: true,
         onPickWorkingCopy: () => {},
+        onOpenLocalFileCompare: () => {},
         onOpenSvnConfig: () => {},
       }),
     ),

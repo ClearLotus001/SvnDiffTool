@@ -9,6 +9,7 @@ import { extractDisplayName, extractVersionLabel } from '@/utils/diff/diffMeta';
 import RevisionPicker from '@/components/navigation/RevisionPicker';
 import RevisionLogHoverCard from '@/components/navigation/RevisionLogHoverCard';
 import Tooltip from '@/components/shared/Tooltip';
+import PathTooltip from '@/components/shared/PathTooltip';
 
 const HEADER_TOOLBAR_PILL_CLASS = 'inline-flex items-center h-[26px] px-2 rounded-full whitespace-nowrap';
 const HEADER_TOOLBAR_TEXT_CLASS = 'font-ui text-[11px] font-semibold leading-[1.15]';
@@ -38,6 +39,7 @@ interface SplitHeaderProps {
   mineTitle?: string;
   baseValueLabel?: string;
   mineValueLabel?: string;
+  isTwoFileCompare?: boolean;
   layout: LayoutMode;
   isWorkbookMode: boolean;
   baseRevisionInfo?: SvnRevisionInfo | null;
@@ -71,6 +73,7 @@ const SplitHeader = memo(({
   baseName, mineName,
   baseTitle = '', mineTitle = '',
   baseValueLabel = '', mineValueLabel = '',
+  isTwoFileCompare = false,
   layout, isWorkbookMode,
   baseRevisionInfo = null, mineRevisionInfo = null,
   revisionOptions = null, canSwitchRevisions = false,
@@ -87,8 +90,8 @@ const SplitHeader = memo(({
   const [copiedSide, setCopiedSide] = useState<'base' | 'mine' | null>(null);
   const baseVersion = baseValueLabel.trim() || baseRevisionInfo?.revision || extractVersionLabel(baseName) || t('commonBase');
   const mineVersion = mineValueLabel.trim() || mineRevisionInfo?.revision || extractVersionLabel(mineName) || t('commonMine');
-  const baseDisplayName = extractDisplayName(baseName);
-  const mineDisplayName = extractDisplayName(mineName);
+  const baseDisplayName = isTwoFileCompare ? baseName.trim() : extractDisplayName(baseName);
+  const mineDisplayName = isTwoFileCompare ? mineName.trim() : extractDisplayName(mineName);
   const options = revisionOptions ?? [];
   const horizontalSplitHeader = layout === 'split-h' && !isWorkbookMode;
   const resolvedSplitRatio = horizontalSplitHeader
@@ -150,8 +153,12 @@ const SplitHeader = memo(({
     );
   };
 
-  const renderStaticVersion = (label: string, accent: string /* CSS var name */) => (
-    <Tooltip content={label} maxWidth={320}>
+  const renderStaticVersion = (
+    label: string,
+    tooltip: string,
+    accent: string /* CSS var name */,
+  ) => {
+    const node = (
       <span
         className={`${HEADER_TOOLBAR_PILL_CLASS} gap-1.5 max-w-full min-w-0 border shrink-0`}
         style={{
@@ -160,14 +167,17 @@ const SplitHeader = memo(({
           boxShadow: `0 10px 18px -24px color-mix(in srgb, var(${accent}) 38%, transparent)`,
         }}>
         <span className={`${HEADER_TOOLBAR_TEXT_INNER_CLASS} ${HEADER_TOOLBAR_TEXT_STRONG_CLASS} whitespace-nowrap`} style={{ color: `var(${accent})` }}>
-          {t('splitHeaderVersionLabel')}
+          {isTwoFileCompare ? t('toolbarFileLabel') : t('splitHeaderVersionLabel')}
         </span>
         <span className={`${HEADER_TOOLBAR_VALUE_INNER_CLASS} text-text-title`}>
           {label}
         </span>
       </span>
-    </Tooltip>
-  );
+    );
+    return isTwoFileCompare
+      ? <PathTooltip path={tooltip || label}>{node}</PathTooltip>
+      : <Tooltip content={tooltip || label} maxWidth={520}>{node}</Tooltip>;
+  };
 
   const renderAxisBadge = (axis: SplitHeaderAxisMeta, accent: string) => {
     const isVertical = axis.kind.includes('left') || axis.kind.includes('right');
@@ -324,20 +334,26 @@ const SplitHeader = memo(({
           <div className="inline-flex items-center gap-1.5 min-w-0 shrink-0">
             {hasRevisionSwitch
               ? renderRevisionSelect(side, info)
-              : renderStaticVersion(staticVersionLabel, accent)}
+              : renderStaticVersion(staticVersionLabel, name || staticVersionLabel, accent)}
             {renderCopyButton(side, normalizedVersion || staticVersionLabel)}
           </div>
         </div>
 
         <div className="flex items-center gap-2 min-w-0">
           <div className="flex items-center min-w-0 flex-1 min-h-7 pl-1">
-            {renderMeta(info, name || title, accent) ?? (
+            {isTwoFileCompare ? (
+              <PathTooltip path={name || title}>
+                <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-secondary text-[11px] font-code">
+                  {name || title}
+                </span>
+              </PathTooltip>
+            ) : (renderMeta(info, name || title, accent) ?? (
               <Tooltip content={name || title} maxWidth={320}>
                 <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-secondary text-[11px] font-ui">
                   {name || title}
                 </span>
               </Tooltip>
-            )}
+            ))}
           </div>
         </div>
       </div>

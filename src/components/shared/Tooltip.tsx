@@ -8,6 +8,7 @@ interface TooltipProps {
   children: React.ReactNode;
   placement?: TooltipPlacement;
   maxWidth?: number;
+  width?: number;
   disabled?: boolean;
   surface?: 'default' | 'bare';
   anchorStyle?: CSSProperties | undefined;
@@ -150,7 +151,7 @@ export function computeTooltipLayout(
 }
 
 const Tooltip = memo(({
-  content, children, placement = 'top', maxWidth = 260, disabled = false, surface = 'default', anchorStyle, sideBoundaryRef,
+  content, children, placement = 'top', maxWidth = 260, width, disabled = false, surface = 'default', anchorStyle, sideBoundaryRef,
 }: TooltipProps) => {
   const id = useId();
   const anchorRef = useRef<HTMLSpanElement>(null);
@@ -191,7 +192,7 @@ const Tooltip = memo(({
     const nextWidth = Math.ceil(bubble.offsetWidth);
     const nextHeight = Math.ceil(bubble.offsetHeight);
     setBubbleSize((prev) => (prev.width === nextWidth && prev.height === nextHeight ? prev : { width: nextWidth, height: nextHeight }));
-  }, [maxWidth, open, rect, content]);
+  }, [content, maxWidth, open, rect, width]);
 
   const resolvedContent: React.ReactNode = typeof content === 'function' ? (open ? content() : null) : (content ?? null);
 
@@ -213,7 +214,10 @@ const Tooltip = memo(({
             ? 'relative'
             : 'svn-tooltip-surface relative p-[8px_10px] rounded-xl border border-border-default text-text-title text-[13px] leading-tight font-ui text-center whitespace-normal shadow-[0_14px_30px_rgba(0,0,0,0.12)] glass'}
           style={{
-            maxWidth,
+            width: width == null
+              ? undefined
+              : `min(${Math.min(width, maxWidth)}px, calc(100vw - ${VIEWPORT_PADDING * 2}px))`,
+            maxWidth: `min(${maxWidth}px, calc(100vw - ${VIEWPORT_PADDING * 2}px))`,
             background: surface === 'bare'
               ? 'transparent'
               : `

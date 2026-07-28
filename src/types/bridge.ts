@@ -9,6 +9,7 @@ import type {
   SvnDiffViewerScope,
   SvnDiffViewerStatus,
   SvnRevisionInfo,
+  LocalFilePickSide,
   WindowFrameState,
   DiffData,
 } from '@/types/svn';
@@ -46,8 +47,10 @@ export interface SvnDiffBridge {
   onCliArgsUpdated?(listener: () => void): () => void;
   isDevMode(): Promise<boolean>;
   pickDiffFile(): Promise<LocalDiffFilePickResult | null>;
+  pickComparableFile(side: LocalFilePickSide, requiredExtension?: string): Promise<LocalDiffFilePickResult | null>;
   loadDevWorkingCopyDiff(filePath: string, compareMode?: WorkbookCompareMode): Promise<DiffData>;
   loadLocalDiff(basePath: string, minePath: string, compareMode?: WorkbookCompareMode): Promise<DiffData>;
+  loadLocalFileDiff(basePath: string, minePath: string, compareMode?: WorkbookCompareMode): Promise<DiffData>;
   getSvnDiffViewerStatus(): Promise<SvnDiffViewerStatus>;
   configureSvnDiffViewer(scope: SvnDiffViewerScope): Promise<SvnDiffViewerStatus>;
   restoreSvnDefaultDiffViewerConfiguration(): Promise<SvnDiffViewerStatus>;

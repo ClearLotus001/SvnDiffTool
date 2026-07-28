@@ -24,6 +24,7 @@ function dialogReducer(state: DialogState, action: DialogAction): DialogState {
       showHelp: false,
       showAbout: false,
       showSvnConfig: false,
+      showLocalFileCompare: false,
     };
   }
 
@@ -39,6 +40,7 @@ const KEY_BY_DIALOG_ID: Record<DialogId, keyof DialogState> = {
   help: 'showHelp',
   about: 'showAbout',
   svnConfig: 'showSvnConfig',
+  localFileCompare: 'showLocalFileCompare',
 };
 
 export default function useDialogState() {
@@ -48,6 +50,7 @@ export default function useDialogState() {
     showHelp: false,
     showAbout: false,
     showSvnConfig: false,
+    showLocalFileCompare: false,
   });
 
   const set = useCallback((dialog: DialogId, value: SetStateAction<boolean>) => {

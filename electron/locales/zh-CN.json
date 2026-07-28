@@ -1,5 +1,8 @@
 {
   "dialogPickWorkingCopyTitle": "选择工作副本文件",
+  "dialogPickBaseCompareFileTitle": "选择基准文件",
+  "dialogPickMineCompareFileTitle": "选择对比文件",
+  "dialogMatchingFileTypeFilterName": "同类型文件",
   "dialogExportDirectoryTitle": "选择导出目录",
   "revisionWorkingCopyTitle": "本地工作副本",
   "revisionWorkingBaseTitle": "工作基线",
@@ -7,5 +10,8 @@
   "revisionMineFallbackTitle": "本地",
   "filePayloadReadError": "读取文件失败：{message}",
   "filePayloadMissingRepositoryUrl": "[SVN] 无法定位仓库 URL，无法按版本切换",
-  "filePayloadReadRevisionError": "[SVN] 读取版本 {revision} 失败：{message}"
+  "filePayloadReadRevisionError": "[SVN] 读取版本 {revision} 失败：{message}",
+  "localFileCompareMissingFiles": "请选择基准文件和对比文件。",
+  "localFileCompareSameFile": "基准文件和对比文件不能是同一个文件。",
+  "localFileCompareTypeMismatch": "请选择两个扩展名相同的文件。"
 }

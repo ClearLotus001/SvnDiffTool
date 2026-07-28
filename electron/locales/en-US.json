@@ -1,5 +1,8 @@
 {
   "dialogPickWorkingCopyTitle": "Select working copy file",
+  "dialogPickBaseCompareFileTitle": "Select baseline file",
+  "dialogPickMineCompareFileTitle": "Select comparison file",
+  "dialogMatchingFileTypeFilterName": "Matching file type",
   "dialogExportDirectoryTitle": "Select export directory",
   "revisionWorkingCopyTitle": "Working Copy",
   "revisionWorkingBaseTitle": "Working Base",
@@ -7,5 +10,8 @@
   "revisionMineFallbackTitle": "Local",
   "filePayloadReadError": "Error reading file: {message}",
   "filePayloadMissingRepositoryUrl": "[SVN] Unable to resolve the repository URL, so revision switching is unavailable",
-  "filePayloadReadRevisionError": "[SVN] Failed to read revision {revision}: {message}"
+  "filePayloadReadRevisionError": "[SVN] Failed to read revision {revision}: {message}",
+  "localFileCompareMissingFiles": "Choose both a baseline file and a comparison file.",
+  "localFileCompareSameFile": "The baseline and comparison files must be different.",
+  "localFileCompareTypeMismatch": "Choose two files with the same extension."
 }

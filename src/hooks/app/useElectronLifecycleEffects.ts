@@ -21,7 +21,6 @@ interface UseElectronLifecycleEffectsArgs {
   workbookCompareModeRef: MutableRefObject<WorkbookCompareMode>;
   loadSeqRef: MutableRefObject<number>;
   revisionQuerySeqRef: MutableRefObject<number>;
-  updateAutoCheckRequestedRef: MutableRefObject<boolean>;
   diffLoad: DiffLoadController;
   revisionQuery: RevisionQueryController;
 }
@@ -33,7 +32,6 @@ export default function useElectronLifecycleEffects({
   workbookCompareModeRef,
   loadSeqRef,
   revisionQuerySeqRef,
-  updateAutoCheckRequestedRef,
   diffLoad,
   revisionQuery,
 }: UseElectronLifecycleEffectsArgs) {
@@ -119,9 +117,6 @@ export default function useElectronLifecycleEffects({
       if (launchContext.launchedAfterUpdate) {
         onLaunchedAfterUpdate?.(launchContext.updateState.currentVersion);
       }
-      if (!launchContext.updateState.supportsAutoUpdate || updateAutoCheckRequestedRef.current) return;
-      updateAutoCheckRequestedRef.current = true;
-      void window.svnDiff?.checkForAppUpdate?.({ manual: false });
     };
 
     const loadData = async () => {
@@ -324,7 +319,6 @@ export default function useElectronLifecycleEffects({
     setResetPair,
     setRevisionOptions,
     setUsesNativeWindowControls,
-    updateAutoCheckRequestedRef,
     workbookCompareModeRef,
   ]);
 

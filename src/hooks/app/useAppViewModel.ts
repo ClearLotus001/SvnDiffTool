@@ -10,7 +10,11 @@ import { computeHunks } from '@/engine/text/diff';
 import { summarizeDiffChanges } from '@/engine/text/textChangeAlignment';
 import { buildSearchPattern, getSearchableLineContent, navigateSearch } from '@/engine/text/search';
 import { computeSearchMatchesAsync } from '@/utils/diff/computeSearchMatchesAsync';
-import { resolveDisplayFileName, resolveVersionLabel } from '@/utils/diff/diffMeta';
+import {
+  resolveDisplayFileName,
+  resolveTwoFileVersionLabels,
+  resolveVersionLabel,
+} from '@/utils/diff/diffMeta';
 import { prepareTextDiffAnalysisFromDiffLines } from '@/utils/diff/preparedTextAnalysis';
 import { createSearchResultItemResolver } from '@/utils/diff/searchResultItems';
 import {
@@ -122,14 +126,20 @@ export default function useAppViewModel({
   const setWorkbookContextMenu = useAppStore((s) => s.setWorkbookContextMenu);
 
   // ── Derived state (same logic as before) ─────────────────────────────
+  const twoFileBasePath = compareContext === 'literal_two_file_compare'
+    ? (currentDiffData?.basePath?.trim() ?? '')
+    : '';
+  const twoFileMinePath = compareContext === 'literal_two_file_compare'
+    ? (currentDiffData?.minePath?.trim() ?? '')
+    : '';
   const displayBaseName = (
     compareContext === 'literal_two_file_compare'
-      ? (launchBaseName || baseName || t('commonBase'))
+      ? (twoFileBasePath || launchBaseName || baseName || t('commonBase'))
       : (baseName || t('commonBase'))
   );
   const displayMineName = (
     compareContext === 'literal_two_file_compare'
-      ? (launchMineName || mineName || t('commonMine'))
+      ? (twoFileMinePath || launchMineName || mineName || t('commonMine'))
       : (mineName || t('commonMine'))
   );
 
@@ -140,21 +150,25 @@ export default function useAppViewModel({
 
   const selectedCell = workbookSelection.primary;
 
+  const twoFileVersionLabels = useMemo(
+    () => resolveTwoFileVersionLabels(displayBaseName, displayMineName),
+    [displayBaseName, displayMineName],
+  );
   const baseVersionLabel = useMemo(
     () => (
       compareContext === 'literal_two_file_compare'
-        ? displayBaseName
+        ? twoFileVersionLabels.base
         : resolveVersionLabel(displayBaseName, baseRevisionInfo, t('commonBase'))
     ),
-    [baseRevisionInfo, compareContext, displayBaseName, t],
+    [baseRevisionInfo, compareContext, displayBaseName, t, twoFileVersionLabels.base],
   );
   const mineVersionLabel = useMemo(
     () => (
       compareContext === 'literal_two_file_compare'
-        ? displayMineName
+        ? twoFileVersionLabels.mine
         : resolveVersionLabel(displayMineName, mineRevisionInfo, t('commonMine'))
     ),
-    [mineRevisionInfo, compareContext, displayMineName, t],
+    [mineRevisionInfo, compareContext, displayMineName, t, twoFileVersionLabels.mine],
   );
 
   const compareContextLabels = useMemo(
@@ -535,6 +549,8 @@ export default function useAppViewModel({
   return {
     displayBaseName,
     displayMineName,
+    twoFileBasePath,
+    twoFileMinePath,
     displayFileName,
     selectedCell,
     baseVersionLabel,

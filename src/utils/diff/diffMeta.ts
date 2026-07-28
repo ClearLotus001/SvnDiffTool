@@ -61,3 +61,96 @@ export function resolveVersionLabel(
 ): string {
   return revisionInfo?.revision?.trim() || extractVersionLabel(name) || fallback;
 }
+
+export interface TwoFileVersionLabels {
+  base: string;
+  mine: string;
+}
+
+function splitFilePath(value: string): string[] {
+  return value
+    .trim()
+    .replaceAll('\\', '/')
+    .split('/')
+    .filter(Boolean);
+}
+
+function samePathSegment(left: string, right: string): boolean {
+  return left.toLocaleLowerCase('en-US') === right.toLocaleLowerCase('en-US');
+}
+
+function formatUniqueDirectory(segments: string[]): string {
+  if (segments.length <= 2) return segments.join(' / ');
+  return `${segments[0]} / … / ${segments[segments.length - 1]}`;
+}
+
+export function resolveTwoFileVersionLabels(
+  basePath: string,
+  minePath: string,
+): TwoFileVersionLabels {
+  const baseSegments = splitFilePath(basePath);
+  const mineSegments = splitFilePath(minePath);
+  const baseFileName = baseSegments.at(-1) || basePath.trim();
+  const mineFileName = mineSegments.at(-1) || minePath.trim();
+
+  if (!samePathSegment(baseFileName, mineFileName)) {
+    return {
+      base: baseFileName,
+      mine: mineFileName,
+    };
+  }
+
+  const baseDirectories = baseSegments.slice(0, -1);
+  const mineDirectories = mineSegments.slice(0, -1);
+  let commonPrefixLength = 0;
+  while (
+    commonPrefixLength < baseDirectories.length
+    && commonPrefixLength < mineDirectories.length
+    && samePathSegment(
+      baseDirectories[commonPrefixLength]!,
+      mineDirectories[commonPrefixLength]!,
+    )
+  ) {
+    commonPrefixLength += 1;
+  }
+
+  let commonSuffixLength = 0;
+  while (
+    commonSuffixLength < baseDirectories.length - commonPrefixLength
+    && commonSuffixLength < mineDirectories.length - commonPrefixLength
+    && samePathSegment(
+      baseDirectories[baseDirectories.length - commonSuffixLength - 1]!,
+      mineDirectories[mineDirectories.length - commonSuffixLength - 1]!,
+    )
+  ) {
+    commonSuffixLength += 1;
+  }
+
+  const baseUniqueEnd = baseDirectories.length - commonSuffixLength;
+  const mineUniqueEnd = mineDirectories.length - commonSuffixLength;
+  const baseUniqueDirectories = baseDirectories.slice(commonPrefixLength, baseUniqueEnd);
+  const mineUniqueDirectories = mineDirectories.slice(commonPrefixLength, mineUniqueEnd);
+  const sharedParent = commonPrefixLength > 0
+    ? baseDirectories[commonPrefixLength - 1] ?? ''
+    : '';
+  const baseDirectoryLabel = formatUniqueDirectory(
+    baseUniqueDirectories.length > 0 ? baseUniqueDirectories : [sharedParent].filter(Boolean),
+  );
+  const mineDirectoryLabel = formatUniqueDirectory(
+    mineUniqueDirectories.length > 0 ? mineUniqueDirectories : [sharedParent].filter(Boolean),
+  );
+
+  const baseLabel = baseDirectoryLabel ? `${baseDirectoryLabel} · ${baseFileName}` : `01 · ${baseFileName}`;
+  const mineLabel = mineDirectoryLabel ? `${mineDirectoryLabel} · ${mineFileName}` : `02 · ${mineFileName}`;
+  if (!samePathSegment(baseLabel, mineLabel)) {
+    return {
+      base: baseLabel,
+      mine: mineLabel,
+    };
+  }
+
+  return {
+    base: `01 · ${baseFileName}`,
+    mine: `02 · ${mineFileName}`,
+  };
+}
