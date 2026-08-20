@@ -23,7 +23,7 @@ function resolveManualChunk(id: string): string | undefined {
 }
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss({ optimize: false })],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -33,6 +33,10 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    // Tailwind/Vite's production CSS optimizer drops standard backdrop-filter
+    // and leaves only the WebKit-prefixed declaration. Electron's Chromium
+    // ignores that prefix, so preserve authored CSS for packaged glass effects.
+    cssMinify: false,
     rollupOptions: {
       output: {
         manualChunks(id) {

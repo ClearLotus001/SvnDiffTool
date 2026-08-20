@@ -64,6 +64,18 @@ test('two-file dialog explains automatic Git/SVN detection and local fallback be
   await expect.poll(async () => versionedRule.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await expect.poll(async () => plainRule.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 
+  const dialogVisuals = await page.evaluate(() => {
+    const overlay = document.querySelector<HTMLElement>('.motion-dialog-overlay');
+    const dialog = document.querySelector<HTMLElement>('.motion-dialog-surface');
+    return {
+      overlayBackdropFilter: overlay ? getComputedStyle(overlay).backdropFilter : '',
+      dialogBackdropFilter: dialog ? getComputedStyle(dialog).backdropFilter : '',
+    };
+  });
+  expect(dialogVisuals.overlayBackdropFilter).toContain('blur(14px)');
+  expect(dialogVisuals.dialogBackdropFilter).toContain('blur(');
+  expect(dialogVisuals.dialogBackdropFilter).not.toBe('none');
+
   const baseDropZone = page.getByTestId('local-file-drop-base');
   const mineDropZone = page.getByTestId('local-file-drop-mine');
   await expect(baseDropZone.getByText('可拖放', { exact: true })).toBeVisible();
