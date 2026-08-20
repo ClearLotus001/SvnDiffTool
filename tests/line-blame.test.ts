@@ -9,14 +9,25 @@ import {
 } from '../src/utils/diff/lineBlame';
 import type { DiffLine } from '../src/types';
 
+function formatExpectedLocalDate(dateText: string): string {
+  const parsed = new Date(dateText);
+  const yyyy = parsed.getFullYear();
+  const mm = `${parsed.getMonth() + 1}`.padStart(2, '0');
+  const dd = `${parsed.getDate()}`.padStart(2, '0');
+  const hh = `${parsed.getHours()}`.padStart(2, '0');
+  const mi = `${parsed.getMinutes()}`.padStart(2, '0');
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+}
+
 test('SVN blame XML retains revision, author, date, and uncommitted lines', () => {
+  const commitDate = '2026-08-20T03:04:05.000000Z';
   const parsed = parseBlameEntries(`<?xml version="1.0"?>
     <blame>
       <target path="sample.txt">
         <entry line-number="1">
           <commit revision="12">
             <author>alice</author>
-            <date>2026-08-20T03:04:05.000000Z</date>
+            <date>${commitDate}</date>
           </commit>
         </entry>
         <entry line-number="2" />
@@ -28,7 +39,7 @@ test('SVN blame XML retains revision, author, date, and uncommitted lines', () =
       lineNo: 1,
       revision: 'r12',
       author: 'alice',
-      date: '2026-08-20 11:04',
+      date: formatExpectedLocalDate(commitDate),
       uncommitted: false,
     },
     {
