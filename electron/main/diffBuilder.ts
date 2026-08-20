@@ -793,6 +793,17 @@ export async function buildDiffData(options: BuildDiffDataOptions = {}): Promise
   }
 
   return {
+    ...(target ? {
+      source: {
+        kind: 'svn' as const,
+        label: target,
+        repositoryPath: target,
+        baseKind: 'svn' as const,
+        targetKind: 'svn' as const,
+        baseVersion: baseRevisionInfo?.id ?? resolvedBaseRevisionId ?? null,
+        targetVersion: mineRevisionInfo?.id ?? resolvedMineRevisionId ?? null,
+      },
+    } : {}),
     svnUrl: target,
     fileName: resolvedFileName,
     basePath: args.basePath,
@@ -905,7 +916,7 @@ export async function buildDevWorkingCopyDiffData(
   };
 }
 
-async function buildLiteralLocalDiffData(
+export async function buildLiteralLocalDiffData(
   basePath: string,
   minePath: string,
   workbookCompareMode: WorkbookCompareMode = 'strict',
@@ -1005,6 +1016,12 @@ async function buildLiteralLocalDiffData(
   }
 
   return {
+    source: {
+      kind: 'local',
+      label: 'Local files',
+      baseVersion: path.basename(resolvedBasePath),
+      targetVersion: path.basename(resolvedMinePath),
+    },
     svnUrl: '',
     fileName: resolvedFileName,
     basePath: resolvedBasePath,
@@ -1222,6 +1239,14 @@ async function buildVersionedTwoFileDiffData(
   }
 
   return {
+    source: {
+      kind: 'svn',
+      label: 'SVN files',
+      baseKind: 'svn',
+      targetKind: 'svn',
+      baseVersion: baseSource.id,
+      targetVersion: mineSource.id,
+    },
     svnUrl: '',
     fileName: resolvedFileName,
     basePath: localArgs.basePath,

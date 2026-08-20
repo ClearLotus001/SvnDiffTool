@@ -155,13 +155,13 @@ const AboutDialog = memo(({
         <div className="flex gap-2.5 mt-3">
           <button
             type="button"
-            onClick={() => openExternal('https://github.com/ClearLotus001/SvnDiffTool')}
+            onClick={() => openExternal('https://github.com/ClearLotus001/Versora')}
             className="h-8 px-3 rounded-[9px] border border-border-strong bg-transparent text-text-primary font-ui text-[13px] font-semibold cursor-pointer hover:bg-bg-surface-hover hover:text-accent active:scale-[0.97] transition-all duration-150">
             {t('aboutOpenRepository')}
           </button>
           <button
             type="button"
-            onClick={() => openExternal('https://github.com/ClearLotus001/SvnDiffTool/releases')}
+            onClick={() => openExternal('https://github.com/ClearLotus001/Versora/releases')}
             className="h-8 px-3 rounded-[9px] border border-border-strong bg-transparent text-text-primary font-ui text-[13px] font-semibold cursor-pointer hover:bg-bg-surface-hover hover:text-accent active:scale-[0.97] transition-all duration-150">
             {t('aboutOpenReleases')}
           </button>

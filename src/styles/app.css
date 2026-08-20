@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   SvnDiffTool — Global Stylesheet (Tailwind CSS v4)
+   Versora — Global Stylesheet (Tailwind CSS v4)
    ═══════════════════════════════════════════════════════════════════════════ */
 
 @import "tailwindcss";
@@ -69,7 +69,7 @@
   --color-scroll-track: var(--scroll-track);
 
   /* ── 字体 ── */
-  --font-ui: 'Inter', 'Microsoft YaHei UI', 'Segoe UI', 'PingFang SC', system-ui, sans-serif;
+  --font-ui: 'Bahnschrift', 'Microsoft YaHei UI', 'Segoe UI', 'PingFang SC', system-ui, sans-serif;
   --font-code: 'Consolas', 'Cascadia Mono', 'Courier New', monospace;
 
   /* ── 字号 (对应 FONT_SIZE 常量，使用 app- 前缀避免覆盖 Tailwind 内置) ── */
@@ -1007,16 +1007,6 @@ textarea::-moz-selection,
     linear-gradient(125deg, var(--home-surface-a) 0%, var(--home-surface-b) 48%, var(--home-surface-d) 100%);
 }
 
-.app-window-surface--home .app-toolbar {
-  border-bottom-color: var(--home-chrome-border);
-  background: var(--home-chrome-bg);
-  box-shadow:
-    inset 0 -1px 0 var(--home-chrome-border),
-    0 16px 34px -34px var(--home-chrome-shadow);
-  backdrop-filter: blur(18px) saturate(128%);
-  -webkit-backdrop-filter: blur(18px) saturate(128%);
-}
-
 .app-window-surface--home .app-stats-bar {
   border-top-color: var(--home-chrome-border);
   background: var(--home-chrome-bg);
@@ -1034,6 +1024,32 @@ textarea::-moz-selection,
   box-shadow: 0 10px 26px -24px var(--home-chrome-shadow);
   backdrop-filter: blur(12px) saturate(120%);
   -webkit-backdrop-filter: blur(12px) saturate(120%);
+}
+
+.app-toolbar__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 6px 0 2px;
+  flex: none;
+  color: var(--text-title);
+  pointer-events: none;
+}
+
+.app-toolbar__brand img {
+  display: block;
+  width: 27px;
+  height: 27px;
+  border-radius: 8px;
+  filter: drop-shadow(0 7px 10px color-mix(in srgb, var(--acc2) 20%, transparent));
+}
+
+.app-toolbar__brand span {
+  font-size: 15px;
+  font-weight: 820;
+  line-height: 1;
+  letter-spacing: -0.025em;
 }
 
 .theme-dark .app-window-surface--home .app-toolbar__group,
@@ -1381,7 +1397,7 @@ textarea::-moz-selection,
   border-left: 1px solid var(--border-color);
 }
 
-.local-file-compare-dialog__smart-mode-rule[data-mode='svn'] svg {
+.local-file-compare-dialog__smart-mode-rule[data-mode='versioned'] svg {
   color: var(--acc2);
 }
 
@@ -2971,6 +2987,7 @@ select:focus {
       color-mix(in srgb, var(--svn-config-scope-accent) 86%, var(--accent) 14%) 0%,
       color-mix(in srgb, var(--svn-config-scope-accent) 74%, var(--accent) 26%) 100%
     ) !important;
+  background-color: var(--svn-config-scope-accent) !important;
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, white 34%, transparent),
     inset 0 -1px 0 color-mix(in srgb, black 12%, transparent),
@@ -2990,16 +3007,14 @@ select:focus {
 
 .theme-hc .motion-dialog-surface .svn-config-dialog__scope-action:not(:disabled) {
   color: var(--btn-active-text) !important;
-  background-color: var(--svn-config-scope-accent) !important;
-  background-image: none !important;
+  background: var(--svn-config-scope-accent) !important;
   border: 1px solid var(--border-strong) !important;
   box-shadow: none !important;
 }
 
 .theme-hc .motion-dialog-surface .svn-config-dialog__scope-action:disabled {
   color: var(--text-secondary) !important;
-  background-color: var(--bg-base) !important;
-  background-image: none !important;
+  background: var(--bg-base) !important;
   border: 1px solid var(--border-strong) !important;
   box-shadow: none !important;
 }
@@ -3101,6 +3116,45 @@ select:focus {
 ::-webkit-scrollbar-thumb {
   background-color: color-mix(in srgb, var(--text-secondary) 30%, transparent);
   border-color: transparent;
+}
+
+/* The home toolbar keeps its controls, but shares the stage background directly. */
+.app-window-surface--home .app-toolbar {
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.app-window-surface--home .app-toolbar::before {
+  content: none;
+}
+
+/* Versora home heading --------------------------------------------------- */
+.home-hero-heading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 5px 8px 13px;
+  text-align: center;
+}
+
+.home-hero-heading h1 {
+  margin: 0;
+  color: var(--text-title);
+  font-size: clamp(23px, 3vw, 34px);
+  font-weight: 820;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+}
+
+@media (max-width: 760px) {
+  .home-hero-heading {
+    justify-content: flex-start;
+    text-align: left;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

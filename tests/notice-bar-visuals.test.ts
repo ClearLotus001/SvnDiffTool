@@ -30,6 +30,6 @@ test('DiffSourceNoticeBar uses the shared neutral indicator accent', () => {
     }),
   );
 
-  assert.match(html, /未纳入 SVN 版本管理|unversioned/i);
+  assert.match(html, /尚未纳入版本管理|not under version control/i);
   assert.match(html, /var\(--acc2\)/);
 });

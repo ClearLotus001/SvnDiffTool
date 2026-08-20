@@ -20,6 +20,7 @@ import type {
   CompareContext,
   RevisionOptionsQuery,
   RevisionSelectionPair,
+  LineBlameLine,
   SvnRevisionInfo,
   XmlNode,
 } from './types.js';
@@ -709,6 +710,32 @@ export function parseLogEntries(xmlText: string): SvnRevisionInfo[] {
     return mapped.filter((entry): entry is SvnRevisionInfo => entry != null);
   } catch (error) {
     logMainWarn('svn-log-parse', error instanceof Error ? error.message : String(error));
+    return [];
+  }
+}
+
+export function parseBlameEntries(xmlText: string): LineBlameLine[] {
+  if (!xmlText.trim()) return [];
+
+  try {
+    const parsed = asXmlNode(XML.parse(xmlText));
+    const targets = asXmlNodeArray(asXmlNode(parsed?.blame)?.target);
+    return targets.flatMap(target => asXmlNodeArray(target.entry)).flatMap((entry): LineBlameLine[] => {
+      const lineNo = Number.parseInt(getXmlString(entry, 'line-number').trim(), 10);
+      if (!Number.isFinite(lineNo) || lineNo < 1) return [];
+
+      const commit = asXmlNode(entry.commit);
+      const revision = formatRevisionLabel(getXmlString(commit, 'revision').trim());
+      return [{
+        lineNo,
+        revision,
+        author: getXmlString(commit, 'author').trim(),
+        date: formatLogDate(getXmlString(commit, 'date').trim()),
+        uncommitted: !revision,
+      }];
+    });
+  } catch (error) {
+    logMainWarn('svn-blame-parse', error instanceof Error ? error.message : String(error));
     return [];
   }
 }

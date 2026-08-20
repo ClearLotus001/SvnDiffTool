@@ -5,3 +5,4 @@ export * from '@/types/theme';
 export * from '@/types/update';
 export * from '@/types/svn';
 export * from '@/types/bridge';
+export * from '../../shared/comparison';

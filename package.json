@@ -1,12 +1,12 @@
 {
-  "name": "svn-diff-tool",
-  "version": "1.0.24",
-  "description": "SvnDiffTool — TortoiseSVN external diff viewer for text and workbook files",
+  "name": "versora",
+  "version": "1.0.25",
+  "description": "Versora — a focused comparison workspace for files, workbooks, Git, and SVN",
   "author": "ClearLotus",
   "main": "dist-electron/electron/main.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ClearLotus001/SvnDiffTool.git"
+    "url": "https://github.com/ClearLotus001/Versora.git"
   },
   "scripts": {
     "dev": "tsx scripts/dev-app.ts",
@@ -54,7 +54,7 @@
   },
   "build": {
     "appId": "com.svnexceldifftool.app",
-    "productName": "SvnDiffTool",
+    "productName": "Versora",
     "artifactName": "${productName}-${version}.${ext}",
     "electronLanguages": [
       "en-US",
@@ -63,13 +63,13 @@
     "win": {
       "target": "nsis",
       "icon": "assets/icon.ico",
-      "executableName": "SvnDiffTool"
+      "executableName": "Versora"
     },
     "publish": [
       {
         "provider": "github",
         "owner": "ClearLotus001",
-        "repo": "SvnDiffTool",
+        "repo": "Versora",
         "releaseType": "release"
       }
     ],

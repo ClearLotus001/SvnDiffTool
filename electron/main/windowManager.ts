@@ -175,6 +175,7 @@ function resolveInstalledUninstallerPath(app: Electron.App): string | null {
   const executableName = path.basename(process.execPath);
   const candidates = [
     path.join(installDir, `Uninstall ${executableName}`),
+    path.join(installDir, 'Uninstall Versora.exe'),
     path.join(installDir, 'Uninstall SvnDiffTool.exe'),
   ];
 
@@ -251,7 +252,7 @@ export function createWindow(): void {
     ...(titleBarOverlay ? { titleBarOverlay } : {}),
     backgroundColor: startupPalette.backgroundColor,
     ...(process.platform === 'win32' ? { roundedCorners: true } : {}),
-    title: 'SvnDiffTool',
+    title: 'Versora',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

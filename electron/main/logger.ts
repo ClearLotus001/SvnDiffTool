@@ -61,7 +61,7 @@ function resolveExternalDiffDebugLogPath(): string | null {
     runtimePaths.logsPath,
     runtimePaths.userDataPath ? path.join(runtimePaths.userDataPath, 'logs') : null,
     process.env.APPDATA?.trim()
-      ? path.join(process.env.APPDATA.trim(), 'svn-diff-tool', 'logs')
+      ? path.join(process.env.APPDATA.trim(), 'versora', 'logs')
       : null,
     path.join(process.cwd(), 'logs'),
   ].find((candidateRoot): candidateRoot is string => Boolean(candidateRoot?.trim()));

@@ -10,13 +10,11 @@ import { getAppUpdater, getMainWindow } from './state.js';
 import { getStartupPalette, readStartupAppearance, writeStartupAppearance } from './startupAppearance.js';
 import {
   buildDiffData,
-  buildDevWorkingCopyDiffData,
-  buildLocalDiffData,
   buildTwoFileRevisionDiffData,
   loadWorkbookCompareModeData,
   loadWorkbookMetadataData,
 } from './diffBuilder.js';
-import { getRevisionOptions, queryRevisionOptions } from './svnOperations.js';
+import { getRevisionOptions, loadSvnLineBlame, queryRevisionOptions } from './svnOperations.js';
 import {
   configureSvnDiffViewer,
   getSvnDiffViewerStatus,
@@ -30,10 +28,30 @@ import {
 import {
   projectTransportDiffData,
 } from './transportProjection.js';
+import { loadWorkingCopyLineBlame } from './workingCopyLineBlame.js';
+import {
+  buildSmartLocalFileDiffData,
+  buildTwoFileVersionDiffData,
+  clearActiveTwoFileVersionSession,
+  hasActiveTwoFileVersionSession,
+  loadTwoFileVersionLineBlame,
+  queryTwoFileRevisionOptions,
+} from './twoFileVersionOperations.js';
 import {
   getLocalFileCompareValidationIssue,
   resolveLocalFileComparePaths,
 } from './localFileCompare.js';
+import {
+  buildGitFileRevisionDiffData,
+  buildSmartWorkingCopyDiffData,
+} from './gitDiffBuilder.js';
+import {
+  clearActiveGitWorkingFileSession,
+  getActiveGitWorkingFileSession,
+  getGitRevisionOptions,
+  loadGitLineBlame,
+  queryGitRevisionOptions,
+} from './gitOperations.js';
 import type {
   LaunchContextPayload,
   LaunchStatePayload,
@@ -82,7 +100,7 @@ function buildLaunchContextPayload(): LaunchContextPayload {
 }
 
 function buildDiagnosticReportFileName(defaultFileName?: string): string {
-  const fallbackName = `svndiff-renderer-error-${new Date().toISOString().replaceAll(':', '-').replace(/\.\d{3}Z$/, 'Z')}.log`;
+  const fallbackName = `versora-renderer-error-${new Date().toISOString().replaceAll(':', '-').replace(/\.\d{3}Z$/, 'Z')}.log`;
   const rawName = typeof defaultFileName === 'string' && defaultFileName.trim()
     ? defaultFileName.trim()
     : fallbackName;
@@ -107,6 +125,8 @@ export function registerIpcHandlers(): void {
       return launchStateInFlight.promise;
     }
 
+    clearActiveGitWorkingFileSession();
+    clearActiveTwoFileVersionSession();
     const promise = (async (): Promise<LaunchStatePayload> => ({
       ...buildLaunchContextPayload(),
       diffData: projectTransportDiffData(await buildDiffData({
@@ -130,6 +150,8 @@ export function registerIpcHandlers(): void {
 
   safeHandle('get-diff-data', async (_, ...args: unknown[]) => {
     const payload = args[0] as { compareMode?: WorkbookCompareMode } | undefined;
+    clearActiveGitWorkingFileSession();
+    clearActiveTwoFileVersionSession();
     return projectTransportDiffData(await buildDiffData({
       workbookCompareMode: payload?.compareMode ?? 'strict',
     }));
@@ -141,18 +163,56 @@ export function registerIpcHandlers(): void {
       mineRevisionId?: string;
       compareMode?: WorkbookCompareMode;
     } | undefined;
-    return projectTransportDiffData(await buildDiffData({
-      baseRevisionId: payload?.baseRevisionId,
-      mineRevisionId: payload?.mineRevisionId,
-      workbookCompareMode: payload?.compareMode ?? 'strict',
-    }));
+    const data = getActiveGitWorkingFileSession()
+      ? await buildGitFileRevisionDiffData(
+          payload?.baseRevisionId,
+          payload?.mineRevisionId,
+          payload?.compareMode ?? 'strict',
+        )
+      : await buildDiffData({
+          baseRevisionId: payload?.baseRevisionId,
+          mineRevisionId: payload?.mineRevisionId,
+          workbookCompareMode: payload?.compareMode ?? 'strict',
+        });
+    return projectTransportDiffData(data);
   });
 
-  safeHandle('get-revision-options', async () => getRevisionOptions());
+  safeHandle('load-line-blame', async (_, ...args: unknown[]) => {
+    const payload = args[0] as {
+      baseRevisionId?: string;
+      mineRevisionId?: string;
+    } | undefined;
+    return getActiveGitWorkingFileSession()
+      ? loadGitLineBlame(payload?.baseRevisionId, payload?.mineRevisionId)
+      : loadSvnLineBlame(payload?.baseRevisionId, payload?.mineRevisionId);
+  });
+
+  safeHandle('load-working-copy-line-blame', async (_, ...args: unknown[]) => {
+    const payload = args[0] as { basePath?: string; minePath?: string } | undefined;
+    return loadWorkingCopyLineBlame(payload?.basePath ?? '', payload?.minePath ?? '');
+  });
+
+  safeHandle('load-two-file-version-line-blame', async (_, ...args: unknown[]) => {
+    const payload = args[0] as { baseRevisionId?: string; mineRevisionId?: string } | undefined;
+    return loadTwoFileVersionLineBlame(
+      payload?.baseRevisionId ?? '',
+      payload?.mineRevisionId ?? '',
+    );
+  });
+
+  safeHandle('get-revision-options', async () => (
+    getActiveGitWorkingFileSession()
+      ? getGitRevisionOptions()
+      : getRevisionOptions()
+  ));
 
   safeHandle('query-revision-options', async (_, ...args: unknown[]) => {
     const payload = args[0] as RevisionOptionsQuery | undefined;
-    return queryRevisionOptions(payload);
+    return hasActiveTwoFileVersionSession()
+      ? queryTwoFileRevisionOptions(payload)
+      : getActiveGitWorkingFileSession()
+      ? queryGitRevisionOptions(payload)
+      : queryRevisionOptions(payload);
   });
 
   safeHandle('load-workbook-compare-mode', async (_, ...args: unknown[]) => {
@@ -161,10 +221,11 @@ export function registerIpcHandlers(): void {
       baseRevisionId?: string;
       mineRevisionId?: string;
     } | undefined;
+    const isGitFileSession = Boolean(getActiveGitWorkingFileSession());
     return loadWorkbookCompareModeData(
       payload?.compareMode ?? 'strict',
-      payload?.baseRevisionId,
-      payload?.mineRevisionId,
+      isGitFileSession ? undefined : payload?.baseRevisionId,
+      isGitFileSession ? undefined : payload?.mineRevisionId,
     );
   });
 
@@ -173,9 +234,10 @@ export function registerIpcHandlers(): void {
       baseRevisionId?: string;
       mineRevisionId?: string;
     } | undefined;
+    const isGitFileSession = Boolean(getActiveGitWorkingFileSession());
     return loadWorkbookMetadataData(
-      payload?.baseRevisionId,
-      payload?.mineRevisionId,
+      isGitFileSession ? undefined : payload?.baseRevisionId,
+      isGitFileSession ? undefined : payload?.mineRevisionId,
     );
   });
 
@@ -203,6 +265,14 @@ export function registerIpcHandlers(): void {
       mineRevisionId?: string;
       compareMode?: WorkbookCompareMode;
     } | undefined;
+    if (hasActiveTwoFileVersionSession()) {
+      return projectTransportDiffData(await buildTwoFileVersionDiffData(
+        payload?.baseRevisionId ?? '',
+        payload?.mineRevisionId ?? '',
+        payload?.compareMode ?? 'strict',
+      ));
+    }
+    clearActiveGitWorkingFileSession();
     return projectTransportDiffData(await buildTwoFileRevisionDiffData(
       payload?.baseRevisionId ?? '',
       payload?.mineRevisionId ?? '',
@@ -241,7 +311,11 @@ export function registerIpcHandlers(): void {
       filePath?: string;
       compareMode?: WorkbookCompareMode;
     } | undefined;
-    return projectTransportDiffData(await buildDevWorkingCopyDiffData(payload?.filePath ?? '', payload?.compareMode ?? 'strict'));
+    clearActiveTwoFileVersionSession();
+    return projectTransportDiffData(await buildSmartWorkingCopyDiffData(
+      payload?.filePath ?? '',
+      payload?.compareMode ?? 'strict',
+    ));
   });
 
   safeHandle('load-local-diff', async (_, ...args: unknown[]) => {
@@ -250,7 +324,12 @@ export function registerIpcHandlers(): void {
       minePath?: string;
       compareMode?: WorkbookCompareMode;
     } | undefined;
-    return projectTransportDiffData(await buildLocalDiffData(payload?.basePath ?? '', payload?.minePath ?? '', payload?.compareMode ?? 'strict'));
+    clearActiveGitWorkingFileSession();
+    return projectTransportDiffData(await buildSmartLocalFileDiffData(
+      payload?.basePath ?? '',
+      payload?.minePath ?? '',
+      payload?.compareMode ?? 'strict',
+    ));
   });
 
   safeHandle('load-local-file-diff', async (_, ...args: unknown[]) => {
@@ -273,7 +352,8 @@ export function registerIpcHandlers(): void {
     if (issue === 'type-mismatch') {
       throw new Error(electronT('localFileCompareTypeMismatch'));
     }
-    return projectTransportDiffData(await buildLocalDiffData(
+    clearActiveGitWorkingFileSession();
+    return projectTransportDiffData(await buildSmartLocalFileDiffData(
       paths.basePath,
       paths.minePath,
       payload?.compareMode ?? 'strict',

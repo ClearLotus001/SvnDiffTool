@@ -176,7 +176,7 @@ test('runtime paths reject a managed cache reached through a directory link', as
         cacheRoot: unsafeCacheRoot,
       });
 
-      assert.equal(runtimePaths.cacheRoot, path.join(defaultLocalAppData, 'SvnDiffTool', 'Cache'));
+      assert.equal(runtimePaths.cacheRoot, path.join(defaultLocalAppData, 'Versora', 'Cache'));
       cleanupStaleManagedTempFilesSync(Date.now(), { force: true });
       cleanupManagedTempFilesOnExitSync();
       assert.equal(fs.existsSync(externalMarkerPath), true);
@@ -216,7 +216,7 @@ test('runtime paths reject linked managed cache subdirectories', async (t) => {
         cacheRoot: configuredCacheRoot,
       });
 
-      assert.equal(runtimePaths.cacheRoot, path.join(defaultLocalAppData, 'SvnDiffTool', 'Cache'));
+      assert.equal(runtimePaths.cacheRoot, path.join(defaultLocalAppData, 'Versora', 'Cache'));
       cleanupStaleManagedTempFilesSync(Date.now(), { force: true });
       cleanupManagedTempFilesOnExitSync();
       assert.equal(fs.existsSync(externalMarkerPath), true);

@@ -294,7 +294,7 @@ export async function writeManagedTempFile(
 
   const tempFilePath = path.join(
     tempRootPath,
-    `svn-diff-${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}${normalizeExtension(extension)}`,
+    `versora-${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}${normalizeExtension(extension)}`,
   );
 
   await fs.promises.writeFile(tempFilePath, Buffer.from(contents));

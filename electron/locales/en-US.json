@@ -1,5 +1,5 @@
 {
-  "dialogPickWorkingCopyTitle": "Select working copy file",
+  "dialogPickWorkingCopyTitle": "Select a working-copy file",
   "dialogPickBaseCompareFileTitle": "Select baseline file",
   "dialogPickMineCompareFileTitle": "Select comparison file",
   "dialogMatchingFileTypeFilterName": "Matching file type",

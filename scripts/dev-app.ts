@@ -13,7 +13,7 @@ const tscCliPath = path.join(rootDir, 'node_modules', 'typescript', 'bin', 'tsc'
 const tsxCliPath = path.join(rootDir, 'node_modules', 'tsx', 'dist', 'cli.mjs');
 const rustArtifactPaths = getRustArtifactPaths(rootDir);
 const devAppLockHash = createHash('sha1').update(rootDir).digest('hex').slice(0, 10);
-const devAppLockDir = path.join(os.tmpdir(), 'SvnDiffTool-dev');
+const devAppLockDir = path.join(os.tmpdir(), 'Versora-dev');
 const devAppLockPath = path.join(devAppLockDir, `dev-app-${devAppLockHash}.lock.json`);
 
 const processes: ChildProcess[] = [];

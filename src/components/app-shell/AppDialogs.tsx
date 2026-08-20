@@ -18,8 +18,6 @@ interface AppDialogsProps {
   showAbout: boolean;
   showSvnConfig: boolean;
   showLocalFileCompare: boolean;
-  localFileCompareLoading: boolean;
-  localFileCompareError: string;
   localFileCompareBasePath: string;
   localFileCompareMinePath: string;
   totalLines: number;
@@ -57,8 +55,6 @@ export default function AppDialogs({
   showAbout,
   showSvnConfig,
   showLocalFileCompare,
-  localFileCompareLoading,
-  localFileCompareError,
   localFileCompareBasePath,
   localFileCompareMinePath,
   totalLines,
@@ -147,8 +143,6 @@ export default function AppDialogs({
       {localFileCompareMotion.shouldRender && (
         <LocalFileCompareDialog
           animationState={localFileCompareMotion.state}
-          loading={localFileCompareLoading}
-          error={localFileCompareError}
           initialBasePath={localFileCompareBasePath}
           initialMinePath={localFileCompareMinePath}
           onPickFile={onPickComparableFile}

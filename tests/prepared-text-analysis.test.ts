@@ -72,3 +72,29 @@ test('materializeSplitRowsFromDescriptors reproduces legacy split-row structure'
     })),
   );
 });
+
+test('materializeSplitRowsFromDescriptors refreshes rows when line metadata is enriched', () => {
+  const diffLines = computeDiff('before', 'after');
+  const prepared = prepareTextDiffAnalysisFromDiffLines(diffLines);
+  const initialRows = materializeSplitRowsFromDescriptors(
+    diffLines,
+    prepared.splitRowDescriptors,
+  );
+  const enrichedDiffLines = diffLines.map((line) => ({
+    ...line,
+    baseBlame: line.baseLineNo == null ? null : {
+      revision: 'abc123',
+      author: 'alice',
+      date: '2026-08-20 11:04',
+      uncommitted: false,
+    },
+  }));
+  const enrichedRows = materializeSplitRowsFromDescriptors(
+    enrichedDiffLines,
+    prepared.splitRowDescriptors,
+  );
+
+  assert.notEqual(enrichedRows, initialRows);
+  assert.equal(enrichedRows[0]?.left, enrichedDiffLines[0]);
+  assert.equal(enrichedRows[0]?.left?.baseBlame?.author, 'alice');
+});

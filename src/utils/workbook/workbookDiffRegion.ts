@@ -34,9 +34,18 @@ interface WorkbookDiffRegionBlock {
 }
 
 function findParent(parent: number[], index: number): number {
-  if (parent[index] === index) return index;
-  parent[index] = findParent(parent, parent[index]!);
-  return parent[index]!;
+  let root = index;
+  while (parent[root] !== root) {
+    root = parent[root]!;
+  }
+
+  let current = index;
+  while (parent[current] !== current) {
+    const next = parent[current]!;
+    parent[current] = root;
+    current = next;
+  }
+  return root;
 }
 
 function unionParent(parent: number[], left: number, right: number) {
@@ -83,9 +92,40 @@ function compareWorkbookDiffRegionBlocks(
     || Number(left.hasMineSide) - Number(right.hasMineSide);
 }
 
-function mergeLineIdxs(lineIdxArrays: number[][]): number[] {
-  return Array.from(new Set(lineIdxArrays.flatMap((lineIdxs) => lineIdxs)))
-    .sort((left, right) => left - right);
+function mergeLineIdxs(lineIdxArrays: ReadonlyArray<ReadonlyArray<number>>): number[] {
+  const merged = new Set<number>();
+  lineIdxArrays.forEach((lineIdxs) => {
+    lineIdxs.forEach((lineIdx) => merged.add(lineIdx));
+  });
+  return Array.from(merged).sort((left, right) => left - right);
+}
+
+function getNumberBounds(values: Iterable<number>): { min: number; max: number } | null {
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  for (const value of values) {
+    if (value < min) min = value;
+    if (value > max) max = value;
+  }
+  return Number.isFinite(min) && Number.isFinite(max) ? { min, max } : null;
+}
+
+function getPositiveRowNumberBounds(
+  nodes: ReadonlyArray<Pick<WorkbookDiffRegionNode, 'rowNumberStart' | 'rowNumberEnd'>>,
+): { min: number; max: number } | null {
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  nodes.forEach((node) => {
+    if (node.rowNumberStart > 0) {
+      min = Math.min(min, node.rowNumberStart);
+      max = Math.max(max, node.rowNumberStart);
+    }
+    if (node.rowNumberEnd > 0) {
+      min = Math.min(min, node.rowNumberEnd);
+      max = Math.max(max, node.rowNumberEnd);
+    }
+  });
+  return Number.isFinite(min) && Number.isFinite(max) ? { min, max } : null;
 }
 
 function buildWorkbookDiffRegionNodeKey(node: WorkbookDiffRegionNode): string {
@@ -116,21 +156,24 @@ function normalizeWorkbookDiffRegionNodes(nodes: WorkbookDiffRegionNode[]): Work
 
   return Array.from(groups.values())
     .map((group) => {
-      const anchorNode = group
-        .slice()
-        .sort(compareWorkbookDiffRegionNodes)
-        .find((node) => node.anchorSelection != null) ?? group[0]!;
-      const rowNumberCandidates = group
-        .flatMap((node) => [node.rowNumberStart, node.rowNumberEnd])
-        .filter((value) => value > 0);
+      let anchorNode = group[0]!;
+      let anchorLineIdx = anchorNode.anchorLineIdx;
+      group.forEach((node) => {
+        const shouldPreferNode = node.anchorSelection != null
+          ? anchorNode.anchorSelection == null || compareWorkbookDiffRegionNodes(node, anchorNode) < 0
+          : anchorNode.anchorSelection == null && compareWorkbookDiffRegionNodes(node, anchorNode) < 0;
+        if (shouldPreferNode) anchorNode = node;
+        anchorLineIdx = Math.min(anchorLineIdx, node.anchorLineIdx);
+      });
+      const rowNumberBounds = getPositiveRowNumberBounds(group);
 
       return {
         ...anchorNode,
         lineIdxs: mergeLineIdxs(group.map((node) => node.lineIdxs ?? [])),
-        rowNumberStart: rowNumberCandidates.length > 0 ? Math.min(...rowNumberCandidates) : 0,
-        rowNumberEnd: rowNumberCandidates.length > 0 ? Math.max(...rowNumberCandidates) : 0,
+        rowNumberStart: rowNumberBounds?.min ?? 0,
+        rowNumberEnd: rowNumberBounds?.max ?? 0,
         anchorSelection: anchorNode.anchorSelection,
-        anchorLineIdx: Math.min(...group.map((node) => node.anchorLineIdx)),
+        anchorLineIdx,
       };
     })
     .sort(compareWorkbookDiffRegionNodes);
@@ -139,13 +182,30 @@ function normalizeWorkbookDiffRegionNodes(nodes: WorkbookDiffRegionNode[]): Work
 function buildWorkbookDiffRegionBlock(
   patches: WorkbookDiffRegionNode[],
 ): WorkbookDiffRegionBlock {
+  const firstPatch = patches[0]!;
+  let startRowIndex = firstPatch.startRowIndex;
+  let endRowIndex = firstPatch.endRowIndex;
+  let startCol = firstPatch.startCol;
+  let endCol = firstPatch.endCol;
+  let hasBaseSide = firstPatch.hasBaseSide;
+  let hasMineSide = firstPatch.hasMineSide;
+  for (let index = 1; index < patches.length; index += 1) {
+    const patch = patches[index]!;
+    startRowIndex = Math.min(startRowIndex, patch.startRowIndex);
+    endRowIndex = Math.max(endRowIndex, patch.endRowIndex);
+    startCol = Math.min(startCol, patch.startCol);
+    endCol = Math.max(endCol, patch.endCol);
+    hasBaseSide ||= patch.hasBaseSide;
+    hasMineSide ||= patch.hasMineSide;
+  }
+
   return {
-    startRowIndex: Math.min(...patches.map((patch) => patch.startRowIndex)),
-    endRowIndex: Math.max(...patches.map((patch) => patch.endRowIndex)),
-    startCol: Math.min(...patches.map((patch) => patch.startCol)),
-    endCol: Math.max(...patches.map((patch) => patch.endCol)),
-    hasBaseSide: patches.some((patch) => patch.hasBaseSide),
-    hasMineSide: patches.some((patch) => patch.hasMineSide),
+    startRowIndex,
+    endRowIndex,
+    startCol,
+    endCol,
+    hasBaseSide,
+    hasMineSide,
     patches: patches.slice().sort(compareWorkbookDiffRegionNodes),
   };
 }
@@ -249,6 +309,74 @@ function buildNodeAnchorSelection(
   return null;
 }
 
+function buildStructuralWorkbookSectionRegion(
+  section: WorkbookSection,
+  rows: IndexedWorkbookSectionRows['rows'],
+  baseVersionLabel: string,
+  mineVersionLabel: string,
+  baseWorkbookMetadata: WorkbookMetadataMap | null,
+  mineWorkbookMetadata: WorkbookMetadataMap | null,
+): WorkbookDiffRegion {
+  const anchorRow = rows.find((row) => (
+    section.firstDataLineIdx != null && row.lineIdxs.includes(section.firstDataLineIdx)
+  )) ?? rows[0] ?? null;
+  const baseEntry = anchorRow
+    ? buildWorkbookRowEntry(anchorRow, 'base', section.name, baseVersionLabel)
+    : null;
+  const mineEntry = anchorRow
+    ? buildWorkbookRowEntry(anchorRow, 'mine', section.name, mineVersionLabel)
+    : null;
+  const anchorLineIdx = section.firstDataLineIdx ?? section.startLineIdx;
+  const rowNumberStart = Math.max(
+    1,
+    section.firstDataRowNumber ?? baseEntry?.rowNumber ?? mineEntry?.rowNumber ?? 1,
+  );
+  const rowNumberEnd = Math.max(rowNumberStart, section.rowCount || rowNumberStart);
+  const endRowIndex = Math.max(0, section.rowCount - 1);
+  const endCol = Math.max(0, section.maxColumns - 1);
+  const anchorSelection = anchorRow
+    ? buildNodeAnchorSelection(
+        anchorRow,
+        baseEntry,
+        mineEntry,
+        0,
+        baseWorkbookMetadata?.sheets[section.name]?.mergeRanges ?? [],
+        mineWorkbookMetadata?.sheets[section.name]?.mergeRanges ?? [],
+      )
+    : null;
+  const patch: WorkbookDiffRegionPatch = {
+    startRowIndex: 0,
+    endRowIndex,
+    startCol: 0,
+    endCol,
+    baseRowStart: section.hasBaseSide ? rowNumberStart : null,
+    baseRowEnd: section.hasBaseSide ? rowNumberEnd : null,
+    mineRowStart: section.hasMineSide ? rowNumberStart : null,
+    mineRowEnd: section.hasMineSide ? rowNumberEnd : null,
+    hasBaseSide: section.hasBaseSide,
+    hasMineSide: section.hasMineSide,
+    lineIdxs: [anchorLineIdx],
+  };
+
+  return {
+    id: `${section.name}:structural:0:0`,
+    sheetName: section.name,
+    startRowIndex: 0,
+    endRowIndex,
+    startCol: 0,
+    endCol,
+    rowNumberStart,
+    rowNumberEnd,
+    lineStartIdx: section.startLineIdx,
+    lineEndIdx: section.endLineIdx,
+    anchorLineIdx,
+    hasBaseSide: section.hasBaseSide,
+    hasMineSide: section.hasMineSide,
+    anchorSelection,
+    patches: [patch],
+  };
+}
+
 function collectWorkbookDiffRegionNodes(
   section: WorkbookSection,
   rows: IndexedWorkbookSectionRows['rows'],
@@ -311,8 +439,10 @@ function collectWorkbookDiffRegionNodes(
       const hasMineSide = Boolean(entry.mineEntry && cellDelta.kind !== 'delete');
       const rowNumberCandidates = [baseRowStart, baseRowEnd, mineRowStart, mineRowEnd]
         .filter((value): value is number => value != null && value > 0);
-      const rowNumberStart = rowNumberCandidates.length > 0 ? Math.min(...rowNumberCandidates) : 0;
-      const rowNumberEnd = rowNumberCandidates.length > 0 ? Math.max(...rowNumberCandidates) : 0;
+      const rowNumberBounds = getNumberBounds(rowNumberCandidates);
+      const lineIdxBounds = getNumberBounds(entry.row.lineIdxs);
+      const rowNumberStart = rowNumberBounds?.min ?? 0;
+      const rowNumberEnd = rowNumberBounds?.max ?? 0;
 
       nodes.push({
         startRowIndex,
@@ -336,7 +466,7 @@ function collectWorkbookDiffRegionNodes(
           baseMergeRanges,
           mineMergeRanges,
         ),
-        anchorLineIdx: Math.min(...entry.row.lineIdxs),
+        anchorLineIdx: lineIdxBounds?.min ?? entry.row.lineIdx,
       });
     });
   });
@@ -355,9 +485,8 @@ function aggregateWorkbookDiffRegions(
       const patches = block.patches.slice().sort(compareWorkbookDiffRegionNodes);
       const anchorPatch = patches[0]!;
       const lineIdxs = mergeLineIdxs(patches.map((patch) => patch.lineIdxs ?? []));
-      const rowNumberCandidates = patches
-        .flatMap((patch) => [patch.rowNumberStart, patch.rowNumberEnd])
-        .filter((value) => value > 0);
+      const rowNumberBounds = getPositiveRowNumberBounds(patches);
+      const lineIdxBounds = getNumberBounds(lineIdxs);
 
       return {
         id: `${sheetName}:${block.startRowIndex}:${block.startCol}:${regionIndex}`,
@@ -366,10 +495,10 @@ function aggregateWorkbookDiffRegions(
         endRowIndex: block.endRowIndex,
         startCol: block.startCol,
         endCol: block.endCol,
-        rowNumberStart: rowNumberCandidates.length > 0 ? Math.min(...rowNumberCandidates) : 0,
-        rowNumberEnd: rowNumberCandidates.length > 0 ? Math.max(...rowNumberCandidates) : 0,
-        lineStartIdx: Math.min(...lineIdxs),
-        lineEndIdx: Math.max(...lineIdxs),
+        rowNumberStart: rowNumberBounds?.min ?? 0,
+        rowNumberEnd: rowNumberBounds?.max ?? 0,
+        lineStartIdx: lineIdxBounds?.min ?? anchorPatch.anchorLineIdx,
+        lineEndIdx: lineIdxBounds?.max ?? anchorPatch.anchorLineIdx,
         anchorLineIdx: anchorPatch.anchorLineIdx,
         hasBaseSide: block.hasBaseSide,
         hasMineSide: block.hasMineSide,
@@ -396,6 +525,16 @@ export function buildWorkbookDiffRegions(
 ): WorkbookDiffRegion[] {
   return workbookSections.flatMap((section) => {
     const rows = workbookSectionRowIndex.get(section.name)?.rows ?? [];
+    if (section.changeType === 'add' || section.changeType === 'delete') {
+      return [buildStructuralWorkbookSectionRegion(
+        section,
+        rows,
+        baseVersionLabel,
+        mineVersionLabel,
+        baseWorkbookMetadata,
+        mineWorkbookMetadata,
+      )];
+    }
     const nodes = collectWorkbookDiffRegionNodes(
       section,
       rows,

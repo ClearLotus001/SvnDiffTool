@@ -37,7 +37,7 @@ test('two-file comparison loads an independent revision timeline for each side',
       }),
     } as NonNullable<typeof window.svnDiff>;
   }, { base: baseRevision, mine: mineRevision });
-  const testBaseUrl = process.env.SVN_DIFF_E2E_BASE_URL ?? '';
+  const testBaseUrl = process.env.VERSORA_E2E_BASE_URL ?? '';
   await page.goto(`${testBaseUrl}/?__e2e=1`);
   await page.waitForFunction(() => Boolean(window.__SVN_DIFF_E2E__));
   await page.evaluate(async ({ base, mine }) => {
@@ -47,6 +47,12 @@ test('two-file comparison loads an independent revision timeline for each side',
       mineName: 'E:\\Project\\Trunk\\sample.txt',
       baseContent: 'base',
       mineContent: 'mine',
+      source: {
+        kind: 'local',
+        label: 'Versioned local files',
+        baseKind: 'git',
+        targetKind: 'svn',
+      },
       revisionOptions: null,
       baseRevisionInfo: base,
       mineRevisionInfo: mine,
@@ -59,6 +65,18 @@ test('two-file comparison loads an independent revision timeline for each side',
   await expect.poll(async () => page.getByTestId('toolbar-view-menu').evaluate(
     (element) => window.getComputedStyle(element).fontSize,
   )).toBe('12px');
+
+  const baseSourceBadge = page.getByTestId('source-badge-base');
+  const mineSourceBadge = page.getByTestId('source-badge-mine');
+  await expect(baseSourceBadge).toHaveText('GIT');
+  await expect(mineSourceBadge).toHaveText('SVN');
+  await expect.poll(async () => {
+    const [baseColor, mineColor] = await Promise.all([
+      baseSourceBadge.evaluate(element => window.getComputedStyle(element).color),
+      mineSourceBadge.evaluate(element => window.getComputedStyle(element).color),
+    ]);
+    return baseColor !== mineColor;
+  }).toBe(true);
 
   const baseTrigger = page.locator('button[aria-expanded]').filter({ hasText: '102' });
   const mineTrigger = page.locator('button[aria-expanded]').filter({ hasText: '205' });
@@ -73,4 +91,49 @@ test('two-file comparison loads an independent revision timeline for each side',
   await mineTrigger.click();
   await expect(page.getByText('mine older', { exact: true })).toBeVisible();
   await expect(page.getByText('base older', { exact: true })).toHaveCount(0);
+});
+
+test('mixed two-file comparison only exposes a picker for the versioned side', async ({ page }) => {
+  await page.addInitScript(({ base }) => {
+    window.svnDiff = {
+      getLaunchState: () => new Promise(() => {}),
+      queryRevisionOptions: async () => ({
+        items: [base],
+        hasMore: false,
+        nextBeforeRevisionId: null,
+        anchorRevisionId: null,
+        queryDateTime: null,
+      }),
+    } as NonNullable<typeof window.svnDiff>;
+  }, { base: baseRevision });
+  const testBaseUrl = process.env.VERSORA_E2E_BASE_URL ?? '';
+  await page.goto(`${testBaseUrl}/?__e2e=1`);
+  await page.waitForFunction(() => Boolean(window.__SVN_DIFF_E2E__));
+  await page.evaluate(async ({ base }) => {
+    await window.__SVN_DIFF_E2E__!.loadTextDiff({
+      fileName: 'mixed.txt',
+      baseName: 'tracked.txt',
+      mineName: 'plain.txt',
+      baseContent: 'tracked',
+      mineContent: 'plain',
+      source: {
+        kind: 'local',
+        label: 'Versioned local files',
+        baseKind: 'git',
+        targetKind: 'local',
+      },
+      revisionOptions: null,
+      baseRevisionInfo: base,
+      mineRevisionInfo: {
+        id: '__mine_input__', revision: '', title: 'plain.txt', author: '', date: '', message: '', kind: 'input-file',
+      },
+      canSwitchRevisions: true,
+      revisionSwitchableSides: { base: true, mine: false },
+    });
+  }, { base: baseRevision });
+
+  await expect(page.locator('button[aria-expanded]').filter({ hasText: '102' })).toBeVisible();
+  await expect(page.locator('button[aria-expanded]').filter({ hasText: 'plain.txt' })).toHaveCount(0);
+  await expect(page.getByTestId('source-badge-base')).toHaveText('GIT');
+  await expect(page.getByTestId('source-badge-mine')).toHaveCount(0);
 });

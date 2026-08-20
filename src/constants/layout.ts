@@ -1,5 +1,5 @@
 /** Width of each line-number gutter column in pixels */
-export const LN_W = 72;
+export const LN_W = 84;
 
 /** Width of the text diff mini map in pixels. */
 export const TEXT_DIFF_MINIMAP_WIDTH = 64;

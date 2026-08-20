@@ -311,7 +311,7 @@ export function getCompareContextLabels(compareContext: CompareContext) {
       mineStatsKey: 'statsWorkingCopy',
     } as const;
   }
-  if (compareContext === 'revision_vs_revision_compare') {
+  if (compareContext === 'revision_vs_revision_compare' || compareContext === 'git_compare') {
     return {
       baseTitleKey: 'splitHeaderLeftVersionTitle',
       mineTitleKey: 'splitHeaderRightVersionTitle',

@@ -39,7 +39,7 @@ async function withSandbox<T>(name: string, run: (sandboxDir: string) => Promise
 async function scenarioUpgradeMigratesReusableCache() {
   return withSandbox('install-upgrade-migrate', async (sandboxDir) => {
     const previousCacheRoot = path.join(sandboxDir, 'cache-old-parent', 'SvnDiffTool', 'Cache');
-    const currentCacheRoot = path.join(sandboxDir, 'cache-new-parent', 'SvnDiffTool', 'Cache');
+    const currentCacheRoot = path.join(sandboxDir, 'cache-new-parent', 'Versora', 'Cache');
 
     const previousSessionMarker = path.join(previousCacheRoot, 'session-data', 'Local Storage', 'leveldb', '000003.log');
     const previousDiskCacheMarker = path.join(previousCacheRoot, 'disk-cache', 'index');
@@ -72,7 +72,7 @@ async function scenarioUpgradeMigratesReusableCache() {
 
 async function scenarioUpgradeWithSameCacheRootIsNoOp() {
   return withSandbox('install-upgrade-same-cache', async (sandboxDir) => {
-    const cacheRoot = path.join(sandboxDir, 'cache-parent', 'SvnDiffTool', 'Cache');
+    const cacheRoot = path.join(sandboxDir, 'cache-parent', 'Versora', 'Cache');
     const sessionMarker = path.join(cacheRoot, 'session-data', 'Local Storage', 'leveldb', '000007.log');
     await writeFile(sessionMarker, 'session payload');
 
@@ -92,7 +92,7 @@ async function scenarioPrepareUninstallCleansManagedArtifacts() {
   return withSandbox('install-upgrade-uninstall', async (sandboxDir) => {
     const userDataPath = path.join(sandboxDir, 'user-data');
     const sessionDataPath = path.join(sandboxDir, 'session-data');
-    const currentCacheRoot = path.join(sandboxDir, 'cache-current-parent', 'SvnDiffTool', 'Cache');
+    const currentCacheRoot = path.join(sandboxDir, 'cache-current-parent', 'Versora', 'Cache');
     const previousCacheRoot = path.join(sandboxDir, 'cache-previous-parent', 'SvnDiffTool', 'Cache');
 
     await writeFile(path.join(userDataPath, 'settings.json'), '{}');

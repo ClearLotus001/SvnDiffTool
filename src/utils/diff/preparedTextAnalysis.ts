@@ -9,7 +9,10 @@ import type {
 import { alignTextChangeBlock } from '@/engine/text/textChangeAlignment';
 
 const preparedAnalysisCache = new WeakMap<DiffLine[], PreparedTextAnalysis>();
-const splitRowsDescriptorCache = new WeakMap<readonly SplitRowDescriptor[], SplitRow[]>();
+const splitRowsDescriptorCache = new WeakMap<
+  readonly SplitRowDescriptor[],
+  WeakMap<DiffLine[], SplitRow[]>
+>();
 
 function buildStatsAndDescriptors(diffLines: DiffLine[]): {
   stats: TextDiffStats;
@@ -110,7 +113,12 @@ export function materializeSplitRowsFromDescriptors(
   diffLines: DiffLine[],
   splitRowDescriptors: readonly SplitRowDescriptor[],
 ): SplitRow[] {
-  const cached = splitRowsDescriptorCache.get(splitRowDescriptors);
+  let rowsByDiffLines = splitRowsDescriptorCache.get(splitRowDescriptors);
+  if (!rowsByDiffLines) {
+    rowsByDiffLines = new WeakMap<DiffLine[], SplitRow[]>();
+    splitRowsDescriptorCache.set(splitRowDescriptors, rowsByDiffLines);
+  }
+  const cached = rowsByDiffLines.get(diffLines);
   if (cached) return cached;
 
   const rows = splitRowDescriptors.map<SplitRow>((descriptor) => ({
@@ -120,6 +128,6 @@ export function materializeSplitRowsFromDescriptors(
     lineIdxs: descriptor.lineIdxs,
     ...(descriptor.isReplacementPair ? { isReplacementPair: true } : {}),
   }));
-  splitRowsDescriptorCache.set(splitRowDescriptors, rows);
+  rowsByDiffLines.set(diffLines, rows);
   return rows;
 }

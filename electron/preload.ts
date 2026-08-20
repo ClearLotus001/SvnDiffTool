@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
-contextBridge.exposeInMainWorld('svnDiff', {
+const versoraApi = {
   notifyRendererReady: () => ipcRenderer.send('renderer-ready'),
   saveStartupAppearance: (appearance: { themeKey?: 'dark' | 'light' | 'hc'; locale?: 'zh-CN' | 'en-US' }) => ipcRenderer.send('save-startup-appearance', appearance),
   getLaunchContext: () => ipcRenderer.invoke('get-launch-context'),
@@ -8,6 +8,9 @@ contextBridge.exposeInMainWorld('svnDiff', {
   getDiffData: (compareMode?: 'strict' | 'content') => ipcRenderer.invoke('get-diff-data', { compareMode }),
   loadRevisionDiff: (baseRevisionId: string, mineRevisionId: string, compareMode?: 'strict' | 'content') => ipcRenderer.invoke('load-revision-diff', { baseRevisionId, mineRevisionId, compareMode }),
   loadTwoFileRevisionDiff: (baseRevisionId: string, mineRevisionId: string, compareMode?: 'strict' | 'content') => ipcRenderer.invoke('load-two-file-revision-diff', { baseRevisionId, mineRevisionId, compareMode }),
+  loadLineBlame: (baseRevisionId?: string, mineRevisionId?: string) => ipcRenderer.invoke('load-line-blame', { baseRevisionId, mineRevisionId }),
+  loadWorkingCopyLineBlame: (basePath: string, minePath: string) => ipcRenderer.invoke('load-working-copy-line-blame', { basePath, minePath }),
+  loadTwoFileVersionLineBlame: (baseRevisionId: string, mineRevisionId: string) => ipcRenderer.invoke('load-two-file-version-line-blame', { baseRevisionId, mineRevisionId }),
   getRevisionOptions: () => ipcRenderer.invoke('get-revision-options'),
   queryRevisionOptions: (query?: {
     limit?: number;
@@ -65,4 +68,8 @@ contextBridge.exposeInMainWorld('svnDiff', {
   saveDiagnosticReport: (content: string, defaultFileName?: string) => ipcRenderer.invoke('save-diagnostic-report', { content, defaultFileName }),
   debugLog: (message: string, payload?: unknown) => ipcRenderer.send('debug-log', { message, payload }),
   openExternal: (url: string) => ipcRenderer.send('open-external', url),
-});
+};
+
+contextBridge.exposeInMainWorld('versora', versoraApi);
+// Compatibility bridge for existing integrations and persisted test harnesses.
+contextBridge.exposeInMainWorld('svnDiff', versoraApi);

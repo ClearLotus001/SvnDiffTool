@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// src/App.tsx  —  SvnDiffTool root
+// src/App.tsx  —  Versora root
 //
 // This file is now a thin orchestrator:
 //   - Reads state from Zustand store (only fields needed for rendering)
@@ -99,6 +99,7 @@ export default function App() {
   const setShowHiddenColumns = useAppStore((s) => s.setShowHiddenColumns);
   const setFontSize = useAppStore((s) => s.setFontSize);
   const setTextSplitHeaderRatio = useAppStore((s) => s.setTextSplitHeaderRatio);
+  const resetDiffSessionToHome = useAppStore((s) => s.resetDiffSessionToHome);
 
   // Diff Data (needed by JSX: notice bars, panelProps, debug)
   const diffLines = useAppStore((s) => s.diffLines);
@@ -135,6 +136,7 @@ export default function App() {
   const baseRevisionInfo = useAppStore((s) => s.baseRevisionInfo);
   const mineRevisionInfo = useAppStore((s) => s.mineRevisionInfo);
   const canSwitchRevisions = useAppStore((s) => s.canSwitchRevisions);
+  const revisionSwitchableSides = useAppStore((s) => s.revisionSwitchableSides);
 
   // Workbook UI (needed by JSX: AppContent, WorkbookFormulaBar, workbookUi controller)
   const workbookSelection = useAppStore((s) => s.workbookSelection);
@@ -619,6 +621,36 @@ export default function App() {
     twoFileBasePath,
     twoFileMinePath,
   ]);
+  const handleReturnHome = useCallback(() => {
+    loadSeqRef.current += 1;
+    revisionQuerySeqRef.current += 1;
+    hasLoadedDiffRef.current = false;
+    currentDiffDataRef.current = null;
+    revisionOptionsRef.current = [];
+    textLayoutSnapshotsRef.current = createEmptyTextLayoutSnapshots();
+    textSharedExpandedBlocksRef.current = EMPTY_COLLAPSE_EXPANSION_STATE;
+    workbookLayoutSnapshotsRef.current = createEmptyWorkbookLayoutSnapshots();
+    workbookSharedExpandedBlocksRef.current = new Map();
+    scrollToIndexRef.current = null;
+    workbookMoveRef.current = null;
+    collapseNavigationRef.current = null;
+    previousShowSearchRef.current = false;
+    resetDiffSessionToHome();
+    diffLoad.actions.setLoading(false);
+    diffLoad.actions.setLoaded(false);
+    diffLoad.actions.setPhase('idle');
+    diffLoad.actions.setError('');
+    diffLoad.actions.setMetrics(null);
+    revisionQuery.actions.setStatus('idle');
+    revisionQuery.actions.setHasMore(false);
+    revisionQuery.actions.setNextBeforeId(null);
+    revisionQuery.actions.setQueryDateTime('');
+    revisionQuery.actions.setQueryError('');
+    revisionQuery.actions.setLoadingMore(false);
+    revisionQuery.actions.setSearchingDateTime(false);
+    revisionQuery.actions.setSwitching(false);
+    closeAllDialogs();
+  }, [closeAllDialogs, diffLoad.actions, resetDiffSessionToHome, revisionQuery.actions]);
   const handleInitialVisualReady = useCallback(() => {
     if (startupRevealRequestedRef.current) return;
     startupRevealRequestedRef.current = true;
@@ -719,6 +751,7 @@ export default function App() {
             setWorkbookCompareMode={handleWorkbookCompareModeChange}
             fontSize={fontSize}         setFontSize={setFontSize}
             onPickFile={handlePickFile}
+            onHome={handleReturnHome}
             onGoto={handleToggleGoto}
             onHelp={handleToggleHelp}
             onAbout={handleToggleAbout}
@@ -774,8 +807,12 @@ export default function App() {
               isWorkbookMode={isWorkbookMode}
               baseRevisionInfo={baseRevisionInfo}
               mineRevisionInfo={mineRevisionInfo}
+              baseSourceKind={currentDiffDataRef.current?.source?.baseKind ?? currentDiffDataRef.current?.source?.kind ?? null}
+              mineSourceKind={currentDiffDataRef.current?.source?.targetKind ?? currentDiffDataRef.current?.source?.kind ?? null}
               revisionOptions={revisionOptions}
               canSwitchRevisions={canSwitchRevisions && isElectron}
+              canSwitchBaseRevision={canSwitchRevisions && revisionSwitchableSides.base && isElectron}
+              canSwitchMineRevision={canSwitchRevisions && revisionSwitchableSides.mine && isElectron}
               isLoadingRevisionOptions={revisionOptionsStatus === 'loading'}
               isSwitchingRevisions={isSwitchingRevisions || isLoadingDiff}
               revisionHasMore={revisionHasMore}
@@ -898,8 +935,6 @@ export default function App() {
             showAbout={showAbout}
             showSvnConfig={showSvnConfig}
             showLocalFileCompare={showLocalFileCompare}
-            localFileCompareLoading={isLoadingDiff}
-            localFileCompareError={loadError}
             localFileCompareBasePath={twoFileBasePath}
             localFileCompareMinePath={twoFileMinePath}
             totalLines={totalLines}

@@ -135,7 +135,11 @@ function InitialVisualReadySignal({
 
 function renderLoadingState(loadingLabel: string, onReady?: () => void) {
   return (
-    <div className="flex-1 w-full min-w-0 min-h-0 flex items-center justify-center p-6">
+    <div
+      data-testid="diff-loading-state"
+      role="status"
+      aria-live="polite"
+      className="flex-1 w-full min-w-0 min-h-0 flex items-center justify-center p-6">
       <InitialVisualReadySignal onReady={onReady} />
       <div className="grid gap-2.5 justify-items-center text-text-primary">
         <div

@@ -11,6 +11,7 @@ import type {
 } from '@/types';
 import { EMPTY_COLLAPSE_EXPANSION_STATE, type CollapseExpansionState } from '@/utils/collapse/collapseState';
 import { buildDiffCacheKey } from '@/utils/diff/diffCacheKey';
+import { attachLineBlameToDiffLines } from '@/utils/diff/lineBlame';
 import { createEmptyTextLayoutSnapshots, type TextLayoutSnapshotsByMode } from '@/utils/diff/textLayoutState';
 import { isWorkbookFileName, resolveDiffTexts } from '@/utils/diff/diffSource';
 import { computeTextDiffAsync } from '@/utils/diff/computeTextDiffAsync';
@@ -262,9 +263,58 @@ export default function useDiffLoader({
           compareContext: nextData.compareContext ?? 'literal_two_file_compare',
           resetPair: nextData.resetPair ?? null,
           canSwitchRevisions: Boolean(nextData.canSwitchRevisions),
+          ...(nextData.revisionSwitchableSides
+            ? { revisionSwitchableSides: nextData.revisionSwitchableSides }
+            : {}),
         });
         diffLoadActions.setLoaded(true);
         diffLoadActions.setPhase('ready');
+      };
+
+      const scheduleLineBlameTask = () => {
+        const bridge = window.svnDiff;
+        const isLocalFilePair = data.source?.kind === 'local';
+        const isVersionedTwoFilePair = Boolean(data.revisionSwitchableSides);
+        if (
+          !bridge
+          || isWorkbookFileName(data.fileName || data.baseName || data.mineName)
+          || (
+            isVersionedTwoFilePair
+              ? !bridge.loadTwoFileVersionLineBlame
+              : isLocalFilePair
+              ? (!bridge.loadWorkingCopyLineBlame || !data.basePath || !data.minePath)
+              : !bridge.loadLineBlame
+          )
+        ) {
+          return;
+        }
+
+        const blameTask = isVersionedTwoFilePair
+          ? bridge.loadTwoFileVersionLineBlame(
+              data.baseRevisionInfo?.id ?? '',
+              data.mineRevisionInfo?.id ?? '',
+            )
+          : isLocalFilePair
+          ? bridge.loadWorkingCopyLineBlame(data.basePath!, data.minePath!)
+          : bridge.loadLineBlame(
+              data.baseRevisionInfo?.id,
+              data.mineRevisionInfo?.id,
+            );
+        void blameTask.then((payload) => {
+          if (seq !== loadSeqRef.current) return;
+          setDiffLines(current => attachLineBlameToDiffLines(current, payload));
+          debugLog('line-blame:loaded', {
+            fileName: data.fileName,
+            baseLineCount: payload.base.length,
+            mineLineCount: payload.mine.length,
+          });
+        }).catch((error: unknown) => {
+          if (seq !== loadSeqRef.current) return;
+          debugLog('line-blame:failed', {
+            fileName: data.fileName,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        });
       };
 
       const cachedMetadataAvailable = cachedResult?.baseWorkbookMetadata != null
@@ -388,6 +438,7 @@ export default function useDiffLoader({
           perf: data.perf ?? null,
         });
         scheduleMetadataTask();
+        scheduleLineBlameTask();
         return;
       }
 
@@ -470,6 +521,7 @@ export default function useDiffLoader({
         mineWorkbookMetadata: data.mineWorkbookMetadata ?? null,
       }));
       scheduleMetadataTask();
+      scheduleLineBlameTask();
     } catch (error) {
       if (seq !== loadSeqRef.current) return;
       if (!hasLoadedDiffRef.current) {

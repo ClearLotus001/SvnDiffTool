@@ -21,17 +21,20 @@ import {
   Maximize2,
   X,
   Columns3,
+  House,
 } from 'lucide-react';
 import { useI18n } from '@/context/i18n';
 import type { AppUpdateState, ThemeKey, LayoutMode, WorkbookCompareMode } from '@/types';
 import { THEME_KEYS } from '@/theme';
 import Tooltip from '@/components/shared/Tooltip';
 import ToolbarViewMenu from '@/components/navigation/ToolbarViewMenu';
+import appIconUrl from '../../../assets/icon.png';
 
 type IconName =
   | 'layoutUnified' | 'layoutSplit' | 'layoutVertical' | 'layoutTopBottom'
   | 'prev' | 'next' | 'search' | 'goto'
   | 'language' | 'file' | 'help'
+  | 'home'
   | 'update' | 'download' | 'install' | 'info' | 'chevronDown'
   | 'windowMinimize' | 'windowMaximize' | 'windowRestore' | 'windowClose';
 
@@ -47,6 +50,7 @@ const ICON_MAP: Record<IconName, React.ElementType> = {
   language: Globe,
   file: FileText,
   help: CircleHelp,
+  home: House,
   update: RefreshCw,
   download: Download,
   install: PackageCheck,
@@ -121,6 +125,7 @@ interface ToolbarProps {
   fontSize: number;
   setFontSize: React.Dispatch<React.SetStateAction<number>>;
   onPickFile: () => void;
+  onHome: () => void;
   onGoto: () => void;
   onHelp: () => void;
   onAbout: () => void;
@@ -144,7 +149,7 @@ const Toolbar = memo((props: ToolbarProps) => {
     showWhitespace, setShowWhitespace, showHiddenColumns, setShowHiddenColumns,
     workbookCompareMode, setWorkbookCompareMode,
     fontSize, setFontSize,
-    onPickFile,
+    onPickFile, onHome,
     onGoto, onHelp, onAbout, isElectron, usesNativeWindowControls, isWindowMaximized, isWorkbookMode,
     updateState, onCheckForUpdates, onDownloadUpdate, onInstallUpdate,
   } = props;
@@ -362,6 +367,22 @@ const Toolbar = memo((props: ToolbarProps) => {
       }}>
       {/* ── Left Section ── */}
       <div className="flex items-center content-center flex-nowrap gap-1.5 min-w-0 flex-1 overflow-hidden">
+        {isHome && (
+          <div className="app-toolbar__brand" data-testid="toolbar-home-brand">
+            <img src={appIconUrl} alt="" draggable={false} />
+            <span>Versora</span>
+          </div>
+        )}
+
+        {showDiffControls && (
+          <Group>
+            <Btn onClick={onHome} tooltip={t('toolbarHomeTitle')} testId="toolbar-home">
+              <Icon name="home" />
+              {showFileActionText && <span>{t('toolbarHomeLabel')}</span>}
+            </Btn>
+          </Group>
+        )}
+
         {/* File chip */}
         {showDiffControls && showFileChip && fileName && (
           <Tooltip content={fileName} maxWidth={320} anchorStyle={noDragAnchorStyle}>

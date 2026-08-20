@@ -14,6 +14,7 @@ import type {
   WorkbookCompareMode,
   WorkbookMetadataMap,
 } from '@/types/workbook';
+import type { ComparisonSourceDescriptor } from '../../shared/comparison';
 
 export type SvnRevisionSourceKind = 'revision' | 'working-copy' | 'input-file';
 
@@ -46,7 +47,8 @@ export interface RevisionOptionsPayload {
 export type CompareContext =
   | 'standard_local_compare'
   | 'literal_two_file_compare'
-  | 'revision_vs_revision_compare';
+  | 'revision_vs_revision_compare'
+  | 'git_compare';
 
 export interface RevisionSelectionPair {
   baseRevisionId: string | null;
@@ -60,6 +62,7 @@ export interface DiffAnalysisSnapshot {
 }
 
 export interface DiffData extends DiffMeta {
+  source?: ComparisonSourceDescriptor;
   sourceIdentity?: string;
   basePath?: string;
   minePath?: string;
@@ -81,6 +84,7 @@ export interface DiffData extends DiffMeta {
   baseRevisionInfo?: SvnRevisionInfo | null;
   mineRevisionInfo?: SvnRevisionInfo | null;
   canSwitchRevisions?: boolean;
+  revisionSwitchableSides?: { base: boolean; mine: boolean };
   workbookArtifactDiff?: WorkbookArtifactDiff | null;
   sourceNoticeCode?: DiffSourceNoticeCode | null;
   perf?: DiffPerformanceMetrics | null;

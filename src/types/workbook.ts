@@ -197,6 +197,7 @@ export interface WorkbookRowDelta {
   tone: WorkbookRowDeltaTone;
   miniMapTone?: WorkbookRowMiniMapTone;
   miniMapPaintTones?: WorkbookRowMiniMapPaintTone[];
+  structuralChange?: 'add' | 'delete';
 }
 
 export interface WorkbookCellDeltaPayload extends Omit<WorkbookCellDelta, 'baseCell' | 'mineCell'> {

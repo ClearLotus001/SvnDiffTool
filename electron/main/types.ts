@@ -1,9 +1,14 @@
 import type { WorkbookArtifactDiffSummary } from '../workbookArtifactDiff.js';
 import type { AppUpdateState } from '../updater/types.js';
+import type { ComparisonSourceDescriptor } from '../../shared/comparison.js';
 
 export type SvnRevisionSourceKind = 'revision' | 'working-copy' | 'input-file';
 export type WorkbookCompareMode = 'strict' | 'content';
-export type CompareContext = 'standard_local_compare' | 'literal_two_file_compare' | 'revision_vs_revision_compare';
+export type CompareContext =
+  | 'standard_local_compare'
+  | 'literal_two_file_compare'
+  | 'revision_vs_revision_compare'
+  | 'git_compare';
 export type WorkbookSectionChangeType = 'equal' | 'add' | 'delete' | 'rename';
 
 export interface SvnRevisionInfo {
@@ -37,6 +42,22 @@ export interface RevisionSelectionPair {
   mineRevisionId: string | null;
 }
 
+export interface LineBlameInfo {
+  revision: string;
+  author: string;
+  date: string;
+  uncommitted: boolean;
+}
+
+export interface LineBlameLine extends LineBlameInfo {
+  lineNo: number;
+}
+
+export interface LineBlamePayload {
+  base: LineBlameLine[];
+  mine: LineBlameLine[];
+}
+
 export interface CharSpan {
   highlight: boolean;
   text: string;
@@ -63,6 +84,8 @@ export interface DiffLine {
   mineLineNo: number | null;
   baseCharSpans: CharSpan[] | null;
   mineCharSpans: CharSpan[] | null;
+  baseBlame?: LineBlameInfo | null;
+  mineBlame?: LineBlameInfo | null;
 }
 
 export interface DiffPerformanceMetrics {
@@ -92,6 +115,7 @@ export interface PreparedTextAnalysis {
 }
 
 export interface DiffData {
+  source?: ComparisonSourceDescriptor;
   baseName: string;
   mineName: string;
   basePath?: string;
@@ -117,6 +141,7 @@ export interface DiffData {
   baseRevisionInfo: SvnRevisionInfo | null;
   mineRevisionInfo: SvnRevisionInfo | null;
   canSwitchRevisions: boolean;
+  revisionSwitchableSides?: { base: boolean; mine: boolean };
   workbookArtifactDiff: WorkbookArtifactDiffSummary | null;
   sourceNoticeCode: 'unversioned-working-copy' | null;
   perf: DiffPerformanceMetrics | null;
@@ -266,6 +291,7 @@ export interface WorkbookRowDeltaPayload {
   tone: WorkbookRowDeltaTone;
   miniMapTone?: WorkbookRowMiniMapTone;
   miniMapPaintTones?: WorkbookRowMiniMapPaintTone[];
+  structuralChange?: 'add' | 'delete';
 }
 
 export interface WorkbookSectionDeltaPayload {

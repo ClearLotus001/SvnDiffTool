@@ -178,7 +178,7 @@ if (maintenanceMode) {
     }
   });
 } else if (!gotSingleInstanceLock) {
-  logMainWarn('electron', 'single-instance lock denied; another SvnDiffTool instance is already running');
+  logMainWarn('electron', 'single-instance lock denied; another Versora instance is already running');
   writeExternalDiffDebugLog('single-instance-lock-denied', {
     argv: process.argv,
     parsedStartupCliArgs,

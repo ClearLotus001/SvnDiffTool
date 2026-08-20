@@ -22,6 +22,22 @@ export interface SplitRowDescriptor {
   lineIdxs: number[];
 }
 
+export interface LineBlameInfo {
+  revision: string;
+  author: string;
+  date: string;
+  uncommitted: boolean;
+}
+
+export interface LineBlameLine extends LineBlameInfo {
+  lineNo: number;
+}
+
+export interface LineBlamePayload {
+  base: LineBlameLine[];
+  mine: LineBlameLine[];
+}
+
 export interface DiffLine {
   type: LineType;
   base: string | null;
@@ -30,6 +46,8 @@ export interface DiffLine {
   mineLineNo: number | null;
   baseCharSpans: CharSpan[] | null;
   mineCharSpans: CharSpan[] | null;
+  baseBlame?: LineBlameInfo | null;
+  mineBlame?: LineBlameInfo | null;
 }
 
 export interface TextDiffStats {

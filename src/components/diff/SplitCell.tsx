@@ -160,6 +160,7 @@ const SplitCell = memo(({
             selected={isBaseLineSelected}
             selectedColor={selectionAccentColor}
             title={lineNumberTitle}
+            blame={currentLine?.baseBlame}
             onClick={onBaseLineNumberClick}
           />
           <Ln
@@ -169,6 +170,7 @@ const SplitCell = memo(({
             selected={isMineLineSelected}
             selectedColor={selectionAccentColor}
             title={lineNumberTitle}
+            blame={currentLine?.mineBlame}
             onClick={onMineLineNumberClick}
           />
         </>
@@ -180,6 +182,7 @@ const SplitCell = memo(({
           selected={side === 'left' ? isBaseLineSelected : isMineLineSelected}
           selectedColor={selectionAccentColor}
           title={lineNumberTitle}
+          blame={side === 'left' ? currentLine?.baseBlame : currentLine?.mineBlame}
           onClick={side === 'left' ? onBaseLineNumberClick : onMineLineNumberClick}
         />
       )}

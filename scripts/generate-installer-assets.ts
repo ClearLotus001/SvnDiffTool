@@ -141,7 +141,6 @@ class Raster {
 const rootDir = path.resolve(__dirname, '..');
 
 const ink = hex('#17212b');
-const paper = hex('#edf2f4');
 const paperBright = hex('#ffffff');
 const cream = hex('#f7fafb');
 const coral = hex('#d65a50');
@@ -212,32 +211,45 @@ function drawAppMark(canvas: Raster, x: number, y: number, size: number) {
   const v = (value: number) => y + (value * size);
   const d = (value: number) => value * size;
 
-  canvas.fillRoundedRect(u(0.075), v(0.085), d(0.85), d(0.85), d(0.19), withAlpha(rgba(0, 0, 0), 30));
-  canvas.fillRoundedRect(u(0.058), v(0.055), d(0.884), d(0.884), d(0.205), verticalGradient(hex('#181715'), ink));
-  canvas.strokeRoundedRect(u(0.09), v(0.088), d(0.82), d(0.82), d(0.17), d(0.0045), withAlpha(cream, 44));
+  canvas.fillRoundedRect(u(0.075), v(0.085), d(0.85), d(0.85), d(0.19), withAlpha(rgba(0, 0, 0), 34));
+  canvas.fillRoundedRect(u(0.058), v(0.055), d(0.884), d(0.884), d(0.205), verticalGradient(hex('#15171a'), ink));
+  canvas.strokeRoundedRect(u(0.09), v(0.088), d(0.82), d(0.82), d(0.17), d(0.0045), withAlpha(cream, 42));
 
-  canvas.fillRoundedRect(u(0.184), v(0.21), d(0.286), d(0.59), d(0.092), withAlpha(rgba(0, 0, 0), 20));
-  canvas.fillRoundedRect(u(0.53), v(0.21), d(0.286), d(0.59), d(0.092), withAlpha(rgba(0, 0, 0), 20));
-  canvas.fillRoundedRect(u(0.168), v(0.194), d(0.286), d(0.59), d(0.092), verticalGradient(coral, coralDeep));
-  canvas.fillRoundedRect(u(0.546), v(0.194), d(0.286), d(0.59), d(0.092), verticalGradient(blue, blueDeep));
-  canvas.strokeRoundedRect(u(0.168), v(0.194), d(0.286), d(0.59), d(0.092), d(0.004), withAlpha(cream, 185));
-  canvas.strokeRoundedRect(u(0.546), v(0.194), d(0.286), d(0.59), d(0.092), d(0.004), withAlpha(cream, 185));
+  // Two version ribbons converge into a single V: one memorable silhouette
+  // instead of a miniature diff interface that disappears at taskbar sizes.
+  canvas.fillPolygon([
+    { x: u(0.19), y: v(0.25) },
+    { x: u(0.35), y: v(0.25) },
+    { x: u(0.36), y: v(0.27) },
+    { x: u(0.5), y: v(0.585) },
+    { x: u(0.5), y: v(0.82) },
+    { x: u(0.385), y: v(0.705) },
+    { x: u(0.18), y: v(0.28) },
+  ], coral);
+  canvas.fillPolygon([
+    { x: u(0.65), y: v(0.25) },
+    { x: u(0.81), y: v(0.25) },
+    { x: u(0.82), y: v(0.28) },
+    { x: u(0.615), y: v(0.705) },
+    { x: u(0.5), y: v(0.82) },
+    { x: u(0.5), y: v(0.585) },
+    { x: u(0.64), y: v(0.27) },
+  ], blue);
 
-  drawCapsule(canvas, u(0.236), v(0.326), d(0.162), d(0.025), withAlpha(cream, 238));
-  drawCapsule(canvas, u(0.236), v(0.578), d(0.184), d(0.025), withAlpha(cream, 238));
-  drawCapsule(canvas, u(0.252), v(0.704), d(0.114), d(0.025), withAlpha(cream, 238));
-  drawCapsule(canvas, u(0.618), v(0.326), d(0.146), d(0.025), withAlpha(cream, 238));
-  drawCapsule(canvas, u(0.606), v(0.578), d(0.184), d(0.025), withAlpha(cream, 238));
-  drawCapsule(canvas, u(0.63), v(0.704), d(0.114), d(0.025), withAlpha(cream, 238));
+  // Fold facets make the two inputs legible as pages while remaining visible
+  // when the master artwork is rasterized down to 16 px.
+  canvas.fillPolygon([
+    { x: u(0.385), y: v(0.705) },
+    { x: u(0.5), y: v(0.82) },
+    { x: u(0.5), y: v(0.585) },
+  ], withAlpha(coralDeep, 232));
+  canvas.fillPolygon([
+    { x: u(0.615), y: v(0.705) },
+    { x: u(0.5), y: v(0.82) },
+    { x: u(0.5), y: v(0.585) },
+  ], withAlpha(blueDeep, 218));
 
-  drawCapsule(canvas, u(0.242), v(0.444), d(0.132), d(0.045), withAlpha(blue, 245));
-  drawCapsule(canvas, u(0.626), v(0.444), d(0.132), d(0.045), withAlpha(coral, 245));
-
-  canvas.fillRoundedRect(u(0.314), v(0.394), d(0.372), d(0.202), d(0.085), withAlpha(rgba(0, 0, 0), 24));
-  canvas.fillRoundedRect(u(0.302), v(0.378), d(0.396), d(0.202), d(0.092), verticalGradient(paperBright, paper));
-  canvas.strokeRoundedRect(u(0.302), v(0.378), d(0.396), d(0.202), d(0.092), d(0.0045), withAlpha(ink, 35));
-  canvas.fillRoundedRect(u(0.363), v(0.437), d(0.124), d(0.084), d(0.038), coral);
-  canvas.fillRoundedRect(u(0.513), v(0.437), d(0.124), d(0.084), d(0.038), blueDeep);
+  canvas.fillRect(u(0.4975), v(0.585), d(0.005), d(0.235), withAlpha(cream, 54));
 }
 
 function verticalGradient(top: Color, bottom: Color): (nx: number, ny: number) => Color {

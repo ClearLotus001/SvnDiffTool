@@ -24,7 +24,13 @@ export interface DialogState {
   showLocalFileCompare: boolean;
 }
 
-export type DialogId = 'search' | 'goto' | 'help' | 'about' | 'svnConfig' | 'localFileCompare';
+export type DialogId =
+  | 'search'
+  | 'goto'
+  | 'help'
+  | 'about'
+  | 'svnConfig'
+  | 'localFileCompare';
 
 export interface DialogActions {
   set: (dialog: DialogId, value: SetStateAction<boolean>) => void;

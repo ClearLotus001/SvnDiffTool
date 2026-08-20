@@ -63,7 +63,7 @@ class AppErrorBoundaryInner extends React.Component<AppErrorBoundaryProps, AppEr
 
   private getReportFileName(): string {
     const stamp = new Date().toISOString().replaceAll(':', '-').replace(/\.\d{3}Z$/, 'Z');
-    return `svndiff-renderer-error-${stamp}.log`;
+    return `versora-renderer-error-${stamp}.log`;
   }
 
   private handleCopyReport = () => {

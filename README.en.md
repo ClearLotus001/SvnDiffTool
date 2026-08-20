@@ -1,312 +1,150 @@
-# SvnDiffTool
+# Versora
 
-[中文](./README.md) | [English](./README.en.md)
+[中文](./README.md) | [English](./README.en.md) | [Download the latest release](https://github.com/ClearLotus001/Versora/releases/latest)
 
-> A Windows external diff viewer for TortoiseSVN, built with Electron + React + Rust for a clearer text and workbook comparison experience.
+> A Windows comparison workspace for reviewing text, Excel, Git versions, and SVN revisions in one interface.
 
-`SvnDiffTool` is designed to replace the default TortoiseSVN diff window. It keeps the familiar external-tool integration model while providing a more modern UI, stronger navigation and search workflows, and a dedicated comparison experience for workbook files.
+Versora is the successor to SvnDiffTool. It keeps the mature text and workbook viewers while treating Git, SVN, and plain local files as comparison sources that can be detected independently.
 
-If your goal is "make SVN diffs easier to read", this project is built for that. If your goal is "full Office-semantic comparison and merge", this is not that kind of heavyweight tool yet.
+## Download and run
 
-## Where It Fits
+- Platform: Windows
+- Installer: [GitHub Releases](https://github.com/ClearLotus001/Versora/releases)
+- The installed app supports in-app updates and optional TortoiseSVN integration
 
-| Scenario | Fit | Notes |
-|----------|-----|-------|
-| Everyday TortoiseSVN file comparison | Excellent | Can be plugged in directly as the external diff tool |
-| Reviewing text-based files | Excellent | Line diff, character highlighting, search, navigation, and collapsing are all covered |
-| Exploring workbook differences | Good | Supports worksheet-, row-, column-, and cell-level visual comparison |
-| Reading very large text files | Good | Includes virtualization, collapse controls, and performance guards |
-| Full Office-semantic compare or merge | Limited | Not intended to handle comments, styles, charts, or macro merging as a primary use case |
+The home screen provides three entry points:
 
-## Core Capabilities
+1. **Open a working-copy file**: detect Git, SVN, or a plain local file automatically.
+2. **Compare two files**: select two text files or Excel workbooks with the same extension.
+3. **Connect to TortoiseSVN**: configure Versora as an external Diff Viewer.
 
-### Text Comparison
+## Highlights
 
-- Supports `Unified`, side-by-side horizontal, and side-by-side vertical layouts
-- Provides line-level diffing with character-level highlights
-- Collapses unchanged regions to reduce noise in long files
-- Supports plain search, regex search, and case-sensitive matching
-- Includes line jump, hunk jump, and keyboard-driven navigation
-- Supports whitespace visualization, font zoom, and full-text copy
+### Text comparison
 
-### SVN Integration
+- Unified, side-by-side, and stacked layouts
+- Line and character highlighting, syntax coloring, and whitespace display
+- Unchanged-region folding, full-text search, diff navigation, go-to, and copy
+- Git/SVN source badges with independent detection for each side
+- Line attribution with version, author, and commit time; uncommitted lines use `WC*`
+- Attribution appears only when a Git/SVN working-copy or revision context exists
 
-- Compatible with TortoiseSVN external diff arguments
-- Supports revision switching and reload for the same SVN file
-- In development mode, lets you load a working-copy file directly for local testing
+### Excel workbooks
 
-### Workbook Comparison
+- A dedicated grid for OOXML workbooks such as `.xlsx`, `.xlsm`, `.xltx`, and `.xltm`
+- Sheet, row, column, cell, and formula changes
+- Strict and content comparison modes
+- Formula bar, frozen panes, hidden rows and columns, diff-region navigation, and minimap
+- Rust-accelerated parsing and diff computation
+- Large comparisons use virtualization, structural-region compression, and compact IPC payloads instead of materializing every cell state in the renderer
 
-- Uses a dedicated workbook comparison panel instead of flattening everything into plain text
-- Supports worksheet switching, diff-region targeting, and cell-level change highlighting
-- Supports both `strict` and `content` comparison modes
-- Includes a formula bar, freeze panes, row/column hide and reveal, and mirrored selection behavior
-- Uses a Rust workbook parsing pipeline to improve resilience on larger and more complex files
+### Git and SVN
 
-### Desktop Experience
+| Source | Default behavior | History | Line attribution |
+|---|---|---|---|
+| Git working-tree file | Compare a repository version with current working-tree content | File-scoped commits, `HEAD`, and working tree | Git blame |
+| SVN working copy | Compare a repository revision with the working copy | Revision history and working-copy switching | SVN blame |
+| Plain local file | Use current file content directly | No version picker | Hidden |
 
-- Built-in Chinese and English UI
-- Ships with light, dark, and high-contrast themes
-- Windows installer builds support auto-updates through GitHub Releases
+In a two-file comparison, each side is detected independently. A Git/SVN side can switch history while a plain side remains local.
 
-## Tech Stack
+All Git operations are read-only. Versora never runs checkout, add, commit, or reset, and it does not mutate repository state.
 
-- Frontend: React 18 + TypeScript
-- Desktop shell: Electron 28
-- Build system: Vite
-- Workbook parsing and diff computation: Rust + `calamine` + `quick-xml`
-- Testing: Node.js test runner + `tsx`
+## Usage
 
-## Maintenance Notes
+### Open one working-copy file
 
-- If you are touching workbook comparison colors, highlights, selection states, overlays, or helper bars, read [`docs/workbook-visual-semantics.md`](./docs/workbook-visual-semantics.md) first
+Choose “Open working-copy file” on the home screen. Versora detects the source and prepares a default comparison:
 
-## Requirements
+- Git: repository version versus working-tree file
+- SVN: repository revision versus working copy
+- Unversioned file: open locally without version switching
 
-### To run the packaged app
+Use the header revision pickers to switch history. The toolbar Home button clears the active comparison and returns to the start screen.
 
-- Windows
-- TortoiseSVN, only if you want to wire it in as your external diff tool
-- The first installation now requires internet access to fetch the main app package
+### Compare two files
 
-### To develop or build from source
+Choose “Compare two files,” then drop or select the left and right files. Both files must have the same extension. After “Compare files” is selected, the dialog closes and the shared “Preparing diff view” screen is shown.
 
-- Windows
-- Node.js 18+
-- npm
-- Rust stable with `cargo`
+### TortoiseSVN integration
 
-> Note: workbook regression tests depend on the Rust parser artifact. Run `npm run build:rust` before the first test run, or run `npm run verify:ci`.
+The installed app can configure all-file, text-only, or workbook-only integration from the home screen. Manual command:
 
-## Quick Start
+```text
+"C:\Path\To\Versora.exe" %base %mine %bname %yname %burl %yurl %brev %yrev %peg %fname
+```
+
+Versora restores TortoiseSVN's default viewer before uninstalling so no external-viewer rule points to a removed executable.
+
+## Compatibility and migration
+
+- Keeps the `window.svnDiff` compatibility bridge and also exposes `window.versora`
+- Stores new settings under `versora.*` while reading legacy `svn-excel-diff-tool.*` settings
+- Uses `Versora/Cache` and recognizes the previous `SvnDiffTool/Cache` location during upgrades
+- Keeps the Windows `appId` stable to preserve installer upgrades and automatic updates
+
+## Development
+
+Requirements: Windows, Node.js 24+, and npm. Rust stable is required for the complete workbook verification suite.
 
 ```bash
 npm install
-npm run typecheck
 npm run dev:app
 ```
 
-If you launch the app directly instead of letting TortoiseSVN pass file arguments, it will enter development mode. From there you can:
+| Command | Purpose |
+|---|---|
+| `npm run dev:app` | Start Vite, Electron, and main-process watch compilation |
+| `npm run verify:static` | Run ESLint, unused-export checks, and TypeScript checks |
+| `npm run test:workbook:unit` | Run unit tests that do not require Rust artifacts |
+| `npm run test:workbook:rust` | Run workbook tests backed by the Rust parser |
+| `npm run test:e2e` | Run Playwright user-flow tests |
+| `npm run verify:ci` | Reproduce the complete CI verification locally |
+| `npm run build:app` | Build the renderer and Electron main process |
+| `npm run build:win` | Build the Windows installer |
 
-- Load an SVN working-copy file for local comparison debugging
-- Use the built-in sample data to inspect UI behavior
-
-## Common Commands
-
-| Command | Description |
-|---------|-------------|
-| `npm run dev:app` | Starts Vite, Electron, and Electron TypeScript watch mode |
-| `npm run typecheck` | Runs type checks for renderer, electron, and scripts |
-| `npm run test:workbook` | Checks the Rust parser artifact and runs the repository test suite, including workbook-focused regressions |
-| `npm run test:workbook:unit` | Runs repository tests that do not directly require the Rust parser artifact, useful for quick checks without a Rust toolchain |
-| `npm run test:workbook:rust` | Checks the Rust parser artifact and runs only the Rust parser integration tests |
-| `npm run test:workbook:js` | Compatibility alias for `test:workbook:unit` |
-| `npm run verify:ci` | Reproduces the main CI gate locally: static checks, Rust build and lint, unit tests, Rust integration tests, and app build |
-| `npm run verify:single-instance-cache` | Verifies single-instance and cache-related behavior |
-| `npm run build` | Builds renderer, Electron, and Rust artifacts |
-| `npm run build:win` | Produces the native Windows installer plus auto-update assets |
-| `npm run report:package-sizes` | Prints the current Windows package size report |
-
-The default local installer output path is:
+## Architecture
 
 ```text
-release/SvnDiffTool-<version>.exe
+Local files ─┐
+Git objects ─┼─> source materialization ─> DiffData ─> text/workbook analysis ─> viewer
+SVN revisions┤
+External CLI ┘
 ```
 
-The `release/` directory also keeps the auto-update assets, for example:
+- [Comparison-source architecture](./docs/comparison-sources.md)
+- [Workbook visual semantics](./docs/workbook-visual-semantics.md)
+
+Repository layout:
 
 ```text
-release/SvnDiffTool-<version>.exe
-release/latest.yml
-release/<package-name>-<version>-x64.nsis.7z
+Versora/
+├── electron/       # Electron main process, Git/SVN sources, installer, updates
+├── shared/         # Contracts shared by main and renderer processes
+├── src/            # React UI, text viewer, and workbook viewer
+├── rust/           # Workbook parsing and comparison
+├── tests/          # Unit, contract, and end-to-end tests
+├── scripts/        # Build, verification, and release scripts
+└── docs/           # Architecture and visual-semantics documentation
 ```
 
-## TortoiseSVN Integration
+## Releases
 
-1. Open `TortoiseSVN -> Settings -> Diff Viewer`
-2. Enable `External`
-3. Set the external diff command to:
-
-```text
-"C:\Path\To\SvnDiffTool.exe" %base %mine %bname %yname %burl %yurl %brev %yrev %peg %fname
-```
-
-Argument reference:
-
-| Argument | Meaning |
-|----------|---------|
-| `%base` | Temporary file path for the old revision |
-| `%mine` | Temporary file path for the new revision |
-| `%bname` | Display name for the old revision |
-| `%yname` | Display name for the new revision |
-| `%burl` | SVN URL for the left side |
-| `%yurl` | SVN URL for the right side |
-| `%brev` | Revision for the left side |
-| `%yrev` | Revision for the right side |
-| `%peg` | Peg revision |
-| `%fname` | Current file name |
-
-Recommended setup notes:
-
-- Keep the executable path quoted if it contains spaces
-- Do not reorder the arguments; the main process parses them in a fixed order
-- You can configure file-extension-specific mappings in `Advanced...`, for example `.ts`, `.tsx`, `.js`, `.json`, and `.xml`
-
-The installed app also includes a built-in setup panel:
-
-- Open it from the home screen via `Connect to TortoiseSVN`
-- Switch between `All-file mode`, `Text-only mode`, and `Workbook-only mode`
-- Use `Restore default diff` to hand control back to TortoiseSVN's default diff behavior
-
-During uninstall, the app automatically restores TortoiseSVN's default diff settings before removing SvnDiffTool, so SVN diff commands are not left pointing at a missing executable.
-
-## Supported File Types and Boundaries
-
-### Text files
-
-The current version is best suited for:
-
-- `.js`
-- `.ts`
-- `.tsx`
-- `.json`
-- `.xml`
-- `.py`
-- `.java`
-- `.txt`
-- and other text-oriented files that benefit from readable diff output
-
-### Workbook files
-
-Workbook comparison is one of the main feature areas of this project.
-
-- OpenXML formats such as `.xlsx`, `.xlsm`, `.xltx`, and `.xltm` are explicitly supported
-- Formats like `.xls` and `.xlsb` can go through the Rust workbook parsing pipeline, with actual results depending on file content and parser compatibility
-- The tool is oriented toward structured difference inspection rather than full Office-semantic merge behavior
-
-What it does well:
-
-- Shows which sheets, rows, columns, and cells changed
-- Helps with review, regression checking, and version backtracking
-
-What it is not currently trying to be:
-
-- A full Office-semantic merge tool for comments, charts, styles, macros, or pivot-table behavior
-- An Excel editor that modifies and writes workbook files back out
-
-## Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `F7` | Next diff hunk |
-| `Shift+F7` | Previous diff hunk |
-| `Ctrl+F` | Toggle the search bar |
-| `Enter` / `F3` | Next search result |
-| `Shift+Enter` | Previous search result |
-| `Ctrl+G` | Go to line |
-| `Ctrl+]` | Increase font size |
-| `Ctrl+[` | Decrease font size |
-| `Ctrl+\` | Toggle whitespace visibility |
-| `Escape` | Close the search bar or dialog |
-| `?` | Open the shortcuts help panel |
-
-## Auto Update
-
-- Auto update is currently available only for the Windows installer build
-- The downloadable `SvnDiffTool-<version>.exe` is the native Windows installer and downloads the main app package on first install
-- The Windows installer build checks GitHub Releases for a new stable version on every app startup
-- When an update is found, it prompts before download
-- Once the download finishes, installation can be triggered from inside the app
-- The first install shows the setup wizard; in-app upgrades close the current window, show in-place installation progress, and let you choose whether to reopen the app when finished
-- Upgrades keep the current install directory, managed cache location, and integration settings; only uninstalling and installing again is treated as a fresh install
-
-## Release Flow
-
-The repository already includes a GitHub Release workflow:
-
-- Trigger: push a tag matching `v*`
-- CI environment: `windows-latest`
-- Build contents: Node.js dependencies, the Rust parser, the native Windows installer, and auto-update assets
-- Release gates: the tag version must match `package.json`, and static checks, repository tests, Rust integration tests, and app build must pass before packaging
-- Electron handling: regular CI jobs do not download or depend on the Electron runtime binary; the Windows packaging job lets `electron-builder` download and publish through its standard flow
-- Publish flow: `electron-builder` publishes the Windows installer and update metadata directly
-
-A typical release flow looks like this:
+The `package.json` version and Git tag must match. Pushing a `v*` tag starts the [Release workflow](./.github/workflows/release.yml), which runs static checks, Node tests, Rust tests, and app builds before publishing the Windows installer and update assets.
 
 ```bash
-# Bump the version
-npm version 1.1.0
-
-# Push code
+npm version patch --no-git-tag-version
+git add -A
+git commit -m "release: vX.Y.Z"
+git tag vX.Y.Z
 git push origin main
-
-# Push the tag to trigger the GitHub Release workflow
-git push origin v1.1.0
+git push origin vX.Y.Z
 ```
 
-## Project Structure
+## Scope
 
-```text
-SvnDiffTool/
-├── .github/workflows/        # GitHub Release workflow
-├── assets/                   # Icons and static assets
-├── electron/                 # Electron main process, preload, and updater logic
-├── rust/                     # Workbook parsing and diff pipeline
-├── scripts/                  # Development and build scripts
-├── src/
-│   ├── components/           # UI components
-│   ├── context/              # Theme and i18n context
-│   ├── engine/               # Core diff / search / tokenizer logic
-│   ├── hooks/                # Custom hooks
-│   ├── locales/              # Chinese and English copy
-│   ├── types/                # Shared types
-│   └── utils/                # Workbook, cache, and settings utilities
-├── tests/                    # Regression, performance, and workbook-related tests
-├── package.json
-└── vite.config.mts
-```
+The current release focuses on reviewing changes. Directory comparison, three-way comparison, editable merge, automatic conflict resolution, and repository write operations are not included.
 
-## FAQ
+## License
 
-### 1. Clicking Diff does not open the tool
-
-Check these first:
-
-- The `SvnDiffTool.exe` path is correct
-- The executable path is quoted if needed
-- The argument order is still `%base %mine %bname %yname %burl %yurl %brev %yrev %peg %fname`
-
-### 2. The app opens with no content when started directly
-
-That is usually expected. If the app is launched manually or via the development script without TortoiseSVN passing file arguments, it enters development mode and waits for you to choose a working-copy file or load sample data.
-
-### 3. What is the difference between `strict` and `content` modes
-
-- `strict` is more sensitive to whitespace, formula text, and exact workbook representation
-- `content` is more normalized and is better when you want to downplay "technically different but not materially important" changes
-
-### 4. `npm run build` or `npm run verify:ci` fails because `cargo` is missing
-
-The build and CI verification pipelines compile the Rust parser. Install Rust stable and make sure `cargo` is available in your `PATH`; if it is not, set the `CARGO` environment variable to a working cargo executable.
-
-### 5. Can very large files still be opened
-
-The current implementation includes virtualization, caching, and performance guards for large text files and complex workbooks. Very large inputs can still take longer to parse and render, but they are no longer blocked by a fixed file-size threshold.
-
-## Development Notes
-
-A practical local development flow is:
-
-```bash
-npm install
-npm run verify:ci
-npm run dev:app
-```
-
-Before committing, at minimum run:
-
-```bash
-npm run verify:ci
-```
-
-That covers lint, TypeScript checks, the Rust parser build, repository tests, and app build output in one pass; the Electron runtime binary is only needed when launching Electron locally or building the Windows installer.
+No license file is currently included. All rights are reserved until an explicit license is added.

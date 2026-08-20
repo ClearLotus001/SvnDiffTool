@@ -324,6 +324,35 @@ test('hydrateWorkbookRowDelta preserves payload arrays and lazily materializes t
   assert.deepEqual(hydrated.miniMapPaintTones, ['modify']);
 });
 
+test('compact structural row deltas retain row semantics without rebuilding per-cell maps', () => {
+  const hydrated = hydrateWorkbookRowDelta({
+    lineIdx: 1,
+    lineIdxs: [1],
+    leftLineIdx: 1,
+    rightLineIdx: null,
+    cellDeltas: [],
+    changedColumns: [],
+    strictOnlyColumns: [],
+    changedCount: 45,
+    hasChanges: true,
+    tone: 'delete',
+    miniMapTone: 'delete',
+    miniMapPaintTones: ['delete'],
+    structuralChange: 'delete',
+  });
+
+  const visibleDelta = buildWorkbookSplitRowCompareState({
+    left: null,
+    right: null,
+    workbookRowDelta: hydrated,
+  }, [0, 1, 2], 'strict');
+
+  assert.equal(visibleDelta, hydrated);
+  assert.equal(visibleDelta.tone, 'delete');
+  assert.equal(visibleDelta.cellDeltas.size, 0);
+  assert.deepEqual(visibleDelta.miniMapPaintTones, ['delete']);
+});
+
 test('buildWorkbookSheetPresentation reuses cached result for identical inputs', () => {
   const base = [
     createWorkbookSheetLine('Thing'),

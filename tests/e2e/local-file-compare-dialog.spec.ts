@@ -1,10 +1,11 @@
 import { expect, test } from '@playwright/test';
 
-test('two-file dialog explains automatic SVN revision and local fallback behavior', async ({ page }) => {
+test('two-file dialog explains automatic Git/SVN detection and local fallback behavior', async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem('svn-excel-diff-tool.locale', 'zh-CN');
     window.svnDiff = {
-      getPathForDroppedFile: (file) => `E:\\Dropped\\${file.name}`,
+      getPathForDroppedFile: (file: File) => `E:\\Dropped\\${file.name}`,
+      loadLocalFileDiff: () => new Promise<never>(() => {}),
       getLaunchState: async () => ({
         isDevMode: true,
         usesNativeWindowControls: false,
@@ -44,7 +45,7 @@ test('two-file dialog explains automatic SVN revision and local fallback behavio
           perf: null,
         },
       }),
-    } as NonNullable<typeof window.svnDiff>;
+    } as unknown as NonNullable<typeof window.svnDiff>;
   });
   const testBaseUrl = process.env.SVN_DIFF_E2E_BASE_URL ?? '';
   await page.goto(`${testBaseUrl}/?__e2e=1`);
@@ -56,12 +57,12 @@ test('two-file dialog explains automatic SVN revision and local fallback behavio
 
   await expect(page.getByRole('heading', { name: '对比两份文件', exact: true })).toBeVisible();
   await expect(page.getByText('自动选择对比来源', { exact: true })).toBeVisible();
-  const svnRule = page.getByText('两份均为 SVN 工作副本：默认对比各自最新修订，可分别切换版本。', { exact: true });
-  const localRule = page.getByText('任一文件非工作副本：直接对比两份本地文件。', { exact: true });
-  await expect(svnRule).toBeVisible();
-  await expect(localRule).toBeVisible();
-  await expect.poll(async () => svnRule.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-  await expect.poll(async () => localRule.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  const versionedRule = page.getByText('Git / SVN：逐侧识别，并支持历史版本切换。', { exact: true });
+  const plainRule = page.getByText('普通文件：直接对比当前内容；仅版本库一侧可切换。', { exact: true });
+  await expect(versionedRule).toBeVisible();
+  await expect(plainRule).toBeVisible();
+  await expect.poll(async () => versionedRule.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await expect.poll(async () => plainRule.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 
   const baseDropZone = page.getByTestId('local-file-drop-base');
   const mineDropZone = page.getByTestId('local-file-drop-mine');
@@ -95,5 +96,12 @@ test('two-file dialog explains automatic SVN revision and local fallback behavio
     element.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
   });
   await expect(mineDropZone.getByText('trunk.xlsx', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: '开始对比', exact: true })).toBeEnabled();
+  const compareAction = page.getByRole('button', { name: '开始对比', exact: true });
+  await expect(compareAction).toBeEnabled();
+  await compareAction.click();
+
+  await expect(page.locator('.local-file-compare-dialog')).toBeHidden();
+  await expect(page.getByTestId('diff-loading-state')).toBeVisible();
+  await expect(page.getByTestId('diff-loading-state')).toContainText('正在准备差异视图');
+  await expect(page.getByText('正在识别并对比…', { exact: true })).toHaveCount(0);
 });

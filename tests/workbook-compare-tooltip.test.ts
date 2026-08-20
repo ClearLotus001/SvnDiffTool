@@ -10,7 +10,10 @@ import type { WorkbookCellDelta } from '../src/types';
 
 function renderTooltip(
   compareCell: WorkbookCellDelta,
-  props?: { baseTitle?: string; mineTitle?: string },
+  props?: {
+    baseTitle?: string;
+    mineTitle?: string;
+  },
 ): string {
   return renderToStaticMarkup(
     React.createElement(

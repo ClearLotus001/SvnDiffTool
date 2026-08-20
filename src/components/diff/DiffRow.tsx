@@ -161,6 +161,7 @@ const DiffRow = memo(({
           selected={isBaseLineSelected}
           selectedColor={selectionAccentColor}
           title={lineNumberTitle}
+          blame={line.baseBlame}
           onClick={onBaseLineNumberClick}
         />
         <Ln
@@ -170,6 +171,7 @@ const DiffRow = memo(({
           selected={isMineLineSelected}
           selectedColor={selectionAccentColor}
           title={lineNumberTitle}
+          blame={line.mineBlame}
           onClick={onMineLineNumberClick}
         />
       </div>

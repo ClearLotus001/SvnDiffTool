@@ -7,7 +7,6 @@ import {
   FolderOpen,
   GitBranch,
   HardDrive,
-  LoaderCircle,
   Upload,
   X,
 } from 'lucide-react';
@@ -20,8 +19,6 @@ import DialogFrame from '@/components/shared/DialogFrame';
 
 interface LocalFileCompareDialogProps {
   animationState: AnimatedVisibilityState;
-  loading: boolean;
-  error: string;
   initialBasePath?: string;
   initialMinePath?: string;
   onPickFile: (side: LocalFilePickSide, requiredExtension?: string) => Promise<LocalDiffFilePickResult | null>;
@@ -193,8 +190,6 @@ const FileSlot = memo(({
 
 const LocalFileCompareDialog = memo(({
   animationState,
-  loading,
-  error,
   initialBasePath = '',
   initialMinePath = '',
   onPickFile,
@@ -210,9 +205,8 @@ const LocalFileCompareDialog = memo(({
   );
   const [pickingSide, setPickingSide] = useState<LocalFilePickSide | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [hasSubmitted, setHasSubmitted] = useState(false);
   const [localError, setLocalError] = useState('');
-  const busy = loading || isSubmitting || pickingSide !== null;
+  const busy = isSubmitting || pickingSide !== null;
 
   useEffect(() => {
     const preventDroppedFileNavigation = (event: DragEvent) => {
@@ -232,8 +226,6 @@ const LocalFileCompareDialog = memo(({
     const nextMineFile = side === 'mine' ? selected : mineFile;
     if (side === 'base') setBaseFile(selected);
     else setMineFile(selected);
-    setHasSubmitted(false);
-
     if (
       nextBaseFile
       && nextMineFile
@@ -306,8 +298,7 @@ const LocalFileCompareDialog = memo(({
     setLocalError('');
   };
 
-  const handleCompare = async () => {
-    setHasSubmitted(true);
+  const handleCompare = () => {
     setLocalError('');
     if (!baseFile || !mineFile) {
       setLocalError(t('localFileCompareMissingFiles'));
@@ -323,12 +314,11 @@ const LocalFileCompareDialog = memo(({
     }
 
     setIsSubmitting(true);
-    const loaded = await onCompare(baseFile.path, mineFile.path);
-    setIsSubmitting(false);
-    if (loaded) onClose();
+    const comparison = onCompare(baseFile.path, mineFile.path);
+    onClose();
+    void comparison;
   };
 
-  const displayError = localError || (hasSubmitted ? error : '');
   const canCompare = haveSameFileType(baseFile, mineFile)
     && normalizeComparablePath(baseFile?.path ?? '') !== normalizeComparablePath(mineFile?.path ?? '')
     && !busy;
@@ -376,17 +366,17 @@ const LocalFileCompareDialog = memo(({
         <div className="local-file-compare-dialog__smart-mode-rules">
           <div
             className="local-file-compare-dialog__smart-mode-rule"
-            data-mode="svn"
-            title={t('localFileCompareSmartModeSvn')}>
+            data-mode="versioned"
+            title={t('localFileCompareSmartModeVersioned')}>
             <GitBranch size={14} aria-hidden="true" />
-            <span>{t('localFileCompareSmartModeSvn')}</span>
+            <span>{t('localFileCompareSmartModeVersioned')}</span>
           </div>
           <div
             className="local-file-compare-dialog__smart-mode-rule"
             data-mode="local"
-            title={t('localFileCompareSmartModeLocal')}>
+            title={t('localFileCompareSmartModePlain')}>
             <HardDrive size={14} aria-hidden="true" />
-            <span>{t('localFileCompareSmartModeLocal')}</span>
+            <span>{t('localFileCompareSmartModePlain')}</span>
           </div>
         </div>
       </section>
@@ -429,12 +419,12 @@ const LocalFileCompareDialog = memo(({
         />
       </div>
 
-      {displayError && (
+      {localError && (
         <div
           role="alert"
           className="mt-3 rounded-[12px] border border-diff-remove-border px-3.5 py-2.5 text-diff-remove-text text-[13px] font-semibold leading-relaxed"
           style={{ background: cssAlpha('delBg', 'cc') }}>
-          {displayError}
+          {localError}
         </div>
       )}
 
@@ -449,10 +439,10 @@ const LocalFileCompareDialog = memo(({
         <button
           type="button"
           disabled={!canCompare}
-          onClick={() => { void handleCompare(); }}
+          onClick={handleCompare}
           className="local-file-compare-dialog__compare-action h-10 min-w-[148px] px-5 rounded-[11px] border-none inline-flex items-center justify-center gap-2 font-ui text-[13px] font-extrabold transition-all duration-150">
-          {isSubmitting || loading ? <LoaderCircle size={15} className="animate-spin" /> : <ArrowLeftRight size={15} />}
-          {isSubmitting || loading ? t('localFileCompareLoading') : t('localFileCompareAction')}
+          <ArrowLeftRight size={15} />
+          {t('localFileCompareAction')}
         </button>
       </footer>
     </DialogFrame>

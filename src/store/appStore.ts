@@ -154,12 +154,14 @@ interface RevisionSlice {
   baseRevisionInfo: SvnRevisionInfo | null;
   mineRevisionInfo: SvnRevisionInfo | null;
   canSwitchRevisions: boolean;
+  revisionSwitchableSides: { base: boolean; mine: boolean };
   setCompareContext: (v: SetStateAction<CompareContext>) => void;
   setResetPair: (v: SetStateAction<RevisionSelectionPair | null>) => void;
   setRevisionOptions: (v: SetStateAction<SvnRevisionInfo[]>) => void;
   setBaseRevisionInfo: (v: SetStateAction<SvnRevisionInfo | null>) => void;
   setMineRevisionInfo: (v: SetStateAction<SvnRevisionInfo | null>) => void;
   setCanSwitchRevisions: (v: SetStateAction<boolean>) => void;
+  setRevisionSwitchableSides: (v: SetStateAction<{ base: boolean; mine: boolean }>) => void;
 }
 
 // ---- Workbook UI ----
@@ -226,6 +228,7 @@ export interface LoadedDiffSessionPayload {
   compareContext: CompareContext;
   resetPair: RevisionSelectionPair | null;
   canSwitchRevisions: boolean;
+  revisionSwitchableSides?: { base: boolean; mine: boolean };
 }
 
 export interface WorkbookMetadataStatePayload {
@@ -236,6 +239,7 @@ export interface WorkbookMetadataStatePayload {
 interface DiffSessionHydrationSlice {
   hydrateLoadedDiffSession: (payload: LoadedDiffSessionPayload) => void;
   hydrateWorkbookMetadataState: (payload: WorkbookMetadataStatePayload) => void;
+  resetDiffSessionToHome: () => void;
 }
 
 
@@ -348,12 +352,14 @@ export const useAppStore = create<AppState>()((set) => ({
   baseRevisionInfo: null,
   mineRevisionInfo: null,
   canSwitchRevisions: false,
+  revisionSwitchableSides: { base: false, mine: false },
   setCompareContext: setter(set, 'compareContext'),
   setResetPair: setter(set, 'resetPair'),
   setRevisionOptions: setter(set, 'revisionOptions'),
   setBaseRevisionInfo: setter(set, 'baseRevisionInfo'),
   setMineRevisionInfo: setter(set, 'mineRevisionInfo'),
   setCanSwitchRevisions: setter(set, 'canSwitchRevisions'),
+  setRevisionSwitchableSides: setter(set, 'revisionSwitchableSides'),
 
   // ── Workbook UI ───────────────────────────────────────────────────────
   workbookSelection: createWorkbookSelectionState(null),
@@ -406,6 +412,10 @@ export const useAppStore = create<AppState>()((set) => ({
     compareContext: payload.compareContext,
     resetPair: payload.resetPair,
     canSwitchRevisions: payload.canSwitchRevisions,
+    revisionSwitchableSides: payload.revisionSwitchableSides ?? {
+      base: payload.canSwitchRevisions,
+      mine: payload.canSwitchRevisions,
+    },
     hunkIdx: 0,
     workbookSelection: createWorkbookSelectionState(null),
     workbookHiddenStateBySheet: payload.preservedWorkbookViewState?.workbookHiddenStateBySheet ?? {},
@@ -417,5 +427,40 @@ export const useAppStore = create<AppState>()((set) => ({
   hydrateWorkbookMetadataState: (payload) => set(() => ({
     baseWorkbookMetadata: payload.baseWorkbookMetadata,
     mineWorkbookMetadata: payload.mineWorkbookMetadata,
+  })),
+  resetDiffSessionToHome: () => set((state) => ({
+    diffLines: [],
+    diffSourceNoticeCode: null,
+    diffSourceNoticeDismissed: false,
+    workbookArtifactDiff: null,
+    artifactNoticeDismissed: false,
+    baseName: '',
+    mineName: '',
+    launchBaseName: '',
+    launchMineName: '',
+    fileName: '',
+    searchQ: '',
+    searchRx: false,
+    searchCs: false,
+    searchWorkbookScope: 'sheet',
+    activeSearchIdx: -1,
+    searchJumpNonce: state.searchJumpNonce + 1,
+    hunkIdx: 0,
+    guidedPulseNonce: state.guidedPulseNonce + 1,
+    compareContext: 'literal_two_file_compare',
+    resetPair: null,
+    revisionOptions: [],
+    baseRevisionInfo: null,
+    mineRevisionInfo: null,
+    canSwitchRevisions: false,
+    revisionSwitchableSides: { base: false, mine: false },
+    workbookSelection: createWorkbookSelectionState(null),
+    workbookHiddenStateBySheet: {},
+    workbookContextMenu: null,
+    workbookFreezeBySheet: {},
+    workbookColumnWidthBySheet: {},
+    activeWorkbookSheetName: null,
+    baseWorkbookMetadata: null,
+    mineWorkbookMetadata: null,
   })),
 }));

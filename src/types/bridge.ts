@@ -13,6 +13,7 @@ import type {
   WindowFrameState,
   DiffData,
 } from '@/types/svn';
+import type { LineBlamePayload } from '@/types/diff';
 import type {
   WorkbookCompareMode,
   WorkbookCompareModePayload,
@@ -33,7 +34,7 @@ export interface LaunchStatePayload extends LaunchContextPayload {
   diffData: DiffData;
 }
 
-export interface SvnDiffBridge {
+export interface VersoraBridge {
   notifyRendererReady?(): void;
   saveStartupAppearance?(appearance: { themeKey?: ThemeKey; locale?: 'zh-CN' | 'en-US' }): void;
   getLaunchContext(): Promise<LaunchContextPayload>;
@@ -41,6 +42,9 @@ export interface SvnDiffBridge {
   getDiffData(compareMode?: WorkbookCompareMode): Promise<DiffData>;
   loadRevisionDiff(baseRevisionId: string, mineRevisionId: string, compareMode?: WorkbookCompareMode): Promise<DiffData>;
   loadTwoFileRevisionDiff(baseRevisionId: string, mineRevisionId: string, compareMode?: WorkbookCompareMode): Promise<DiffData>;
+  loadLineBlame(baseRevisionId?: string, mineRevisionId?: string): Promise<LineBlamePayload>;
+  loadWorkingCopyLineBlame(basePath: string, minePath: string): Promise<LineBlamePayload>;
+  loadTwoFileVersionLineBlame(baseRevisionId: string, mineRevisionId: string): Promise<LineBlamePayload>;
   getRevisionOptions(): Promise<SvnRevisionInfo[]>;
   queryRevisionOptions(query?: RevisionOptionsQuery): Promise<RevisionOptionsPayload>;
   loadWorkbookCompareMode(compareMode: WorkbookCompareMode, baseRevisionId?: string, mineRevisionId?: string): Promise<WorkbookCompareModePayload>;
@@ -76,8 +80,12 @@ export interface SvnDiffBridge {
   openExternal(url: string): void;
 }
 
+/** @deprecated Use VersoraBridge. Kept for external integration compatibility. */
+export type SvnDiffBridge = VersoraBridge;
+
 declare global {
   interface Window {
-    svnDiff?: SvnDiffBridge;
+    versora?: VersoraBridge;
+    svnDiff?: VersoraBridge;
   }
 }

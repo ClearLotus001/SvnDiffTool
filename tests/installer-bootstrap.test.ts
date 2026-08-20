@@ -71,7 +71,11 @@ test('normalizeInstallerBootstrapConfig preserves the text-only diff mode', () =
   assert.equal(normalized.diffViewerMode, 'text-only');
 });
 
-test('controlled cache root requires the managed SvnDiffTool cache suffix', () => {
+test('controlled cache root accepts current and legacy managed cache suffixes', () => {
+  assert.equal(
+    isControlledCacheRoot(String.raw`C:\Users\me\AppData\Local\Versora\Cache`),
+    true,
+  );
   assert.equal(
     isControlledCacheRoot(String.raw`C:\Users\me\AppData\Local\SvnDiffTool\Cache`),
     true,
@@ -86,12 +90,12 @@ test('installer bootstrap content keeps the expected key-value structure', () =>
   const content = toInstallerBootstrapContent({
     version: 1,
     diffViewerMode: 'workbook-only',
-    cacheRoot: String.raw`D:\TempRoot\SvnDiffTool\Cache`,
+    cacheRoot: String.raw`D:\TempRoot\Versora\Cache`,
   });
 
   assert.match(content, /^version=1/m);
   assert.match(content, /^diffViewerMode=workbook-only/m);
-  assert.match(content, /^cacheRoot=D:\\TempRoot\\SvnDiffTool\\Cache/m);
+  assert.match(content, /^cacheRoot=D:\\TempRoot\\Versora\\Cache/m);
   assert.equal(content.includes(`${CACHE_CONTAINER_DIR_NAME}\\${CACHE_LEAF_DIR_NAME}`), true);
 });
 

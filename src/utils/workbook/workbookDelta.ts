@@ -279,6 +279,7 @@ export function hydrateWorkbookRowDelta(payload: WorkbookRowDeltaPayload): Workb
     tone: payload.tone,
     miniMapTone: payload.miniMapTone ?? fallbackSummary?.miniMapTone ?? 'equal',
     miniMapPaintTones: payload.miniMapPaintTones ?? fallbackSummary?.miniMapPaintTones ?? [],
+    ...(payload.structuralChange ? { structuralChange: payload.structuralChange } : {}),
   };
 }
 
@@ -324,6 +325,7 @@ export function buildWorkbookSplitRowDelta(
   if (!precomputed) {
     return buildWorkbookRowDelta(row.left, row.right, columns, compareMode);
   }
+  if (precomputed.structuralChange) return precomputed;
   if (!columns || columns.length === 0) return precomputed;
 
   const subsetCacheKey = `${compareMode}::${columns.join(',')}`;

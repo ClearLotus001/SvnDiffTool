@@ -141,7 +141,7 @@ async function main() {
   await fs.promises.mkdir(releaseDir, { recursive: true });
 
   const { tempOutputDir, artifactsOutputDir } = await buildInstallerArtifacts(workspaceDir, publishMode);
-  const installerPath = path.join(artifactsOutputDir, `SvnDiffTool-${version}.exe`);
+  const installerPath = path.join(artifactsOutputDir, `Versora-${version}.exe`);
   const winUnpackedDir = path.join(tempOutputDir, 'win-unpacked');
   const localesDir = path.join(winUnpackedDir, 'locales');
   const appAsarPath = path.join(winUnpackedDir, 'resources', 'app.asar');

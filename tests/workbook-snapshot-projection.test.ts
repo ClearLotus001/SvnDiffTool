@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { prepareWorkbookProjection } from '../electron/main/workbookProjection';
+import {
+  prepareWorkbookProjection,
+  projectWorkbookDeltaForSnapshot,
+} from '../electron/main/workbookProjection';
 import { applyWorkbookRegionVersionLabels } from '../src/hooks/app/helpers';
 import { createWorkbookRowLine, createWorkbookSheetLine } from '../src/utils/workbook/workbookDisplay';
 import {
@@ -215,6 +218,118 @@ test('prepareWorkbookProjection can project unchanged workbook sections from del
   assert.deepEqual(projection.navigationRegions, []);
 });
 
+test('prepareWorkbookProjection compresses whole-sheet additions and deletions into structural regions', () => {
+  const diffLines: DiffLine[] = [
+    createDiffLine('delete', createWorkbookSheetLine('Removed'), null, null),
+    createDiffLine('delete', createWorkbookRowLine(1, ['old']), null, 1),
+    createDiffLine('add', null, createWorkbookSheetLine('Added'), null),
+    createDiffLine('add', null, createWorkbookRowLine(1, ['new']), 1),
+  ];
+  const workbookDelta: WorkbookPrecomputedDeltaPayload = {
+    compareMode: 'strict',
+    sections: [
+      {
+        name: 'Removed',
+        hasBaseSide: true,
+        hasMineSide: false,
+        startLineIdx: 0,
+        endLineIdx: 1,
+        maxColumns: 1,
+        rowCount: 1,
+        firstDataLineIdx: 1,
+        firstDataRowNumber: 1,
+        rows: [{
+          lineIdx: 1,
+          lineIdxs: [1],
+          leftLineIdx: 1,
+          rightLineIdx: null,
+          baseRowNumber: 1,
+          mineRowNumber: null,
+          cellDeltas: [{
+            column: 0,
+            baseCell: { value: 'old', formula: '' },
+            mineCell: { value: '', formula: '' },
+            changed: true,
+            masked: false,
+            strictOnly: false,
+            kind: 'delete',
+            hasBaseContent: true,
+            hasMineContent: false,
+            hasContent: true,
+          }],
+          changedColumns: [0],
+          strictOnlyColumns: [],
+          changedCount: 1,
+          hasChanges: true,
+          tone: 'delete',
+        }],
+      },
+      {
+        name: 'Added',
+        hasBaseSide: false,
+        hasMineSide: true,
+        startLineIdx: 2,
+        endLineIdx: 3,
+        maxColumns: 1,
+        rowCount: 1,
+        firstDataLineIdx: 3,
+        firstDataRowNumber: 1,
+        rows: [{
+          lineIdx: 3,
+          lineIdxs: [3],
+          leftLineIdx: null,
+          rightLineIdx: 3,
+          baseRowNumber: null,
+          mineRowNumber: 1,
+          cellDeltas: [{
+            column: 0,
+            baseCell: { value: '', formula: '' },
+            mineCell: { value: 'new', formula: '' },
+            changed: true,
+            masked: false,
+            strictOnly: false,
+            kind: 'add',
+            hasBaseContent: false,
+            hasMineContent: true,
+            hasContent: true,
+          }],
+          changedColumns: [0],
+          strictOnlyColumns: [],
+          changedCount: 1,
+          hasChanges: true,
+          tone: 'add',
+        }],
+      },
+    ],
+  };
+
+  const projection = prepareWorkbookProjection({
+    diffLines: diffLines as MainDiffLine[],
+    workbookDelta: workbookDelta as MainWorkbookPrecomputedDeltaPayload,
+    compareMode: 'strict',
+    baseWorkbookMetadata: null,
+    mineWorkbookMetadata: null,
+  });
+
+  assert.deepEqual(
+    projection.sections.map(section => [section.name, section.changeType]),
+    [['Removed', 'delete'], ['Added', 'add']],
+  );
+  assert.equal(projection.navigationRegions.length, 2);
+  assert.deepEqual(projection.navigationRegions.map(region => region.patches.length), [1, 1]);
+  assert.equal(projection.navigationRegions[0]?.hasBaseSide, true);
+  assert.equal(projection.navigationRegions[1]?.hasMineSide, true);
+
+  const projectedDelta = projectWorkbookDeltaForSnapshot(
+    workbookDelta as MainWorkbookPrecomputedDeltaPayload,
+    projection.sections as Parameters<typeof projectWorkbookDeltaForSnapshot>[1],
+  );
+  assert.equal(projectedDelta?.sections[0]?.rows[0]?.structuralChange, 'delete');
+  assert.equal(projectedDelta?.sections[1]?.rows[0]?.structuralChange, 'add');
+  assert.deepEqual(projectedDelta?.sections[0]?.rows[0]?.cellDeltas, []);
+  assert.deepEqual(projectedDelta?.sections[0]?.rows[0]?.changedColumns, []);
+});
+
 test('prepareWorkbookProjection projects large workbook sections without overflowing the call stack', () => {
   const rowCount = 70_000;
   const diffLines: DiffLine[] = [
@@ -272,6 +387,65 @@ test('prepareWorkbookProjection projects large workbook sections without overflo
   assert.equal(projection.sections[0]?.maxColumns, 24);
   assert.equal(projection.sections[0]?.rowCount, rowCount);
   assert.deepEqual(projection.navigationRegions, []);
+});
+
+test('prepareWorkbookProjection aggregates a very large connected diff region without argument spreading', () => {
+  const rowCount = 140_000;
+  const sharedRowLineIdx = 1;
+  const diffLines: DiffLine[] = [
+    createDiffLine('equal', createWorkbookSheetLine('Sheet1'), createWorkbookSheetLine('Sheet1'), null),
+    createDiffLine('equal', createWorkbookRowLine(1, ['before']), createWorkbookRowLine(1, ['after']), 1),
+  ];
+  const rows: WorkbookPrecomputedDeltaPayload['sections'][number]['rows'] = Array.from(
+    { length: rowCount },
+    (_, index) => {
+      const rowNumber = index + 1;
+      return {
+        lineIdx: sharedRowLineIdx,
+        lineIdxs: [sharedRowLineIdx],
+        leftLineIdx: sharedRowLineIdx,
+        rightLineIdx: sharedRowLineIdx,
+        baseRowNumber: rowNumber,
+        mineRowNumber: rowNumber,
+        cellDeltas: [],
+        changedColumns: [0],
+        strictOnlyColumns: [],
+        changedCount: 1,
+        hasChanges: true,
+        tone: 'mixed' as const,
+      };
+    },
+  );
+  const workbookDelta: WorkbookPrecomputedDeltaPayload = {
+    compareMode: 'strict',
+    sections: [{
+      name: 'Sheet1',
+      hasBaseSide: true,
+      hasMineSide: true,
+      startLineIdx: 0,
+      endLineIdx: sharedRowLineIdx,
+      maxColumns: 1,
+      rowCount,
+      firstDataLineIdx: sharedRowLineIdx,
+      firstDataRowNumber: 1,
+      rows,
+    }],
+  };
+
+  const projection = prepareWorkbookProjection({
+    diffLines: diffLines as MainDiffLine[],
+    workbookDelta: workbookDelta as MainWorkbookPrecomputedDeltaPayload,
+    compareMode: 'strict',
+    baseWorkbookMetadata: null,
+    mineWorkbookMetadata: null,
+  });
+
+  assert.equal(projection.navigationRegions.length, 1);
+  assert.equal(projection.navigationRegions[0]?.startRowIndex, 0);
+  assert.equal(projection.navigationRegions[0]?.endRowIndex, rowCount - 1);
+  assert.equal(projection.navigationRegions[0]?.rowNumberStart, 1);
+  assert.equal(projection.navigationRegions[0]?.rowNumberEnd, rowCount);
+  assert.equal(projection.navigationRegions[0]?.patches.length, rowCount);
 });
 
 test('applyWorkbookRegionVersionLabels hydrates snapshot-projected anchor selections', () => {

@@ -8,16 +8,21 @@ import {
 import { rememberFileEquality, rememberLimitedEntry } from './cache.js';
 import { logMainDebug, logMainWarn } from '../logging.js';
 import { logDebugTiming, writeExternalDiffDebugLog } from './logger.js';
-import { runSvnUtf8 } from './rustBridge.js';
+import { runSvnBuffer, runSvnUtf8 } from './rustBridge.js';
 import {
   buildFileEqualityCacheKey,
   buildRevisionQueryCacheKey,
+  createCliRevisionInfo,
   formatSvnDateQuery,
+  getPeggedSvnTarget,
   getRevisionNumberValue,
   haveSameExplicitSvnUrl,
   isRemoteRepositoryTarget,
+  isRevisionSelectionId,
+  normalizeRevisionNumber,
   normalizeRevisionQuery,
   normalizeSvnUrlForCompare,
+  parseBlameEntries,
   parseLogEntries,
 } from './svnHelpers.js';
 import {
@@ -37,8 +42,13 @@ import type {
   LocalWorkbookPairCacheContext,
   RevisionOptionsPayload,
   RevisionOptionsQuery,
+  LineBlameLine,
+  LineBlamePayload,
   SvnRevisionInfo,
 } from './types.js';
+
+const SVN_BLAME_CACHE_LIMIT = 32;
+const svnBlameCache = new Map<string, Promise<LineBlameLine[]>>();
 
 function rememberProbePromise<T>(
   cache: Map<string, Promise<T>>,
@@ -244,6 +254,164 @@ export async function detectLocalSvnVersioningStatus(
     if (firstLine.startsWith('?') || firstLine.startsWith('I')) return 'unversioned';
     return 'versioned';
   });
+}
+
+interface ResolvedBlameSource {
+  target: string;
+  revision: string;
+  cacheable: boolean;
+}
+
+function getSideValue(
+  side: 'base' | 'mine',
+  values: { base: string; mine: string },
+): string {
+  return side === 'base' ? values.base : values.mine;
+}
+
+function escapeLocalSvnTarget(filePath: string): string {
+  return filePath.includes('@') ? `${filePath}@` : filePath;
+}
+
+async function resolveBlameSource(
+  side: 'base' | 'mine',
+  requestedRevisionId: string | undefined,
+): Promise<ResolvedBlameSource | null> {
+  const args = getActiveCliArgs();
+  const sidePath = getSideValue(side, { base: args.basePath, mine: args.minePath }).trim();
+  const sideUrl = getSideValue(side, { base: args.baseUrl, mine: args.mineUrl }).trim();
+  const revisionInfo = createCliRevisionInfo(side);
+  const revisionId = requestedRevisionId?.trim() || revisionInfo?.id.trim() || '';
+
+  if (isRevisionSelectionId(revisionId)) {
+    const remoteTarget = isRemoteRepositoryTarget(sideUrl)
+      ? sideUrl
+      : (sidePath ? await resolveLocalSvnUrl(sidePath) : '') || await resolveSvnTarget();
+    if (!remoteTarget) return null;
+
+    return {
+      target: getPeggedSvnTarget(remoteTarget),
+      revision: normalizeRevisionNumber(revisionId),
+      cacheable: true,
+    };
+  }
+
+  if (!sidePath || await detectLocalSvnVersioningStatus(sidePath) !== 'versioned') {
+    return null;
+  }
+
+  return {
+    target: escapeLocalSvnTarget(sidePath),
+    revision: side === 'base' ? 'BASE' : '',
+    cacheable: side === 'base',
+  };
+}
+
+async function queryBlameSource(source: ResolvedBlameSource | null): Promise<LineBlameLine[]> {
+  if (!source) return [];
+
+  const cacheKey = `${source.target}::${source.revision || 'WORKING'}`;
+  if (source.cacheable) {
+    const cached = svnBlameCache.get(cacheKey);
+    if (cached) return cached;
+  }
+
+  const pending = (async () => {
+    const svnArgs = ['blame', '--xml'];
+    if (source.revision) svnArgs.push('-r', source.revision);
+    svnArgs.push(source.target);
+
+    const result = await runSvnUtf8(svnArgs);
+    if (!result.ok) {
+      const message = result.stderr.trim();
+      if (message) logMainWarn('svn-blame', message);
+      return [];
+    }
+    return parseBlameEntries(result.stdout);
+  })();
+
+  if (source.cacheable) {
+    void rememberLimitedEntry(svnBlameCache, cacheKey, pending, SVN_BLAME_CACHE_LIMIT);
+    void pending.catch(() => svnBlameCache.delete(cacheKey));
+  }
+  return pending;
+}
+
+export async function loadSvnLineBlame(
+  baseRevisionId?: string,
+  mineRevisionId?: string,
+): Promise<LineBlamePayload> {
+  const [baseSource, mineSource] = await Promise.all([
+    resolveBlameSource('base', baseRevisionId),
+    resolveBlameSource('mine', mineRevisionId),
+  ]);
+  const sameSource = baseSource != null
+    && mineSource != null
+    && baseSource.target === mineSource.target
+    && baseSource.revision === mineSource.revision;
+  const basePromise = queryBlameSource(baseSource);
+  const [base, mine] = sameSource
+    ? await Promise.all([basePromise, basePromise])
+    : await Promise.all([basePromise, queryBlameSource(mineSource)]);
+
+  return { base, mine };
+}
+
+export async function loadSvnWorkingFileLineBlame(
+  filePath: string,
+): Promise<LineBlameLine[]> {
+  const candidate = filePath.trim();
+  if (!candidate || !await resolveLocalSvnUrl(candidate)) return [];
+  return queryBlameSource({
+    target: escapeLocalSvnTarget(candidate),
+    revision: '',
+    cacheable: false,
+  });
+}
+
+export function loadSvnTargetLineBlame(
+  target: string,
+  revisionId: string,
+): Promise<LineBlameLine[]> {
+  return queryBlameSource({
+    target: getPeggedSvnTarget(target),
+    revision: normalizeRevisionNumber(revisionId),
+    cacheable: true,
+  });
+}
+
+export async function readSvnFileRevision(
+  target: string,
+  revisionId: string,
+): Promise<Buffer> {
+  const result = await runSvnBuffer([
+    'cat',
+    '-r',
+    normalizeRevisionNumber(revisionId),
+    getPeggedSvnTarget(target),
+  ]);
+  if (!result.ok) {
+    throw new Error(result.stderr.trim() || `Unable to read SVN revision ${revisionId}.`);
+  }
+  return result.stdout;
+}
+
+export async function querySvnRevisionInfoForTarget(
+  target: string,
+  revisionId: string,
+): Promise<SvnRevisionInfo | null> {
+  const revision = normalizeRevisionNumber(revisionId);
+  if (!target || !revision) return null;
+  const result = await runSvnUtf8([
+    'log',
+    '--xml',
+    '--limit',
+    '1',
+    '-r',
+    revision,
+    getPeggedSvnTarget(target),
+  ]);
+  return result.ok ? (parseLogEntries(result.stdout)[0] ?? null) : null;
 }
 
 export async function resolveWorkingCopyPathForTarget(

@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
-import type { LayoutMode, SvnRevisionInfo } from '@/types';
+import type { ComparisonSourceKind, LayoutMode, SvnRevisionInfo } from '@/types';
 import { useI18n } from '@/context/i18n';
 import { TEXT_DIFF_MINIMAP_WIDTH } from '@/constants/layout';
 import { useAppStore } from '@/store/appStore';
@@ -44,8 +44,12 @@ interface SplitHeaderProps {
   isWorkbookMode: boolean;
   baseRevisionInfo?: SvnRevisionInfo | null;
   mineRevisionInfo?: SvnRevisionInfo | null;
+  baseSourceKind?: ComparisonSourceKind | null;
+  mineSourceKind?: ComparisonSourceKind | null;
   revisionOptions?: SvnRevisionInfo[] | null;
   canSwitchRevisions?: boolean;
+  canSwitchBaseRevision?: boolean;
+  canSwitchMineRevision?: boolean;
   isLoadingRevisionOptions?: boolean;
   isSwitchingRevisions?: boolean;
   revisionHasMore?: boolean;
@@ -76,7 +80,10 @@ const SplitHeader = memo(({
   isTwoFileCompare = false,
   layout, isWorkbookMode,
   baseRevisionInfo = null, mineRevisionInfo = null,
+  baseSourceKind = null, mineSourceKind = null,
   revisionOptions = null, canSwitchRevisions = false,
+  canSwitchBaseRevision = canSwitchRevisions,
+  canSwitchMineRevision = canSwitchRevisions,
   isLoadingRevisionOptions = false, isSwitchingRevisions = false,
   revisionHasMore = false, revisionQueryDateTime = '', revisionQueryError = '',
   isLoadingMoreRevisions = false, isSearchingRevisionDateTime = false,
@@ -177,6 +184,33 @@ const SplitHeader = memo(({
     return isTwoFileCompare
       ? <PathTooltip path={tooltip || label}>{node}</PathTooltip>
       : <Tooltip content={tooltip || label} maxWidth={520}>{node}</Tooltip>;
+  };
+
+  const renderSourceBadge = (
+    side: 'base' | 'mine',
+    sourceKind: ComparisonSourceKind | null,
+  ) => {
+    if (sourceKind !== 'git' && sourceKind !== 'svn') return null;
+    const label = sourceKind === 'git' ? 'GIT' : 'SVN';
+    const tooltip = sourceKind === 'git'
+      ? t('splitHeaderGitRepository')
+      : t('splitHeaderSvnRepository');
+    const color = sourceKind === 'git' ? '#f05a3c' : '#6f91bd';
+    return (
+      <Tooltip content={tooltip}>
+        <span
+          data-testid={`source-badge-${side}`}
+          aria-label={tooltip}
+          className="inline-flex items-center justify-center h-[18px] min-w-[30px] px-1 rounded-[5px] border shrink-0 font-code text-[9px] font-bold leading-none tracking-[0.08em]"
+          style={{
+            color,
+            borderColor: `color-mix(in srgb, ${color} 42%, var(--border-color) 58%)`,
+            background: `color-mix(in srgb, ${color} 11%, var(--bg-surface-solid) 89%)`,
+          }}>
+          {label}
+        </span>
+      </Tooltip>
+    );
   };
 
   const renderAxisBadge = (axis: SplitHeaderAxisMeta, accent: string) => {
@@ -293,10 +327,12 @@ const SplitHeader = memo(({
 
   const headerSide = (
     side: 'base' | 'mine', axis: SplitHeaderAxisMeta, title: string, name: string,
-    version: string, info: SvnRevisionInfo | null, divider = false,
+    version: string, info: SvnRevisionInfo | null, sourceKind: ComparisonSourceKind | null,
+    divider = false,
   ) => {
     const accent = side === 'base' ? '--acc2' : '--accent';
-    const hasRevisionSwitch = canSwitchRevisions && Boolean(onRevisionChange);
+    const sideCanSwitch = side === 'base' ? canSwitchBaseRevision : canSwitchMineRevision;
+    const hasRevisionSwitch = canSwitchRevisions && sideCanSwitch && Boolean(onRevisionChange);
     const normalizedVersion = version.trim();
     const staticVersionLabel = (
       normalizedVersion && normalizedVersion !== t('commonBase') && normalizedVersion !== t('commonMine')
@@ -341,15 +377,16 @@ const SplitHeader = memo(({
 
         <div className="flex items-center gap-2 min-w-0">
           <div className="flex items-center min-w-0 flex-1 min-h-7 pl-1">
+            {renderSourceBadge(side, sourceKind)}
             {isTwoFileCompare ? (
               <PathTooltip path={name || title}>
-                <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-secondary text-[11px] font-code">
+                <span className={`${sourceKind === 'git' || sourceKind === 'svn' ? 'ml-1.5' : ''} min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-secondary text-[11px] font-code`}>
                   {name || title}
                 </span>
               </PathTooltip>
             ) : (renderMeta(info, name || title, accent) ?? (
               <Tooltip content={name || title} maxWidth={320}>
-                <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-secondary text-[11px] font-ui">
+                <span className={`${sourceKind === 'git' || sourceKind === 'svn' ? 'ml-1.5' : ''} min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-secondary text-[11px] font-ui`}>
                   {name || title}
                 </span>
               </Tooltip>
@@ -369,10 +406,10 @@ const SplitHeader = memo(({
           : 'minmax(0, 1fr) minmax(0, 1fr)',
       }}>
       <div className="min-w-0">
-        {headerSide('base', resolveAxisMeta('base'), baseTitle, baseDisplayName, baseVersion, baseRevisionInfo, false)}
+        {headerSide('base', resolveAxisMeta('base'), baseTitle, baseDisplayName, baseVersion, baseRevisionInfo, baseSourceKind, false)}
       </div>
       <div className="min-w-0">
-        {headerSide('mine', resolveAxisMeta('mine'), mineTitle, mineDisplayName, mineVersion, mineRevisionInfo, true)}
+        {headerSide('mine', resolveAxisMeta('mine'), mineTitle, mineDisplayName, mineVersion, mineRevisionInfo, mineSourceKind, true)}
       </div>
     </div>
   );

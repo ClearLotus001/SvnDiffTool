@@ -1,14 +1,17 @@
 import { computeDiff } from '@/engine/text/diff';
+import { attachLineBlameToDiffLines } from '@/utils/diff/lineBlame';
 import { prepareTextDiffAnalysisFromDiffLines } from '@/utils/diff/preparedTextAnalysis';
-import type { DiffData, LayoutMode, SvnRevisionInfo } from '@/types';
+import type { DiffData, LayoutMode, LineBlameLine, SvnRevisionInfo } from '@/types';
 
 interface E2ERevisionPayload {
+  source?: DiffData['source'];
   basePath?: string;
   minePath?: string;
   revisionOptions?: SvnRevisionInfo[] | null;
   baseRevisionInfo?: SvnRevisionInfo | null;
   mineRevisionInfo?: SvnRevisionInfo | null;
   canSwitchRevisions?: boolean;
+  revisionSwitchableSides?: { base: boolean; mine: boolean };
 }
 
 export interface E2ELoadTextDiffPayload extends E2ERevisionPayload {
@@ -19,6 +22,8 @@ export interface E2ELoadTextDiffPayload extends E2ERevisionPayload {
   mineContent: string;
   layout?: LayoutMode;
   collapseCtx?: boolean;
+  baseBlame?: LineBlameLine[];
+  mineBlame?: LineBlameLine[];
 }
 
 export interface E2ELoadWorkbookDiffPayload extends E2ERevisionPayload {
@@ -59,8 +64,15 @@ export function buildE2EDiffData(payload: E2ELoadTextDiffPayload): DiffData {
   const fileName = payload.fileName?.trim() || 'selection-sample.ts';
   const baseName = payload.baseName?.trim() || 'base.ts';
   const mineName = payload.mineName?.trim() || 'mine.ts';
-  const diffLines = computeDiff(payload.baseContent, payload.mineContent);
+  const diffLines = attachLineBlameToDiffLines(
+    computeDiff(payload.baseContent, payload.mineContent),
+    {
+      base: payload.baseBlame ?? [],
+      mine: payload.mineBlame ?? [],
+    },
+  );
   return {
+    ...(payload.source ? { source: payload.source } : {}),
     svnUrl: '',
     fileName,
     ...(payload.basePath?.trim() ? { basePath: payload.basePath.trim() } : {}),
@@ -85,6 +97,9 @@ export function buildE2EDiffData(payload: E2ELoadTextDiffPayload): DiffData {
     baseRevisionInfo: payload.baseRevisionInfo ?? null,
     mineRevisionInfo: payload.mineRevisionInfo ?? null,
     canSwitchRevisions: payload.canSwitchRevisions ?? false,
+    ...(payload.revisionSwitchableSides
+      ? { revisionSwitchableSides: payload.revisionSwitchableSides }
+      : {}),
     workbookArtifactDiff: null,
     sourceNoticeCode: null,
     perf: {
@@ -98,6 +113,7 @@ export function buildE2EWorkbookDiffData(payload: E2ELoadWorkbookDiffPayload): D
   const baseName = payload.baseName?.trim() || 'workbook-base.xlsx';
   const mineName = payload.mineName?.trim() || 'workbook-mine.xlsx';
   return {
+    ...(payload.source ? { source: payload.source } : {}),
     svnUrl: '',
     fileName,
     ...(payload.basePath?.trim() ? { basePath: payload.basePath.trim() } : {}),
@@ -116,6 +132,9 @@ export function buildE2EWorkbookDiffData(payload: E2ELoadWorkbookDiffPayload): D
     baseRevisionInfo: payload.baseRevisionInfo ?? null,
     mineRevisionInfo: payload.mineRevisionInfo ?? null,
     canSwitchRevisions: payload.canSwitchRevisions ?? false,
+    ...(payload.revisionSwitchableSides
+      ? { revisionSwitchableSides: payload.revisionSwitchableSides }
+      : {}),
     workbookArtifactDiff: null,
     sourceNoticeCode: null,
     perf: {

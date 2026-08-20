@@ -6,7 +6,10 @@ import {
   resolveWorkbookCompareModePayload,
   resolveWorkbookMetadataPairPayload,
 } from './filePayload.js';
-import { prepareWorkbookProjection } from './workbookProjection.js';
+import {
+  prepareWorkbookProjection,
+  projectWorkbookDeltaForSnapshot,
+} from './workbookProjection.js';
 import { haveSameLocalFileAndBytes, haveSameLocalFileContents } from './svnOperations.js';
 import { prepareTextDiffAnalysis } from './text/diff.js';
 import type {
@@ -233,6 +236,10 @@ async function buildWorkbookSnapshot(
     baseWorkbookMetadata,
     mineWorkbookMetadata,
   });
+  const projectedWorkbookDelta = projectWorkbookDeltaForSnapshot(
+    workbookDelta,
+    workbookProjection.sections,
+  );
   const contentsEqual = diffLines
     ? await resolveWorkbookContentsEqual(
         {
@@ -266,7 +273,7 @@ async function buildWorkbookSnapshot(
         [input.compareMode]: diffLines,
       },
       workbookDeltaByMode: {
-        [input.compareMode]: workbookDelta,
+        [input.compareMode]: projectedWorkbookDelta,
       },
       sectionsByMode: {
         [input.compareMode]: workbookProjection.sections,

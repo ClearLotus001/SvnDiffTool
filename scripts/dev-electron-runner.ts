@@ -15,7 +15,7 @@ const readyResources = [
   preloadBundlePath,
 ];
 const devProfileHash = createHash('sha1').update(rootDir).digest('hex').slice(0, 10);
-const devProfileDir = path.join(os.tmpdir(), 'SvnDiffTool-dev', devProfileHash);
+const devProfileDir = path.join(os.tmpdir(), 'Versora-dev', devProfileHash);
 const EARLY_EXIT_WINDOW_MS = 5_000;
 const MAX_EARLY_EXIT_RETRIES = 3;
 const EARLY_EXIT_RETRY_DELAY_MS = 800;
@@ -150,7 +150,7 @@ function startElectron(resourceSignature: string) {
 
       console.warn(
         '[dev-electron-runner] Electron kept exiting immediately. ' +
-        'A previous SvnDiffTool dev instance may still be running in the background. ' +
+        'A previous Versora dev instance may still be running in the background. ' +
         'Close old Electron windows/processes, then save a file or restart `npm run dev:app`.',
       );
       return;

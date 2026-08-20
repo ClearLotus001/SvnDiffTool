@@ -70,4 +70,6 @@ test('HomeStartPanel shows retry and close actions when an error is present', ()
   assert.match(html, /文件加载失败：boom/);
   assert.match(html, /重试/);
   assert.match(html, /关闭窗口/);
+  assert.match(html, /打开工作副本文件/);
+  assert.doesNotMatch(html, /打开 Git 仓库/);
 });

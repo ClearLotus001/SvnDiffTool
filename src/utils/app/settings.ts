@@ -10,7 +10,8 @@ export interface AppSettings {
   fontSize: number;
 }
 
-const SETTINGS_STORAGE_KEY = 'svn-excel-diff-tool.settings';
+const SETTINGS_STORAGE_KEY = 'versora.settings';
+const LEGACY_SETTINGS_STORAGE_KEY = 'svn-excel-diff-tool.settings';
 
 const DEFAULT_SETTINGS: AppSettings = {
   themeKey: 'dark',
@@ -44,7 +45,8 @@ export function getStoredAppSettings(): AppSettings {
   if (typeof window === 'undefined') return DEFAULT_SETTINGS;
 
   try {
-    const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+    const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY)
+      ?? window.localStorage.getItem(LEGACY_SETTINGS_STORAGE_KEY);
     if (!raw) return DEFAULT_SETTINGS;
 
     const parsed = JSON.parse(raw) as Partial<AppSettings>;

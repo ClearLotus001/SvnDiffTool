@@ -122,3 +122,45 @@ test('hydrateLoadedDiffSession can preserve workbook view state for same-session
     useAppStore.setState(originalState, true);
   }
 });
+
+test('resetDiffSessionToHome clears transient comparison state and preserves preferences', () => {
+  const originalState = useAppStore.getState();
+
+  try {
+    useAppStore.setState({
+      fileName: 'active.ts',
+      baseName: 'base.ts',
+      mineName: 'mine.ts',
+      diffLines: [{
+        type: 'add',
+        base: null,
+        mine: 'changed',
+        baseLineNo: null,
+        mineLineNo: 1,
+        baseCharSpans: null,
+        mineCharSpans: null,
+      }],
+      searchQ: 'changed',
+      hunkIdx: 3,
+      revisionOptions: [{
+        id: 'r1', revision: 'r1', title: 'r1', author: 'A', date: '', message: '', kind: 'revision',
+      }],
+      activeWorkbookSheetName: 'Sheet1',
+    });
+    const themeBefore = useAppStore.getState().themeKey;
+    const layoutBefore = useAppStore.getState().layout;
+
+    useAppStore.getState().resetDiffSessionToHome();
+    const nextState = useAppStore.getState();
+    assert.equal(nextState.fileName, '');
+    assert.equal(nextState.diffLines.length, 0);
+    assert.equal(nextState.searchQ, '');
+    assert.equal(nextState.hunkIdx, 0);
+    assert.equal(nextState.revisionOptions.length, 0);
+    assert.equal(nextState.activeWorkbookSheetName, null);
+    assert.equal(nextState.themeKey, themeBefore);
+    assert.equal(nextState.layout, layoutBefore);
+  } finally {
+    useAppStore.setState(originalState, true);
+  }
+});

@@ -194,7 +194,7 @@ export function buildRendererDiagnosticReport({
   const workbookLogs = getWorkbookDebugLogSnapshot();
 
   return [
-    'SvnDiffTool Renderer Error Report',
+    'Versora Renderer Error Report',
     `generatedAt: ${new Date().toISOString()}`,
     `message: ${error.message || 'Unknown renderer error'}`,
     `name: ${error.name || 'Error'}`,

@@ -190,7 +190,7 @@ export default function useRevisionCompare({
     void queryRevisionOptionsPage(
       {
         limit: 50,
-        includeSpecials: false,
+        includeSpecials: compareContext === 'git_compare' || compareContext === 'literal_two_file_compare',
       },
       {
         showInitialLoading: true,
@@ -212,21 +212,21 @@ export default function useRevisionCompare({
     const trimmed = nextDateTime.trim();
     void queryRevisionOptionsPage(
       trimmed
-        ? {
+          ? {
             limit: 50,
             anchorDateTime: trimmed,
-            includeSpecials: false,
+            includeSpecials: compareContext === 'git_compare' || compareContext === 'literal_two_file_compare',
           }
         : {
             limit: 50,
-            includeSpecials: false,
+            includeSpecials: compareContext === 'git_compare' || compareContext === 'literal_two_file_compare',
           },
       {
         showSearchLoading: true,
         targetSide,
       },
     );
-  }, [queryRevisionOptionsPage]);
+  }, [compareContext, queryRevisionOptionsPage]);
 
   const handleRevisionCompareChange = useCallback(async (
     nextBaseRevisionId: string,

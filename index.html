@@ -17,19 +17,21 @@
       base-uri 'self';
       frame-ancestors 'none';
     " />
-  <title>SvnDiffTool</title>
+  <title>Versora</title>
   <script>
     (function () {
       var THEME_MAP = { dark: 'theme-dark', light: 'theme-light', hc: 'theme-hc' };
       var BG_MAP = { dark: '#09090B', light: '#F4F4F5', hc: '#000000' };
       var FG_MAP = { dark: '#FAFAFA', light: '#09090B', hc: '#FFFFFF' };
-      var SETTINGS_KEY = 'svn-excel-diff-tool.settings';
-      var LOCALE_KEY = 'svn-excel-diff-tool.locale';
+      var SETTINGS_KEY = 'versora.settings';
+      var LEGACY_SETTINGS_KEY = 'svn-excel-diff-tool.settings';
+      var LOCALE_KEY = 'versora.locale';
+      var LEGACY_LOCALE_KEY = 'svn-excel-diff-tool.locale';
 
       function detectTheme() {
         var themeKey = 'dark';
         try {
-          var raw = localStorage.getItem(SETTINGS_KEY);
+          var raw = localStorage.getItem(SETTINGS_KEY) || localStorage.getItem(LEGACY_SETTINGS_KEY);
           if (raw) {
             var parsed = JSON.parse(raw);
             if (parsed && parsed.themeKey && THEME_MAP[parsed.themeKey]) {
@@ -42,7 +44,7 @@
 
       function detectLocale() {
         try {
-          var saved = localStorage.getItem(LOCALE_KEY);
+          var saved = localStorage.getItem(LOCALE_KEY) || localStorage.getItem(LEGACY_LOCALE_KEY);
           if (saved === 'zh-CN' || saved === 'en-US') {
             return saved;
           }
@@ -71,8 +73,9 @@
       root.lang = locale;
       root.style.setProperty('--boot-bg', BG_MAP[themeKey]);
       root.style.setProperty('--boot-fg', FG_MAP[themeKey]);
-      if (window.svnDiff && typeof window.svnDiff.saveStartupAppearance === 'function') {
-        window.svnDiff.saveStartupAppearance({
+      var desktopBridge = window.versora || window.svnDiff;
+      if (desktopBridge && typeof desktopBridge.saveStartupAppearance === 'function') {
+        desktopBridge.saveStartupAppearance({
           themeKey: themeKey,
           locale: locale
         });
@@ -97,7 +100,7 @@
       display: flex;
       width: 100vw;
       height: 100vh;
-      font-family: 'Inter', 'Microsoft YaHei UI', 'Segoe UI', 'PingFang SC', system-ui, sans-serif;
+      font-family: 'Bahnschrift', 'Microsoft YaHei UI', 'Segoe UI', 'PingFang SC', system-ui, sans-serif;
       background: var(--boot-bg, #09090B);
     }
 

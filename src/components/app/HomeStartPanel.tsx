@@ -838,6 +838,10 @@ const HomeStartPanel = memo(({
           </div>
         )}
 
+        <section className="home-hero-heading" aria-labelledby="versora-home-title">
+          <h1 id="versora-home-title">{t('homeStartHeroTitle')}</h1>
+        </section>
+
         <div className="home-action-grid grid gap-5 sm:grid-cols-2 items-stretch">
           <ActionCard
             accent="--acc2"
@@ -860,7 +864,7 @@ const HomeStartPanel = memo(({
             disabled={!isElectron}
           />
           <ActionCard
-            accent="--accent"
+            accent="--text-secondary"
             icon="gear"
             title={t('homeStartConfigTitle')}
             body={t('homeStartConfigBody')}

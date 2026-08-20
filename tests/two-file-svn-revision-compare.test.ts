@@ -9,12 +9,14 @@ import { strToU8, zipSync } from 'fflate';
 
 import { REMOTE_HEAD_ID } from '../electron/main/constants';
 import {
+  buildDevWorkingCopyDiffData,
   buildLocalDiffData,
   buildTwoFileRevisionDiffData,
   loadWorkbookCompareModeData,
   loadWorkbookMetadataData,
 } from '../electron/main/diffBuilder';
-import { queryRevisionOptions } from '../electron/main/svnOperations';
+import { loadSvnLineBlame, queryRevisionOptions } from '../electron/main/svnOperations';
+import { loadWorkingCopyLineBlame } from '../electron/main/workingCopyLineBlame';
 import { setActiveCliArgs } from '../electron/main/state';
 import { EMPTY_CLI_ARGS } from '../electron/cliArgs';
 import {
@@ -123,7 +125,13 @@ test('two working-copy files default to their independent latest revisions and r
     await fs.writeFile(trunkFile, 'trunk local only\n', 'utf8');
     await fs.writeFile(releaseFile, 'release local only\n', 'utf8');
 
+    const workingCopyPairBlame = await loadWorkingCopyLineBlame(trunkFile, releaseFile);
+    assert.equal(workingCopyPairBlame.base[0]?.uncommitted, true);
+    assert.equal(workingCopyPairBlame.mine[0]?.uncommitted, true);
+
     const latest = await buildLocalDiffData(trunkFile, releaseFile, 'strict');
+    assert.equal(latest.source?.baseKind, 'svn');
+    assert.equal(latest.source?.targetKind, 'svn');
     assert.equal(latest.compareContext, 'literal_two_file_compare');
     assert.equal(latest.canSwitchRevisions, true);
     assert.equal(latest.workingCopyAvailable, true);
@@ -135,6 +143,14 @@ test('two working-copy files default to their independent latest revisions and r
       baseRevisionId: REMOTE_HEAD_ID,
       mineRevisionId: REMOTE_HEAD_ID,
     });
+    const latestBlame = await loadSvnLineBlame(
+      latest.baseRevisionInfo?.id,
+      latest.mineRevisionInfo?.id,
+    );
+    assert.equal(latestBlame.base[0]?.revision, 'r2');
+    assert.equal(latestBlame.mine[0]?.revision, 'r3');
+    assert.ok(latestBlame.base[0]?.author);
+    assert.ok(latestBlame.mine[0]?.date);
 
     const [baseHistory, mineHistory] = await Promise.all([
       queryRevisionOptions({ limit: 10, targetSide: 'base' }),
@@ -148,6 +164,12 @@ test('two working-copy files default to their independent latest revisions and r
     assert.equal(switched.mineContent, 'release latest\n');
     assert.equal(switched.baseRevisionInfo?.revision, 'r1');
     assert.equal(switched.mineRevisionInfo?.revision, 'r3');
+    const switchedBlame = await loadSvnLineBlame(
+      switched.baseRevisionInfo?.id,
+      switched.mineRevisionInfo?.id,
+    );
+    assert.equal(switchedBlame.base[0]?.revision, 'r1');
+    assert.equal(switchedBlame.mine[0]?.revision, 'r3');
 
     const trunkWorkbook = path.join(trunkWorkingCopy, 'sample.xlsx');
     const releaseWorkbook = path.join(releaseWorkingCopy, 'sample.xlsx');
@@ -163,7 +185,6 @@ test('two working-copy files default to their independent latest revisions and r
       workbookDiff.analysisSnapshotsByMode?.strict?.workbookAnalysis?.diffLinesByMode.strict?.length
       ?? 0
     ) > 0);
-
     const contentMode = await loadWorkbookCompareModeData(
       'content',
       workbookDiff.baseRevisionInfo?.id,
@@ -176,6 +197,14 @@ test('two working-copy files default to their independent latest revisions and r
     assert.ok((contentMode.analysisSnapshot?.workbookAnalysis?.diffLinesByMode.content?.length ?? 0) > 0);
     assert.deepEqual(Object.keys(metadata.base?.sheets ?? {}), ['Thing']);
     assert.deepEqual(Object.keys(metadata.mine?.sheets ?? {}), ['Thing']);
+
+    const workingCopyDiff = await buildDevWorkingCopyDiffData(trunkFile, 'strict');
+    const workingCopyBlame = await loadSvnLineBlame(
+      workingCopyDiff.baseRevisionInfo?.id,
+      workingCopyDiff.mineRevisionInfo?.id,
+    );
+    assert.equal(workingCopyBlame.base[0]?.revision, 'r2');
+    assert.equal(workingCopyBlame.mine[0]?.uncommitted, true);
   } finally {
     setActiveCliArgs(EMPTY_CLI_ARGS);
     cleanupManagedTempFilesOnExitSync();
