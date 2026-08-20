@@ -32,6 +32,7 @@ export interface RevisionOptionsQuery {
   beforeRevisionId?: string;
   anchorDateTime?: string;
   includeSpecials?: boolean;
+  targetSide?: LocalFilePickSide;
 }
 
 export interface RevisionOptionsPayload {

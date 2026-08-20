@@ -1,10 +1,14 @@
-import { memo, useState } from 'react';
+import { memo, useEffect, useRef, useState, type DragEvent as ReactDragEvent } from 'react';
 import {
   ArrowLeftRight,
-  File,
+  FileCheck2,
+  File as FileIcon,
   Files,
   FolderOpen,
+  GitBranch,
+  HardDrive,
   LoaderCircle,
+  Upload,
   X,
 } from 'lucide-react';
 
@@ -33,6 +37,7 @@ interface FileSlotProps {
   file: LocalDiffFilePickResult | null;
   busy: boolean;
   onPick: (side: LocalFilePickSide) => void;
+  onDropFiles: (side: LocalFilePickSide, files: File[], containsDirectory: boolean) => void;
 }
 
 function normalizeComparablePath(filePath: string): string {
@@ -71,12 +76,62 @@ const FileSlot = memo(({
   file,
   busy,
   onPick,
+  onDropFiles,
 }: FileSlotProps) => {
   const { t } = useI18n();
+  const dragDepthRef = useRef(0);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+
+  const hasFilePayload = (event: ReactDragEvent<HTMLElement>) => (
+    Array.from(event.dataTransfer.types).includes('Files') || event.dataTransfer.files.length > 0
+  );
+
+  const handleDragEnter = (event: ReactDragEvent<HTMLElement>) => {
+    if (busy || !hasFilePayload(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dragDepthRef.current += 1;
+    setIsDraggingFile(true);
+  };
+
+  const handleDragOver = (event: ReactDragEvent<HTMLElement>) => {
+    if (!hasFilePayload(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = busy ? 'none' : 'copy';
+  };
+
+  const handleDragLeave = (event: ReactDragEvent<HTMLElement>) => {
+    if (!isDraggingFile) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDraggingFile(false);
+  };
+
+  const handleDrop = (event: ReactDragEvent<HTMLElement>) => {
+    if (!hasFilePayload(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dragDepthRef.current = 0;
+    setIsDraggingFile(false);
+    if (busy) return;
+
+    const containsDirectory = Array.from(event.dataTransfer.items).some((item) => (
+      item.webkitGetAsEntry()?.isDirectory === true
+    ));
+    onDropFiles(side, Array.from(event.dataTransfer.files), containsDirectory);
+  };
+
   return (
     <section
-      className={`local-file-compare-dialog__slot ${file ? 'local-file-compare-dialog__slot--selected' : ''}`}
-      data-side={side}>
+      className={`local-file-compare-dialog__slot ${file ? 'local-file-compare-dialog__slot--selected' : ''} ${isDraggingFile ? 'local-file-compare-dialog__slot--dragging' : ''}`}
+      data-side={side}
+      data-testid={`local-file-drop-${side}`}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}>
       <div className="flex items-start justify-between gap-3">
         <div className="grid gap-1 min-w-0">
           <div className="flex items-center gap-2.5">
@@ -85,22 +140,43 @@ const FileSlot = memo(({
           </div>
           <div className="text-text-secondary text-[12px] leading-relaxed">{hint}</div>
         </div>
-        <File
+        <FileIcon
           aria-hidden="true"
           size={20}
           className={file ? 'text-[var(--acc2)] shrink-0' : 'text-text-secondary shrink-0'}
         />
       </div>
 
-      <div className="local-file-compare-dialog__file" title={file?.path ?? ''}>
-        <div className="min-w-0 grid gap-1">
-          <div className={`truncate text-[13px] font-bold ${file ? 'text-text-title' : 'text-text-secondary'}`}>
-            {file?.name ?? t('localFileCompareEmptyFile')}
+      <div
+        className="local-file-compare-dialog__file"
+        data-state={isDraggingFile ? 'dragging' : file ? 'selected' : 'empty'}
+        title={file?.path ?? ''}
+        aria-live="polite">
+        <span
+          className={`local-file-compare-dialog__drop-glyph ${file && !isDraggingFile ? 'local-file-compare-dialog__drop-glyph--selected' : ''}`}
+          aria-hidden="true">
+          {file && !isDraggingFile
+            ? <FileCheck2 size={17} strokeWidth={2.15} />
+            : <Upload size={17} strokeWidth={2.25} />}
+        </span>
+        <div className="local-file-compare-dialog__drop-copy">
+          <div className={`truncate text-[13px] font-bold ${isDraggingFile ? 'text-[var(--acc2)]' : file ? 'text-text-title' : 'text-text-primary'}`}>
+            {isDraggingFile
+              ? t('localFileCompareDropActive')
+              : file?.name ?? t('localFileCompareDropEmpty')}
           </div>
           <div className="truncate text-[11px] font-code text-text-secondary">
-            {file?.path ?? t('localFileCompareFilePlaceholder')}
+            {isDraggingFile && file
+              ? t('localFileCompareDropReplaceHint')
+              : file?.path ?? t('localFileCompareFilePlaceholder')}
           </div>
         </div>
+        {!isDraggingFile && (
+          <span className="local-file-compare-dialog__drop-badge" aria-hidden="true">
+            <Upload size={10} strokeWidth={2.4} />
+            {file ? t('localFileCompareDropReplaceBadge') : t('localFileCompareDropBadge')}
+          </span>
+        )}
       </div>
 
       <button
@@ -138,6 +214,41 @@ const LocalFileCompareDialog = memo(({
   const [localError, setLocalError] = useState('');
   const busy = loading || isSubmitting || pickingSide !== null;
 
+  useEffect(() => {
+    const preventDroppedFileNavigation = (event: DragEvent) => {
+      if (!Array.from(event.dataTransfer?.types ?? []).includes('Files')) return;
+      event.preventDefault();
+    };
+    window.addEventListener('dragover', preventDroppedFileNavigation);
+    window.addEventListener('drop', preventDroppedFileNavigation);
+    return () => {
+      window.removeEventListener('dragover', preventDroppedFileNavigation);
+      window.removeEventListener('drop', preventDroppedFileNavigation);
+    };
+  }, []);
+
+  const applySelectedFile = (side: LocalFilePickSide, selected: LocalDiffFilePickResult) => {
+    const nextBaseFile = side === 'base' ? selected : baseFile;
+    const nextMineFile = side === 'mine' ? selected : mineFile;
+    if (side === 'base') setBaseFile(selected);
+    else setMineFile(selected);
+    setHasSubmitted(false);
+
+    if (
+      nextBaseFile
+      && nextMineFile
+      && normalizeComparablePath(nextBaseFile.path) === normalizeComparablePath(nextMineFile.path)
+    ) {
+      setLocalError(t('localFileCompareSameFile'));
+      return;
+    }
+    if (nextBaseFile && nextMineFile && !haveSameFileType(nextBaseFile, nextMineFile)) {
+      setLocalError(t('localFileCompareTypeMismatch'));
+      return;
+    }
+    setLocalError('');
+  };
+
   const handlePick = async (side: LocalFilePickSide) => {
     setPickingSide(side);
     setLocalError('');
@@ -145,16 +256,47 @@ const LocalFileCompareDialog = memo(({
       const peerFile = side === 'base' ? mineFile : baseFile;
       const selected = await onPickFile(side, getComparableExtension(peerFile?.path ?? ''));
       if (!selected) return;
-      if (side === 'base') setBaseFile(selected);
-      else setMineFile(selected);
-      if (peerFile && getComparableExtension(selected.path) !== getComparableExtension(peerFile.path)) {
-        setLocalError(t('localFileCompareTypeMismatch'));
-      }
+      applySelectedFile(side, selected);
     } catch (pickError) {
       setLocalError(pickError instanceof Error ? pickError.message : String(pickError));
     } finally {
       setPickingSide(null);
     }
+  };
+
+  const handleDropFiles = (
+    side: LocalFilePickSide,
+    files: File[],
+    containsDirectory: boolean,
+  ) => {
+    if (containsDirectory) {
+      setLocalError(t('localFileCompareDropDirectory'));
+      return;
+    }
+    if (files.length !== 1) {
+      setLocalError(t('localFileCompareDropMultiple'));
+      return;
+    }
+
+    const droppedFile = files[0]!;
+    let droppedPath = '';
+    try {
+      droppedPath = window.svnDiff?.getPathForDroppedFile?.(droppedFile)?.trim() ?? '';
+    } catch {
+      droppedPath = '';
+    }
+    if (!droppedPath) {
+      droppedPath = ((droppedFile as File & { path?: string }).path ?? '').trim();
+    }
+    const selected = toFilePickResult(droppedPath);
+    if (!selected) {
+      setLocalError(t('localFileCompareDropUnavailable'));
+      return;
+    }
+    applySelectedFile(side, {
+      ...selected,
+      name: droppedFile.name.trim() || selected.name,
+    });
   };
 
   const handleSwap = () => {
@@ -194,7 +336,7 @@ const LocalFileCompareDialog = memo(({
   return (
     <DialogFrame
       animationState={animationState}
-      className="local-file-compare-dialog w-[860px] max-w-[calc(100vw-32px)] max-h-[calc(100vh-48px)] overflow-y-auto bg-bg-surface-solid border border-border-strong rounded-[24px] p-[24px] shadow-2xl font-ui box-border">
+      className="local-file-compare-dialog w-[980px] max-w-[calc(100vw-32px)] max-h-[calc(100vh-48px)] overflow-y-auto bg-bg-surface-solid border border-border-strong rounded-[24px] p-[24px] shadow-2xl font-ui box-border">
       <button
         type="button"
         disabled={busy}
@@ -227,6 +369,28 @@ const LocalFileCompareDialog = memo(({
         </p>
       </header>
 
+      <section className="local-file-compare-dialog__smart-mode mt-4" aria-label={t('localFileCompareSmartModeTitle')}>
+        <div className="local-file-compare-dialog__smart-mode-title">
+          {t('localFileCompareSmartModeTitle')}
+        </div>
+        <div className="local-file-compare-dialog__smart-mode-rules">
+          <div
+            className="local-file-compare-dialog__smart-mode-rule"
+            data-mode="svn"
+            title={t('localFileCompareSmartModeSvn')}>
+            <GitBranch size={14} aria-hidden="true" />
+            <span>{t('localFileCompareSmartModeSvn')}</span>
+          </div>
+          <div
+            className="local-file-compare-dialog__smart-mode-rule"
+            data-mode="local"
+            title={t('localFileCompareSmartModeLocal')}>
+            <HardDrive size={14} aria-hidden="true" />
+            <span>{t('localFileCompareSmartModeLocal')}</span>
+          </div>
+        </div>
+      </section>
+
       <div className="local-file-compare-dialog__pair mt-5">
         <FileSlot
           side="base"
@@ -236,6 +400,7 @@ const LocalFileCompareDialog = memo(({
           file={baseFile}
           busy={busy}
           onPick={(side) => { void handlePick(side); }}
+          onDropFiles={handleDropFiles}
         />
 
         <div className="local-file-compare-dialog__axis" aria-hidden={!baseFile && !mineFile}>
@@ -260,6 +425,7 @@ const LocalFileCompareDialog = memo(({
           file={mineFile}
           busy={busy}
           onPick={(side) => { void handlePick(side); }}
+          onDropFiles={handleDropFiles}
         />
       </div>
 

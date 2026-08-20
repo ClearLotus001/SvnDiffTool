@@ -21,7 +21,6 @@ import {
   Maximize2,
   X,
   Columns3,
-  GitCompareArrows,
 } from 'lucide-react';
 import { useI18n } from '@/context/i18n';
 import type { AppUpdateState, ThemeKey, LayoutMode, WorkbookCompareMode } from '@/types';
@@ -32,7 +31,7 @@ import ToolbarViewMenu from '@/components/navigation/ToolbarViewMenu';
 type IconName =
   | 'layoutUnified' | 'layoutSplit' | 'layoutVertical' | 'layoutTopBottom'
   | 'prev' | 'next' | 'search' | 'goto'
-  | 'language' | 'file' | 'help' | 'brand'
+  | 'language' | 'file' | 'help'
   | 'update' | 'download' | 'install' | 'info' | 'chevronDown'
   | 'windowMinimize' | 'windowMaximize' | 'windowRestore' | 'windowClose';
 
@@ -48,7 +47,6 @@ const ICON_MAP: Record<IconName, React.ElementType> = {
   language: Globe,
   file: FileText,
   help: CircleHelp,
-  brand: GitCompareArrows,
   update: RefreshCw,
   download: Download,
   install: PackageCheck,
@@ -364,16 +362,6 @@ const Toolbar = memo((props: ToolbarProps) => {
       }}>
       {/* ── Left Section ── */}
       <div className="flex items-center content-center flex-nowrap gap-1.5 min-w-0 flex-1 overflow-hidden">
-        {/* Brand */}
-        <div className="flex items-center gap-2 mr-0.5 shrink-0 py-0.5 pr-1" style={noDragStyle}>
-          <div className="size-7 bg-accent rounded-[10px] flex items-center justify-center text-btn-active-text">
-            <Icon name="brand" size={14} />
-          </div>
-          <span className="font-bold text-[14px] tracking-tight text-text-title whitespace-nowrap font-ui">
-            SvnDiffTool
-          </span>
-        </div>
-
         {/* File chip */}
         {showDiffControls && showFileChip && fileName && (
           <Tooltip content={fileName} maxWidth={320} anchorStyle={noDragAnchorStyle}>

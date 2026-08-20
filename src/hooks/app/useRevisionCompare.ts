@@ -1,7 +1,8 @@
-import { useCallback, type MutableRefObject } from 'react';
+import { useCallback, useRef, type MutableRefObject } from 'react';
 
 import type {
   DiffData,
+  LocalFilePickSide,
   RevisionOptionsPayload,
   RevisionOptionsQuery,
   SvnRevisionInfo,
@@ -37,15 +38,19 @@ export default function useRevisionCompare({
 }: UseRevisionCompareArgs) {
   // ── Read state/setters directly from Zustand store ────────────────────
   const resetPair = useAppStore((s) => s.resetPair);
+  const compareContext = useAppStore((s) => s.compareContext);
+  const revisionOptions = useAppStore((s) => s.revisionOptions);
   const setRevisionOptions = useAppStore((s) => s.setRevisionOptions);
   const setBaseRevisionInfo = useAppStore((s) => s.setBaseRevisionInfo);
   const setMineRevisionInfo = useAppStore((s) => s.setMineRevisionInfo);
 
   const { state: revisionState, actions: revisionActions } = revisionQuery;
+  const revisionOptionsScopeRef = useRef<'shared' | LocalFilePickSide | null>(null);
 
   const applyRevisionOptionsPayload = useCallback((
     payload: RevisionOptionsPayload,
     mode: 'replace' | 'append' = 'replace',
+    targetSide?: LocalFilePickSide,
   ) => {
     const nextOptions = mode === 'append'
       ? mergeRevisionOptions(revisionOptionsRef.current, payload.items)
@@ -58,12 +63,16 @@ export default function useRevisionCompare({
     revisionActions.setNextBeforeId(payload.nextBeforeRevisionId);
     revisionActions.setQueryDateTime(payload.queryDateTime ?? '');
     revisionActions.setQueryError('');
-    setBaseRevisionInfo((prev) => (
-      prev ? (nextOptions.find((option) => option.id === prev.id) ?? prev) : prev
-    ));
-    setMineRevisionInfo((prev) => (
-      prev ? (nextOptions.find((option) => option.id === prev.id) ?? prev) : prev
-    ));
+    if (!targetSide || targetSide === 'base') {
+      setBaseRevisionInfo((prev) => (
+        prev ? (nextOptions.find((option) => option.id === prev.id) ?? prev) : prev
+      ));
+    }
+    if (!targetSide || targetSide === 'mine') {
+      setMineRevisionInfo((prev) => (
+        prev ? (nextOptions.find((option) => option.id === prev.id) ?? prev) : prev
+      ));
+    }
   }, [
     revisionOptionsRef,
     revisionActions,
@@ -78,6 +87,7 @@ export default function useRevisionCompare({
       append?: boolean;
       showInitialLoading?: boolean;
       showSearchLoading?: boolean;
+      targetSide?: LocalFilePickSide;
     },
   ) => {
     if (!window.svnDiff?.queryRevisionOptions) return;
@@ -98,9 +108,15 @@ export default function useRevisionCompare({
     }
 
     try {
-      const payload = await window.svnDiff.queryRevisionOptions(query);
+      const targetSide = compareContext === 'literal_two_file_compare'
+        ? options?.targetSide
+        : undefined;
+      const payload = await window.svnDiff.queryRevisionOptions({
+        ...query,
+        ...(targetSide ? { targetSide } : {}),
+      });
       if (seq !== revisionQuerySeqRef.current) return;
-      applyRevisionOptionsPayload(payload, append ? 'append' : 'replace');
+      applyRevisionOptionsPayload(payload, append ? 'append' : 'replace', targetSide);
       debugLog('revision-options:loaded', {
         count: payload.items.length,
         hasMore: payload.hasMore,
@@ -127,11 +143,12 @@ export default function useRevisionCompare({
     }
   }, [
     applyRevisionOptionsPayload,
+    compareContext,
     revisionQuerySeqRef,
     revisionActions,
   ]);
 
-  const handleLoadMoreRevisionOptions = useCallback(() => {
+  const handleLoadMoreRevisionOptions = useCallback((targetSide: LocalFilePickSide) => {
     if (!window.svnDiff?.queryRevisionOptions) return;
     if (revisionState.isLoadingMoreRevisions || !revisionState.revisionHasMore || !revisionState.revisionNextBeforeId) return;
     void queryRevisionOptionsPage(
@@ -142,6 +159,7 @@ export default function useRevisionCompare({
       },
       {
         append: true,
+        targetSide,
       },
     );
   }, [
@@ -151,10 +169,21 @@ export default function useRevisionCompare({
     revisionState.revisionNextBeforeId,
   ]);
 
-  const handleEnsureRevisionOptionsLoaded = useCallback(() => {
+  const handleEnsureRevisionOptionsLoaded = useCallback((targetSide: LocalFilePickSide) => {
     if (!window.svnDiff?.queryRevisionOptions) return;
-    if (revisionOptionsRef.current.length > 0) return;
+    const nextScope = compareContext === 'literal_two_file_compare' ? targetSide : 'shared';
+    if (revisionOptionsScopeRef.current === nextScope && revisionOptions.length > 0) return;
     if (revisionState.revisionOptionsStatus === 'loading') return;
+
+    if (revisionOptionsScopeRef.current !== nextScope) {
+      revisionOptionsScopeRef.current = nextScope;
+      revisionOptionsRef.current = [];
+      setRevisionOptions([]);
+      revisionActions.setHasMore(false);
+      revisionActions.setNextBeforeId(null);
+      revisionActions.setQueryDateTime('');
+      revisionActions.setQueryError('');
+    }
 
     debugLog('revision-options:request');
 
@@ -165,15 +194,20 @@ export default function useRevisionCompare({
       },
       {
         showInitialLoading: true,
+        targetSide,
       },
     );
   }, [
+    compareContext,
     queryRevisionOptionsPage,
+    revisionActions,
+    revisionOptions,
     revisionOptionsRef,
+    setRevisionOptions,
     revisionState.revisionOptionsStatus,
   ]);
 
-  const handleRevisionDateTimeQuery = useCallback((nextDateTime: string) => {
+  const handleRevisionDateTimeQuery = useCallback((targetSide: LocalFilePickSide, nextDateTime: string) => {
     if (!window.svnDiff?.queryRevisionOptions) return;
     const trimmed = nextDateTime.trim();
     void queryRevisionOptionsPage(
@@ -189,6 +223,7 @@ export default function useRevisionCompare({
           },
       {
         showSearchLoading: true,
+        targetSide,
       },
     );
   }, [queryRevisionOptionsPage]);
@@ -197,15 +232,22 @@ export default function useRevisionCompare({
     nextBaseRevisionId: string,
     nextMineRevisionId: string,
   ) => {
-    if (!window.svnDiff?.loadRevisionDiff) return;
+    const bridge = window.svnDiff;
+    if (!bridge) return;
     revisionActions.setSwitching(true);
     const seq = await beginDiffLoad();
     try {
-      const nextData = await window.svnDiff.loadRevisionDiff(
-        nextBaseRevisionId,
-        nextMineRevisionId,
-        workbookCompareModeRef.current,
-      );
+      const nextData = compareContext === 'literal_two_file_compare'
+        ? await bridge.loadTwoFileRevisionDiff(
+            nextBaseRevisionId,
+            nextMineRevisionId,
+            workbookCompareModeRef.current,
+          )
+        : await bridge.loadRevisionDiff(
+            nextBaseRevisionId,
+            nextMineRevisionId,
+            workbookCompareModeRef.current,
+          );
       if (seq !== loadSeqRef.current) return;
       await applyDiffData(nextData, {
         seq,
@@ -219,6 +261,7 @@ export default function useRevisionCompare({
   }, [
     applyDiffData,
     beginDiffLoad,
+    compareContext,
     failDiffLoad,
     loadSeqRef,
     revisionActions,
@@ -226,17 +269,24 @@ export default function useRevisionCompare({
   ]);
 
   const handleResetRevisionCompare = useCallback(async () => {
-    if (!window.svnDiff?.loadRevisionDiff || !resetPair) return;
+    const bridge = window.svnDiff;
+    if (!bridge || !resetPair) return;
     if (!resetPair.baseRevisionId && !resetPair.mineRevisionId) return;
 
     revisionActions.setSwitching(true);
     const seq = await beginDiffLoad();
     try {
-      const nextData = await window.svnDiff.loadRevisionDiff(
-        resetPair.baseRevisionId ?? '',
-        resetPair.mineRevisionId ?? '',
-        workbookCompareModeRef.current,
-      );
+      const nextData = compareContext === 'literal_two_file_compare'
+        ? await bridge.loadTwoFileRevisionDiff(
+            resetPair.baseRevisionId ?? '',
+            resetPair.mineRevisionId ?? '',
+            workbookCompareModeRef.current,
+          )
+        : await bridge.loadRevisionDiff(
+            resetPair.baseRevisionId ?? '',
+            resetPair.mineRevisionId ?? '',
+            workbookCompareModeRef.current,
+          );
       if (seq !== loadSeqRef.current) return;
       await applyDiffData(nextData, {
         seq,
@@ -250,6 +300,7 @@ export default function useRevisionCompare({
   }, [
     applyDiffData,
     beginDiffLoad,
+    compareContext,
     failDiffLoad,
     loadSeqRef,
     resetPair,

@@ -12,6 +12,7 @@ import {
   buildDiffData,
   buildDevWorkingCopyDiffData,
   buildLocalDiffData,
+  buildTwoFileRevisionDiffData,
   loadWorkbookCompareModeData,
   loadWorkbookMetadataData,
 } from './diffBuilder.js';
@@ -194,6 +195,19 @@ export function registerIpcHandlers(): void {
       path: selectedPath,
       name: path.basename(selectedPath),
     };
+  });
+
+  safeHandle('load-two-file-revision-diff', async (_, ...args: unknown[]) => {
+    const payload = args[0] as {
+      baseRevisionId?: string;
+      mineRevisionId?: string;
+      compareMode?: WorkbookCompareMode;
+    } | undefined;
+    return projectTransportDiffData(await buildTwoFileRevisionDiffData(
+      payload?.baseRevisionId ?? '',
+      payload?.mineRevisionId ?? '',
+      payload?.compareMode ?? 'strict',
+    ));
   });
 
   safeHandle('pick-comparable-file', async (_, ...args: unknown[]) => {

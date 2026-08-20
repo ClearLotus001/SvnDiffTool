@@ -21,6 +21,7 @@ export interface RevisionOptionsQuery {
   beforeRevisionId?: string;
   anchorDateTime?: string;
   includeSpecials?: boolean;
+  targetSide?: 'base' | 'mine';
 }
 
 export interface RevisionOptionsPayload {

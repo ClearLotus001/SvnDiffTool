@@ -8,11 +8,11 @@ export const FONT_CODE_STYLE = {
 } as const;
 
 export const FONT_SIZE = {
-  xs: 11,
-  sm: 12,
-  md: 14,
-  lg: 15,
-  xl: 18,
+  xs: 10,
+  sm: 11,
+  md: 12,
+  lg: 14,
+  xl: 16,
 } as const;
 
 export function getWorkbookFontScale(fontSize: number) {

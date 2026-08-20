@@ -40,6 +40,7 @@ export interface SvnDiffBridge {
   getLaunchState(compareMode?: WorkbookCompareMode): Promise<LaunchStatePayload>;
   getDiffData(compareMode?: WorkbookCompareMode): Promise<DiffData>;
   loadRevisionDiff(baseRevisionId: string, mineRevisionId: string, compareMode?: WorkbookCompareMode): Promise<DiffData>;
+  loadTwoFileRevisionDiff(baseRevisionId: string, mineRevisionId: string, compareMode?: WorkbookCompareMode): Promise<DiffData>;
   getRevisionOptions(): Promise<SvnRevisionInfo[]>;
   queryRevisionOptions(query?: RevisionOptionsQuery): Promise<RevisionOptionsPayload>;
   loadWorkbookCompareMode(compareMode: WorkbookCompareMode, baseRevisionId?: string, mineRevisionId?: string): Promise<WorkbookCompareModePayload>;
@@ -48,6 +49,7 @@ export interface SvnDiffBridge {
   isDevMode(): Promise<boolean>;
   pickDiffFile(): Promise<LocalDiffFilePickResult | null>;
   pickComparableFile(side: LocalFilePickSide, requiredExtension?: string): Promise<LocalDiffFilePickResult | null>;
+  getPathForDroppedFile?(file: File): string;
   loadDevWorkingCopyDiff(filePath: string, compareMode?: WorkbookCompareMode): Promise<DiffData>;
   loadLocalDiff(basePath: string, minePath: string, compareMode?: WorkbookCompareMode): Promise<DiffData>;
   loadLocalFileDiff(basePath: string, minePath: string, compareMode?: WorkbookCompareMode): Promise<DiffData>;

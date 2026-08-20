@@ -218,18 +218,29 @@ export function formatSvnDateQuery(value: string): string {
   return value.trim().replace('T', ' ');
 }
 
+export interface NormalizedRevisionOptionsQuery {
+  limit: number;
+  beforeRevisionId: string;
+  anchorDateTime: string;
+  includeSpecials: boolean;
+  targetSide: '' | 'base' | 'mine';
+}
+
 export function normalizeRevisionQuery(
   query: RevisionOptionsQuery | undefined,
-): Required<RevisionOptionsQuery> {
+): NormalizedRevisionOptionsQuery {
   return {
     limit: clampRevisionQueryLimit(query?.limit),
     beforeRevisionId: formatRevisionLabel(query?.beforeRevisionId ?? ''),
     anchorDateTime: normalizeAnchorDateTime(query?.anchorDateTime),
     includeSpecials: Boolean(query?.includeSpecials),
+    targetSide: query?.targetSide === 'base' || query?.targetSide === 'mine'
+      ? query.targetSide
+      : '',
   };
 }
 
-export function buildRevisionQueryCacheKey(query: Required<RevisionOptionsQuery>): string {
+export function buildRevisionQueryCacheKey(query: NormalizedRevisionOptionsQuery): string {
   return JSON.stringify(query);
 }
 

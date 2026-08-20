@@ -68,7 +68,7 @@ function getCandidateLocalPaths(args: { basePath: string; minePath: string }): s
   );
 }
 
-async function resolveLocalSvnUrl(filePath: string): Promise<string> {
+export async function resolveLocalSvnUrl(filePath: string): Promise<string> {
   const candidate = filePath.trim();
   if (!candidate) return '';
 
@@ -270,19 +270,20 @@ export async function resolveWorkingCopyPathForTarget(
 // Revision options query
 // ---------------------------------------------------------------------------
 
-export async function queryRevisionOptions(
+export async function queryRevisionOptionsForTarget(
+  target: string,
   query: RevisionOptionsQuery | undefined,
 ): Promise<RevisionOptionsPayload> {
   const start = performance.now();
   const normalized = normalizeRevisionQuery(query);
-  const cacheKey = buildRevisionQueryCacheKey(normalized);
+  const normalizedTarget = normalizeSvnUrlForCompare(target);
+  const cacheKey = `${normalizedTarget}::${buildRevisionQueryCacheKey(normalized)}`;
   const shouldBypassCache = !normalized.beforeRevisionId && !normalized.anchorDateTime;
   const cached = shouldBypassCache ? null : cachedRevisionOptionPages.get(cacheKey);
   if (cached) return cached;
 
-  const target = await resolveTimelineTargetUrl();
   const specials: SvnRevisionInfo[] = [];
-  if (!target) {
+  if (!normalizedTarget) {
     const payload: RevisionOptionsPayload = {
       items: specials,
       hasMore: false,
@@ -326,7 +327,7 @@ export async function queryRevisionOptions(
   } else if (normalized.anchorDateTime) {
     svnArgs.push('-r', `{${formatSvnDateQuery(normalized.anchorDateTime)}}:1`);
   }
-  svnArgs.push(target);
+  svnArgs.push(normalizedTarget);
 
   const result = await runSvnUtf8(svnArgs);
   if (!result.ok) {
@@ -370,6 +371,22 @@ export async function queryRevisionOptions(
     queryDateTime: payload.queryDateTime,
   });
   return payload;
+}
+
+export async function queryRevisionOptions(
+  query: RevisionOptionsQuery | undefined,
+): Promise<RevisionOptionsPayload> {
+  const targetSide = query?.targetSide;
+  const args = getActiveCliArgs();
+  const sideTarget = targetSide === 'base'
+    ? args.baseUrl.trim()
+    : targetSide === 'mine'
+      ? args.mineUrl.trim()
+      : '';
+  const target = isRemoteRepositoryTarget(sideTarget)
+    ? sideTarget
+    : await resolveTimelineTargetUrl();
+  return queryRevisionOptionsForTarget(target, query);
 }
 
 export async function getRevisionOptions(): Promise<SvnRevisionInfo[]> {

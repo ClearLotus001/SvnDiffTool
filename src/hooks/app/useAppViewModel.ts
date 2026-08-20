@@ -80,6 +80,7 @@ export default function useAppViewModel({
   const fileName = useAppStore((s) => s.fileName);
   const baseRevisionInfo = useAppStore((s) => s.baseRevisionInfo);
   const mineRevisionInfo = useAppStore((s) => s.mineRevisionInfo);
+  const canSwitchRevisions = useAppStore((s) => s.canSwitchRevisions);
   const workbookSelection = useAppStore((s) => s.workbookSelection);
   const workbookFreezeBySheet = useAppStore((s) => s.workbookFreezeBySheet);
   const baseWorkbookMetadata = useAppStore((s) => s.baseWorkbookMetadata);
@@ -157,18 +158,22 @@ export default function useAppViewModel({
   const baseVersionLabel = useMemo(
     () => (
       compareContext === 'literal_two_file_compare'
-        ? twoFileVersionLabels.base
+        ? (canSwitchRevisions
+            ? resolveVersionLabel(displayBaseName, baseRevisionInfo, twoFileVersionLabels.base)
+            : twoFileVersionLabels.base)
         : resolveVersionLabel(displayBaseName, baseRevisionInfo, t('commonBase'))
     ),
-    [baseRevisionInfo, compareContext, displayBaseName, t, twoFileVersionLabels.base],
+    [baseRevisionInfo, canSwitchRevisions, compareContext, displayBaseName, t, twoFileVersionLabels.base],
   );
   const mineVersionLabel = useMemo(
     () => (
       compareContext === 'literal_two_file_compare'
-        ? twoFileVersionLabels.mine
+        ? (canSwitchRevisions
+            ? resolveVersionLabel(displayMineName, mineRevisionInfo, twoFileVersionLabels.mine)
+            : twoFileVersionLabels.mine)
         : resolveVersionLabel(displayMineName, mineRevisionInfo, t('commonMine'))
     ),
-    [mineRevisionInfo, compareContext, displayMineName, t, twoFileVersionLabels.mine],
+    [mineRevisionInfo, canSwitchRevisions, compareContext, displayMineName, t, twoFileVersionLabels.mine],
   );
 
   const compareContextLabels = useMemo(

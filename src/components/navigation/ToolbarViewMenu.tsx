@@ -11,7 +11,7 @@ const DEFAULT_VIEW_STATE = {
   showWhitespace: false,
   showHiddenColumns: false,
   workbookCompareMode: 'strict' as WorkbookCompareMode,
-  fontSize: 14,
+  fontSize: 12,
 };
 const MENU_WIDTH = 292;
 const MENU_GAP = 8;

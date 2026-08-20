@@ -3,6 +3,8 @@ import { prepareTextDiffAnalysisFromDiffLines } from '@/utils/diff/preparedTextA
 import type { DiffData, LayoutMode, SvnRevisionInfo } from '@/types';
 
 interface E2ERevisionPayload {
+  basePath?: string;
+  minePath?: string;
   revisionOptions?: SvnRevisionInfo[] | null;
   baseRevisionInfo?: SvnRevisionInfo | null;
   mineRevisionInfo?: SvnRevisionInfo | null;
@@ -61,6 +63,8 @@ export function buildE2EDiffData(payload: E2ELoadTextDiffPayload): DiffData {
   return {
     svnUrl: '',
     fileName,
+    ...(payload.basePath?.trim() ? { basePath: payload.basePath.trim() } : {}),
+    ...(payload.minePath?.trim() ? { minePath: payload.minePath.trim() } : {}),
     baseName,
     mineName,
     launchBaseName: baseName,
@@ -96,6 +100,8 @@ export function buildE2EWorkbookDiffData(payload: E2ELoadWorkbookDiffPayload): D
   return {
     svnUrl: '',
     fileName,
+    ...(payload.basePath?.trim() ? { basePath: payload.basePath.trim() } : {}),
+    ...(payload.minePath?.trim() ? { minePath: payload.minePath.trim() } : {}),
     baseName,
     mineName,
     launchBaseName: baseName,

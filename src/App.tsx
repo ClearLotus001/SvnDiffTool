@@ -70,6 +70,7 @@ import Toolbar from '@/components/navigation/Toolbar';
 import SplitHeader from '@/components/navigation/SplitHeader';
 import StatsBar from '@/components/navigation/StatsBar';
 import { copyText } from '@/utils/app/clipboard';
+import { shouldOpenTwoFilePicker } from '@/utils/app/filePickerRouting';
 import { recordPerfBridgeEvent } from '@/utils/app/perfBridge';
 import { findWorkbookDiffRegionNavigationIndex } from '@/utils/workbook/workbookDiffRegion';
 
@@ -602,12 +603,22 @@ export default function App() {
     setShowLocalFileCompare(true);
   }, [setShowLocalFileCompare]);
   const handlePickFile = useCallback(() => {
-    if (compareContext === 'literal_two_file_compare') {
+    if (shouldOpenTwoFilePicker({
+      compareContext,
+      basePath: twoFileBasePath,
+      minePath: twoFileMinePath,
+    })) {
       handleOpenLocalFileCompare();
       return;
     }
     void handlePickWorkingCopyFile();
-  }, [compareContext, handleOpenLocalFileCompare, handlePickWorkingCopyFile]);
+  }, [
+    compareContext,
+    handleOpenLocalFileCompare,
+    handlePickWorkingCopyFile,
+    twoFileBasePath,
+    twoFileMinePath,
+  ]);
   const handleInitialVisualReady = useCallback(() => {
     if (startupRevealRequestedRef.current) return;
     startupRevealRequestedRef.current = true;

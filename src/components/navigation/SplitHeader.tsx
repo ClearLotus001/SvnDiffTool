@@ -54,11 +54,11 @@ interface SplitHeaderProps {
   isLoadingMoreRevisions?: boolean;
   isSearchingRevisionDateTime?: boolean;
   onRevisionChange?: ((baseRevisionId: string, mineRevisionId: string) => void) | undefined;
-  onOpenRevisionPicker?: (() => void) | undefined;
+  onOpenRevisionPicker?: ((side: 'base' | 'mine') => void) | undefined;
   onResetCompare?: (() => void) | undefined;
   canResetCompare?: boolean;
-  onLoadMoreRevisions?: (() => void) | undefined;
-  onRevisionDateTimeQuery?: ((value: string) => void) | undefined;
+  onLoadMoreRevisions?: ((side: 'base' | 'mine') => void) | undefined;
+  onRevisionDateTimeQuery?: ((side: 'base' | 'mine', value: string) => void) | undefined;
   onBaseCopy?: (() => Promise<boolean> | boolean | void) | undefined;
   onMineCopy?: (() => Promise<boolean> | boolean | void) | undefined;
 }
@@ -216,14 +216,14 @@ const SplitHeader = memo(({
         queryDateTime={revisionQueryDateTime}
         queryError={revisionQueryError}
         isSearchingDateTime={isSearchingRevisionDateTime}
-        onOpen={onOpenRevisionPicker}
+        onOpen={() => onOpenRevisionPicker?.(side)}
         onChange={(nextId) => {
           if (!nextId) return;
           if (side === 'base') { onRevisionChange?.(nextId, otherId || mineRevisionInfo?.id || nextId); return; }
           onRevisionChange?.(otherId || baseRevisionInfo?.id || nextId, nextId);
         }}
-        onLoadMore={onLoadMoreRevisions}
-        onQueryDateTime={onRevisionDateTimeQuery}
+        onLoadMore={() => onLoadMoreRevisions?.(side)}
+        onQueryDateTime={(value) => onRevisionDateTimeQuery?.(side, value)}
       />
     );
   };

@@ -19,7 +19,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   showWhitespace: false,
   showHiddenColumns: false,
   workbookCompareMode: 'strict',
-  fontSize: 14,
+  fontSize: 12,
 };
 
 function isThemeKey(value: unknown): value is ThemeKey {
