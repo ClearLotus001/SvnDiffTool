@@ -12,6 +12,7 @@ import {
   formatWorkbookDiffRegionSemanticSummary,
   formatWorkbookDiffRegionSummary,
   resolveWorkbookDiffRegionChangeKind,
+  resolveWorkbookDiffRegionSemanticLabelsForLayout,
   shouldShowWorkbookDiffRegionLabelForSide,
 } from '../src/utils/workbook/workbookDiffRegion';
 import { createWorkbookRowLine, createWorkbookSheetLine } from '../src/utils/workbook/workbookDisplay';
@@ -20,7 +21,7 @@ import {
   buildWorkbookSectionRowIndexFromPrecomputedDelta,
 } from '../src/utils/workbook/workbookSheetIndex';
 import { getWorkbookSections } from '../src/utils/workbook/workbookSections';
-import type { WorkbookPrecomputedDeltaPayload } from '../src/types';
+import type { WorkbookPrecomputedDeltaPayload } from '../src/types/workbook';
 
 function buildWorkbook(rows: Array<Array<string>>, sheetName = 'Thing') {
   return [
@@ -155,6 +156,32 @@ test('workbook diff region semantic labels describe change direction and owning 
   assert.equal(formatWorkbookDiffRegionSemanticSummary(modified, labels), 'Modified A8 · 1×1');
   assert.equal(shouldShowWorkbookDiffRegionLabelForSide(modified, 'base'), true);
   assert.equal(shouldShowWorkbookDiffRegionLabelForSide(modified, 'mine'), true);
+});
+
+test('stacked workbook region labels avoid side directions that are not visible', () => {
+  const variants = {
+    add: 'Added content',
+    delete: 'Deleted content',
+    addOnMine: 'Added on right',
+    deleteFromMine: 'Deleted on right',
+    modify: 'Modified',
+  };
+
+  assert.deepEqual(resolveWorkbookDiffRegionSemanticLabelsForLayout('stacked', variants), {
+    add: 'Added content',
+    delete: 'Deleted content',
+    modify: 'Modified',
+  });
+  assert.deepEqual(resolveWorkbookDiffRegionSemanticLabelsForLayout('columns', variants), {
+    add: 'Added on right',
+    delete: 'Deleted on right',
+    modify: 'Modified',
+  });
+  assert.deepEqual(resolveWorkbookDiffRegionSemanticLabelsForLayout('horizontal', variants), {
+    add: 'Added on right',
+    delete: 'Deleted on right',
+    modify: 'Modified',
+  });
 });
 
 test('buildWorkbookDiffRegions merges corner-touching workbook cells into one visual region', () => {

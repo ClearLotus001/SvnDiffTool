@@ -728,6 +728,24 @@ export function formatWorkbookDiffRegionSummary(
 
 export type WorkbookDiffRegionChangeKind = 'add' | 'delete' | 'modify' | 'equal';
 
+export function resolveWorkbookDiffRegionSemanticLabelsForLayout(
+  layout: 'stacked' | 'columns' | 'horizontal',
+  labels: {
+    add: string;
+    delete: string;
+    addOnMine: string;
+    deleteFromMine: string;
+    modify: string;
+  },
+): { add: string; delete: string; modify: string } {
+  const showSideDirection = layout !== 'stacked';
+  return {
+    add: showSideDirection ? labels.addOnMine : labels.add,
+    delete: showSideDirection ? labels.deleteFromMine : labels.delete,
+    modify: labels.modify,
+  };
+}
+
 export function resolveWorkbookDiffRegionChangeKind(
   region: WorkbookDiffRegion | null | undefined,
 ): WorkbookDiffRegionChangeKind {

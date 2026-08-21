@@ -47,6 +47,7 @@ import {
 } from '@/utils/workbook/workbookSections';
 import {
   formatWorkbookDiffRegionSemanticSummary,
+  resolveWorkbookDiffRegionSemanticLabelsForLayout,
 } from '@/utils/workbook/workbookDiffRegion';
 import {
   type WorkbookMetadataMap,
@@ -1357,14 +1358,20 @@ const WorkbookComparePanel = memo(({
     compareCellsByRowNumber,
     compareMode,
   });
+  const activeRegionSemanticLabels = useMemo(
+    () => resolveWorkbookDiffRegionSemanticLabelsForLayout(mode, {
+      add: t('workbookRegionAdded'),
+      delete: t('workbookRegionDeleted'),
+      addOnMine: t('workbookRegionAddedOnMine'),
+      deleteFromMine: t('workbookRegionDeletedFromMine'),
+      modify: t('workbookRegionModified'),
+    }),
+    [mode, t],
+  );
   const activeRegionOverlayLabel = useMemo(() => formatWorkbookDiffRegionSemanticSummary(
     activeDiffRegion,
-    {
-      add: t('workbookRegionAddedOnMine'),
-      delete: t('workbookRegionDeletedFromMine'),
-      modify: t('workbookRegionModified'),
-    },
-  ), [activeDiffRegion, t]);
+    activeRegionSemanticLabels,
+  ), [activeDiffRegion, activeRegionSemanticLabels]);
   const activeRegionOverlayProps = useWorkbookCompareOverlayLayout({
     sectionRows,
     showColumnHeader,

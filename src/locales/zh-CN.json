@@ -422,6 +422,8 @@
   "workbookFrozenRowsWindowLabelRight": "右侧冻结行窗口",
   "workbookFrozenPaneItemColumns": "列",
   "workbookFrozenPaneHint": "拖动滚动条浏览冻结区域",
+  "workbookRegionAdded": "新增内容",
+  "workbookRegionDeleted": "删除内容",
   "workbookRegionAddedOnMine": "右侧新增",
   "workbookRegionDeletedFromMine": "右侧已删除",
   "workbookRegionModified": "内容修改",

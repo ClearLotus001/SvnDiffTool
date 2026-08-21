@@ -422,6 +422,8 @@
   "workbookFrozenRowsWindowLabelRight": "Right frozen rows viewport",
   "workbookFrozenPaneItemColumns": "cols",
   "workbookFrozenPaneHint": "Drag the scrollbar to inspect the frozen region",
+  "workbookRegionAdded": "Added content",
+  "workbookRegionDeleted": "Deleted content",
   "workbookRegionAddedOnMine": "Added on right",
   "workbookRegionDeletedFromMine": "Deleted on right",
   "workbookRegionModified": "Modified",
