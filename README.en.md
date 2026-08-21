@@ -4,7 +4,7 @@
 
 > A Windows comparison workspace for reviewing text, Excel, Git versions, and SVN revisions in one interface.
 
-Versora is the successor to SvnDiffTool. It keeps the mature text and workbook viewers while treating Git, SVN, and plain local files as comparison sources that can be detected independently.
+Versora combines mature text and workbook viewers while treating Git, SVN, and plain local files as comparison sources that can be detected independently.
 
 ## Download and run
 
@@ -68,10 +68,10 @@ Choose “Compare two files,” then drop or select the left and right files. Bo
 
 ### TortoiseSVN integration
 
-The installed app can configure all-file, text-only, or workbook-only integration from the home screen. Manual command:
+The installed app can configure all-file, text-only, or workbook-only integration from the home screen. In-app setup is recommended. For manual setup, point the command to the bundled SVN launcher:
 
 ```text
-"C:\Path\To\Versora.exe" %base %mine %bname %yname %burl %yurl %brev %yrev %peg %fname
+"C:\Path\To\Versora\resources\bin\svn_diff_launcher.exe" %base %mine %bname %yname %burl %yurl %brev %yrev %peg %fname
 ```
 
 Versora restores TortoiseSVN's default viewer before uninstalling so no external-viewer rule points to a removed executable.
@@ -79,8 +79,8 @@ Versora restores TortoiseSVN's default viewer before uninstalling so no external
 ## Compatibility and migration
 
 - Exposes a single Electron renderer bridge at `window.versora`
-- Stores new settings under `versora.*` while reading legacy `svn-excel-diff-tool.*` settings
-- Uses `Versora/Cache` and recognizes the previous `SvnDiffTool/Cache` location during upgrades
+- Stores settings under `versora.*`
+- Uses `Versora/Cache` for managed Windows cache data
 - Keeps the Windows `appId` stable to preserve installer upgrades and automatic updates
 
 ## Development

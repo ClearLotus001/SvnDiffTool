@@ -53,7 +53,7 @@
     "preview": "vite preview"
   },
   "build": {
-    "appId": "com.svnexceldifftool.app",
+    "appId": "com.versora.app",
     "productName": "Versora",
     "artifactName": "${productName}-${version}.${ext}",
     "electronLanguages": [

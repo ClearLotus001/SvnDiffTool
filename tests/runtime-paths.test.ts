@@ -150,9 +150,9 @@ test('runtime paths reject a managed cache reached through a directory link', as
   await withSandbox('svn-diff-runtime-root-link-', async (sandboxDir) => {
     const previousLocalAppData = process.env.LOCALAPPDATA;
     const defaultLocalAppData = path.join(sandboxDir, 'default-local-app-data');
-    const externalContainer = path.join(sandboxDir, 'external', 'SvnDiffTool');
+    const externalContainer = path.join(sandboxDir, 'external', 'Versora');
     const externalMarkerPath = path.join(externalContainer, 'Cache', 'temp', 'external.bin');
-    const linkedContainer = path.join(sandboxDir, 'linked-parent', 'SvnDiffTool');
+    const linkedContainer = path.join(sandboxDir, 'linked-parent', 'Versora');
     const unsafeCacheRoot = path.join(linkedContainer, 'Cache');
 
     await fsp.mkdir(path.dirname(linkedContainer), { recursive: true });
@@ -190,7 +190,7 @@ test('runtime paths reject linked managed cache subdirectories', async (t) => {
   await withSandbox('svn-diff-runtime-temp-link-', async (sandboxDir) => {
     const previousLocalAppData = process.env.LOCALAPPDATA;
     const defaultLocalAppData = path.join(sandboxDir, 'default-local-app-data');
-    const configuredCacheRoot = path.join(sandboxDir, 'configured-parent', 'SvnDiffTool', 'Cache');
+    const configuredCacheRoot = path.join(sandboxDir, 'configured-parent', 'Versora', 'Cache');
     const externalTempRoot = path.join(sandboxDir, 'external-temp');
     const externalMarkerPath = path.join(externalTempRoot, 'external.bin');
     const linkedTempRoot = path.join(configuredCacheRoot, 'temp');

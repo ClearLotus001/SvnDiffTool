@@ -11,7 +11,7 @@ import {
   resolveLaunchCliArgsFromArgv,
 } from '../electron/externalDiffRequest';
 
-const EXEC_PATH = String.raw`C:\Program Files\SvnDiffTool\SvnDiffTool.exe`;
+const EXEC_PATH = String.raw`C:\Program Files\Versora\Versora.exe`;
 
 function withTempDir(run: (dir: string) => void) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'svn-diff-request-test-'));

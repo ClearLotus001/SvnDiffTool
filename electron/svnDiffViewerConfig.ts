@@ -9,14 +9,18 @@ import {
   getOwnedSvnDiffRegistryEntries,
   normalizeSvnDiffViewerCommand,
   normalizeSvnDiffViewerScope as normalizeSvnDiffViewerScopeValue,
+  resolveSvnDiffViewerAvailabilityReason,
   resolveSvnDiffViewerMode,
+  type SvnDiffViewerAvailabilityReason,
   type SvnDiffViewerScope,
 } from './svnDiffViewerConfigShared';
 import { writeSvnDiffViewerPreference } from './svnDiffViewerPreferences';
 
-export type { SvnDiffViewerScope } from './svnDiffViewerConfigShared';
+export type {
+  SvnDiffViewerAvailabilityReason,
+  SvnDiffViewerScope,
+} from './svnDiffViewerConfigShared';
 export type SvnDiffViewerMode = SvnDiffViewerScope | 'mixed' | 'unconfigured' | 'unsupported';
-export type SvnDiffViewerAvailabilityReason = 'ready' | 'windows-only' | 'packaged-only';
 
 export interface SvnDiffViewerStatus {
   available: boolean;
@@ -64,13 +68,15 @@ function isWorkbookKey(value: string) {
 }
 
 function getAvailabilityReason(): SvnDiffViewerAvailabilityReason {
-  if (process.platform !== 'win32') return 'windows-only';
-  if (!app.isPackaged) return 'packaged-only';
-  return 'ready';
+  return resolveSvnDiffViewerAvailabilityReason(
+    process.platform,
+    app.isPackaged,
+    getDiffLauncherPath() !== null,
+  );
 }
 
 function getDiffLauncherPath(): string | null {
-  if (getAvailabilityReason() !== 'ready') return null;
+  if (process.platform !== 'win32' || !app.isPackaged) return null;
   const launcherPath = path.join(process.resourcesPath, 'bin', 'svn_diff_launcher.exe');
   if (!fs.existsSync(launcherPath)) return null;
   return launcherPath;

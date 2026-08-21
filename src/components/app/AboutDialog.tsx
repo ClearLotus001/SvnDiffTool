@@ -183,11 +183,11 @@ const AboutDialog = memo(({
           onClick={actionButton.onClick}
           disabled={actionButton.disabled}
           className={`
-            h-[34px] min-w-[108px] px-3.5 rounded-[9px] border-none
+            about-dialog__update-action h-[34px] min-w-[108px] px-3.5 rounded-[9px] border
             font-ui text-[13px] font-bold transition-all duration-150
             ${actionButton.disabled
-              ? 'bg-bg-elevated text-text-secondary cursor-not-allowed'
-              : 'bg-[var(--acc2)] text-[var(--btn-active-text)] cursor-pointer hover:-translate-y-px hover:brightness-105 active:scale-[0.97] shadow-[0_16px_30px_-24px_var(--acc2)]'
+              ? 'cursor-not-allowed'
+              : 'cursor-pointer hover:-translate-y-px hover:brightness-105 active:scale-[0.97]'
             }
           `}>
           {actionButton.label}

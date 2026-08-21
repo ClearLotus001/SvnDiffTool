@@ -28,7 +28,6 @@ export type TranslationParams<K extends TranslationKey = TranslationKey> = Trans
 export type TranslationFn = <K extends TranslationKey>(key: K, ...args: TranslationArgs<K>) => string;
 
 export const LOCALE_STORAGE_KEY = 'versora.locale';
-const LEGACY_LOCALE_STORAGE_KEY = 'svn-excel-diff-tool.locale';
 
 const zhCNMessages = coerceMessages(zhCN, 'Invalid locale messages payload.');
 const enUSMessages = coerceMessages(enUS, 'Invalid locale messages payload.');
@@ -118,8 +117,7 @@ function detectNavigatorLocale(): Locale {
 
 function readStoredLocale(): Locale | null {
   try {
-    const saved = globalThis.localStorage?.getItem(LOCALE_STORAGE_KEY)
-      ?? globalThis.localStorage?.getItem(LEGACY_LOCALE_STORAGE_KEY);
+    const saved = globalThis.localStorage?.getItem(LOCALE_STORAGE_KEY);
     return isLocale(saved) ? saved : null;
   } catch {
     return null;

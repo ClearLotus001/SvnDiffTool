@@ -11,7 +11,7 @@ import {
 } from '../electron/main/svnOperations';
 
 function createTempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'svn-diff-tool-file-eq-'));
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'versora-file-eq-'));
 }
 
 test('haveSameLocalFileContents compares large files in streaming chunks', async () => {

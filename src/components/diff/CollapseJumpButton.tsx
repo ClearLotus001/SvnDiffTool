@@ -32,7 +32,7 @@ interface DragState {
   parentHeight: number;
 }
 
-const STORAGE_PREFIX = 'svn-diff-tool.collapse-jump-position';
+const STORAGE_PREFIX = 'versora.collapse-jump-position';
 const EDGE_PADDING = 8;
 const SNAP_THRESHOLD = 24;
 const DEFAULT_POSITION: FloatingPosition = { right: 10, bottom: 10 };

@@ -24,14 +24,12 @@
       var BG_MAP = { dark: '#08090D', light: '#F5F7FB', hc: '#000000' };
       var FG_MAP = { dark: '#FAFAFA', light: '#09090B', hc: '#FFFFFF' };
       var SETTINGS_KEY = 'versora.settings';
-      var LEGACY_SETTINGS_KEY = 'svn-excel-diff-tool.settings';
       var LOCALE_KEY = 'versora.locale';
-      var LEGACY_LOCALE_KEY = 'svn-excel-diff-tool.locale';
 
       function detectTheme() {
         var themeKey = 'dark';
         try {
-          var raw = localStorage.getItem(SETTINGS_KEY) || localStorage.getItem(LEGACY_SETTINGS_KEY);
+          var raw = localStorage.getItem(SETTINGS_KEY);
           if (raw) {
             var parsed = JSON.parse(raw);
             if (parsed && parsed.themeKey && THEME_MAP[parsed.themeKey]) {
@@ -44,7 +42,7 @@
 
       function detectLocale() {
         try {
-          var saved = localStorage.getItem(LOCALE_KEY) || localStorage.getItem(LEGACY_LOCALE_KEY);
+          var saved = localStorage.getItem(LOCALE_KEY);
           if (saved === 'zh-CN' || saved === 'en-US') {
             return saved;
           }

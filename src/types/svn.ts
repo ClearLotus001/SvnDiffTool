@@ -99,7 +99,11 @@ export type LocalFilePickSide = 'base' | 'mine';
 
 export type SvnDiffViewerScope = 'all-files' | 'text-only' | 'workbook-only';
 export type SvnDiffViewerMode = SvnDiffViewerScope | 'mixed' | 'unconfigured' | 'unsupported';
-export type SvnDiffViewerAvailabilityReason = 'ready' | 'windows-only' | 'packaged-only';
+export type SvnDiffViewerAvailabilityReason =
+  | 'ready'
+  | 'windows-only'
+  | 'packaged-only'
+  | 'launcher-missing';
 
 export interface SvnDiffViewerStatus {
   available: boolean;

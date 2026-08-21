@@ -12,6 +12,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const EXTERNAL_DIFF_REQUEST_VERSION: u32 = 1;
 const REQUEST_RETENTION_SECS: u64 = 24 * 60 * 60;
+const APP_EXECUTABLE_NAME: &str = "Versora.exe";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -45,7 +46,8 @@ fn resolve_app_path(current_exe: &Path) -> Option<PathBuf> {
     let bin_dir = current_exe.parent()?;
     let resources_dir = bin_dir.parent()?;
     let install_dir = resources_dir.parent()?;
-    Some(install_dir.join("SvnDiffTool.exe"))
+    let app_path = install_dir.join(APP_EXECUTABLE_NAME);
+    app_path.is_file().then_some(app_path)
 }
 
 fn normalize_arg(value: Option<&OsString>) -> String {
@@ -97,7 +99,7 @@ fn build_request_payload(args: &[OsString]) -> ExternalDiffRequestPayload {
 }
 
 fn request_root_path() -> PathBuf {
-    env::temp_dir().join("svn-diff-tool").join("requests")
+    env::temp_dir().join("versora").join("requests")
 }
 
 fn cleanup_stale_request_files(root_path: &Path) {
@@ -191,16 +193,16 @@ fn main() {
     };
 
     let app_path = match resolve_app_path(&current_exe) {
-        Some(path) if path.exists() => path,
-        Some(path) => {
+        Some(path) => path,
+        None => {
             append_log(
                 &current_exe,
-                &format!("resolve_app_path:missing {}", path.display()),
+                &format!(
+                    "resolve_app_path:none install_candidate={}",
+                    APP_EXECUTABLE_NAME
+                ),
             );
-            std::process::exit(1)
-        }
-        None => {
-            append_log(&current_exe, "resolve_app_path:none");
+            let _ = fs::remove_file(&request_path);
             std::process::exit(1)
         }
     };
@@ -243,7 +245,37 @@ fn main() {
         }
         Err(error) => {
             append_log(&current_exe, &format!("spawn:error {}", error));
+            let _ = fs::remove_file(&request_path);
             std::process::exit(1)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_app_path_requires_versora_executable() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let install_dir = env::temp_dir().join(format!(
+            "versora-launcher-path-test-{}-{}",
+            std::process::id(),
+            stamp,
+        ));
+        let bin_dir = install_dir.join("resources").join("bin");
+        fs::create_dir_all(&bin_dir).expect("create launcher test layout");
+        let launcher_path = bin_dir.join("svn_diff_launcher.exe");
+
+        assert_eq!(resolve_app_path(&launcher_path), None);
+
+        let versora_path = install_dir.join("Versora.exe");
+        fs::write(&versora_path, []).expect("create Versora app executable");
+        assert_eq!(resolve_app_path(&launcher_path), Some(versora_path));
+
+        fs::remove_dir_all(&install_dir).expect("remove launcher test layout");
     }
 }

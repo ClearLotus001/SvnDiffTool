@@ -38,7 +38,7 @@ async function withSandbox<T>(name: string, run: (sandboxDir: string) => Promise
 
 async function scenarioUpgradeMigratesReusableCache() {
   return withSandbox('install-upgrade-migrate', async (sandboxDir) => {
-    const previousCacheRoot = path.join(sandboxDir, 'cache-old-parent', 'SvnDiffTool', 'Cache');
+    const previousCacheRoot = path.join(sandboxDir, 'cache-old-parent', 'Versora', 'Cache');
     const currentCacheRoot = path.join(sandboxDir, 'cache-new-parent', 'Versora', 'Cache');
 
     const previousSessionMarker = path.join(previousCacheRoot, 'session-data', 'Local Storage', 'leveldb', '000003.log');
@@ -93,7 +93,7 @@ async function scenarioPrepareUninstallCleansManagedArtifacts() {
     const userDataPath = path.join(sandboxDir, 'user-data');
     const sessionDataPath = path.join(sandboxDir, 'session-data');
     const currentCacheRoot = path.join(sandboxDir, 'cache-current-parent', 'Versora', 'Cache');
-    const previousCacheRoot = path.join(sandboxDir, 'cache-previous-parent', 'SvnDiffTool', 'Cache');
+    const previousCacheRoot = path.join(sandboxDir, 'cache-previous-parent', 'Versora', 'Cache');
 
     await writeFile(path.join(userDataPath, 'settings.json'), '{}');
     await writeFile(path.join(sessionDataPath, 'Local Storage', 'leveldb', 'CURRENT'), 'state');

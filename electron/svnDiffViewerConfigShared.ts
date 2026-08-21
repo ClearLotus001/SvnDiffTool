@@ -10,11 +10,28 @@ export interface OwnedSvnDiffRegistryEntries {
 
 export type SvnDiffViewerScope = 'all-files' | 'text-only' | 'workbook-only';
 
+export type SvnDiffViewerAvailabilityReason =
+  | 'ready'
+  | 'windows-only'
+  | 'packaged-only'
+  | 'launcher-missing';
+
 export type ResolvedSvnDiffViewerMode =
   | SvnDiffViewerScope
   | 'mixed'
   | 'unconfigured'
   | 'unsupported';
+
+export function resolveSvnDiffViewerAvailabilityReason(
+  platform: string,
+  isPackaged: boolean,
+  launcherExists: boolean,
+): SvnDiffViewerAvailabilityReason {
+  if (platform !== 'win32') return 'windows-only';
+  if (!isPackaged) return 'packaged-only';
+  if (!launcherExists) return 'launcher-missing';
+  return 'ready';
+}
 
 function normalizeKeyName(value: string) {
   return value.trim().toLowerCase();

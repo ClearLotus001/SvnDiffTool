@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test('toolbar switch file keeps single working-copy and two-file sessions separate', async ({ page }) => {
   await page.addInitScript(() => {
-    window.localStorage.setItem('svn-excel-diff-tool.locale', 'zh-CN');
+    window.localStorage.setItem('versora.locale', 'zh-CN');
     (window as Window & { __pickDiffFileCalls?: number }).__pickDiffFileCalls = 0;
     window.versora = {
       getLaunchContext: () => new Promise(() => {}),

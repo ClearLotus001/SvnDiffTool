@@ -15,7 +15,6 @@ const INSTALLER_BOOTSTRAP_FILE_NAME = 'installer-bootstrap.properties';
 const INSTALLER_BOOTSTRAP_PREVIOUS_FILE_NAME = 'installer-bootstrap.previous.properties';
 const INSTALLER_MAINTENANCE_PENDING_FILE_NAME = 'installer-maintenance.pending';
 export const CACHE_CONTAINER_DIR_NAME = 'Versora';
-const LEGACY_CACHE_CONTAINER_DIR_NAME = 'SvnDiffTool';
 export const CACHE_LEAF_DIR_NAME = 'Cache';
 
 function resolveLocalAppDataRoot(): string {
@@ -61,10 +60,7 @@ export function isControlledCacheRoot(cacheRoot: string): boolean {
   const normalized = path.resolve(cacheRoot);
   const containerName = path.basename(path.dirname(normalized)).toLowerCase();
   return path.basename(normalized).toLowerCase() === CACHE_LEAF_DIR_NAME.toLowerCase()
-    && (
-      containerName === CACHE_CONTAINER_DIR_NAME.toLowerCase()
-      || containerName === LEGACY_CACHE_CONTAINER_DIR_NAME.toLowerCase()
-    );
+    && containerName === CACHE_CONTAINER_DIR_NAME.toLowerCase();
 }
 
 function normalizeCacheRoot(value: string | null | undefined): string {

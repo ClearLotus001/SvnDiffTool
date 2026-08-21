@@ -2,8 +2,8 @@ import { expect, test } from '@playwright/test';
 
 test('floating window corners keep the frame, surface, and page canvas on the active theme', async ({ page }) => {
   await page.addInitScript(() => {
-    window.localStorage.setItem('svn-excel-diff-tool.locale', 'en-US');
-    window.localStorage.setItem('svn-excel-diff-tool.settings', JSON.stringify({ themeKey: 'dark' }));
+    window.localStorage.setItem('versora.locale', 'en-US');
+    window.localStorage.setItem('versora.settings', JSON.stringify({ themeKey: 'dark' }));
     window.versora = { getLaunchContext: () => new Promise(() => {}) } as NonNullable<typeof window.versora>;
   });
   await page.goto('/?__e2e=1');

@@ -19,11 +19,11 @@ async function loadSvnConfigFixture(page: Page) {
     const status = {
       available: true,
       reason: 'ready',
-      executablePath: 'C:\\Tools\\SvnDiffTool\\svn_diff_launcher.exe',
-      command: '"C:\\Tools\\SvnDiffTool\\svn_diff_launcher.exe" %base %mine',
+      executablePath: 'C:\\Tools\\Versora\\resources\\bin\\svn_diff_launcher.exe',
+      command: '"C:\\Tools\\Versora\\resources\\bin\\svn_diff_launcher.exe" %base %mine',
       currentMode: 'all-files',
       canRestoreDefault: true,
-      globalDiffCommand: '"C:\\Tools\\SvnDiffTool\\svn_diff_launcher.exe" %base %mine',
+      globalDiffCommand: '"C:\\Tools\\Versora\\resources\\bin\\svn_diff_launcher.exe" %base %mine',
       workbookDiffCommands: {},
       workbookExtensions: ['.xlsx', '.xls'],
     };

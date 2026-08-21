@@ -21,8 +21,8 @@ function buildWideWorkbook(lastValue: string): string {
 async function loadWideWorkbookDiff(page: Page) {
   await page.setViewportSize({ width: 1600, height: 900 });
   await page.addInitScript(() => {
-    window.localStorage.setItem('svn-excel-diff-tool.locale', 'en-US');
-    window.localStorage.setItem('svn-excel-diff-tool.settings', JSON.stringify({ themeKey: 'light' }));
+    window.localStorage.setItem('versora.locale', 'en-US');
+    window.localStorage.setItem('versora.settings', JSON.stringify({ themeKey: 'light' }));
     window.versora = { getLaunchContext: () => new Promise(() => {}) } as NonNullable<typeof window.versora>;
   });
   await page.goto('/?__e2e=1');

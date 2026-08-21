@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test('two-file dialog explains automatic Git/SVN detection and local fallback behavior', async ({ page }) => {
   await page.addInitScript(() => {
-    window.localStorage.setItem('svn-excel-diff-tool.locale', 'zh-CN');
+    window.localStorage.setItem('versora.locale', 'zh-CN');
     window.versora = {
       getPathForDroppedFile: (file: File) => `E:\\Dropped\\${file.name}`,
       loadLocalFileDiff: () => new Promise<never>(() => {}),

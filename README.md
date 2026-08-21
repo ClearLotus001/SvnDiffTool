@@ -4,7 +4,7 @@
 
 > 面向 Windows 的文件比较工作台，用一套界面审阅文本、Excel、Git 版本与 SVN 修订。
 
-Versora 是 SvnDiffTool 的后续版本。它保留了成熟的文本和工作簿查看能力，同时把 Git、SVN 与普通本地文件统一为可独立识别的比较来源。
+Versora 提供成熟的文本和工作簿查看能力，同时把 Git、SVN 与普通本地文件统一为可独立识别的比较来源。
 
 ## 下载与运行
 
@@ -68,10 +68,10 @@ Versora 是 SvnDiffTool 的后续版本。它保留了成熟的文本和工作�
 
 ### TortoiseSVN 接入
 
-安装版可从首页打开“接入 TortoiseSVN”，并选择全部文件、仅文本或仅工作簿模式。手动配置命令：
+安装版可从首页打开“接入 TortoiseSVN”，并选择全部文件、仅文本或仅工作簿模式。推荐使用应用内配置；如需手动配置，请将命令指向安装目录内的 SVN 启动组件：
 
 ```text
-"C:\Path\To\Versora.exe" %base %mine %bname %yname %burl %yurl %brev %yrev %peg %fname
+"C:\Path\To\Versora\resources\bin\svn_diff_launcher.exe" %base %mine %bname %yname %burl %yurl %brev %yrev %peg %fname
 ```
 
 卸载前 Versora 会恢复 TortoiseSVN 默认查看器，避免外部查看规则指向已删除的程序。
@@ -79,8 +79,8 @@ Versora 是 SvnDiffTool 的后续版本。它保留了成熟的文本和工作�
 ## 兼容性与数据迁移
 
 - Electron 渲染进程仅通过 `window.versora` 使用桥接能力
-- 新设置使用 `versora.*` 键，并兼容读取旧 `svn-excel-diff-tool.*` 设置
-- 新缓存目录为 `Versora/Cache`；升级时可识别并迁移旧 `SvnDiffTool/Cache`
+- 设置统一使用 `versora.*` 键
+- Windows 受控缓存目录统一为 `Versora/Cache`
 - Windows `appId` 保持不变，以延续安装升级和自动更新链路
 
 ## 开发

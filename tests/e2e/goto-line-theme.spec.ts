@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test('goto action keeps the correct inverse contrast in every theme', async ({ page }) => {
   await page.addInitScript(() => {
-    window.localStorage.setItem('svn-excel-diff-tool.locale', 'zh-CN');
+    window.localStorage.setItem('versora.locale', 'zh-CN');
     window.versora = { getLaunchContext: () => new Promise(() => {}) } as NonNullable<typeof window.versora>;
   });
   await page.goto('/?__e2e=1');

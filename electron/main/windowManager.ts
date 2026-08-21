@@ -176,7 +176,6 @@ function resolveInstalledUninstallerPath(app: Electron.App): string | null {
   const candidates = [
     path.join(installDir, `Uninstall ${executableName}`),
     path.join(installDir, 'Uninstall Versora.exe'),
-    path.join(installDir, 'Uninstall SvnDiffTool.exe'),
   ];
 
   return candidates.find(candidate => fs.existsSync(candidate)) ?? null;

@@ -21,7 +21,7 @@ test('resolveElectronAppRoot supports source, build, and packaged bundle layouts
     repoRoot,
   );
 
-  const packagedAppRoot = path.resolve('C:/mock/SvnDiffTool/resources/app.asar');
+  const packagedAppRoot = path.resolve('C:/mock/Versora/resources/app.asar');
   assert.equal(
     resolveElectronAppRoot(path.join(packagedAppRoot, 'dist-electron', 'electron', 'main')),
     packagedAppRoot,

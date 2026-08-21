@@ -146,6 +146,7 @@
   "svnConfigModeUnsupported": "当前环境不可自动配置",
   "svnConfigAvailabilityWindowsOnly": "仅支持 Windows",
   "svnConfigAvailabilityPackagedOnly": "请在安装版中使用此功能",
+  "svnConfigAvailabilityLauncherMissing": "SVN 启动组件缺失，请重新安装 Versora",
   "svnConfigAvailabilityReady": "可直接配置",
   "svnConfigCurrentModeLabel": "当前状态",
   "svnConfigExecutableLabel": "当前应用",

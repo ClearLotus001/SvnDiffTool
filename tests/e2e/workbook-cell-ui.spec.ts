@@ -4,8 +4,8 @@ test('clipped workbook text exposes its full value and workbook chrome follows t
   const longDescription = '通过每日任务、剧情模式、主线活动获得完整奖励说明，并在指定时间内完成挑战后领取额外成长资源与限时道具奖励';
   await page.setViewportSize({ width: 1920, height: 1000 });
   await page.addInitScript(() => {
-    window.localStorage.setItem('svn-excel-diff-tool.locale', 'en-US');
-    window.localStorage.setItem('svn-excel-diff-tool.settings', JSON.stringify({ themeKey: 'light' }));
+    window.localStorage.setItem('versora.locale', 'en-US');
+    window.localStorage.setItem('versora.settings', JSON.stringify({ themeKey: 'light' }));
     window.versora = { getLaunchContext: () => new Promise(() => {}) } as NonNullable<typeof window.versora>;
   });
   await page.goto('/?__e2e=1');

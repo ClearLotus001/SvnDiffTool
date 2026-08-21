@@ -25,6 +25,6 @@ The Git adapter uses `spawn` with an argument array and never invokes a shell. V
 
 ## Compatibility
 
-The renderer uses a single `window.versora` bridge. TortoiseSVN launches enter through the command-line adapter and do not require a second renderer global. New settings use `versora.*` keys and fall back to the legacy `svn-excel-diff-tool.*` keys on first read.
+The renderer uses a single `window.versora` bridge. TortoiseSVN launches enter through the command-line adapter and do not require a second renderer global. Settings use `versora.*` keys.
 
-The Windows cache root is now `Versora/Cache`. Runtime safety checks also recognize the legacy `SvnDiffTool/Cache` root so installer maintenance can migrate or clean previous versions safely.
+The Windows cache root is `Versora/Cache`. Runtime safety checks only allow cache maintenance inside that managed container.

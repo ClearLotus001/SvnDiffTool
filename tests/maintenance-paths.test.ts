@@ -37,8 +37,8 @@ async function writeFile(targetPath: string, contents: string) {
 
 test('migratePreviousCacheRoot copies reusable session and disk cache data only', async () => {
   await withSandbox('svn-diff-maintenance-paths-', async (sandboxDir) => {
-    const previousCacheRoot = path.join(sandboxDir, 'previous-parent', 'SvnDiffTool', 'Cache');
-    const currentCacheRoot = path.join(sandboxDir, 'current-parent', 'SvnDiffTool', 'Cache');
+    const previousCacheRoot = path.join(sandboxDir, 'previous-parent', 'Versora', 'Cache');
+    const currentCacheRoot = path.join(sandboxDir, 'current-parent', 'Versora', 'Cache');
 
     await writeFile(path.join(previousCacheRoot, 'session-data', 'Local Storage', 'leveldb', '000003.log'), 'session');
     await writeFile(path.join(previousCacheRoot, 'disk-cache', 'index'), 'cache');
@@ -57,8 +57,8 @@ test('migratePreviousCacheRoot copies reusable session and disk cache data only'
 
 test('cleanupPreviousCacheRoot removes only the previous managed cache root', async () => {
   await withSandbox('svn-diff-maintenance-cleanup-', async (sandboxDir) => {
-    const previousCacheRoot = path.join(sandboxDir, 'previous-parent', 'SvnDiffTool', 'Cache');
-    const currentCacheRoot = path.join(sandboxDir, 'current-parent', 'SvnDiffTool', 'Cache');
+    const previousCacheRoot = path.join(sandboxDir, 'previous-parent', 'Versora', 'Cache');
+    const currentCacheRoot = path.join(sandboxDir, 'current-parent', 'Versora', 'Cache');
 
     await writeFile(path.join(previousCacheRoot, 'disk-cache', 'index'), 'cache');
     await writeFile(path.join(currentCacheRoot, 'session-data', 'CURRENT'), 'state');
@@ -78,7 +78,7 @@ test('cleanupPreviousCacheRoot removes only the previous managed cache root', as
 
 test('cache migration treats canonical aliases of the same root as a no-op', async () => {
   await withSandbox('svn-diff-maintenance-alias-', async (sandboxDir) => {
-    const cacheRoot = path.join(sandboxDir, 'cache-parent', 'SvnDiffTool', 'Cache');
+    const cacheRoot = path.join(sandboxDir, 'cache-parent', 'Versora', 'Cache');
     const equivalentCacheRoot = path.join(cacheRoot, '..', 'Cache');
     const markerPath = path.join(cacheRoot, 'session-data', 'CURRENT');
     await writeFile(markerPath, 'state');
@@ -96,8 +96,8 @@ test('cache migration treats canonical aliases of the same root as a no-op', asy
 
 test('cache migration refuses overlapping roots without deleting the previous cache', async () => {
   await withSandbox('svn-diff-maintenance-overlap-', async (sandboxDir) => {
-    const previousCacheRoot = path.join(sandboxDir, 'cache-parent', 'SvnDiffTool', 'Cache');
-    const currentCacheRoot = path.join(previousCacheRoot, 'nested', 'SvnDiffTool', 'Cache');
+    const previousCacheRoot = path.join(sandboxDir, 'cache-parent', 'Versora', 'Cache');
+    const currentCacheRoot = path.join(previousCacheRoot, 'nested', 'Versora', 'Cache');
     const markerPath = path.join(previousCacheRoot, 'session-data', 'CURRENT');
     await writeFile(markerPath, 'state');
 
@@ -115,8 +115,8 @@ test('cache migration refuses overlapping roots without deleting the previous ca
 
 test('failed cache migration retains the complete previous cache for retry', async () => {
   await withSandbox('svn-diff-maintenance-failure-', async (sandboxDir) => {
-    const previousCacheRoot = path.join(sandboxDir, 'previous-parent', 'SvnDiffTool', 'Cache');
-    const currentCacheRoot = path.join(sandboxDir, 'current-parent', 'SvnDiffTool', 'Cache');
+    const previousCacheRoot = path.join(sandboxDir, 'previous-parent', 'Versora', 'Cache');
+    const currentCacheRoot = path.join(sandboxDir, 'current-parent', 'Versora', 'Cache');
     const previousMarkerPath = path.join(previousCacheRoot, 'session-data', 'CURRENT');
     await writeFile(previousMarkerPath, 'state');
     await writeFile(path.join(currentCacheRoot, 'session-data'), 'blocks directory creation');
@@ -134,8 +134,8 @@ test('failed cache migration retains the complete previous cache for retry', asy
 
 test('cache migration does not follow nested directory links', async (t) => {
   await withSandbox('svn-diff-maintenance-link-', async (sandboxDir) => {
-    const previousCacheRoot = path.join(sandboxDir, 'previous-parent', 'SvnDiffTool', 'Cache');
-    const currentCacheRoot = path.join(sandboxDir, 'current-parent', 'SvnDiffTool', 'Cache');
+    const previousCacheRoot = path.join(sandboxDir, 'previous-parent', 'Versora', 'Cache');
+    const currentCacheRoot = path.join(sandboxDir, 'current-parent', 'Versora', 'Cache');
     const externalRoot = path.join(sandboxDir, 'external-payload');
     const externalMarkerPath = path.join(externalRoot, 'secret.txt');
     const linkedPath = path.join(previousCacheRoot, 'session-data', 'linked');
@@ -167,11 +167,11 @@ test('cache migration does not follow nested directory links', async (t) => {
 
 test('cache cleanup refuses roots reached through a directory link', async (t) => {
   await withSandbox('svn-diff-maintenance-root-link-', async (sandboxDir) => {
-    const externalContainer = path.join(sandboxDir, 'external', 'SvnDiffTool');
+    const externalContainer = path.join(sandboxDir, 'external', 'Versora');
     const externalMarkerPath = path.join(externalContainer, 'Cache', 'session-data', 'CURRENT');
-    const linkedContainer = path.join(sandboxDir, 'linked-parent', 'SvnDiffTool');
+    const linkedContainer = path.join(sandboxDir, 'linked-parent', 'Versora');
     const previousCacheRoot = path.join(linkedContainer, 'Cache');
-    const currentCacheRoot = path.join(sandboxDir, 'current-parent', 'SvnDiffTool', 'Cache');
+    const currentCacheRoot = path.join(sandboxDir, 'current-parent', 'Versora', 'Cache');
 
     await writeFile(externalMarkerPath, 'external');
     await fsp.mkdir(path.dirname(linkedContainer), { recursive: true });
@@ -198,8 +198,8 @@ test('cache cleanup refuses roots reached through a directory link', async (t) =
 
 test('cache migration refuses a destination reached through a nested directory link', async (t) => {
   await withSandbox('svn-diff-maintenance-destination-link-', async (sandboxDir) => {
-    const previousCacheRoot = path.join(sandboxDir, 'previous-parent', 'SvnDiffTool', 'Cache');
-    const currentCacheRoot = path.join(sandboxDir, 'current-parent', 'SvnDiffTool', 'Cache');
+    const previousCacheRoot = path.join(sandboxDir, 'previous-parent', 'Versora', 'Cache');
+    const currentCacheRoot = path.join(sandboxDir, 'current-parent', 'Versora', 'Cache');
     const externalRoot = path.join(sandboxDir, 'external-destination');
     const destinationLink = path.join(currentCacheRoot, 'session-data', 'Local Storage');
     const previousMarkerPath = path.join(previousCacheRoot, 'session-data', 'Local Storage', 'copied.txt');
@@ -238,7 +238,7 @@ test('cache migration treats case-only Windows path differences as the same root
   }
 
   await withSandbox('svn-diff-maintenance-case-', async (sandboxDir) => {
-    const cacheRoot = path.join(sandboxDir, 'cache-parent', 'SvnDiffTool', 'Cache');
+    const cacheRoot = path.join(sandboxDir, 'cache-parent', 'Versora', 'Cache');
     const markerPath = path.join(cacheRoot, 'session-data', 'CURRENT');
     await writeFile(markerPath, 'state');
 
@@ -257,8 +257,8 @@ test('cleanupRuntimeArtifactsForUninstall removes user data, session data and ma
   await withSandbox('svn-diff-maintenance-uninstall-', async (sandboxDir) => {
     const userDataPath = path.join(sandboxDir, 'user-data');
     const sessionDataPath = path.join(sandboxDir, 'session-data');
-    const currentCacheRoot = path.join(sandboxDir, 'current-parent', 'SvnDiffTool', 'Cache');
-    const previousCacheRoot = path.join(sandboxDir, 'previous-parent', 'SvnDiffTool', 'Cache');
+    const currentCacheRoot = path.join(sandboxDir, 'current-parent', 'Versora', 'Cache');
+    const previousCacheRoot = path.join(sandboxDir, 'previous-parent', 'Versora', 'Cache');
 
     await writeFile(path.join(userDataPath, 'settings.json'), '{}');
     await writeFile(path.join(sessionDataPath, 'Local Storage', 'leveldb', 'CURRENT'), 'state');

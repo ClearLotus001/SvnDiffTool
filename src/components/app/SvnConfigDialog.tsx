@@ -57,6 +57,7 @@ const SvnConfigDialog = memo(({
     switch (status.reason) {
       case 'windows-only': return t('svnConfigAvailabilityWindowsOnly');
       case 'packaged-only': return t('svnConfigAvailabilityPackagedOnly');
+      case 'launcher-missing': return t('svnConfigAvailabilityLauncherMissing');
       case 'ready': default: return t('svnConfigAvailabilityReady');
     }
   })();

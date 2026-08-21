@@ -5,11 +5,19 @@ import {
   canRestoreSvnDefaultDiffViewer,
   getOwnedSvnDiffRegistryEntries,
   normalizeSvnDiffViewerCommand,
+  resolveSvnDiffViewerAvailabilityReason,
   resolveSvnDiffViewerMode,
 } from '../electron/svnDiffViewerConfigShared';
 
-const OUR_COMMAND = String.raw`"C:\Program Files\SvnDiffTool\svn_diff_launcher.exe" %base %mine %bname %yname %burl %yurl %brev %yrev %peg %fname`;
+const OUR_COMMAND = String.raw`"C:\Program Files\Versora\resources\bin\svn_diff_launcher.exe" %base %mine %bname %yname %burl %yurl %brev %yrev %peg %fname`;
 const WORKBOOK_EXTENSIONS = ['.xls', '.xlsx', '.xlsm', '.xlsb', '.xltx', '.xltm'] as const;
+
+test('resolveSvnDiffViewerAvailabilityReason requires the packaged Windows launcher', () => {
+  assert.equal(resolveSvnDiffViewerAvailabilityReason('linux', true, true), 'windows-only');
+  assert.equal(resolveSvnDiffViewerAvailabilityReason('win32', false, true), 'packaged-only');
+  assert.equal(resolveSvnDiffViewerAvailabilityReason('win32', true, false), 'launcher-missing');
+  assert.equal(resolveSvnDiffViewerAvailabilityReason('win32', true, true), 'ready');
+});
 
 test('normalizeSvnDiffViewerCommand ignores repeated whitespace and case', () => {
   assert.equal(
@@ -18,7 +26,7 @@ test('normalizeSvnDiffViewerCommand ignores repeated whitespace and case', () =>
   );
 });
 
-test('getOwnedSvnDiffRegistryEntries finds global and per-extension rules owned by SvnDiffTool', () => {
+test('getOwnedSvnDiffRegistryEntries finds global and per-extension rules owned by Versora', () => {
   const owned = getOwnedSvnDiffRegistryEntries(OUR_COMMAND, {
     globalDiffCommand: OUR_COMMAND.toUpperCase(),
     diffToolCommands: {
@@ -32,7 +40,7 @@ test('getOwnedSvnDiffRegistryEntries finds global and per-extension rules owned 
   assert.deepEqual(owned.ownedDiffToolKeys.sort(), ['.xlsx', '.xlsm'].sort());
 });
 
-test('canRestoreSvnDefaultDiffViewer only enables restore when SvnDiffTool owns some current rule', () => {
+test('canRestoreSvnDefaultDiffViewer only enables restore when Versora owns some current rule', () => {
   assert.equal(
     canRestoreSvnDefaultDiffViewer(OUR_COMMAND, {
       globalDiffCommand: null,

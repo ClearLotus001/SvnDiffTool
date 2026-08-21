@@ -27,7 +27,7 @@ function createInstallerConfig(diffViewerMode: InstallerBootstrapConfig['diffVie
   return {
     version: 1,
     diffViewerMode,
-    cacheRoot: String.raw`D:\TempRoot\SvnDiffTool\Cache`,
+    cacheRoot: String.raw`D:\TempRoot\Versora\Cache`,
   };
 }
 
@@ -87,14 +87,14 @@ test('invalid SVN diff viewer preference is ignored', async () => {
 
 test('updating installer bootstrap diff mode preserves the cache root', async () => {
   await withTempDir(async (dir) => {
-    const execPath = path.join(dir, 'SvnDiffTool.exe');
+    const execPath = path.join(dir, 'Versora.exe');
     const bootstrapPath = path.join(dir, 'installer-bootstrap.properties');
     fs.writeFileSync(
       bootstrapPath,
       [
         'version=1',
         'diffViewerMode=keep',
-        String.raw`cacheRoot=D:\Custom\SvnDiffTool\Cache`,
+        String.raw`cacheRoot=D:\Custom\Versora\Cache`,
         '',
       ].join('\n'),
       'utf-8',
@@ -104,6 +104,6 @@ test('updating installer bootstrap diff mode preserves the cache root', async ()
     const updated = readInstallerBootstrapSync(execPath);
 
     assert.equal(updated?.diffViewerMode, 'all-files');
-    assert.equal(updated?.cacheRoot, String.raw`D:\Custom\SvnDiffTool\Cache`);
+    assert.equal(updated?.cacheRoot, String.raw`D:\Custom\Versora\Cache`);
   });
 });

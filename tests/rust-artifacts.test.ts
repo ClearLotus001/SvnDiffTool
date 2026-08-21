@@ -8,7 +8,7 @@ import {
 } from '../scripts/rustArtifacts';
 
 test('getRustArtifactPaths resolves the platform-specific parser artifact', () => {
-  const paths = getRustArtifactPaths('E:\\Project\\SvnDiffTool', { platform: 'win32' });
+  const paths = getRustArtifactPaths('E:\\Project\\Versora', { platform: 'win32' });
 
   assert.equal(paths.parserName, 'svn_excel_parser.exe');
   assert.match(paths.parserPath, /rust[\\/]target[\\/]release[\\/]svn_excel_parser\.exe$/);
@@ -36,7 +36,7 @@ test('resolveCargoExecutable reports missing cargo when all probes fail', () => 
 
 test('runRustReleaseBuild returns missing-cargo instead of throwing', () => {
   const result = runRustReleaseBuild({
-    repoRoot: 'E:\\Project\\SvnDiffTool',
+    repoRoot: 'E:\\Project\\Versora',
     platform: 'win32',
     env: {
       PATH: '',
@@ -58,7 +58,7 @@ test('runRustReleaseBuild returns missing-cargo instead of throwing', () => {
 test('runRustReleaseBuild invokes cargo release build after a successful probe', () => {
   const calls: Array<{ command: string; args: string[] }> = [];
   const result = runRustReleaseBuild({
-    repoRoot: 'E:\\Project\\SvnDiffTool',
+    repoRoot: 'E:\\Project\\Versora',
     platform: 'win32',
     env: {
       PATH: '',
@@ -77,7 +77,7 @@ test('runRustReleaseBuild invokes cargo release build after a successful probe',
   assert.deepEqual(calls[1]?.args, [
     'build',
     '--manifest-path',
-    'E:\\Project\\SvnDiffTool\\rust\\Cargo.toml',
+    'E:\\Project\\Versora\\rust\\Cargo.toml',
     '--release',
   ]);
 });

@@ -80,8 +80,7 @@ test('two-file comparison loads an independent revision timeline for each side',
     });
   }, { base: baseRevision, mine: mineRevision });
 
-  const toolbar = page.locator('.app-toolbar');
-  await expect(toolbar).not.toContainText('SvnDiffTool');
+  await expect(page).toHaveTitle('Versora');
   await expect.poll(async () => page.getByTestId('toolbar-view-menu').evaluate(
     (element) => window.getComputedStyle(element).fontSize,
   )).toBe('12px');

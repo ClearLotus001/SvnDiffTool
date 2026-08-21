@@ -146,6 +146,7 @@
   "svnConfigModeUnsupported": "Automatic setup unavailable",
   "svnConfigAvailabilityWindowsOnly": "Windows only",
   "svnConfigAvailabilityPackagedOnly": "Use this from the installed desktop build",
+  "svnConfigAvailabilityLauncherMissing": "The SVN launcher is missing. Reinstall Versora.",
   "svnConfigAvailabilityReady": "Ready to apply",
   "svnConfigCurrentModeLabel": "Current status",
   "svnConfigExecutableLabel": "Current app",

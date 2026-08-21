@@ -69,19 +69,19 @@ test('normalizeInstallerBootstrapConfig preserves the text-only diff mode', () =
   const normalized = normalizeInstallerBootstrapConfig({
     version: 1,
     diffViewerMode: 'text-only',
-    cacheRoot: String.raw`D:\TempRoot\SvnDiffTool\Cache`,
+    cacheRoot: String.raw`D:\TempRoot\Versora\Cache`,
   });
 
   assert.equal(normalized.diffViewerMode, 'text-only');
 });
 
-test('controlled cache root accepts current and legacy managed cache suffixes', () => {
+test('controlled cache root only accepts the Versora managed cache suffix', () => {
   assert.equal(
-    isControlledCacheRoot(String.raw`C:\Users\me\AppData\Local\Versora\Cache`),
-    true,
+    isControlledCacheRoot(String.raw`C:\Users\me\AppData\Local\OtherProduct\Cache`),
+    false,
   );
   assert.equal(
-    isControlledCacheRoot(String.raw`C:\Users\me\AppData\Local\SvnDiffTool\Cache`),
+    isControlledCacheRoot(String.raw`C:\Users\me\AppData\Local\Versora\Cache`),
     true,
   );
   assert.equal(
@@ -105,44 +105,44 @@ test('installer bootstrap content keeps the expected key-value structure', () =>
 
 test('getMaintenanceModeFromArgv supports equals and split argument forms', () => {
   assert.equal(
-    getMaintenanceModeFromArgv(['SvnDiffTool.exe', '--maintenance=post-install']),
+    getMaintenanceModeFromArgv(['Versora.exe', '--maintenance=post-install']),
     'post-install',
   );
   assert.equal(
-    getMaintenanceModeFromArgv(['SvnDiffTool.exe', '--maintenance', 'prepare-uninstall']),
+    getMaintenanceModeFromArgv(['Versora.exe', '--maintenance', 'prepare-uninstall']),
     'prepare-uninstall',
   );
   assert.equal(
-    getMaintenanceModeFromArgv(['SvnDiffTool.exe', '--maintenance=unknown']),
+    getMaintenanceModeFromArgv(['Versora.exe', '--maintenance=unknown']),
     null,
   );
 });
 
 test('shouldDeleteAppDataFromArgv only enables explicit personal-data cleanup', () => {
   assert.equal(
-    shouldDeleteAppDataFromArgv(['Uninstall SvnDiffTool.exe', '--delete-app-data']),
+    shouldDeleteAppDataFromArgv(['Uninstall Versora.exe', '--delete-app-data']),
     true,
   );
   assert.equal(
-    shouldDeleteAppDataFromArgv(['Uninstall SvnDiffTool.exe', '/S']),
+    shouldDeleteAppDataFromArgv(['Uninstall Versora.exe', '/S']),
     false,
   );
 });
 
 test('wasLaunchedAfterUpdateFromArgv detects update relaunch marker', () => {
   assert.equal(
-    wasLaunchedAfterUpdateFromArgv(['SvnDiffTool.exe', '--updated']),
+    wasLaunchedAfterUpdateFromArgv(['Versora.exe', '--updated']),
     true,
   );
   assert.equal(
-    wasLaunchedAfterUpdateFromArgv(['SvnDiffTool.exe', '--maintenance=post-install']),
+    wasLaunchedAfterUpdateFromArgv(['Versora.exe', '--maintenance=post-install']),
     false,
   );
 });
 
 test('post-install maintenance markers are detected and can be cleared', () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'svn-diff-tool-installer-'));
-  const execPath = path.join(tempDir, 'SvnDiffTool.exe');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'versora-installer-'));
+  const execPath = path.join(tempDir, 'Versora.exe');
   const markerPath = getInstallerMaintenancePendingPath(execPath);
   const previousBootstrapPath = getPreviousInstallerBootstrapPath(execPath);
 
