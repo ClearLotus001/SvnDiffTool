@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import type { DiffLine, SearchMatch } from '../src/types';
-import { createWorkbookRowLine } from '../src/utils/workbook/workbookDisplay';
+import {
+  createWorkbookRowLine,
+  createWorkbookSheetLine,
+} from '../src/utils/workbook/workbookDisplay';
 import {
   createSearchResultItemResolver,
   getVirtualizedSearchResultsWindow,
@@ -56,6 +59,52 @@ test('search result resolver builds workbook preview lazily and caches the item'
   assert.equal(item.sideLabel, 'Mine');
   assert.equal(resolveResult(0), item);
   assert.equal(resolveResult(1), null);
+});
+
+test('search result resolver never exposes workbook protocol markers in fallback previews', () => {
+  const rowLine = createWorkbookRowLine(5, ['Alpha', 'Beta']);
+  const sheetLine = createWorkbookSheetLine('Budget Data');
+  const diffLines = [
+    createDiffLine('equal', rowLine, rowLine),
+    createDiffLine('equal', sheetLine, sheetLine),
+  ];
+  const searchMatches: SearchMatch[] = [
+    {
+      lineIdx: 0,
+      start: rowLine.indexOf('@@row'),
+      end: rowLine.indexOf('@@row') + '@@row'.length,
+      workbookTarget: {
+        sheetName: 'Budget Data',
+        side: 'mine',
+        rowNumber: 5,
+        colIndex: null,
+      },
+    },
+    {
+      lineIdx: 1,
+      start: sheetLine.indexOf('@@sheet'),
+      end: sheetLine.indexOf('@@sheet') + '@@sheet'.length,
+      workbookTarget: {
+        sheetName: 'Budget Data',
+        side: 'mine',
+        rowNumber: null,
+        colIndex: null,
+      },
+    },
+  ];
+
+  const resolveResult = createSearchResultItemResolver({
+    diffLines,
+    searchMatches,
+    baseRoleTitle: 'Base',
+    mineRoleTitle: 'Mine',
+    noResultsLabel: 'No results',
+  });
+
+  assert.equal(resolveResult(0)?.preview, 'Alpha    Beta');
+  assert.equal(resolveResult(1)?.preview, 'Budget Data');
+  assert.doesNotMatch(resolveResult(0)?.preview ?? '', /@@row|@@sheet/);
+  assert.doesNotMatch(resolveResult(1)?.preview ?? '', /@@row|@@sheet/);
 });
 
 test('virtualized search results window only exposes the visible slice with overscan', () => {

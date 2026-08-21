@@ -13,6 +13,8 @@ import type {
 import { parseWorkbookDisplayLine } from '@/utils/workbook/workbookDisplay';
 import { hasWorkbookCellContent } from '@/utils/workbook/workbookCellContract';
 import { buildWorkbookHiddenColumnSegments } from '@/utils/workbook/workbookManualVisibility';
+import { buildWorkbookSplitRowCompareState } from '@/utils/workbook/workbookCompare';
+import { buildWorkbookAutoCollapsedColumns } from '@/utils/workbook/workbookAutoCollapse';
 import {
   normalizeWorkbookColumnRange,
   parseWorkbookColumnIndexFromCellRef,
@@ -295,6 +297,10 @@ export function buildWorkbookSheetPresentation(
   includeHiddenColumns = false,
   compareMode: WorkbookCompareMode = 'strict',
   manualHiddenColumns: number[] = [],
+  autoCollapseUnchangedColumns = false,
+  revealedAutoColumns: number[] = [],
+  protectedAutoCollapseColumns: number[] = [],
+  protectedAutoCollapseColumnCount = 0,
 ): WorkbookSheetPresentation {
   const baseSheet = baseMetadata?.sheets[sheetName] ?? null;
   const mineSheet = mineMetadata?.sheets[sheetName] ?? null;
@@ -310,6 +316,10 @@ export function buildWorkbookSheetPresentation(
     includeHiddenColumns ? '1' : '0',
     compareMode,
     manualHiddenColumns.join(','),
+    autoCollapseUnchangedColumns ? '1' : '0',
+    revealedAutoColumns.join(','),
+    protectedAutoCollapseColumns.join(','),
+    protectedAutoCollapseColumnCount,
     getCacheObjectId(baseSheet),
     getCacheObjectId(mineSheet),
   ].join('::');
@@ -344,13 +354,34 @@ export function buildWorkbookSheetPresentation(
 
   const allColumns = [...candidateColumns].sort((left, right) => left - right);
 
+  const protectedColumns = new Set<number>([
+    ...revealedAutoColumns,
+    ...protectedAutoCollapseColumns,
+    ...allColumns.slice(0, Math.max(0, protectedAutoCollapseColumnCount)),
+    ...collectMergedColumns(baseSheet?.mergeRanges ?? []),
+    ...collectMergedColumns(mineSheet?.mergeRanges ?? []),
+  ]);
+  if (autoCollapseUnchangedColumns) {
+    rows.forEach((row) => {
+      buildWorkbookSplitRowCompareState(row, undefined, compareMode).changedColumns
+        .forEach((column) => protectedColumns.add(column));
+    });
+  }
+  const autoCollapsedColumns = autoCollapseUnchangedColumns
+    ? buildWorkbookAutoCollapsedColumns(allColumns, protectedColumns)
+    : [];
+  const autoCollapsedColumnSet = new Set(autoCollapsedColumns);
+
   let visibleColumns = allColumns
     .filter(column => (
-      includeHiddenColumns
-      || (
-        !(baseHidden.has(column) && mineHidden.has(column))
-        && !manualHidden.has(column)
+      (
+        includeHiddenColumns
+        || (
+          !(baseHidden.has(column) && mineHidden.has(column))
+          && !manualHidden.has(column)
+        )
       )
+      && !autoCollapsedColumnSet.has(column)
     ));
 
   if (visibleColumns.length === 0) visibleColumns = [0];
@@ -358,9 +389,15 @@ export function buildWorkbookSheetPresentation(
   const presentation: WorkbookSheetPresentation = {
     allColumns,
     visibleColumns,
-    hiddenColumnSegments: includeHiddenColumns
-      ? []
-      : buildWorkbookHiddenColumnSegments(allColumns, manualHiddenColumns),
+    hiddenColumnSegments: buildWorkbookHiddenColumnSegments(
+      allColumns,
+      [
+        ...autoCollapsedColumns,
+        ...(includeHiddenColumns ? [] : manualHiddenColumns),
+      ],
+    ),
+    autoCollapsedColumns,
+    autoCollapsedColumnSegments: buildWorkbookHiddenColumnSegments(allColumns, autoCollapsedColumns),
     baseMergeRanges: baseSheet?.mergeRanges ?? [],
     mineMergeRanges: mineSheet?.mergeRanges ?? [],
   };

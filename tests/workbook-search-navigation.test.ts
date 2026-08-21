@@ -2,7 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import type { DiffLine } from '../src/types';
-import { createWorkbookRowLine } from '../src/utils/workbook/workbookDisplay';
+import {
+  createWorkbookRowLine,
+  createWorkbookSheetLine,
+  getWorkbookSearchableContentStart,
+} from '../src/utils/workbook/workbookDisplay';
 import type { WorkbookLineSheetContext } from '../src/utils/workbook/workbookSections';
 import {
   buildWorkbookRowEntry,
@@ -158,6 +162,21 @@ test('workbook search does not force a cell focus for non-cell prefixes', () => 
     }),
     null,
   );
+});
+
+test('workbook search starts after row metadata and excludes sheet protocol lines', () => {
+  const rowLine = createWorkbookRowLine(25, ['Alpha', 'World']);
+  const sheetLine = createWorkbookSheetLine('World Data');
+
+  assert.equal(
+    getWorkbookSearchableContentStart(rowLine),
+    rowLine.indexOf('Alpha'),
+  );
+  assert.equal(
+    getWorkbookSearchableContentStart(sheetLine),
+    sheetLine.length,
+  );
+  assert.equal(getWorkbookSearchableContentStart('plain text'), 0);
 });
 
 test('workbook search can preserve hidden target columns instead of clamping to visible columns', () => {

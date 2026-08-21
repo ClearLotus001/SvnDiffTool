@@ -86,8 +86,8 @@ export class WindowsUpdater implements PlatformUpdater {
         status: nextState,
         availableVersion: null,
         downloadPercent: 0,
-        releaseName: null,
-        releaseNotes: null,
+        releaseName: info.releaseName ?? info.version ?? null,
+        releaseNotes: normalizeReleaseNotes(info.releaseNotes),
         publishedAt: info.releaseDate ?? null,
         errorMessage: null,
       });

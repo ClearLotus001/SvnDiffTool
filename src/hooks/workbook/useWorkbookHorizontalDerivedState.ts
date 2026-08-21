@@ -64,6 +64,10 @@ export interface UseWorkbookHorizontalDerivedStateParams {
   baseWorkbookMetadata: WorkbookMetadataMap | null;
   mineWorkbookMetadata: WorkbookMetadataMap | null;
   showHiddenColumns: boolean;
+  autoCollapseUnchangedColumns?: boolean;
+  revealedAutoColumns?: number[];
+  protectedAutoCollapseColumns?: number[];
+  protectedAutoCollapseColumnCount?: number;
 }
 
 export interface UseWorkbookHorizontalDerivedStateResult {
@@ -118,6 +122,10 @@ export function useWorkbookHorizontalDerivedState({
   baseWorkbookMetadata,
   mineWorkbookMetadata,
   showHiddenColumns,
+  autoCollapseUnchangedColumns = false,
+  revealedAutoColumns = [],
+  protectedAutoCollapseColumns = [],
+  protectedAutoCollapseColumnCount = 0,
 }: UseWorkbookHorizontalDerivedStateParams): UseWorkbookHorizontalDerivedStateResult {
   const collapsibleSheetView = useMemo(
     () => getWorkbookCollapsibleSheetView({
@@ -367,14 +375,22 @@ export function useWorkbookHorizontalDerivedState({
       showHiddenColumns,
       compareMode,
       activeHiddenColumns,
+      autoCollapseUnchangedColumns,
+      revealedAutoColumns,
+      protectedAutoCollapseColumns,
+      protectedAutoCollapseColumnCount,
     ),
     [
       activeHiddenColumns,
       activeWorkbookSection?.maxColumns,
       activeWorkbookSection?.name,
       baseWorkbookMetadata,
+      autoCollapseUnchangedColumns,
       compareMode,
       mineWorkbookMetadata,
+      protectedAutoCollapseColumns,
+      protectedAutoCollapseColumnCount,
+      revealedAutoColumns,
       sectionRows,
       showHiddenColumns,
     ],

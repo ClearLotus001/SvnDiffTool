@@ -49,6 +49,7 @@ import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
 import { useAppStore } from '@/store/appStore';
 import { createWorkbookSelectionState } from '@/utils/workbook/workbookSelectionState';
 import { revealWorkbookSelection } from '@/utils/workbook/workbookManualVisibility';
+import { getWorkbookSearchableContentStart } from '@/utils/workbook/workbookDisplay';
 
 interface UseAppViewModelArgs {
   t: TranslationFn;
@@ -60,6 +61,10 @@ interface UseAppViewModelArgs {
 const WORKBOOK_FILE_EXTENSION_RE = /\.(xlsx|xlsm|xltx|xltm|xlsb|xls)$/i;
 const EMPTY_SEARCH_MATCHES: SearchMatch[] = [];
 const EMPTY_SEARCHABLE_LINES: string[] = [];
+const EMPTY_SEARCHABLE_LINE_PROJECTION = {
+  lines: EMPTY_SEARCHABLE_LINES,
+  lineStartOffsets: null,
+};
 const EMPTY_MODIFIED_WORKBOOK_SHEET_NAMES = new Set<string>();
 const SEARCH_REQUEST_DEBOUNCE_MS = 90;
 
@@ -260,22 +265,27 @@ export default function useAppViewModel({
     () => (shouldBuildWorkbookLineSheetContexts ? buildWorkbookLineSheetContexts(diffLines) : []),
     [diffLines, shouldBuildWorkbookLineSheetContexts],
   );
-  const searchableLines = useMemo(() => {
-    if (!hasSearchQuery) return EMPTY_SEARCHABLE_LINES;
+  const searchableLineProjection = useMemo(() => {
+    if (!hasSearchQuery) return EMPTY_SEARCHABLE_LINE_PROJECTION;
     const limitToActiveWorkbookSheet = isWorkbookCandidate
       && searchWorkbookScope === 'sheet'
       && Boolean(activeWorkbookSheetName)
       && workbookLineSheetContexts.length > 0;
-    return diffLines.map((line, lineIdx) => (
-      !limitToActiveWorkbookSheet
-      || resolveWorkbookSheetNameForLineContext({
-        line,
-        context: workbookLineSheetContexts[lineIdx],
-        preferredSheetName: activeWorkbookSheetName,
-      }) === activeWorkbookSheetName
-        ? getSearchableLineContent(line)
-        : ''
-    ));
+    const lines = diffLines.map((line, lineIdx) => {
+      const isLineInSearchScope = !limitToActiveWorkbookSheet
+        || resolveWorkbookSheetNameForLineContext({
+          line,
+          context: workbookLineSheetContexts[lineIdx],
+          preferredSheetName: activeWorkbookSheetName,
+        }) === activeWorkbookSheetName;
+      return isLineInSearchScope ? getSearchableLineContent(line) : '';
+    });
+    return {
+      lines,
+      lineStartOffsets: isWorkbookCandidate
+        ? lines.map(getWorkbookSearchableContentStart)
+        : null,
+    };
   }, [
     activeWorkbookSheetName,
     diffLines,
@@ -301,11 +311,15 @@ export default function useAppViewModel({
     const timeoutId = window.setTimeout(() => {
       if (seq !== searchSeqRef.current) return;
       setIsSearching(true);
-      void computeSearchMatchesAsync(searchableLines, {
-        query: searchQ,
-        isRegex: searchRx,
-        isCaseSensitive: searchCs,
-      }).then((result) => {
+      void computeSearchMatchesAsync(
+        searchableLineProjection.lines,
+        {
+          query: searchQ,
+          isRegex: searchRx,
+          isCaseSensitive: searchCs,
+        },
+        searchableLineProjection.lineStartOffsets,
+      ).then((result) => {
         if (seq !== searchSeqRef.current) return;
         const matches = result.matches;
         setIsSearching(false);
@@ -341,7 +355,7 @@ export default function useAppViewModel({
     searchPattern,
     searchQ,
     searchRx,
-    searchableLines,
+    searchableLineProjection,
     workbookLineSheetContexts,
   ]);
 

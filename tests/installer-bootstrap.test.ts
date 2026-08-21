@@ -290,6 +290,17 @@ test('release workflow publishes commit notes for the in-app updater', () => {
   assert.match(workflow, /gh release edit \$currentTag --notes-file -/);
 });
 
+test('an up-to-date check keeps the latest GitHub release notes visible', () => {
+  const updaterSource = readWindowsUpdaterSource();
+  const notAvailableHandler = updaterSource.match(
+    /autoUpdater\.on\('update-not-available',[\s\S]*?autoUpdater\.on\('download-progress'/,
+  )?.[0] ?? '';
+
+  assert.match(notAvailableHandler, /releaseName: info\.releaseName \?\? info\.version \?\? null/);
+  assert.match(notAvailableHandler, /releaseNotes: normalizeReleaseNotes\(info\.releaseNotes\)/);
+  assert.doesNotMatch(notAvailableHandler, /releaseNotes: null/);
+});
+
 test('installer uses a visible manual-overwrite summary without double-confirming in-app updates', () => {
   const script = readInstallerScript();
 

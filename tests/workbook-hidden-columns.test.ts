@@ -6,6 +6,17 @@ import { createWorkbookRowLine, createWorkbookSheetLine } from '../src/utils/wor
 import { computeWorkbookDiff } from '../src/engine/workbook/workbookDiff';
 import { getWorkbookSections } from '../src/utils/workbook/workbookSections';
 import { buildWorkbookSectionRowIndex } from '../src/utils/workbook/workbookSheetIndex';
+import {
+  formatWorkbookHiddenColumnMarkerCount,
+  getWorkbookHiddenColumnMarkerWidth,
+} from '../src/utils/workbook/workbookHiddenColumnVisuals';
+
+test('hidden column marker uses a neutral count label and scales for large groups', () => {
+  assert.equal(formatWorkbookHiddenColumnMarkerCount(5), '5');
+  assert.equal(formatWorkbookHiddenColumnMarkerCount(-2), '0');
+  assert.equal(getWorkbookHiddenColumnMarkerWidth(5), 36);
+  assert.ok(getWorkbookHiddenColumnMarkerWidth(10_000) > getWorkbookHiddenColumnMarkerWidth(5));
+});
 
 test('buildWorkbookSheetPresentation can include hidden columns when requested', () => {
   const base = [
@@ -63,7 +74,65 @@ test('buildWorkbookSheetPresentation keeps covered merged columns visible to avo
 
   const withoutMetadata = buildWorkbookSheetPresentation(rows, 'Thing', null, null, 2, false);
   const withMetadata = buildWorkbookSheetPresentation(rows, 'Thing', metadata, metadata, 2, false);
+  const withAutoCollapse = buildWorkbookSheetPresentation(
+    rows,
+    'Thing',
+    metadata,
+    metadata,
+    2,
+    false,
+    'strict',
+    [],
+    true,
+  );
 
   assert.deepEqual(withoutMetadata.visibleColumns, [0]);
   assert.deepEqual(withMetadata.visibleColumns, [0, 1]);
+  assert.deepEqual(withAutoCollapse.visibleColumns, [0, 1]);
+  assert.deepEqual(withAutoCollapse.autoCollapsedColumns, []);
+});
+
+test('buildWorkbookSheetPresentation auto-collapses unchanged column runs and preserves changed columns', () => {
+  const base = [
+    createWorkbookSheetLine('Thing'),
+    createWorkbookRowLine(1, ['A', 'B', 'C', 'D', 'E', 'F', 'G']),
+    createWorkbookRowLine(2, ['a', 'b', 'c', 'before', 'e', 'f', 'g']),
+  ].join('\n');
+  const mine = [
+    createWorkbookSheetLine('Thing'),
+    createWorkbookRowLine(1, ['A', 'B', 'C', 'D', 'E', 'F', 'G']),
+    createWorkbookRowLine(2, ['a', 'b', 'c', 'after', 'e', 'f', 'g']),
+  ].join('\n');
+  const diffLines = computeWorkbookDiff(base, mine);
+  const sections = getWorkbookSections(diffLines);
+  const rows = buildWorkbookSectionRowIndex(diffLines, sections).get('Thing')?.rows ?? [];
+
+  const collapsed = buildWorkbookSheetPresentation(
+    rows,
+    'Thing',
+    null,
+    null,
+    7,
+    false,
+    'strict',
+    [],
+    true,
+  );
+  const revealed = buildWorkbookSheetPresentation(
+    rows,
+    'Thing',
+    null,
+    null,
+    7,
+    false,
+    'strict',
+    [],
+    true,
+    [1],
+  );
+
+  assert.deepEqual(collapsed.autoCollapsedColumns, [1, 5]);
+  assert.deepEqual(collapsed.visibleColumns, [0, 2, 3, 4, 6]);
+  assert.deepEqual(revealed.autoCollapsedColumns, [5]);
+  assert.deepEqual(revealed.visibleColumns, [0, 1, 2, 3, 4, 6]);
 });

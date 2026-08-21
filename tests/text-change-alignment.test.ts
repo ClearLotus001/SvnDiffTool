@@ -233,3 +233,25 @@ test('scanMatchesInSearchableLines counts all matches while bounding materialize
   assert.equal(result.matches.length, 3);
   assert.equal(result.truncated, true);
 });
+
+test('scanMatchesInSearchableLines skips protocol prefixes and preserves source offsets', () => {
+  const rowLine = '@@row\t12\twow';
+  const sheetLine = '@@sheet\tWow';
+  const contentStart = rowLine.indexOf('wow');
+  const pattern = buildSearchPattern('w', { isRegex: false, isCaseSensitive: false });
+  const result = scanMatchesInSearchableLines(
+    [rowLine, sheetLine],
+    pattern,
+    Number.POSITIVE_INFINITY,
+    [contentStart, sheetLine.length],
+  );
+
+  assert.equal(result.totalCount, 2);
+  assert.deepEqual(
+    result.matches.map((match) => ({ lineIdx: match.lineIdx, start: match.start, end: match.end })),
+    [
+      { lineIdx: 0, start: contentStart, end: contentStart + 1 },
+      { lineIdx: 0, start: contentStart + 2, end: contentStart + 3 },
+    ],
+  );
+});

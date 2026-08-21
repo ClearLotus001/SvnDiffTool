@@ -15,6 +15,7 @@ interface SearchOptions {
 interface TextSearchWorkerSetLinesRequest {
   type: 'set-lines';
   lines: string[];
+  lineStartOffsets: number[] | null;
 }
 
 interface TextSearchWorkerSearchRequest {
@@ -41,21 +42,29 @@ type TextSearchWorkerResponse = TextSearchWorkerSuccess | TextSearchWorkerFailur
 
 interface TextSearchRequestInput {
   searchableLines: string[];
+  lineStartOffsets: number[] | null;
   options: SearchOptions;
 }
 
 function computeSearchMatchesSync({
   searchableLines,
+  lineStartOffsets,
   options,
 }: TextSearchRequestInput): SearchScanResult {
   const pattern = buildSearchPattern(options.query, {
     isRegex: options.isRegex,
     isCaseSensitive: options.isCaseSensitive,
   });
-  return scanMatchesInSearchableLines(searchableLines, pattern);
+  return scanMatchesInSearchableLines(
+    searchableLines,
+    pattern,
+    undefined,
+    lineStartOffsets,
+  );
 }
 
 let workerSearchableLines: string[] | null = null;
+let workerLineStartOffsets: number[] | null = null;
 
 const textSearchWorkerClient = createLatestWorkerClient<
   TextSearchRequestInput,
@@ -68,13 +77,18 @@ const textSearchWorkerClient = createLatestWorkerClient<
     { type: 'module' },
   ),
   beforeRequest: (worker, input) => {
-    if (workerSearchableLines === input.searchableLines) return;
+    if (
+      workerSearchableLines === input.searchableLines
+      && workerLineStartOffsets === input.lineStartOffsets
+    ) return;
 
     worker.postMessage({
       type: 'set-lines',
       lines: input.searchableLines,
+      lineStartOffsets: input.lineStartOffsets,
     } satisfies TextSearchWorkerSetLinesRequest);
     workerSearchableLines = input.searchableLines;
+    workerLineStartOffsets = input.lineStartOffsets;
   },
   buildRequest: (requestId, input) => ({
     type: 'search',
@@ -95,6 +109,7 @@ const textSearchWorkerClient = createLatestWorkerClient<
   workerMessageErrorMessage: 'Failed to receive search worker result.',
   onDispose: () => {
     workerSearchableLines = null;
+    workerLineStartOffsets = null;
   },
 });
 
@@ -105,9 +120,10 @@ scheduleWorkerWarmup(() => {
 export function computeSearchMatchesAsync(
   searchableLines: string[],
   options: SearchOptions,
+  lineStartOffsets: number[] | null = null,
 ): Promise<SearchScanResult> {
   if (!options.query) {
     return Promise.resolve({ matches: [], totalCount: 0, truncated: false });
   }
-  return textSearchWorkerClient.compute({ searchableLines, options });
+  return textSearchWorkerClient.compute({ searchableLines, lineStartOffsets, options });
 }

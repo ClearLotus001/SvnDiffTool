@@ -11,6 +11,7 @@ interface CollapseJumpButtonProps {
   currentIndex: number;
   totalCount: number;
   storageKey?: string;
+  contextLabel?: string;
 }
 
 interface FloatingPosition {
@@ -59,6 +60,7 @@ const CollapseJumpButton = memo(({
   currentIndex,
   totalCount,
   storageKey,
+  contextLabel = '',
 }: CollapseJumpButtonProps) => {
   const { t } = useI18n();
   const anchorRef = useRef<HTMLDivElement | null>(null);
@@ -266,6 +268,13 @@ const CollapseJumpButton = memo(({
   const statusText = currentIndex > 0
     ? t('collapseJumpStatus', { current: currentIndex, total: totalCount })
     : t('collapseJumpStatus', { current: 1, total: totalCount });
+  const contextText = contextLabel
+    ? t('collapseJumpSheetContext', { sheet: contextLabel })
+    : '';
+  const previousTitle = t('collapseJumpPrevTitle');
+  const nextTitle = t('collapseJumpNextTitle');
+  const previousAriaLabel = contextText ? `${previousTitle} · ${contextText} · ${statusText}` : previousTitle;
+  const nextAriaLabel = contextText ? `${nextTitle} · ${contextText} · ${statusText}` : nextTitle;
   const activeDockSide = snapPreview.horizontal ?? dockedHorizontal;
 
   const anchorStyle = {
@@ -451,21 +460,23 @@ const CollapseJumpButton = memo(({
         <div style={panelShellStyle}>
           <Tooltip content={
             <div className="grid gap-0.5">
-              <span>{t('collapseJumpPrevTitle')}</span>
+              <span>{previousTitle}</span>
+              {contextText && <span className="text-text-primary text-[11px] font-semibold">{contextText}</span>}
               <span className="text-text-secondary text-[11px]">{statusText}</span>
             </div>
           } placement="top">
-            <button type="button" onClick={onPrev} aria-label={t('collapseJumpPrevTitle')} style={buttonStyle}>
+            <button type="button" onClick={onPrev} aria-label={previousAriaLabel} style={buttonStyle}>
               <ChevronUp size={14} />
             </button>
           </Tooltip>
           <Tooltip content={
             <div className="grid gap-0.5">
-              <span>{t('collapseJumpNextTitle')}</span>
+              <span>{nextTitle}</span>
+              {contextText && <span className="text-text-primary text-[11px] font-semibold">{contextText}</span>}
               <span className="text-text-secondary text-[11px]">{statusText}</span>
             </div>
           } placement="top">
-            <button type="button" onClick={onNext} aria-label={t('collapseJumpNextTitle')} style={buttonStyle}>
+            <button type="button" onClick={onNext} aria-label={nextAriaLabel} style={buttonStyle}>
               <ChevronDown size={14} />
             </button>
           </Tooltip>

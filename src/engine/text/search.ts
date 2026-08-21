@@ -47,6 +47,7 @@ export function scanMatchesInSearchableLines(
   lines: readonly string[],
   pattern: RegExp | null,
   maxMaterializedMatches = MAX_MATERIALIZED_SEARCH_MATCHES,
+  lineStartOffsets: readonly number[] | null = null,
 ): SearchScanResult {
   if (!pattern) return { matches: [], totalCount: 0, truncated: false };
   const results: SearchMatch[] = [];
@@ -56,17 +57,23 @@ export function scanMatchesInSearchableLines(
   for (let lineIdx = 0; lineIdx < lines.length; lineIdx += 1) {
     const content = lines[lineIdx] ?? '';
     if (!content) continue;
+    const requestedStartOffset = lineStartOffsets?.[lineIdx] ?? 0;
+    const startOffset = Number.isFinite(requestedStartOffset)
+      ? Math.max(0, Math.min(content.length, Math.floor(requestedStartOffset)))
+      : 0;
+    const searchableContent = startOffset > 0 ? content.slice(startOffset) : content;
+    if (!searchableContent) continue;
 
     pattern.lastIndex = 0;
     try {
       let match: RegExpExecArray | null;
-      while ((match = pattern.exec(content)) !== null) {
+      while ((match = pattern.exec(searchableContent)) !== null) {
         totalCount += 1;
         if (results.length < materializedLimit) {
           results.push({
             lineIdx,
-            start: match.index,
-            end: match.index + match[0].length,
+            start: startOffset + match.index,
+            end: startOffset + match.index + match[0].length,
             workbookTarget: null,
           });
         }

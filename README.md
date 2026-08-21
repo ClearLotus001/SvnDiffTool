@@ -147,4 +147,4 @@ git push origin vX.Y.Z
 
 ## License
 
-仓库目前未包含许可证文件。在添加明确许可证前，默认保留所有权利。
+本项目基于 [MIT License](./LICENSE) 开源。

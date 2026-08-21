@@ -147,4 +147,4 @@ The current release focuses on reviewing changes. Directory comparison, three-wa
 
 ## License
 
-No license file is currently included. All rights are reserved until an explicit license is added.
+This project is licensed under the [MIT License](./LICENSE).

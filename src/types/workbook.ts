@@ -160,6 +160,8 @@ export interface WorkbookSheetPresentation {
   allColumns: number[];
   visibleColumns: number[];
   hiddenColumnSegments: WorkbookHiddenColumnSegment[];
+  autoCollapsedColumns: number[];
+  autoCollapsedColumnSegments: WorkbookHiddenColumnSegment[];
   baseMergeRanges: WorkbookMergeRange[];
   mineMergeRanges: WorkbookMergeRange[];
 }

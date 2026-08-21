@@ -62,6 +62,20 @@ function buildSearchSnippet(content: string, start: number, end: number): string
   return `${snippetStart > 0 ? SEARCH_SNIPPET_ELLIPSIS : ''}${snippet}${snippetEnd < content.length ? SEARCH_SNIPPET_ELLIPSIS : ''}`;
 }
 
+function buildWorkbookLinePreview(
+  parsedLine: ReturnType<typeof parseWorkbookDisplayLine>,
+): string {
+  if (!parsedLine) return '';
+  if (parsedLine.kind === 'sheet') return normalizeSearchPreview(parsedLine.sheetName);
+
+  return normalizeSearchPreview(
+    parsedLine.cells
+      .map((cell) => cell.value || cell.formula)
+      .filter(Boolean)
+      .join('\t'),
+  );
+}
+
 function createSearchResultItem(
   match: SearchMatch,
   index: number,
@@ -97,7 +111,9 @@ function createSearchResultItem(
       || '',
     )
     : '';
-  const preview = workbookPreview || buildSearchSnippet(workbookContent || '', match.start, match.end);
+  const preview = parsedWorkbookLine
+    ? workbookPreview || buildWorkbookLinePreview(parsedWorkbookLine)
+    : buildSearchSnippet(workbookContent || '', match.start, match.end);
   const detail = workbookTarget?.sheetName
     ? [
       workbookTarget.sheetName,

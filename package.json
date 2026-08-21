@@ -1,8 +1,9 @@
 {
   "name": "versora",
-  "version": "1.0.30",
+  "version": "1.0.31",
   "description": "Versora — a focused comparison workspace for files, workbooks, Git, and SVN",
   "author": "ClearLotus",
+  "license": "MIT",
   "main": "dist-electron/electron/main.js",
   "repository": {
     "type": "git",

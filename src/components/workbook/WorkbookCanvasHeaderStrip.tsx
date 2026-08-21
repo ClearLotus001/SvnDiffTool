@@ -25,9 +25,12 @@ import {
 } from '@/utils/workbook/workbookMergeLayout';
 import { createWorkbookCanvasBorderRegistry } from '@/utils/workbook/workbookCanvasBorders';
 import WorkbookAnchorTooltip, { type WorkbookAnchorTooltipState } from '@/components/workbook/WorkbookAnchorTooltip';
+import {
+  formatWorkbookHiddenColumnMarkerCount,
+  getWorkbookHiddenColumnMarkerWidth,
+} from '@/utils/workbook/workbookHiddenColumnVisuals';
 
 type WorkbookCanvasHeaderMode = 'single' | 'paired-wide' | 'paired-compact';
-const HIDDEN_MARKER_MIN_WIDTH = 24;
 const HIDDEN_MARKER_HEIGHT = 18;
 
 interface ColumnSelectionRequestMeta {
@@ -78,6 +81,20 @@ function getSelectionModeFromMouseEvent(event: Pick<React.MouseEvent<HTMLCanvasE
   if (event.shiftKey) return 'range';
   if (event.ctrlKey || event.metaKey) return 'toggle';
   return 'replace';
+}
+
+function drawCompressionChevron(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  direction: 'left' | 'right',
+) {
+  const directionScale = direction === 'right' ? 1 : -1;
+  ctx.beginPath();
+  ctx.moveTo(x - (2 * directionScale), y - 3);
+  ctx.lineTo(x + (1.5 * directionScale), y);
+  ctx.lineTo(x - (2 * directionScale), y + 3);
+  ctx.stroke();
 }
 
 const WorkbookCanvasHeaderStrip = memo(({
@@ -153,7 +170,7 @@ const WorkbookCanvasHeaderStrip = memo(({
 
       if (boundaryX == null) return [];
 
-      const width = Math.max(HIDDEN_MARKER_MIN_WIDTH, 14 + (String(segment.count).length * 7));
+      const width = getWorkbookHiddenColumnMarkerWidth(segment.count);
       if (boundaryX < contentLeft - width || boundaryX > contentRight + width) return [];
 
       const left = Math.max(
@@ -442,18 +459,48 @@ const WorkbookCanvasHeaderStrip = memo(({
       }
 
       resolveHiddenIndicatorLayouts(currentScrollLeft).forEach((indicator) => {
-        ctx.fillStyle = T.bg0;
-        ctx.strokeStyle = T.acc2;
+        const hoverKey = `${sheetName}:${indicator.segment.startCol}:${indicator.segment.count}`;
+        const isHovered = hiddenColumnHover?.key === hoverKey;
+        const markerColor = isHovered ? T.acc2 : T.border2;
+        const markerTextColor = isHovered ? T.acc2 : T.t0;
+        const centerX = indicator.left + (indicator.width / 2);
+        const centerY = indicator.top + (indicator.height / 2);
+        const label = formatWorkbookHiddenColumnMarkerCount(indicator.segment.count);
+        const fillGradient = ctx.createLinearGradient(
+          indicator.left,
+          indicator.top,
+          indicator.left,
+          indicator.top + indicator.height,
+        );
+        fillGradient.addColorStop(0, T.bg0);
+        fillGradient.addColorStop(1, T.bg2);
+
+        ctx.save();
+        ctx.fillStyle = fillGradient;
+        ctx.strokeStyle = markerColor;
         ctx.lineWidth = 1;
+        ctx.setLineDash(isHovered ? [] : [3, 2]);
+        ctx.shadowColor = `${markerColor}${isHovered ? '44' : '22'}`;
+        ctx.shadowBlur = isHovered ? 6 : 3;
         ctx.beginPath();
         ctx.roundRect(indicator.left, indicator.top, indicator.width, indicator.height, 999);
         ctx.fill();
         ctx.stroke();
-        ctx.fillStyle = T.acc2;
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = markerTextColor;
         ctx.font = `${Math.max(10, sizes.header - 1)}px ${FONT_CODE}`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(`+${indicator.segment.count}`, indicator.left + (indicator.width / 2), indicator.top + (indicator.height / 2));
+        ctx.fillText(label, centerX, centerY + 0.25);
+
+        ctx.strokeStyle = markerColor;
+        ctx.lineWidth = isHovered ? 1.5 : 1.25;
+        drawCompressionChevron(ctx, centerX - 10, centerY, isHovered ? 'left' : 'right');
+        drawCompressionChevron(ctx, centerX + 10, centerY, isHovered ? 'right' : 'left');
+        ctx.restore();
       });
 
       ctx.restore();
@@ -476,6 +523,7 @@ const WorkbookCanvasHeaderStrip = memo(({
     fixedSide,
     freezeColumnCount,
     headerColumnPartition,
+    hiddenColumnHover?.key,
     hiddenColumnSegments,
     columnLayoutByColumn,
     mode,

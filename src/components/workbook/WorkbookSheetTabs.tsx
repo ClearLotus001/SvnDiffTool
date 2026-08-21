@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Menu } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Menu } from 'lucide-react';
 import { getWorkbookFontScale } from '@/constants/typography';
 import Tooltip from '@/components/shared/Tooltip';
 import { useI18n } from '@/context/i18n';
@@ -10,6 +10,10 @@ import {
   resolveWorkbookSectionIndicatorTone,
 } from '@/utils/diff/diffIndicatorVisuals';
 import type { WorkbookSection } from '@/utils/workbook/workbookSections';
+import {
+  buildWorkbookSheetTabItems,
+  type WorkbookCollapsedSheetTabItem,
+} from '@/utils/workbook/workbookAutoCollapse';
 
 interface WorkbookSheetTabsProps {
   sections: WorkbookSection[];
@@ -17,6 +21,8 @@ interface WorkbookSheetTabsProps {
   onSelect: (index: number) => void;
   fontSize: number;
   modifiedSheetNames?: ReadonlySet<string>;
+  collapseUnchanged?: boolean;
+  onCollapsedGroupsChange?: ((groups: WorkbookCollapsedSheetTabItem[]) => void) | undefined;
 }
 
 const EMPTY_MODIFIED_SHEET_NAMES = new Set<string>();
@@ -28,12 +34,37 @@ const WorkbookSheetTabs = memo(({
   onSelect,
   fontSize,
   modifiedSheetNames = EMPTY_MODIFIED_SHEET_NAMES,
+  collapseUnchanged = false,
+  onCollapsedGroupsChange,
 }: WorkbookSheetTabsProps) => {
   const { t } = useI18n();
   const sizes = useMemo(() => getWorkbookFontScale(fontSize), [fontSize]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [expandedCollapseKeys, setExpandedCollapseKeys] = useState<Set<string>>(() => new Set());
+  const sheetTabItems = useMemo(
+    () => buildWorkbookSheetTabItems(sections, {
+      collapseUnchanged,
+      activeIndex,
+      modifiedSheetNames,
+      expandedCollapseKeys,
+    }),
+    [activeIndex, collapseUnchanged, expandedCollapseKeys, modifiedSheetNames, sections],
+  );
+  const collapsedGroups = useMemo(
+    () => sheetTabItems.filter((item): item is WorkbookCollapsedSheetTabItem => item.kind === 'collapse'),
+    [sheetTabItems],
+  );
+
+  useEffect(() => {
+    if (collapseUnchanged) return;
+    setExpandedCollapseKeys(new Set());
+  }, [collapseUnchanged]);
+
+  useEffect(() => {
+    onCollapsedGroupsChange?.(collapsedGroups);
+  }, [collapsedGroups, onCollapsedGroupsChange]);
 
   const isModifiedSection = (section: WorkbookSection) => (
     section.changeType === 'equal' && modifiedSheetNames.has(section.name)
@@ -233,7 +264,55 @@ const WorkbookSheetTabs = memo(({
         ref={scrollRef}
         className={`flex-1 min-w-0 ${SCROLL_RAIL_CLASS}`}>
         <div className="inline-flex items-end gap-1 min-w-max pr-1">
-          {sections.map((section, index) => {
+          {sheetTabItems.map((item) => {
+            if (item.kind === 'collapse') {
+              const label = t('workbookCollapsedSheetsLabel', { count: item.count });
+              return (
+                <Tooltip key={item.key} content={label} maxWidth={220}>
+                  <button
+                    type="button"
+                    data-testid="workbook-sheet-collapse"
+                    data-collapse-visual="compressed-range"
+                    data-collapse-density="compact"
+                    data-collapse-arrows="wrap-count"
+                    aria-label={t('workbookCollapsedSheetsExpandTitle', { count: item.count })}
+                    onClick={() => setExpandedCollapseKeys((previous) => {
+                      const next = new Set(previous);
+                      next.add(item.key);
+                      return next;
+                    })}
+                    className="group h-[22px] mb-[3px] px-1 rounded-full border border-dashed cursor-pointer font-ui whitespace-nowrap shrink-0 inline-flex items-center gap-0.5 transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:translate-y-0 active:scale-[0.97]"
+                    style={{
+                      borderColor: cssVar('border2'),
+                      background: `linear-gradient(180deg, color-mix(in srgb, ${cssVar('border2')} 9%, ${cssVar('bg1')}) 0%, color-mix(in srgb, ${cssVar('border2')} 16%, ${cssVar('bg2')}) 100%)`,
+                      color: cssVar('t1'),
+                      fontSize: Math.max(10, sizes.ui - 1),
+                      fontWeight: 700,
+                      boxShadow: `inset 0 1px 0 color-mix(in srgb, ${cssVar('bg0')} 72%, transparent)`,
+                    }}>
+                    <ChevronRight
+                      aria-hidden="true"
+                      size={8}
+                      strokeWidth={2.4}
+                      className="shrink-0 opacity-60 transition-all duration-150 group-hover:opacity-90 group-hover:rotate-180"
+                    />
+                    <span
+                      className="min-w-[10px] text-center tabular-nums leading-none"
+                      style={{ color: cssVar('t0') }}>
+                      {item.count}
+                    </span>
+                    <ChevronLeft
+                      aria-hidden="true"
+                      size={8}
+                      strokeWidth={2.4}
+                      className="shrink-0 opacity-60 transition-all duration-150 group-hover:opacity-90 group-hover:rotate-180"
+                    />
+                  </button>
+                </Tooltip>
+              );
+            }
+
+            const { section, index } = item;
             const active = index === activeIndex;
             const modified = isModifiedSection(section);
             const indicatorTone = resolveSectionTone(section);

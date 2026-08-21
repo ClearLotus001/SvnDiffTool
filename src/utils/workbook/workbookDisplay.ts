@@ -61,6 +61,19 @@ export function createWorkbookRowLine(rowNumber: number, cells: Array<string | W
   return `${WORKBOOK_ROW_PREFIX}\t${rowNumber}\t${normalizedCells.join('\t')}`;
 }
 
+/**
+ * Returns the first offset that contains user-authored workbook content.
+ * Keeping the original line intact while searching from this offset preserves
+ * match coordinates without exposing the internal sheet/row protocol fields.
+ */
+export function getWorkbookSearchableContentStart(line: string): number {
+  if (line.startsWith(`${WORKBOOK_SHEET_PREFIX}\t`)) return line.length;
+  if (!line.startsWith(`${WORKBOOK_ROW_PREFIX}\t`)) return 0;
+
+  const rowNumberEnd = line.indexOf('\t', WORKBOOK_ROW_PREFIX.length + 1);
+  return rowNumberEnd >= 0 ? rowNumberEnd + 1 : line.length;
+}
+
 export function parseWorkbookDisplayLine(line: string): WorkbookDisplayLine | null {
   if (typeof line !== 'string') return null;
   const cached = parsedDisplayLineCache.get(line);

@@ -15,6 +15,7 @@ import type {
     WorkbookCompareMode,
     WorkbookDiffRegion,
     WorkbookFreezeState,
+    WorkbookHiddenColumnSegment,
     WorkbookHiddenStateBySheet,
     WorkbookHorizontalLayoutSnapshot,
     WorkbookMoveDirection,
@@ -32,7 +33,10 @@ import {
 import { useVirtual, ROW_H } from '@/hooks/virtualization/useVirtual';
 import { useVariableVirtual } from '@/hooks/virtualization/useVariableVirtual';
 import { useHorizontalVirtualColumns } from '@/hooks/virtualization/useHorizontalVirtualColumns';
-import { useCollapseNavigationState } from '@/hooks/diff/useCollapseNavigationState';
+import {
+  useWorkbookCollapseNavigationState,
+  type WorkbookRowCollapseNavigationTarget,
+} from '@/hooks/workbook/useWorkbookCollapseNavigationState';
 import { useWorkbookExpandedBlocksState } from '@/hooks/workbook/useWorkbookExpandedBlocksState';
 import { useWorkbookHorizontalViewportSync } from '@/hooks/workbook/useWorkbookHorizontalViewportSync';
 import { useWorkbookHorizontalNavigationEffects } from '@/hooks/workbook/useWorkbookHorizontalNavigationEffects';
@@ -46,6 +50,7 @@ import { useWorkbookHorizontalNavigationRows } from '@/hooks/workbook/useWorkboo
 import { useWorkbookHorizontalMiniMapState } from '@/hooks/workbook/useWorkbookHorizontalMiniMapState';
 import { useWorkbookHorizontalPerfStats } from '@/hooks/workbook/useWorkbookHorizontalPerfStats';
 import { useWorkbookHorizontalDerivedState } from '@/hooks/workbook/useWorkbookHorizontalDerivedState';
+import { useWorkbookAutoColumnCollapseState } from '@/hooks/workbook/useWorkbookAutoColumnCollapseState';
 import { LN_W } from '@/constants/layout';
 import { WORKBOOK_CELL_WIDTH } from '@/utils/workbook/workbookDisplay';
 import {
@@ -121,6 +126,7 @@ import {
 import { findNearestWorkbookVisibleItemIndex } from '@/utils/workbook/workbookRenderItemIndexes';
 import { buildWorkbookRenderIdentity } from '@/utils/workbook/workbookRenderIdentity';
 import { scrollElementForNavigation } from '@/utils/navigation/animatedScroll';
+import type { WorkbookCollapsedSheetTabItem } from '@/utils/workbook/workbookAutoCollapse';
 
 export interface WorkbookHorizontalPanelProps {
   diffLines: DiffLine[];
@@ -250,6 +256,7 @@ const WorkbookHorizontalPanel = memo(({
   const [hoveredCanvasCell, setHoveredCanvasCell] = useState<WorkbookCanvasHoverCell | null>(null);
   const [pendingScrollTarget, setPendingScrollTarget] = useState<{ lineIdx: number; align: 'start' | 'center' } | null>(null);
   const [hoveredFrozenRowsPaneSide, setHoveredFrozenRowsPaneSide] = useState<'left' | 'right' | null>(null);
+  const [collapsedSheetGroups, setCollapsedSheetGroups] = useState<WorkbookCollapsedSheetTabItem[]>([]);
   const suppressGuidedNavigationUntilRef = useRef(0);
   const lastFreezeSignatureRef = useRef<string | null>(null);
   const lastFrozenPaneAutoScrollKeyRef = useRef('');
@@ -412,6 +419,23 @@ const WorkbookHorizontalPanel = memo(({
     [activeWorkbookSection?.firstDataRowNumber, activeFreezeState],
   );
   const {
+    revealedColumns: revealedAutoColumns,
+    revealColumns: revealAutoColumns,
+  } = useWorkbookAutoColumnCollapseState(collapseCtx, activeWorkbookSection?.name ?? null);
+  const protectedAutoCollapseColumns = useMemo(() => {
+    const columns = new Set<number>();
+    [
+      selectedCell,
+      navigationTargetCell,
+      activeSearchMatch?.workbookTarget?.sheetName === activeWorkbookSection?.name
+        ? activeSearchMatch?.workbookTarget ?? null
+        : null,
+    ].forEach((target) => {
+      if (target?.colIndex != null && target.colIndex >= 0) columns.add(target.colIndex);
+    });
+    return [...columns].sort((left, right) => left - right);
+  }, [activeSearchMatch, activeWorkbookSection?.name, navigationTargetCell, selectedCell]);
+  const {
     hiddenRowNumberSet,
     rowBlocks,
     effectiveExpandedBlocks,
@@ -443,6 +467,10 @@ const WorkbookHorizontalPanel = memo(({
     baseWorkbookMetadata,
     mineWorkbookMetadata,
     showHiddenColumns,
+    autoCollapseUnchangedColumns: collapseCtx,
+    revealedAutoColumns,
+    protectedAutoCollapseColumns,
+    protectedAutoCollapseColumnCount: freezeColumnCount,
   });
   const rowVirtualHeights = items.length > 0 ? itemHeights : EMPTY_HEIGHTS;
   const rowEntryByRowNumber = renderModel.rowEntryByRowNumber;
@@ -1034,12 +1062,49 @@ const WorkbookHorizontalPanel = memo(({
     visibleColumns: sheetPresentation.visibleColumns,
   });
   const miniMapSegments = miniMapMeasured.value;
+  const rowCollapseNavigationTargets = useMemo<WorkbookRowCollapseNavigationTarget[]>(
+    () => items.flatMap((item, itemIndex) => item.kind === 'split-collapse'
+      ? [{
+          key: `${item.blockId}:${item.hiddenStart}:${item.hiddenEnd}`,
+          itemIndex,
+        }]
+      : []),
+    [items],
+  );
   const scrollToCollapseIndex = useCallback((idx: number, align: 'start' | 'center' = 'start') => {
     markProgrammaticScroll('left', 640);
     markProgrammaticScroll('right', 640);
     scrollToIndex(idx, align, 'smooth');
     requestAnimationFrame(() => syncScrollPosition('left'));
   }, [markProgrammaticScroll, scrollToIndex, syncScrollPosition]);
+  const handleNavigateCollapsedSheet = useCallback((group: WorkbookCollapsedSheetTabItem) => {
+    const section = workbookSections[group.startIndex];
+    if (!section) return;
+    onSelectionRequest({ target: null, reason: 'programmatic' });
+    onActiveWorkbookSheetChange(section.name);
+    leftScrollRef.current?.scrollTo({ top: 0, left: 0 });
+    rightScrollRef.current?.scrollTo({ top: 0, left: 0 });
+  }, [leftScrollRef, onActiveWorkbookSheetChange, onSelectionRequest, rightScrollRef, workbookSections]);
+  const handleNavigateCollapsedColumn = useCallback((segment: WorkbookHiddenColumnSegment) => {
+    const left = leftScrollRef.current;
+    const right = rightScrollRef.current;
+    if (!left || !right) return;
+    const boundaryColumn = segment.afterColumn ?? segment.beforeColumn;
+    const boundaryEntry = boundaryColumn != null
+      ? leftVirtualColumns.columnLayoutByColumn.get(boundaryColumn) ?? null
+      : null;
+    if (!boundaryEntry || boundaryEntry.position < freezeColumnCount) return;
+    markProgrammaticScroll('left', 640);
+    markProgrammaticScroll('right', 640);
+    scrollElementForNavigation(left, {
+      left: Math.max(0, boundaryEntry.offset - leftVirtualColumns.frozenWidth - (left.clientWidth / 2)),
+      behavior: 'smooth',
+      linkedElements: [right],
+    });
+  }, [freezeColumnCount, leftScrollRef, leftVirtualColumns.columnLayoutByColumn, leftVirtualColumns.frozenWidth, markProgrammaticScroll, rightScrollRef]);
+  const handleNavigateCollapsedRow = useCallback((target: WorkbookRowCollapseNavigationTarget) => {
+    scrollToCollapseIndex(target.itemIndex);
+  }, [scrollToCollapseIndex]);
   const {
     activeCollapseIndex,
     activeCollapsePosition,
@@ -1047,12 +1112,16 @@ const WorkbookHorizontalPanel = memo(({
     handleJumpToNextCollapse,
     handleJumpToPreviousCollapse,
     resetActiveCollapseNavigation,
-  } = useCollapseNavigationState({
-    items,
+  } = useWorkbookCollapseNavigationState({
+    scopeKey: activeSheetCacheKey,
+    sheetGroups: collapsedSheetGroups,
+    columnSegments: sheetPresentation.autoCollapsedColumnSegments,
+    rowTargets: rowCollapseNavigationTargets,
     startIdx,
     endIdx,
-    isCollapseItem: (item) => item.kind === 'split-collapse',
-    scrollToIndex: scrollToCollapseIndex,
+    onNavigateSheet: handleNavigateCollapsedSheet,
+    onNavigateColumn: handleNavigateCollapsedColumn,
+    onNavigateRow: handleNavigateCollapsedRow,
   });
 
   const perfStats = useWorkbookHorizontalPerfStats({
@@ -1274,8 +1343,9 @@ const WorkbookHorizontalPanel = memo(({
   }, [activeWorkbookSection, fontSize, onColumnWidthChange, sectionRows]);
   const handleRevealHiddenHeaderColumns = useCallback((columns: number[]) => {
     if (!activeWorkbookSection) return;
+    revealAutoColumns(activeWorkbookSection.name, columns);
     onRevealHiddenColumns(activeWorkbookSection.name, columns);
-  }, [activeWorkbookSection, onRevealHiddenColumns]);
+  }, [activeWorkbookSection, onRevealHiddenColumns, revealAutoColumns]);
   const handleRevealActiveSheetRows = useCallback((rowNumbers: number[]) => {
     if (!activeWorkbookSection) return;
     onRevealHiddenRows(activeWorkbookSection.name, rowNumbers);
@@ -1431,6 +1501,7 @@ const WorkbookHorizontalPanel = memo(({
           currentIndex={activeCollapsePosition >= 0 ? activeCollapsePosition + 1 : 0}
           totalCount={totalCollapseCount}
           storageKey="workbook-split-h"
+          contextLabel={activeWorkbookSection?.displayName ?? activeWorkbookSection?.name ?? ''}
         />
       )}
       miniMap={(
@@ -1455,6 +1526,8 @@ const WorkbookHorizontalPanel = memo(({
           onSelect={handleSelectSheet}
           fontSize={fontSize}
           modifiedSheetNames={modifiedSheetNames}
+          collapseUnchanged={collapseCtx}
+          onCollapsedGroupsChange={setCollapsedSheetGroups}
         />
       )}
     />

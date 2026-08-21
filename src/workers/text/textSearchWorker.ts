@@ -9,6 +9,7 @@ import {
 interface TextSearchWorkerSetLinesRequest {
   type: 'set-lines';
   lines: string[];
+  lineStartOffsets: number[] | null;
 }
 
 interface TextSearchWorkerSearchRequest {
@@ -36,11 +37,13 @@ interface TextSearchWorkerFailure {
 type TextSearchWorkerResponse = TextSearchWorkerSuccess | TextSearchWorkerFailure;
 
 let searchableLines: string[] = [];
+let lineStartOffsets: number[] | null = null;
 
 self.onmessage = (event: MessageEvent<TextSearchWorkerRequest>) => {
   const request = event.data;
   if (request.type === 'set-lines') {
     searchableLines = request.lines;
+    lineStartOffsets = request.lineStartOffsets;
     return;
   }
 
@@ -49,7 +52,12 @@ self.onmessage = (event: MessageEvent<TextSearchWorkerRequest>) => {
       isRegex: request.isRegex,
       isCaseSensitive: request.isCaseSensitive,
     });
-    const result = scanMatchesInSearchableLines(searchableLines, pattern);
+    const result = scanMatchesInSearchableLines(
+      searchableLines,
+      pattern,
+      undefined,
+      lineStartOffsets,
+    );
     const response: TextSearchWorkerResponse = {
       ok: true,
       requestId: request.requestId,
