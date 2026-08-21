@@ -190,6 +190,23 @@ test('installer splits location and integration settings into compact custom pag
   assert.match(script, /Function InstallerIntegrationPageCreate[\s\S]*CreateInstallerCard 32% 138u 68% 92u/);
 });
 
+test('installer option controls are explicitly shown above decorative card backgrounds', () => {
+  const script = readInstallerScript();
+
+  assert.match(
+    script,
+    /!macro ShowInstallerInteractiveControl HWND[\s\S]*EnableWindow \$\{HWND\} 1[\s\S]*ShowWindow \$\{HWND\} \$\{SW_SHOW\}[\s\S]*SetWindowPos\(p\$\{HWND\},p0/,
+  );
+  assert.match(
+    script,
+    /Function InstallerLocationPageCreate[\s\S]*ShowInstallerInteractiveControl \$InstallOptionsInstallDirText[\s\S]*ShowInstallerInteractiveControl \$InstallOptionsInstallBrowseButton[\s\S]*ShowInstallerInteractiveControl \$InstallOptionsDesktopShortcutCheckbox/,
+  );
+  assert.match(
+    script,
+    /Function InstallerIntegrationPageCreate[\s\S]*ShowInstallerInteractiveControl \$InstallOptionsDiffKeepRadio[\s\S]*ShowInstallerInteractiveControl \$InstallOptionsDiffAllRadio[\s\S]*ShowInstallerInteractiveControl \$InstallOptionsCacheParentText[\s\S]*ShowInstallerInteractiveControl \$InstallOptionsCacheBrowseButton/,
+  );
+});
+
 test('installer enlarges and anchors every native page without a header image gap', () => {
   const script = readInstallerScript();
 

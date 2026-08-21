@@ -36,6 +36,7 @@ Var InstallOptionsDiffTextRadio
 Var InstallOptionsDiffWorkbookRadio
 Var InstallOptionsDiffAllRadio
 Var InstallOptionsCacheParentText
+Var InstallOptionsCacheBrowseButton
 Var InstallOptionsDesktopShortcutCheckbox
 Var InstallerWidthDelta
 Var InstallerHeightDelta
@@ -141,6 +142,12 @@ Var InstallerOriginalHeight
 !macro StyleInstallerControl HWND FONT TEXTCOLOR BGCOLOR
   SendMessage ${HWND} ${WM_SETFONT} ${FONT} 1
   SetCtlColors ${HWND} ${TEXTCOLOR} ${BGCOLOR}
+!macroend
+
+!macro ShowInstallerInteractiveControl HWND
+  EnableWindow ${HWND} 1
+  ShowWindow ${HWND} ${SW_SHOW}
+  System::Call 'USER32::SetWindowPos(p${HWND},p0,i0,i0,i0,i0,i0x13)'
 !macroend
 
 LangString INSTALL_WELCOME_BADGE 1033 "VERSORA  /  VERSION ${VERSION}"
@@ -827,10 +834,12 @@ Function InstallerLocationPageCreate
   ${NSD_CreateText} 36% 46u 46% 20u "$INSTDIR"
   Pop $InstallOptionsInstallDirText
   !insertmacro StyleInstallerControl $InstallOptionsInstallDirText $InstallerFontMono "${COLOR_TEXT}" "${COLOR_PANEL}"
+  !insertmacro ShowInstallerInteractiveControl $InstallOptionsInstallDirText
   ${NSD_CreateButton} 84% 45u 12% 22u "$(INSTALL_OPTIONS_INSTALL_BROWSE)"
   Pop $InstallOptionsInstallBrowseButton
   SendMessage $InstallOptionsInstallBrowseButton ${WM_SETFONT} $InstallerFontSmallStrong 1
   ${NSD_OnClick} $InstallOptionsInstallBrowseButton InstallerOptionsBrowseInstallDir
+  !insertmacro ShowInstallerInteractiveControl $InstallOptionsInstallBrowseButton
   ${NSD_CreateLabel} 36% 78u 60% 26u "$(INSTALL_OPTIONS_INSTALL_HELP)"
   Pop $0
   !insertmacro StyleInstallerControl $0 $InstallerFontBody "${COLOR_MUTED}" "${COLOR_PANEL}"
@@ -850,6 +859,7 @@ Function InstallerLocationPageCreate
   ${Else}
     ${NSD_SetState} $InstallOptionsDesktopShortcutCheckbox ${BST_CHECKED}
   ${EndIf}
+  !insertmacro ShowInstallerInteractiveControl $InstallOptionsDesktopShortcutCheckbox
 
   nsDialogs::Show
 FunctionEnd
@@ -919,6 +929,10 @@ Function InstallerIntegrationPageCreate
   ${Else}
     ${NSD_SetState} $InstallOptionsDiffKeepRadio ${BST_CHECKED}
   ${EndIf}
+  !insertmacro ShowInstallerInteractiveControl $InstallOptionsDiffKeepRadio
+  !insertmacro ShowInstallerInteractiveControl $InstallOptionsDiffTextRadio
+  !insertmacro ShowInstallerInteractiveControl $InstallOptionsDiffWorkbookRadio
+  !insertmacro ShowInstallerInteractiveControl $InstallOptionsDiffAllRadio
 
   !insertmacro CreateInstallerCard 32% 138u 68% 92u "${COLOR_SUCCESS}"
 
@@ -932,10 +946,12 @@ Function InstallerIntegrationPageCreate
   ${NSD_CreateText} 36% 192u 46% 20u "$SelectedCacheParent"
   Pop $InstallOptionsCacheParentText
   !insertmacro StyleInstallerControl $InstallOptionsCacheParentText $InstallerFontMono "${COLOR_TEXT}" "${COLOR_PANEL}"
+  !insertmacro ShowInstallerInteractiveControl $InstallOptionsCacheParentText
   ${NSD_CreateButton} 84% 191u 12% 22u "$(INSTALL_OPTIONS_CACHE_BROWSE)"
-  Pop $1
-  SendMessage $1 ${WM_SETFONT} $InstallerFontSmallStrong 1
-  ${NSD_OnClick} $1 InstallerOptionsBrowseCacheParent
+  Pop $InstallOptionsCacheBrowseButton
+  SendMessage $InstallOptionsCacheBrowseButton ${WM_SETFONT} $InstallerFontSmallStrong 1
+  ${NSD_OnClick} $InstallOptionsCacheBrowseButton InstallerOptionsBrowseCacheParent
+  !insertmacro ShowInstallerInteractiveControl $InstallOptionsCacheBrowseButton
   ${NSD_CreateLabel} 36% 216u 60% 12u "$(INSTALL_OPTIONS_CACHE_HELP)"
   Pop $0
   !insertmacro StyleInstallerControl $0 $InstallerFontBody "${COLOR_MUTED}" "${COLOR_PANEL}"
