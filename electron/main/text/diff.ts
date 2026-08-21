@@ -11,7 +11,7 @@ import type {
   TextReplacementPair,
 } from '../types.js';
 import { computeCharDiff } from './myers.js';
-import { alignTextChangeBlock } from './textChangeAlignment.js';
+import { alignTextChangeBlock } from '../../../shared/textChangeAlignment.js';
 
 const MAX_LINES_FOR_DIFF = 50_000;
 const MAX_LCS_CANDIDATE_PAIRS = 4_000_000;

@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub(super) struct SheetInfo {
@@ -34,6 +35,7 @@ pub(crate) struct ZipWorkbookContext {
     archive: ZipArchive<File>,
     sheet_infos: Vec<SheetInfo>,
     shared_strings: SharedStringsStore,
+    sheet_xml_cache: HashMap<String, Arc<str>>,
     sheet_scan_cache: HashMap<String, CachedSheetScan>,
 }
 
@@ -68,6 +70,7 @@ impl ZipWorkbookContext {
             archive,
             sheet_infos,
             shared_strings,
+            sheet_xml_cache: HashMap::new(),
             sheet_scan_cache: HashMap::new(),
         })
     }
@@ -104,13 +107,21 @@ impl ZipWorkbookContext {
             .cloned()
     }
 
-    fn read_sheet_xml(&mut self, sheet_info: &SheetInfo) -> io::Result<String> {
-        super::read_zip_entry_to_string(&mut self.archive, &sheet_info.path).ok_or_else(|| {
-            io::Error::other(format!("Failed to read sheet xml '{}'", sheet_info.path))
-        })
+    fn read_sheet_xml(&mut self, sheet_info: &SheetInfo) -> io::Result<Arc<str>> {
+        if let Some(cached) = self.sheet_xml_cache.get(&sheet_info.name) {
+            return Ok(Arc::clone(cached));
+        }
+        let sheet_xml = super::read_zip_entry_to_string(&mut self.archive, &sheet_info.path)
+            .ok_or_else(|| {
+                io::Error::other(format!("Failed to read sheet xml '{}'", sheet_info.path))
+            })?;
+        let cached: Arc<str> = Arc::from(sheet_xml);
+        self.sheet_xml_cache
+            .insert(sheet_info.name.clone(), Arc::clone(&cached));
+        Ok(cached)
     }
 
-    pub(crate) fn read_sheet_xml_by_name(&mut self, sheet_name: &str) -> io::Result<String> {
+    pub(crate) fn read_sheet_xml_by_name(&mut self, sheet_name: &str) -> io::Result<Arc<str>> {
         let sheet_info = self.find_sheet_info(sheet_name).ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::NotFound,
@@ -118,6 +129,14 @@ impl ZipWorkbookContext {
             )
         })?;
         self.read_sheet_xml(&sheet_info)
+    }
+
+    pub(crate) fn remove_cached_sheet_xml(&mut self, sheet_name: &str) {
+        self.sheet_xml_cache.remove(sheet_name);
+    }
+
+    pub(crate) fn clear_sheet_scan_cache(&mut self) {
+        self.sheet_scan_cache.clear();
     }
 
     pub(crate) fn collect_semantic_fingerprints(
@@ -294,11 +313,7 @@ impl ZipWorkbookContext {
         for sheet_info in self.requested_sheet_infos(requested_sheet_names) {
             let sheet_start = profile::start();
             let sheet_xml = self.read_sheet_xml(&sheet_info)?;
-            let rows = scan_full_sheet_rows(
-                &sheet_xml,
-                &self.shared_strings,
-                FullRowsSink::new(compare_mode),
-            );
+            let rows = scan_full_sheet_rows(&sheet_xml, &self.shared_strings, FullRowsSink::new());
             let row_count = rows.len();
             let col_count = rows.iter().map(|row| row.cells.len()).max().unwrap_or(0);
             result.push(WorkbookSheetDiffEntry {

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { WorkbookCanvasHoverCell } from '@/components/workbook/WorkbookCanvasHoverTooltip';
+import { FONT_UI } from '@/constants/typography';
+import { isWorkbookCanvasTextTruncated } from '@/utils/workbook/workbookCanvasText';
 
 const WORKBOOK_HOVER_OPEN_DELAY_MS = 140;
 
@@ -20,6 +22,46 @@ export function isWorkbookCanvasPointerInsideHoverAnchor(
     && clientX < rect.right
     && clientY >= rect.top
     && clientY < rect.bottom;
+}
+
+export function resolveWorkbookCanvasHoverVisibility(
+  hover: WorkbookCanvasHoverCell | null,
+  fontSize: number,
+  measureText: (value: string) => number,
+): WorkbookCanvasHoverCell | null {
+  if (!hover) return null;
+  const lineHeight = Math.max(fontSize + 4, 16);
+  const maxLines = hover.wrapText
+    ? Math.max(1, Math.floor(Math.max(0, hover.anchorRect.height - 4) / lineHeight))
+    : 1;
+  const isTextTruncated = isWorkbookCanvasTextTruncated({
+    value: hover.displayValue ?? '',
+    maxWidth: Math.max(0, hover.anchorRect.width - 12),
+    maxLines,
+    wrapText: Boolean(hover.wrapText),
+    measureText,
+  });
+  if (!hover.compareCell && !isTextTruncated) return null;
+  return { ...hover, isTextTruncated };
+}
+
+export function resolveWorkbookCanvasHoverForCanvas(
+  canvas: HTMLCanvasElement,
+  hover: WorkbookCanvasHoverCell | null,
+  fontSize: number,
+): WorkbookCanvasHoverCell | null {
+  if (!hover) return null;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return hover.compareCell ? hover : null;
+  ctx.save();
+  ctx.font = `${fontSize}px ${FONT_UI}`;
+  const resolved = resolveWorkbookCanvasHoverVisibility(
+    hover,
+    fontSize,
+    value => ctx.measureText(value).width,
+  );
+  ctx.restore();
+  return resolved;
 }
 
 function useWorkbookCanvasHoverController(

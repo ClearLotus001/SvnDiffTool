@@ -30,6 +30,7 @@ import { logDebugTiming, writeExternalDiffDebugLog } from './logger.js';
 import {
   tryParseWorkbookWithRust,
   tryResolveWorkbookDiffWithRust,
+  tryResolveWorkbookDiffStreamWithRust,
   tryResolveWorkbookMetadataWithRust,
   runSvnBuffer,
 } from './rustBridge.js';
@@ -47,6 +48,7 @@ import { removeManagedTempFile, writeManagedTempFile } from '../runtimePaths.js'
 import { getLocalWorkbookPairCacheContext, resolveWorkingCopyPathForTarget } from './svnOperations.js';
 import type {
   FilePayload,
+  LocalWorkbookPairCacheContext,
   ReadFilePayloadOptions,
   ResolvedWorkbookCompareModePayload,
   SvnRevisionInfo,
@@ -59,6 +61,7 @@ const WORKBOOK_METADATA_ONLY_OPTIONS = {
   includeWorkbookBytes: false,
   includeWorkbookMetadata: true,
 } as const;
+const WORKBOOK_DUAL_MODE_PARSE_MAX_BYTES = 64 * 1024 * 1024;
 
 // ---------------------------------------------------------------------------
 // readFilePayload — read a file from the local filesystem (with caching)
@@ -460,6 +463,51 @@ export async function resolveWorkbookMetadataPairPayload(
 // Workbook diff resolution
 // ---------------------------------------------------------------------------
 
+function rememberWorkbookComparePayload(
+  cacheContext: LocalWorkbookPairCacheContext,
+  payload: ResolvedWorkbookCompareModePayload,
+): void {
+  const inlineStoredPayload = storeWorkbookCompareCachePayloadInline(payload);
+  rememberCacheEntry(workbookCompareCache, cacheContext.key, {
+    leftMtimeMs: cacheContext.leftMtimeMs,
+    rightMtimeMs: cacheContext.rightMtimeMs,
+    leftSize: cacheContext.leftSize,
+    rightSize: cacheContext.rightSize,
+    payload: inlineStoredPayload.payload,
+    memoryBytes: inlineStoredPayload.memoryBytes,
+  }, WORKBOOK_COMPARE_CACHE_LIMIT, WORKBOOK_COMPARE_CACHE_MAX_BYTES);
+
+  if (!shouldCompressWorkbookCompareCachePayload(inlineStoredPayload.estimatedMemoryBytes)) return;
+  void storeWorkbookCompareCachePayload(payload)
+    .then((storedPayload) => {
+      const current = workbookCompareCache.get(cacheContext.key);
+      if (
+        !current
+        || current.leftMtimeMs !== cacheContext.leftMtimeMs
+        || current.rightMtimeMs !== cacheContext.rightMtimeMs
+        || current.leftSize !== cacheContext.leftSize
+        || current.rightSize !== cacheContext.rightSize
+      ) {
+        return;
+      }
+      rememberCacheEntry(workbookCompareCache, cacheContext.key, {
+        leftMtimeMs: cacheContext.leftMtimeMs,
+        rightMtimeMs: cacheContext.rightMtimeMs,
+        leftSize: cacheContext.leftSize,
+        rightSize: cacheContext.rightSize,
+        payload: storedPayload.payload,
+        memoryBytes: storedPayload.memoryBytes,
+      }, WORKBOOK_COMPARE_CACHE_LIMIT, WORKBOOK_COMPARE_CACHE_MAX_BYTES);
+    })
+    .catch((error) => {
+      logMainWarn(
+        'workbook-compare-cache',
+        'background compression failed:',
+        error instanceof Error ? error.message : String(error),
+      );
+    });
+}
+
 function canUseDirectWorkbookDiff(
   basePath: string,
   minePath: string,
@@ -559,7 +607,77 @@ export async function resolveWorkbookCompareModePayload(
   }
 
   const resolver = (async (): Promise<ResolvedWorkbookCompareModePayload | null> => {
-    const directResult = canUseDirectWorkbookDiff(basePathCandidate, minePathCandidate, fileName)
+    const buildPayload = (
+      mode: WorkbookCompareMode,
+      result: {
+        diffLines: ResolvedWorkbookCompareModePayload['diffLines'];
+        workbookDelta: ResolvedWorkbookCompareModePayload['workbookDelta'];
+        baseMetadata: Exclude<ResolvedWorkbookCompareModePayload['baseMetadata'], undefined>;
+        mineMetadata: Exclude<ResolvedWorkbookCompareModePayload['mineMetadata'], undefined>;
+        metadataMs: number | null;
+      },
+      rustDiffMs: number,
+    ): ResolvedWorkbookCompareModePayload => ({
+      compareMode: mode,
+      diffLines: result.diffLines,
+      workbookDelta: result.workbookDelta,
+      baseMetadata: result.baseMetadata,
+      mineMetadata: result.mineMetadata,
+      perf: {
+        rustDiffMs,
+        metadataMs: result.metadataMs ?? 0,
+      },
+    });
+
+    const directDiffAvailable = canUseDirectWorkbookDiff(
+      basePathCandidate,
+      minePathCandidate,
+      fileName,
+    );
+    const shouldResolveBothModes = Boolean(
+      cacheContext
+      && directDiffAvailable
+      && (cacheContext.leftSize + cacheContext.rightSize) <= WORKBOOK_DUAL_MODE_PARSE_MAX_BYTES,
+    );
+
+    if (shouldResolveBothModes) {
+      const alternateMode: WorkbookCompareMode = compareMode === 'strict' ? 'content' : 'strict';
+      const alternateContext = await getLocalWorkbookPairCacheContext(
+        basePathCandidate,
+        minePathCandidate,
+        `compare:${alternateMode}`,
+      );
+      let sharedRustDiffMs = 0;
+      const primary = await tryResolveWorkbookDiffStreamWithRust(
+        basePathCandidate,
+        minePathCandidate,
+        compareMode,
+        (alternate) => {
+          if (!alternateContext || !alternate.diffLines) return;
+          rememberWorkbookComparePayload(
+            alternateContext,
+            buildPayload(
+              alternate.compareMode,
+              alternate,
+              sharedRustDiffMs || alternate.parseMs,
+            ),
+          );
+        },
+      );
+      if (primary.diffLines) {
+        sharedRustDiffMs = primary.parseMs;
+        const primaryPayload = buildPayload(compareMode, primary, primary.parseMs);
+        rememberWorkbookComparePayload(cacheContext!, primaryPayload);
+        logDebugTiming('workbook-compare-dual-mode:primary-ready', {
+          fileName,
+          requestedMode: compareMode,
+          rustDiffMs: Number(primary.parseMs.toFixed(1)),
+        });
+        return primaryPayload;
+      }
+    }
+
+    const directResult = directDiffAvailable
       ? await tryResolveWorkbookDiffWithRust(basePathCandidate, minePathCandidate, compareMode)
       : await withWorkbookDiffSources(
           basePathCandidate,
@@ -569,64 +687,10 @@ export async function resolveWorkbookCompareModePayload(
           fileName,
           (basePath, minePath) => tryResolveWorkbookDiffWithRust(basePath, minePath, compareMode),
         );
-
     if (!directResult?.diffLines) return null;
 
-    const payload: ResolvedWorkbookCompareModePayload = {
-      compareMode,
-      diffLines: directResult.diffLines,
-      workbookDelta: directResult.workbookDelta,
-      baseMetadata: directResult.baseMetadata,
-      mineMetadata: directResult.mineMetadata,
-      perf: {
-        rustDiffMs: directResult.parseMs,
-        metadataMs: directResult.metadataMs ?? 0,
-      },
-    };
-
-    if (cacheContext) {
-      const inlineStoredPayload = storeWorkbookCompareCachePayloadInline(payload);
-      rememberCacheEntry(workbookCompareCache, cacheContext.key, {
-        leftMtimeMs: cacheContext.leftMtimeMs,
-        rightMtimeMs: cacheContext.rightMtimeMs,
-        leftSize: cacheContext.leftSize,
-        rightSize: cacheContext.rightSize,
-        payload: inlineStoredPayload.payload,
-        memoryBytes: inlineStoredPayload.memoryBytes,
-      }, WORKBOOK_COMPARE_CACHE_LIMIT, WORKBOOK_COMPARE_CACHE_MAX_BYTES);
-
-      if (shouldCompressWorkbookCompareCachePayload(inlineStoredPayload.estimatedMemoryBytes)) {
-        void storeWorkbookCompareCachePayload(payload)
-          .then((storedPayload) => {
-            const current = workbookCompareCache.get(cacheContext.key);
-            if (
-              !current
-              || current.leftMtimeMs !== cacheContext.leftMtimeMs
-              || current.rightMtimeMs !== cacheContext.rightMtimeMs
-              || current.leftSize !== cacheContext.leftSize
-              || current.rightSize !== cacheContext.rightSize
-            ) {
-              return;
-            }
-            rememberCacheEntry(workbookCompareCache, cacheContext.key, {
-              leftMtimeMs: cacheContext.leftMtimeMs,
-              rightMtimeMs: cacheContext.rightMtimeMs,
-              leftSize: cacheContext.leftSize,
-              rightSize: cacheContext.rightSize,
-              payload: storedPayload.payload,
-              memoryBytes: storedPayload.memoryBytes,
-            }, WORKBOOK_COMPARE_CACHE_LIMIT, WORKBOOK_COMPARE_CACHE_MAX_BYTES);
-          })
-          .catch((error) => {
-            logMainWarn(
-              'workbook-compare-cache',
-              'background compression failed:',
-              error instanceof Error ? error.message : String(error),
-            );
-          });
-      }
-    }
-
+    const payload = buildPayload(compareMode, directResult, directResult.parseMs);
+    if (cacheContext) rememberWorkbookComparePayload(cacheContext, payload);
     return payload;
   })();
 

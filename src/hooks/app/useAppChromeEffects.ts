@@ -66,13 +66,16 @@ export default function useAppChromeEffects({
     }
     root.classList.add(THEME_CLASS_MAP[themeKey]);
     invalidateThemeTokensCache();
+    const T = getComputedThemeTokens(themeKey);
+    root.style.setProperty('--boot-bg', T.bg0);
+    root.style.setProperty('--boot-fg', T.t0);
   }, [themeKey]);
 
   // 原生窗口控件的标题栏颜色跟随主题
   useEffect(() => {
-    if (!isElectron || !usesNativeWindowControls || !window.svnDiff?.setTitleBarOverlay) return;
+    if (!isElectron || !usesNativeWindowControls || !window.versora?.setTitleBarOverlay) return;
     const T = getComputedThemeTokens(themeKey);
-    window.svnDiff.setTitleBarOverlay({
+    window.versora.setTitleBarOverlay({
       color: T.bg1,
       symbolColor: T.t0,
       height: 44,
@@ -108,6 +111,6 @@ export default function useAppChromeEffects({
   }, [settings]);
 
   useEffect(() => {
-    window.svnDiff?.saveStartupAppearance?.({ themeKey });
+    window.versora?.saveStartupAppearance?.({ themeKey });
   }, [themeKey]);
 }

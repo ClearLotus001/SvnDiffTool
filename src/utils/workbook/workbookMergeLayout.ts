@@ -169,27 +169,19 @@ function getWorkbookMergeRangesForRow(
 ): WorkbookMergeRange[] | null {
   let cachedRowIndex = workbookMergeRangeRowIndexCache.get(mergedRanges);
   if (!cachedRowIndex) {
-    const nextRowIndex = new Map<number, WorkbookMergeRange[]>();
-    mergedRanges.forEach((range) => {
-      for (let currentRow = range.startRow; currentRow <= range.endRow; currentRow += 1) {
-        const rangesForRow = nextRowIndex.get(currentRow);
-        if (rangesForRow) {
-          rangesForRow.push(range);
-          continue;
-        }
-        nextRowIndex.set(currentRow, [range]);
-      }
-    });
-    nextRowIndex.forEach((rangesForRow) => {
-      rangesForRow.sort((left, right) => (
-        left.startCol - right.startCol || left.endCol - right.endCol
-      ));
-    });
-    workbookMergeRangeRowIndexCache.set(mergedRanges, nextRowIndex);
-    cachedRowIndex = nextRowIndex;
+    cachedRowIndex = new Map<number, WorkbookMergeRange[]>();
+    workbookMergeRangeRowIndexCache.set(mergedRanges, cachedRowIndex);
   }
 
-  return cachedRowIndex.get(rowNumber) ?? null;
+  const cached = cachedRowIndex.get(rowNumber);
+  if (cached) return cached;
+  const rangesForRow = mergedRanges
+    .filter((range) => rowNumber >= range.startRow && rowNumber <= range.endRow)
+    .sort((left, right) => (
+      left.startCol - right.startCol || left.endCol - right.endCol
+    ));
+  cachedRowIndex.set(rowNumber, rangesForRow);
+  return rangesForRow.length > 0 ? rangesForRow : null;
 }
 
 function getWorkbookSelectionColumnSpan(

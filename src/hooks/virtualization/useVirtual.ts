@@ -23,6 +23,7 @@
 
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, type RefObject } from 'react';
 import type { VirtualState } from '@/types';
+import { scrollElementForNavigation } from '@/utils/navigation/animatedScroll';
 
 /**
  * Row height in pixels. MUST match the `height: ROW_H` in every row component.
@@ -37,6 +38,7 @@ export interface UseVirtualOptions {
   overscanMin?: number;
   overscanFactor?: number;
   syncKey?: string | number | null;
+  getScrollFollowers?: (() => readonly HTMLElement[]) | undefined;
 }
 
 export interface VirtualWindow extends VirtualState {
@@ -94,6 +96,7 @@ export function useVirtual(
   const overscanMin = options.overscanMin ?? DEFAULT_OVERSCAN_MIN;
   const overscanFactor = options.overscanFactor ?? DEFAULT_OVERSCAN_FACTOR;
   const syncKey = options.syncKey ?? null;
+  const getScrollFollowers = options.getScrollFollowers;
   const [viewH, setViewH] = useState(600);
   const [windowRange, setWindowRange] = useState<VirtualWindow>(() => computeVirtualWindow(
     count,
@@ -198,7 +201,12 @@ export function useVirtual(
     latestScrollTopRef.current = 0;
     const el = scrollRef.current;
     if (el && (el.scrollTop !== 0 || el.scrollLeft !== 0)) {
-      el.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      scrollElementForNavigation(el, {
+        top: 0,
+        left: 0,
+        behavior: 'auto',
+        linkedElements: getScrollFollowers?.(),
+      });
     }
     const nextRange = computeVirtualWindow(
       count,
@@ -210,7 +218,7 @@ export function useVirtual(
     );
     rangeRef.current = nextRange;
     setWindowRange(nextRange);
-  }, [count, overscanFactor, overscanMin, rowHeight, scrollRef, syncKey]);
+  }, [count, getScrollFollowers, overscanFactor, overscanMin, rowHeight, scrollRef, syncKey]);
 
   const effectiveWindowRange = useMemo(() => (
     syncKeyRef.current !== syncKey
@@ -236,16 +244,13 @@ export function useVirtual(
         ? Math.max(0, viewH / 2 - rowHeight / 2)
         : 60;
       const nextTop = Math.max(0, targetTop - offset);
-      const distance = Math.abs(el.scrollTop - nextTop);
-      const resolvedBehavior = behavior === 'smart'
-        ? (distance > Math.max(viewH * 4, rowHeight * 200) ? 'auto' : 'smooth')
-        : behavior;
-      el.scrollTo({
+      scrollElementForNavigation(el, {
         top: nextTop,
-        behavior: resolvedBehavior,
+        behavior,
+        linkedElements: getScrollFollowers?.(),
       });
     },
-    [scrollRef, viewH, rowHeight],
+    [getScrollFollowers, scrollRef, viewH, rowHeight],
   );
 
   const debug = useMemo<VirtualDebugInfo>(() => ({

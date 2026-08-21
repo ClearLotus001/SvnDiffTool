@@ -11,13 +11,16 @@ use quick_xml::Reader as XmlReader;
 use zip::ZipArchive;
 
 use crate::model::{
-    encode_cell, encode_cell_owned, format_cell, get_column_index, get_formula_for_position,
-    get_row_number, has_workbook_cell_content, is_truthy_flag, normalize_field, parse_merge_range,
-    WorkbookCellSnapshotJson, WorkbookMetadataMap, WorkbookRowEntry, WorkbookSheetDiffEntry,
-    WorkbookSheetMetadata, WorkbookTextRowEntry, WorkbookTextSheetEntry, FORMULA_SEPARATOR,
+    encode_cell, encode_cell_owned, format_cell, get_formula_for_position,
+    has_workbook_cell_content, is_truthy_flag, normalize_field, parse_merge_range,
+    try_get_column_index, try_get_row_number, WorkbookCellSnapshotJson, WorkbookMetadataMap,
+    WorkbookRowEntry, WorkbookSheetDiffEntry, WorkbookSheetMetadata, WorkbookTextRowEntry,
+    WorkbookTextSheetEntry, FORMULA_SEPARATOR, MAX_WORKBOOK_COLUMN_COUNT, MAX_WORKBOOK_ROW_NUMBER,
     ROW_PREFIX, SHEET_PREFIX,
 };
 use crate::profile;
+
+const MAX_WORKBOOK_XML_ENTRY_BYTES: u64 = 256 * 1024 * 1024;
 
 #[path = "workbook/context.rs"]
 mod context;
@@ -51,9 +54,18 @@ pub fn is_zip_workbook(file_path: &str) -> bool {
 }
 
 fn read_zip_entry_to_string(archive: &mut ZipArchive<File>, entry_path: &str) -> Option<String> {
-    let mut entry = archive.by_name(entry_path).ok()?;
+    let entry = archive.by_name(entry_path).ok()?;
+    if entry.size() > MAX_WORKBOOK_XML_ENTRY_BYTES {
+        return None;
+    }
     let mut text = String::new();
-    entry.read_to_string(&mut text).ok()?;
+    let bytes_read = entry
+        .take(MAX_WORKBOOK_XML_ENTRY_BYTES + 1)
+        .read_to_string(&mut text)
+        .ok()?;
+    if bytes_read as u64 > MAX_WORKBOOK_XML_ENTRY_BYTES {
+        return None;
+    }
     Some(text)
 }
 
@@ -133,7 +145,7 @@ pub fn parse_workbook_document(
         result.push(WorkbookSheetDiffEntry {
             name: sheet_name.clone(),
             raw_sheet_line: format!("{}\t{}", SHEET_PREFIX, normalize_field(&sheet_name).trim()),
-            rows: collect_workbook_row_entries(&range, Some(&formulas), compare_mode),
+            rows: collect_workbook_row_entries(&range, Some(&formulas)),
         });
         profile::log_elapsed(
             sheet_start,

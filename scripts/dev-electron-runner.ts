@@ -3,6 +3,10 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import {
+  areDevElectronResourcesFresh,
+  resolveDevElectronProfileDir,
+} from './devElectronStartup';
 
 const electronBinary = require('electron') as string;
 
@@ -15,7 +19,19 @@ const readyResources = [
   preloadBundlePath,
 ];
 const devProfileHash = createHash('sha1').update(rootDir).digest('hex').slice(0, 10);
-const devProfileDir = path.join(os.tmpdir(), 'Versora-dev', devProfileHash);
+const devRootDir = path.join(os.tmpdir(), 'Versora-dev');
+const stableDevProfileDir = path.join(devRootDir, devProfileHash);
+const stableProfileLocked = fs.existsSync(path.join(stableDevProfileDir, 'user-data', 'lockfile'));
+const devProfileDir = resolveDevElectronProfileDir({
+  devRootDir,
+  profileHash: devProfileHash,
+  runnerPid: process.pid,
+  stableProfileLocked,
+});
+const parsedBuildEpochMs = Number(process.env.VERSORA_DEV_BUILD_EPOCH_MS ?? '');
+const buildEpochMs = Number.isFinite(parsedBuildEpochMs) && parsedBuildEpochMs > 0
+  ? parsedBuildEpochMs
+  : null;
 const EARLY_EXIT_WINDOW_MS = 5_000;
 const MAX_EARLY_EXIT_RETRIES = 3;
 const EARLY_EXIT_RETRY_DELAY_MS = 800;
@@ -31,7 +47,11 @@ let lastLaunchedResourceSignature = '';
 
 async function waitForBundles() {
   while (!shutdownRequested) {
-    const bundlesReady = readyResources.every((resourcePath) => fs.existsSync(resourcePath));
+    const bundlesReady = readyResources.every((resourcePath) => fs.existsSync(resourcePath))
+      && areDevElectronResourcesFresh(
+        readyResources.map((resourcePath) => fs.statSync(resourcePath).mtimeMs),
+        buildEpochMs,
+      );
     const serverReady = await isServerReady(devServerUrl);
     if (bundlesReady && serverReady) return;
     await sleep(250);
@@ -161,6 +181,13 @@ function startElectron(resourceSignature: string) {
       process.exit(normalizedCode);
     }
   });
+}
+
+if (stableProfileLocked) {
+  console.warn(
+    `[dev-electron-runner] The shared dev profile is already locked. ` +
+    `Using an isolated recovery profile for this session: ${devProfileDir}`,
+  );
 }
 
 async function bootElectron() {

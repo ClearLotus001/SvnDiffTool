@@ -133,7 +133,7 @@ const SplitCell = memo(({
     isActiveSearch,
   });
 
-  const renderLineNumberGutter = (currentLine: DiffLine | null) => (
+  const renderLineNumberGutter = (currentLine: DiffLine | null, accent = 'transparent') => (
     <div style={{
       width: gutterWidth,
       minWidth: gutterWidth,
@@ -151,6 +151,23 @@ const SplitCell = memo(({
         ? `inset -1px 0 0 color-mix(in srgb, ${selectionAccent} 12%, transparent)`
         : gutterShadow,
     }}>
+      {accent !== 'transparent' && (
+        <div
+          aria-hidden
+          data-diff-row-accent="true"
+          style={{
+            position: 'absolute',
+            right: -3,
+            top: 2,
+            bottom: 2,
+            width: 3,
+            borderRadius: 999,
+            background: accent,
+            pointerEvents: 'none',
+            zIndex: 1,
+          }}
+        />
+      )}
       {usesPairedLineNumbers ? (
         <>
           <Ln
@@ -265,24 +282,8 @@ const SplitCell = memo(({
         background: rowBackground,
         borderRadius: isActiveSearch ? 4 : undefined,
       }}>
-      {brd !== 'transparent' && (
-        <div
-          aria-hidden
-          style={{
-            position: 'absolute',
-            left: isActiveSearch ? 2 : 0,
-            top: 2,
-            bottom: 2,
-            width: 3,
-            borderRadius: 999,
-            background: brd,
-            pointerEvents: 'none',
-            zIndex: 6,
-          }}
-        />
-      )}
-      {renderLineNumberGutter(line)}
-      <div style={{
+      {renderLineNumberGutter(line, brd)}
+      <div data-diff-row-content="true" style={{
         flex: 1,
         display: 'flex',
         minWidth: isContentWidth ? 'max-content' : 0,

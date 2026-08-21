@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-export interface InnerInstallerSizeReport {
+export interface InstallerSizeReport {
   installerFileName: string;
   installerBytes: number;
   winUnpackedBytes: number;
@@ -14,18 +14,10 @@ export interface InnerInstallerSizeReport {
   }>;
 }
 
-export interface OuterSetupSizeReport {
-  setupFileName: string;
-  setupBytes: number;
-  winUnpackedBytes: number;
-  appAsarBytes: number;
-}
-
 export interface PackageSizeReport {
   version: string;
   generatedAt: string;
-  innerInstaller?: InnerInstallerSizeReport;
-  outerSetup?: OuterSetupSizeReport;
+  installer?: InstallerSizeReport;
 }
 
 export function getReleaseDir(rootDir: string): string {
@@ -92,16 +84,11 @@ export async function updatePackageSizeReport(
     generatedAt: new Date().toISOString(),
   };
 
-  const inheritedInnerInstaller = previous?.version === version ? previous.innerInstaller : undefined;
-  const inheritedOuterSetup = previous?.version === version ? previous.outerSetup : undefined;
-  const nextInnerInstaller = partial.innerInstaller ?? inheritedInnerInstaller;
-  const nextOuterSetup = partial.outerSetup ?? inheritedOuterSetup;
+  const inheritedInstaller = previous?.version === version ? previous.installer : undefined;
+  const nextInstaller = partial.installer ?? inheritedInstaller;
 
-  if (nextInnerInstaller) {
-    next.innerInstaller = nextInnerInstaller;
-  }
-  if (nextOuterSetup) {
-    next.outerSetup = nextOuterSetup;
+  if (nextInstaller) {
+    next.installer = nextInstaller;
   }
 
   const reportPath = getPackageSizeReportPath(rootDir);

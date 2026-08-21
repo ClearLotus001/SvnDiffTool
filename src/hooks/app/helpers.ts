@@ -64,7 +64,7 @@ export function getNow() {
 }
 
 export function debugLog(message: string, payload?: unknown) {
-  window.svnDiff?.debugLog?.(message, payload);
+  window.versora?.debugLog?.(message, payload);
 }
 
 export function cycleHunkIndex(current: number, total: number, direction: -1 | 1): number {

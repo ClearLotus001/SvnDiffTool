@@ -132,20 +132,6 @@ const DiffRow = memo(({
         background: rowBackground,
         borderRadius: isActiveSearch ? 4 : undefined,
       }}>
-      {brdL !== 'transparent' && (
-        <div
-          aria-hidden
-          className="pointer-events-none absolute z-[6]"
-          style={{
-            left: isActiveSearch ? 2 : 0,
-            top: 2,
-            bottom: 2,
-            width: 3,
-            borderRadius: 999,
-            background: brdL,
-          }}
-        />
-      )}
       <div
         className="flex shrink-0 sticky left-0 z-[4]"
         style={{
@@ -154,6 +140,22 @@ const DiffRow = memo(({
           background: gutterBackground,
           boxShadow: gutterShadow,
         }}>
+        {brdL !== 'transparent' && (
+          <div
+            aria-hidden
+            data-diff-row-accent="true"
+            className="pointer-events-none absolute"
+            style={{
+              right: -3,
+              top: 2,
+              bottom: 2,
+              width: 3,
+              borderRadius: 999,
+              background: brdL,
+              zIndex: 1,
+            }}
+          />
+        )}
         <Ln
           n={line.baseLineNo}
           active={isActiveSearch}
@@ -176,6 +178,7 @@ const DiffRow = memo(({
         />
       </div>
       <div
+        data-diff-row-content="true"
         className="flex relative z-[1]"
           style={{
             flex: 1,

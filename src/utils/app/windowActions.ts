@@ -1,11 +1,11 @@
-import type { SvnDiffBridge } from '@/types/bridge';
+import type { VersoraBridge } from '@/types/bridge';
 
 interface WindowActionHost {
   close?: () => void;
   location?: {
     reload: () => void;
   };
-  svnDiff?: Pick<SvnDiffBridge, 'windowClose'>;
+  versora?: Pick<VersoraBridge, 'windowClose'>;
 }
 
 export function retryCurrentPage(host: WindowActionHost = window): void {
@@ -13,8 +13,8 @@ export function retryCurrentPage(host: WindowActionHost = window): void {
 }
 
 export function closeCurrentWindow(host: WindowActionHost = window): void {
-  if (host.svnDiff?.windowClose) {
-    host.svnDiff.windowClose();
+  if (host.versora?.windowClose) {
+    host.versora.windowClose();
     return;
   }
 

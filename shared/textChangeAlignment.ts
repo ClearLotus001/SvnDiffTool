@@ -258,12 +258,12 @@ function getReplacementScoreFromFeatures(left: TextFeatures, right: TextFeatures
   if (left.kind === 'markdown-structure' || right.kind === 'markdown-structure') return 0;
   if (left.kind === 'code-like' && right.kind === 'code-like') {
     const codeTokenDice = computeCodeTokenDice(left, right);
-    if (codeTokenDice <= 0) return 0;
-    return Math.max(
-      codeTokenDice,
+    const structuralSimilarity = Math.max(
       computeCommonAffixRatio(left.normalized, right.normalized),
       computeShortEditSimilarity(left.normalized, right.normalized),
     );
+    if (codeTokenDice <= 0) return structuralSimilarity;
+    return Math.max(codeTokenDice, structuralSimilarity);
   }
 
   const maxLength = Math.max(left.raw.length, right.raw.length);
@@ -289,7 +289,7 @@ function getReplacementScoreFromFeatures(left: TextFeatures, right: TextFeatures
   );
 }
 
-function buildLegacyPairs(deleteCount: number, addCount: number): TextChangeAlignmentPair[] {
+function buildPositionalPairs(deleteCount: number, addCount: number): TextChangeAlignmentPair[] {
   const pairs: TextChangeAlignmentPair[] = [];
   const maxLength = Math.max(deleteCount, addCount);
 
@@ -306,7 +306,6 @@ function buildLegacyPairs(deleteCount: number, addCount: number): TextChangeAlig
 
   return pairs;
 }
-
 export function alignTextChangeBlock(
   deleteTexts: readonly string[],
   addTexts: readonly string[],
@@ -318,7 +317,7 @@ export function alignTextChangeBlock(
     deleteFeatures.some((feature) => feature.structured)
     || addFeatures.some((feature) => feature.structured)
   ) {
-    return buildLegacyPairs(deleteTexts.length, addTexts.length);
+    return buildPositionalPairs(deleteTexts.length, addTexts.length);
   }
 
   const scoreCache = new Map<string, number>();

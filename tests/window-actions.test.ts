@@ -26,7 +26,7 @@ test('closeCurrentWindow prefers the Electron bridge close handler', () => {
   let fallbackClosed = 0;
 
   closeCurrentWindow({
-    svnDiff: {
+    versora: {
       windowClose: () => {
         bridgeClosed += 1;
       },

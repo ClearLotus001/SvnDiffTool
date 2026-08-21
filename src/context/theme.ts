@@ -9,7 +9,7 @@ import { createContext, useContext, useMemo } from 'react';
 import {
   type ThemeKey,
   type ThemeTokens,
-  getComputedThemeTokens,
+  getThemeTokensSnapshot,
 } from '@/theme';
 
 export const ThemeContext = createContext<ThemeKey>('dark');
@@ -35,5 +35,5 @@ export function useTheme(): ThemeKey {
  */
 export function useThemeTokens(): ThemeTokens {
   const themeKey = useTheme();
-  return useMemo(() => getComputedThemeTokens(themeKey), [themeKey]);
+  return useMemo(() => getThemeTokensSnapshot(themeKey), [themeKey]);
 }

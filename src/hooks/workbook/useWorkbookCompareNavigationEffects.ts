@@ -229,12 +229,12 @@ export function useWorkbookCompareNavigationEffects({
       ? (rowItemIndexBySide[anchorSide].get(anchorRowNumber) ?? -1)
       : -1;
     if (stackedTarget) {
-      scrollToStackedTarget(stackedTarget, 'start', 'auto');
+      scrollToStackedTarget(stackedTarget, 'start', 'smooth');
     } else if (targetRowIndex >= 0) {
-      markProgrammaticScroll(420);
-      scrollToIndex(targetRowIndex, 'start', 'auto');
+      markProgrammaticScroll(640);
+      scrollToIndex(targetRowIndex, 'start', 'smooth');
     } else {
-      scrollToResolvedLine(activeDiffRegion.lineStartIdx, 'start', 'auto');
+      scrollToResolvedLine(activeDiffRegion.lineStartIdx, 'start', 'smooth');
     }
 
     focusWorkbookDiffRegion(activeDiffRegion);
@@ -300,7 +300,7 @@ export function useWorkbookCompareNavigationEffects({
     } else if (idx >= 0) {
       if (shouldForceReveal) lastForcedRevealHunkIdxRef.current = activeHunkIdx;
       lastAutoRowKeyRef.current = selectionKey;
-      markProgrammaticScroll(360);
+      markProgrammaticScroll(640);
       scrollToIndex(idx, 'center', 'smart');
     }
   }, [

@@ -39,7 +39,7 @@ test('useWorkbookHorizontalPaneRenderProps uses the shared workbook content-left
       stickyHeaderHeight: 48,
       activeRegionOverlayVisibleRowFrames: new Map(),
       activeRegionPulseTriggerKey: 'Thing:0',
-      overlayLabel: 'A1:B2 路 2脳2',
+      overlayLabels: { left: '', right: '' },
       selection: {
         anchor: null,
         primary: null,
@@ -136,7 +136,7 @@ test('useWorkbookHorizontalPaneRenderProps keeps horizontal focus geometry on th
       stickyHeaderHeight: 48,
       activeRegionOverlayVisibleRowFrames: new Map(),
       activeRegionPulseTriggerKey: 'Thing:0',
-      overlayLabel: 'B2:B3 路 2脳1',
+      overlayLabels: { left: 'Deleted on right B2:B3 · 2×1', right: '' },
       selection: {
         anchor: null,
         primary: null,
@@ -171,4 +171,6 @@ test('useWorkbookHorizontalPaneRenderProps keeps horizontal focus geometry on th
   assert.deepEqual(captured.current.left.overlayProps.resolvePatchBoundsModes(patch), ['single']);
   assert.deepEqual(captured.current.left.overlayProps.fallbackBoundsModes, ['single']);
   assert.deepEqual(captured.current.left.overlayProps.resolveFocusPatchBoundsModes?.(patch), ['single']);
+  assert.equal(captured.current.left.overlayProps.label, 'Deleted on right B2:B3 · 2×1');
+  assert.equal(captured.current.right.overlayProps.label, undefined);
 });

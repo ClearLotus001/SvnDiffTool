@@ -11,11 +11,11 @@ import RevisionLogHoverCard from '@/components/navigation/RevisionLogHoverCard';
 import Tooltip from '@/components/shared/Tooltip';
 import PathTooltip from '@/components/shared/PathTooltip';
 
-const HEADER_TOOLBAR_PILL_CLASS = 'inline-flex items-center h-[26px] px-2 rounded-full whitespace-nowrap';
-const HEADER_TOOLBAR_TEXT_CLASS = 'font-ui text-[11px] font-semibold leading-[1.15]';
-const HEADER_TOOLBAR_TEXT_STRONG_CLASS = 'font-ui text-[11px] font-bold leading-[1.15]';
+const HEADER_STATUS_TAG_CLASS = 'inline-flex items-center h-5 px-1.5 rounded-[5px] whitespace-nowrap box-border border';
+const HEADER_TOOLBAR_TEXT_CLASS = 'font-ui text-[10px] font-semibold leading-none';
+const HEADER_TOOLBAR_TEXT_STRONG_CLASS = 'font-ui text-[10px] font-bold leading-none';
 const HEADER_TOOLBAR_TEXT_INNER_CLASS = 'inline-flex items-center h-full leading-none';
-const HEADER_TOOLBAR_VALUE_INNER_CLASS = 'inline-flex items-center h-full min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-ui text-[11px] font-semibold leading-none tracking-[-0.01em]';
+const HEADER_TOOLBAR_VALUE_INNER_CLASS = 'inline-flex items-center h-full min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-ui text-[10px] font-semibold leading-none tracking-[-0.01em]';
 
 type SplitHeaderAxisKind =
   | 'left-pane'
@@ -161,17 +161,18 @@ const SplitHeader = memo(({
   };
 
   const renderStaticVersion = (
+    side: 'base' | 'mine',
     label: string,
     tooltip: string,
     accent: string /* CSS var name */,
   ) => {
     const node = (
       <span
-        className={`${HEADER_TOOLBAR_PILL_CLASS} gap-1.5 max-w-full min-w-0 border shrink-0`}
+        data-testid={`static-version-${side}`}
+        className={`${HEADER_STATUS_TAG_CLASS} ${HEADER_TOOLBAR_TEXT_STRONG_CLASS} gap-1 max-w-full min-w-0 shrink-0`}
         style={{
-          borderColor: `color-mix(in srgb, var(${accent}) 18%, var(--border-color) 82%)`,
-          background: `linear-gradient(135deg, color-mix(in srgb, var(${accent}) 10%, var(--bg-surface-hover) 90%) 0%, var(--bg-surface-hover) 100%)`,
-          boxShadow: `0 10px 18px -24px color-mix(in srgb, var(${accent}) 38%, transparent)`,
+          borderColor: `color-mix(in srgb, var(${accent}) 30%, var(--border-color) 70%)`,
+          background: `color-mix(in srgb, var(${accent}) 9%, var(--bg-surface-solid) 91%)`,
         }}>
         <span className={`${HEADER_TOOLBAR_TEXT_INNER_CLASS} ${HEADER_TOOLBAR_TEXT_STRONG_CLASS} whitespace-nowrap`} style={{ color: `var(${accent})` }}>
           {isTwoFileCompare ? t('toolbarFileLabel') : t('splitHeaderVersionLabel')}
@@ -201,7 +202,7 @@ const SplitHeader = memo(({
         <span
           data-testid={`source-badge-${side}`}
           aria-label={tooltip}
-          className="inline-flex items-center justify-center h-[18px] min-w-[30px] px-1 rounded-[5px] border shrink-0 font-code text-[9px] font-bold leading-none tracking-[0.08em]"
+          className={`${HEADER_STATUS_TAG_CLASS} min-w-8 justify-center shrink-0 font-code text-[10px] font-bold leading-none tracking-[0.06em]`}
           style={{
             color,
             borderColor: `color-mix(in srgb, ${color} 42%, var(--border-color) 58%)`,
@@ -222,7 +223,8 @@ const SplitHeader = memo(({
 
     return (
       <span
-        className={`${HEADER_TOOLBAR_PILL_CLASS} ${HEADER_TOOLBAR_TEXT_CLASS}`}
+        data-testid={`axis-tag-${axis.kind}`}
+        className={`${HEADER_STATUS_TAG_CLASS} ${HEADER_TOOLBAR_TEXT_CLASS}`}
         style={{
           color: `color-mix(in srgb, var(${accent}) 84%, var(--text-title) 16%)`,
           border: `1px solid color-mix(in srgb, var(${accent}) 22%, var(--border-color) 78%)`,
@@ -340,28 +342,39 @@ const SplitHeader = memo(({
 
     return (
       <div
+        data-split-header-side={side}
         className="grid gap-1.5 min-w-0 p-[7px_14px_8px] min-h-[54px] bg-transparent border-t border-border-default"
         style={{ borderLeft: divider ? `1px solid var(--border-color)` : 'none' }}>
         <div className="flex items-center justify-between gap-3 min-w-0 flex-wrap">
           <div className="inline-flex items-center gap-1 min-w-0 flex-wrap">
+            {renderSourceBadge(side, sourceKind)}
             <span
-              className={`${HEADER_TOOLBAR_PILL_CLASS} ${HEADER_TOOLBAR_TEXT_STRONG_CLASS} gap-1.5 border border-border-default bg-bg-surface-hover`}
-              style={{ color: `var(${accent})` }}>
+              data-testid={`version-role-${side}`}
+              className={`${HEADER_STATUS_TAG_CLASS} ${HEADER_TOOLBAR_TEXT_STRONG_CLASS} gap-1`}
+              style={{
+                color: `var(${accent})`,
+                borderColor: `color-mix(in srgb, var(${accent}) 30%, var(--border-color) 70%)`,
+                background: `color-mix(in srgb, var(${accent}) 9%, var(--bg-surface-solid) 91%)`,
+              }}>
               {renderRoleBadge(side)}
               <span className={HEADER_TOOLBAR_TEXT_INNER_CLASS}>{title}</span>
             </span>
             {side === 'base' && onResetCompare && (
               <button
                 type="button"
+                data-testid="reset-compare-tag"
                 onClick={onResetCompare}
                 disabled={!canResetCompare || isSwitchingRevisions}
                 className={`
-                  ${HEADER_TOOLBAR_PILL_CLASS}
-                  border border-border-default bg-bg-surface-hover
+                  ${HEADER_STATUS_TAG_CLASS}
                   ${HEADER_TOOLBAR_TEXT_STRONG_CLASS}
-                  ${canResetCompare && !isSwitchingRevisions ? 'text-text-primary cursor-pointer hover:border-accent hover:text-accent' : 'text-text-secondary cursor-default'}
+                  ${canResetCompare && !isSwitchingRevisions ? 'text-text-primary cursor-pointer hover:text-accent hover:brightness-110' : 'text-text-secondary cursor-default'}
                   transition-all duration-150
-                `}>
+                `}
+                style={{
+                  borderColor: `color-mix(in srgb, var(${accent}) 20%, var(--border-color) 80%)`,
+                  background: `color-mix(in srgb, var(${accent}) 5%, var(--bg-surface-solid) 95%)`,
+                }}>
                 <span className={HEADER_TOOLBAR_TEXT_INNER_CLASS}>{t('revisionPickerReset')}</span>
               </button>
             )}
@@ -370,23 +383,22 @@ const SplitHeader = memo(({
           <div className="inline-flex items-center gap-1.5 min-w-0 shrink-0">
             {hasRevisionSwitch
               ? renderRevisionSelect(side, info)
-              : renderStaticVersion(staticVersionLabel, name || staticVersionLabel, accent)}
+              : renderStaticVersion(side, staticVersionLabel, name || staticVersionLabel, accent)}
             {renderCopyButton(side, normalizedVersion || staticVersionLabel)}
           </div>
         </div>
 
         <div className="flex items-center gap-2 min-w-0">
           <div className="flex items-center min-w-0 flex-1 min-h-7 pl-1">
-            {renderSourceBadge(side, sourceKind)}
             {isTwoFileCompare ? (
               <PathTooltip path={name || title}>
-                <span className={`${sourceKind === 'git' || sourceKind === 'svn' ? 'ml-1.5' : ''} min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-secondary text-[11px] font-code`}>
+                <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-secondary text-[11px] font-code">
                   {name || title}
                 </span>
               </PathTooltip>
             ) : (renderMeta(info, name || title, accent) ?? (
               <Tooltip content={name || title} maxWidth={320}>
-                <span className={`${sourceKind === 'git' || sourceKind === 'svn' ? 'ml-1.5' : ''} min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-secondary text-[11px] font-ui`}>
+                <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-secondary text-[11px] font-ui">
                   {name || title}
                 </span>
               </Tooltip>

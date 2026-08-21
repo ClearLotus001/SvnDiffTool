@@ -1,7 +1,7 @@
 // src/components/navigation/RevisionPicker.tsx
-import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { SvnRevisionInfo } from '@/types';
 import { useI18n } from '@/context/i18n';
 import { useTheme } from '@/context/theme';
@@ -66,9 +66,9 @@ const RevisionPicker = memo(({
   const [draftDate, setDraftDate] = useState('');
   const [draftHour, setDraftHour] = useState('23');
   const [draftMinute, setDraftMinute] = useState('59');
+  const [panelWidth, setPanelWidth] = useState<number>(RP_UI.panelPreferredWidth);
   const deferredSearchQuery = useDeferredValue(searchQuery.trim().toLowerCase());
   const selectedId = value?.id ?? '';
-  const panelAlignStyle = align === 'left' ? { left: 0 } : { right: 0 };
   const controlColorScheme: CSSProperties['colorScheme'] = themeKey === 'light' ? 'light' : 'dark';
   const highlightStyle: CSSProperties = {
     background: cssAlpha('searchHl', '5c'),
@@ -132,6 +132,33 @@ const RevisionPicker = memo(({
   useEffect(() => { if (open) searchInputRef.current?.focus(); }, [open]);
   useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
 
+  const updatePanelWidth = useCallback(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    const triggerRect = wrapper.getBoundingClientRect();
+    const sideBoundary = wrapper.closest<HTMLElement>('[data-split-header-side]');
+    const sideRect = sideBoundary?.getBoundingClientRect();
+    const viewportMaxWidth = Math.max(0, window.innerWidth - 24);
+    const ownSideAvailableWidth = Math.max(0, triggerRect.right - (sideRect?.left ?? 12) - 12);
+    const availableWidth = Math.min(viewportMaxWidth, ownSideAvailableWidth);
+    const minimumWidth = Math.min(RP_UI.panelMinWidth, viewportMaxWidth);
+    setPanelWidth(Math.max(minimumWidth, Math.min(RP_UI.panelPreferredWidth, availableWidth)));
+  }, []);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    updatePanelWidth();
+    const sideBoundary = wrapperRef.current?.closest<HTMLElement>('[data-split-header-side]');
+    const resizeObserver = new ResizeObserver(updatePanelWidth);
+    if (wrapperRef.current) resizeObserver.observe(wrapperRef.current);
+    if (sideBoundary) resizeObserver.observe(sideBoundary);
+    window.addEventListener('resize', updatePanelWidth);
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', updatePanelWidth);
+    };
+  }, [open, updatePanelWidth]);
+
   const revisionOptions = useMemo(() => options.filter((o) => o.kind === 'revision'), [options]);
   const dateMatchedRevisionOptions = useMemo(
     () => (!activeDateFilter ? revisionOptions : revisionOptions.filter((o) => o.date.startsWith(activeDateFilter))),
@@ -169,13 +196,13 @@ const RevisionPicker = memo(({
 
   const handleQuery = () => onQueryDateTime?.(buildQueryDateTime(draftDate, draftHour, draftMinute));
   const handleToggleOpen = () => {
-    setOpen((current) => {
-      const nextOpen = !current;
-      if (nextOpen) {
-        onOpen?.();
-      }
-      return nextOpen;
-    });
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    updatePanelWidth();
+    onOpen?.();
+    setOpen(true);
   };
   const handleDateFilterKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter') handleQuery();
@@ -199,7 +226,11 @@ const RevisionPicker = memo(({
     : (!searchQuery.trim() && hasMore ? t('revisionPickerSearchRangeHint') : '');
 
   return (
-    <div ref={wrapperRef} className="relative" style={{ flex: '1 1 312px', minWidth: 220, maxWidth: 408 }}>
+    <div
+      ref={wrapperRef}
+      className="relative"
+      data-revision-picker-side={align}
+      style={{ flex: '0 0 auto', minWidth: 80, maxWidth: 156 }}>
       {/* ── Trigger ── */}
       <Tooltip
         content={triggerTooltipContent}
@@ -208,39 +239,45 @@ const RevisionPicker = memo(({
         anchorStyle={{ display: 'flex', width: '100%', minWidth: 0 }}>
         <button
           type="button"
+          data-testid={`revision-picker-trigger-${align}`}
           aria-expanded={open}
           aria-label={title}
           disabled={disabled}
           onClick={handleToggleOpen}
-          className="flex items-center justify-between gap-1.5 w-full min-w-0 rounded-full text-left"
+          className="flex items-center justify-between gap-1 w-full min-w-0 text-left font-ui text-[10px] font-bold leading-none"
           style={{
             height: RP_UI.triggerHeight,
             padding: RP_UI.triggerPadding,
-            border: `1px solid ${open ? cssAlphaRaw(accent, '55') : cssVar('border')}`,
-            background: disabled ? cssVar('bg1') : `linear-gradient(180deg, ${cssVar('bg2')} 0%, ${cssVar('bg1')} 100%)`,
-            color: cssVar('t0'),
-            boxShadow: open ? `0 14px 28px -24px ${cssAlphaRaw(accent, '66')}, inset 0 0 0 1px ${cssAlphaRaw(accent, '22')}` : 'none',
+            borderRadius: RP_UI.triggerRadius,
+            border: `1px solid ${open ? cssAlphaRaw(accent, '55') : `color-mix(in srgb, var(${accent}) 30%, var(--border-color) 70%)`}`,
+            background: disabled
+              ? cssVar('bg1')
+              : `color-mix(in srgb, var(${accent}) 9%, var(--bg-surface-solid) 91%)`,
+            color: `var(${accent})`,
+            boxShadow: open ? `0 10px 22px -20px ${cssAlphaRaw(accent, '66')}, inset 0 0 0 1px ${cssAlphaRaw(accent, '18')}` : 'none',
             cursor: disabled ? 'default' : 'pointer',
           }}>
-          <div className="flex items-center gap-1.5 min-w-0 flex-1">
-            <span className="inline-flex items-center h-full shrink-0 font-ui text-[11px] font-semibold leading-none tracking-[-0.01em] whitespace-nowrap overflow-hidden text-ellipsis" style={{ color: `var(${accent})` }}>
+          <div className="flex items-center min-w-0 flex-1">
+            <span className="inline-flex items-center h-full min-w-0 overflow-hidden text-ellipsis whitespace-nowrap tracking-[-0.01em]">
               {value ? formatDisplayRevision(value.revision) : t('splitHeaderVersionUnknown')}
             </span>
           </div>
-          <span aria-hidden="true" className="shrink-0 text-[8px] font-ui leading-none" style={{ color: open ? `var(${accent})` : cssVar('t2') }}>
-            {open ? '▲' : '▼'}
-          </span>
+          {open
+            ? <ChevronUp aria-hidden="true" size={10} strokeWidth={2.4} className="shrink-0" />
+            : <ChevronDown aria-hidden="true" size={10} strokeWidth={2.4} className="shrink-0" />}
         </button>
       </Tooltip>
 
       {/* ── Dropdown Panel ── */}
       {open && (
         <div
+          data-testid="revision-picker-panel"
           className="absolute z-[72] overflow-hidden"
           style={{
             top: 'calc(100% + 10px)',
-            ...panelAlignStyle,
-            width: RP_UI.panelWidth,
+            right: 0,
+            width: panelWidth,
+            maxWidth: 'calc(100vw - 24px)',
             borderRadius: RP_UI.panelRadius,
             border: `1px solid ${cssVar('border')}`,
             background: `linear-gradient(180deg, ${cssVar('bg1')} 0%, ${cssVar('bg0')} 100%)`,
@@ -349,9 +386,10 @@ const RevisionPicker = memo(({
           <div className="relative p-[10px_12px_12px]">
             <div
               ref={listRef}
+              data-testid="revision-picker-list"
               onScroll={handleListScroll}
-              className="overflow-y-auto overflow-x-hidden rounded-[14px] border border-border-default bg-bg-surface-solid"
-              style={{ maxHeight: RP_UI.listMaxHeight, scrollbarWidth: 'thin' }}>
+              className="app-themed-scrollbar overflow-y-auto overflow-x-hidden rounded-[14px] border border-border-default bg-bg-surface-solid"
+              style={{ maxHeight: RP_UI.listMaxHeight }}>
               {/* Column header */}
               {filteredRevisionOptions.length > 0 && (
                 <div

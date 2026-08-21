@@ -25,7 +25,7 @@ function formatDateTime(value: string | null): string {
 }
 
 function openExternal(url: string) {
-  window.svnDiff?.openExternal?.(url);
+  window.versora?.openExternal?.(url);
 }
 
 const AboutDialog = memo(({

@@ -4,7 +4,6 @@ const versoraApi = {
   notifyRendererReady: () => ipcRenderer.send('renderer-ready'),
   saveStartupAppearance: (appearance: { themeKey?: 'dark' | 'light' | 'hc'; locale?: 'zh-CN' | 'en-US' }) => ipcRenderer.send('save-startup-appearance', appearance),
   getLaunchContext: () => ipcRenderer.invoke('get-launch-context'),
-  getLaunchState: (compareMode?: 'strict' | 'content') => ipcRenderer.invoke('get-launch-state', { compareMode }),
   getDiffData: (compareMode?: 'strict' | 'content') => ipcRenderer.invoke('get-diff-data', { compareMode }),
   loadRevisionDiff: (baseRevisionId: string, mineRevisionId: string, compareMode?: 'strict' | 'content') => ipcRenderer.invoke('load-revision-diff', { baseRevisionId, mineRevisionId, compareMode }),
   loadTwoFileRevisionDiff: (baseRevisionId: string, mineRevisionId: string, compareMode?: 'strict' | 'content') => ipcRenderer.invoke('load-two-file-revision-diff', { baseRevisionId, mineRevisionId, compareMode }),
@@ -71,5 +70,3 @@ const versoraApi = {
 };
 
 contextBridge.exposeInMainWorld('versora', versoraApi);
-// Compatibility bridge for existing integrations and persisted test harnesses.
-contextBridge.exposeInMainWorld('svnDiff', versoraApi);

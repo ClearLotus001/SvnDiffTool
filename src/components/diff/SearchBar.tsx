@@ -16,6 +16,8 @@ interface SearchBarProps {
   workbookSearchScope: 'all' | 'sheet';
   activeSheetName: string | null;
   matchCount: number;
+  totalMatchCount: number;
+  resultsTruncated: boolean;
   activeIdx: number;
   isSearching: boolean;
   resolveResult: (index: number) => SearchResultItem | null;
@@ -34,6 +36,8 @@ const SearchBar = memo(({
   workbookSearchScope,
   activeSheetName,
   matchCount,
+  totalMatchCount,
+  resultsTruncated,
   activeIdx,
   isSearching,
   resolveResult,
@@ -92,9 +96,6 @@ const SearchBar = memo(({
     return () => window.clearTimeout(timeoutId);
   }, [hasQuery, isSearching, resultsVisibilityKey]);
   useEffect(() => {
-    setPopoverPosition(null);
-  }, [resultsVisibilityKey]);
-  useEffect(() => {
     if (!showResults || popoverPosition) return;
     const rect = anchorRef.current?.getBoundingClientRect() ?? rootRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -136,7 +137,11 @@ const SearchBar = memo(({
     ? (
       showSearchLoadingIndicator
         ? t('searchLoading')
-        : (!isSearching ? (matchCount > 0 ? `${activeIdx + 1} / ${matchCount}` : t('searchNoResults')) : '')
+        : (!isSearching
+            ? (matchCount > 0
+                ? `${activeIdx + 1} / ${matchCount}${resultsTruncated ? '+' : ''}`
+                : t('searchNoResults'))
+            : '')
     )
     : '';
   const shouldRenderSearchSummary = hasQuery && (showSearchLoadingIndicator || !isSearching);
@@ -356,6 +361,8 @@ const SearchBar = memo(({
         <SearchResultsPopover
           isWorkbookMode={isWorkbookMode}
           resultCount={matchCount}
+          totalResultCount={totalMatchCount}
+          resultsTruncated={resultsTruncated}
           resolveResult={resolveResult}
           activeIdx={activeIdx}
           isSearching={isSearching}

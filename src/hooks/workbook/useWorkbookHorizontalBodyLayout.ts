@@ -11,14 +11,12 @@ import {
 export type WorkbookHorizontalRenderItem =
   | { kind: 'split-line'; row: SplitRow; lineIdx: number }
   | { kind: 'split-collapse'; blockId: string; count: number; fromIdx: number; toIdx: number; hiddenStart: number; hiddenEnd: number; expandStep: number; rowNumberStart: number | null; rowNumberEnd: number | null }
-  | { kind: 'hidden-rows'; rows: SplitRow[]; rowNumbers: number[]; count: number }
-  | { kind: 'sparse-gap'; rowNumberStart: number; rowNumberEnd: number; count: number };
+  | { kind: 'hidden-rows'; rows: SplitRow[]; rowNumbers: number[]; count: number };
 
 export type WorkbookHorizontalBodySegment =
   | { kind: 'rows'; rows: WorkbookPaneCanvasRow[]; top: number; height: number }
   | { kind: 'collapse'; item: Extract<WorkbookHorizontalRenderItem, { kind: 'split-collapse' }>; top: number; height: number; sourceItemIndex: number }
-  | { kind: 'hidden-rows'; item: Extract<WorkbookHorizontalRenderItem, { kind: 'hidden-rows' }>; top: number; height: number }
-  | { kind: 'sparse-gap'; item: Extract<WorkbookHorizontalRenderItem, { kind: 'sparse-gap' }>; top: number; height: number };
+  | { kind: 'hidden-rows'; item: Extract<WorkbookHorizontalRenderItem, { kind: 'hidden-rows' }>; top: number; height: number };
 
 interface UseWorkbookHorizontalBodyLayoutParams {
   items: WorkbookHorizontalRenderItem[];
@@ -51,10 +49,9 @@ export function useWorkbookHorizontalBodyLayout({
       resolveItemKind: (item) => {
         if (item.kind === 'split-line') return 'row';
         if (item.kind === 'split-collapse') return 'collapse';
-        if (item.kind === 'hidden-rows') return 'hidden-rows';
-        return 'sparse-gap';
+        return 'hidden-rows';
       },
-      resolveItemHeight: (item) => item.kind === 'sparse-gap' ? item.count * ROW_H : ROW_H,
+      resolveItemHeight: () => ROW_H,
       resolveRow: (item) => item.kind === 'split-line' ? item.row : null,
       buildStaticRow: (item) => ({
         row: (item as Extract<WorkbookHorizontalRenderItem, { kind: 'split-line' }>).row,
@@ -78,14 +75,6 @@ export function useWorkbookHorizontalBodyLayout({
         return {
           kind: 'hidden-rows',
           item: segment.item as Extract<WorkbookHorizontalRenderItem, { kind: 'hidden-rows' }>,
-          top: segment.top,
-          height: segment.height,
-        };
-      }
-      if (segment.kind === 'sparse-gap') {
-        return {
-          kind: 'sparse-gap',
-          item: segment.item as Extract<WorkbookHorizontalRenderItem, { kind: 'sparse-gap' }>,
           top: segment.top,
           height: segment.height,
         };

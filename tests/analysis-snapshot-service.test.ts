@@ -8,6 +8,7 @@ import { strToU8, zipSync } from 'fflate';
 import {
   buildAnalysisSnapshotCacheKey,
   clearAnalysisSnapshotCache,
+  estimateAnalysisSnapshotMemoryBytes,
   peekAnalysisSnapshot,
   resolveAnalysisSnapshot,
 } from '../electron/main/analysisSnapshotService';
@@ -119,6 +120,35 @@ test('resolveAnalysisSnapshot reuses cached text analysis for identical keys', a
   assert.ok((first.textAnalysis?.replacementPairs.length ?? 0) > 0);
 });
 
+test('estimateAnalysisSnapshotMemoryBytes scales with prepared analysis payload size', async () => {
+  clearAnalysisSnapshotCache();
+  const small = await resolveAnalysisSnapshot({
+    sourceIdentity: 'cli::estimate-small',
+    compareMode: 'strict',
+    fileName: 'small.ts',
+    isWorkbook: false,
+    basePayload: createTextPayload('before'),
+    minePayload: createTextPayload('after'),
+    baseLocalPath: '',
+    mineLocalPath: '',
+  });
+  const largeBase = Array.from({ length: 4_000 }, (_, index) => `line-${index}`).join('\n');
+  const largeMine = `${largeBase}\nadded-tail`;
+  const large = await resolveAnalysisSnapshot({
+    sourceIdentity: 'cli::estimate-large',
+    compareMode: 'strict',
+    fileName: 'large.ts',
+    isWorkbook: false,
+    basePayload: createTextPayload(largeBase),
+    minePayload: createTextPayload(largeMine),
+    baseLocalPath: '',
+    mineLocalPath: '',
+  });
+
+  assert.ok(estimateAnalysisSnapshotMemoryBytes(small) > 0);
+  assert.ok(estimateAnalysisSnapshotMemoryBytes(large) > estimateAnalysisSnapshotMemoryBytes(small));
+});
+
 test('peekAnalysisSnapshot returns cached analysis without recomputing payload-dependent work', async () => {
   clearAnalysisSnapshotCache();
   const basePayload = createTextPayload(['header', 'alpha', 'tail'].join('\n'));
@@ -189,6 +219,62 @@ test('resolveAnalysisSnapshot can hydrate local workbook metadata when payload m
     assert.ok((snapshot.workbookAnalysis?.sectionsByMode?.strict?.length ?? 0) > 0);
     assert.ok((snapshot.workbookAnalysis?.navigationRegionsByMode?.strict?.length ?? 0) > 0);
     assert.ok((snapshot.workbookAnalysis?.perf?.metadataMs ?? 0) > 0);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('rust snapshot navigation keeps distant changed rows as separate visual regions', async () => {
+  clearAnalysisSnapshotCache();
+  if (!process.resourcesPath) {
+    Object.defineProperty(process, 'resourcesPath', {
+      value: '',
+      configurable: true,
+    });
+  }
+
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'svn-diff-navigation-snapshot-'));
+  const basePath = path.join(tempDir, 'base.xlsx');
+  const minePath = path.join(tempDir, 'mine.xlsx');
+  const rowCount = 600;
+  const baseRows = Array.from({ length: rowCount }, (_, index) => [
+    String(index + 1),
+    `Value-${index + 1}`,
+  ]);
+  const mineRows = baseRows.map((row) => [...row]);
+  mineRows[99]![1] = 'Changed-100';
+  mineRows[499]![1] = 'Changed-500';
+
+  try {
+    await fs.writeFile(basePath, Buffer.from(buildWorkbookZip('Thing', baseRows)));
+    await fs.writeFile(minePath, Buffer.from(buildWorkbookZip('Thing', mineRows)));
+
+    const snapshot = await resolveAnalysisSnapshot({
+      sourceIdentity: 'local-dev::navigation-snapshot-workbook',
+      compareMode: 'strict',
+      fileName: 'navigation.xlsx',
+      isWorkbook: true,
+      basePayload: {
+        content: null,
+        bytes: null,
+        metadata: null,
+        perf: { readMs: 0, parserMs: 0, metadataMs: 0, byteLength: 0 },
+      },
+      minePayload: {
+        content: null,
+        bytes: null,
+        metadata: null,
+        perf: { readMs: 0, parserMs: 0, metadataMs: 0, byteLength: 0 },
+      },
+      baseLocalPath: basePath,
+      mineLocalPath: minePath,
+    });
+
+    const rows = snapshot.workbookAnalysis?.workbookDeltaByMode.strict?.sections[0]?.rows ?? [];
+    const regions = snapshot.workbookAnalysis?.navigationRegionsByMode?.strict ?? [];
+    assert.ok(rows.length < rowCount / 10);
+    assert.deepEqual(regions.map((region) => region.startRowIndex), [99, 499]);
+    assert.deepEqual(regions.map((region) => region.anchorSelection?.rowNumber), [100, 500]);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }

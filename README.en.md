@@ -78,7 +78,7 @@ Versora restores TortoiseSVN's default viewer before uninstalling so no external
 
 ## Compatibility and migration
 
-- Keeps the `window.svnDiff` compatibility bridge and also exposes `window.versora`
+- Exposes a single Electron renderer bridge at `window.versora`
 - Stores new settings under `versora.*` while reading legacy `svn-excel-diff-tool.*` settings
 - Uses `Versora/Cache` and recognizes the previous `SvnDiffTool/Cache` location during upgrades
 - Keeps the Windows `appId` stable to preserve installer upgrades and automatic updates

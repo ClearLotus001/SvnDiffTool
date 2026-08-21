@@ -148,6 +148,33 @@ const coralDeep = hex('#b8453d');
 const blue = hex('#3aa6a8');
 const blueDeep = hex('#208b8d');
 
+// Keep the native installer aligned with the light/dark surfaces used by the
+// renderer. This is the canonical installer palette; a generated NSIS include
+// lets the native controls and raster artwork consume the same values.
+const installerTheme = {
+  background: '#F5F7FB',
+  panel: '#FFFFFF',
+  panelAlt: '#E7EDF6',
+  text: '#09090B',
+  muted: '#71717A',
+  accent: '#3B82F6',
+  accentStrong: '#2563EB',
+  accentSoft: '#DBEAFE',
+  brandBackground: '#0B0D12',
+  brandSurface: '#171A27',
+  brandText: '#FAFAFA',
+  brandMuted: '#A1A1AA',
+  success: '#10B981',
+} as const;
+
+const installerBackground = hex(installerTheme.background);
+const installerBrandBackground = hex(installerTheme.brandBackground);
+const installerBrandSurface = hex(installerTheme.brandSurface);
+const installerAccent = hex(installerTheme.accent);
+const installerSuccess = hex(installerTheme.success);
+const installerWarm = hex('#F07A61');
+const installerLilac = hex('#8B7CF6');
+
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
@@ -206,6 +233,35 @@ function drawCapsule(canvas: Raster, x: number, y: number, width: number, height
   canvas.fillRoundedRect(x, y, width, height, height / 2, color);
 }
 
+function drawSoftGlow(canvas: Raster, cx: number, cy: number, radius: number, color: Color, maxAlpha: number) {
+  canvas.fillCircle(cx, cy, radius, (nx, ny) => {
+    const dx = (nx - 0.5) * 2;
+    const dy = (ny - 0.5) * 2;
+    const distance = Math.min(1, Math.sqrt((dx * dx) + (dy * dy)));
+    return withAlpha(color, Math.round(maxAlpha * ((1 - distance) ** 2)));
+  });
+}
+
+function drawGlassDiffCard(canvas: Raster, x: number, y: number, width: number, height: number, tone: Color) {
+  canvas.fillRoundedRect(
+    x,
+    y,
+    width,
+    height,
+    18,
+    (_nx, ny) => withAlpha(paperBright, Math.round(26 - (ny * 10))),
+  );
+  canvas.strokeRoundedRect(x, y, width, height, 18, 2, withAlpha(paperBright, 38));
+  canvas.fillRect(x + 18, y, width - 36, 2, withAlpha(tone, 176));
+
+  drawCapsule(canvas, x + 20, y + 23, width * 0.31, 10, withAlpha(tone, 218));
+  drawCapsule(canvas, x + (width * 0.57), y + 23, width * 0.25, 10, withAlpha(paperBright, 90));
+  drawCapsule(canvas, x + 20, y + 49, width * 0.46, 8, withAlpha(paperBright, 82));
+  drawCapsule(canvas, x + (width * 0.56), y + 49, width * 0.27, 8, withAlpha(tone, 142));
+  drawCapsule(canvas, x + 32, y + 70, width * 0.27, 7, withAlpha(paperBright, 54));
+  drawCapsule(canvas, x + (width * 0.45), y + 70, width * 0.37, 7, withAlpha(paperBright, 48));
+}
+
 function drawAppMark(canvas: Raster, x: number, y: number, size: number) {
   const u = (value: number) => x + (value * size);
   const v = (value: number) => y + (value * size);
@@ -257,36 +313,84 @@ function verticalGradient(top: Color, bottom: Color): (nx: number, ny: number) =
 }
 
 function drawInstallerHeader(): Raster {
-  const canvas = new Raster(300, 114, paperBright);
+  const canvas = new Raster(300, 114, installerBackground);
   return downsample(canvas, 2);
 }
 
+function drawInstallerRail(width: number, height: number): Raster {
+  const canvas = new Raster(width, height, installerBrandBackground);
+  canvas.fillRoundedRect(0, 0, width, height, 0, (nx, ny) => (
+    mix(installerBrandBackground, installerBrandSurface, clamp01((nx * 0.26) + (ny * 0.7)))
+  ));
+
+  drawSoftGlow(canvas, width * 0.12, height * 0.76, width * 0.78, installerAccent, 72);
+  drawSoftGlow(canvas, width * 0.96, height * 0.16, width * 0.72, installerWarm, 58);
+  drawSoftGlow(canvas, width * 0.68, height * 0.49, width * 0.62, installerLilac, 38);
+
+  canvas.fillRect(0, 0, width * 0.56, 10, coral);
+  canvas.fillRect(width * 0.56, 0, width * 0.44, 10, blue);
+  canvas.fillRect(0, 10, width, 2, withAlpha(paperBright, 38));
+
+  const markSize = Math.min(width * 0.42, height * 0.19);
+  drawAppMark(canvas, (width - markSize) / 2, height * 0.075, markSize);
+
+  const cardX = width * 0.105;
+  const cardWidth = width * 0.79;
+  const cardHeight = Math.min(102, height * 0.155);
+  const firstCardY = height * 0.31;
+  drawGlassDiffCard(canvas, cardX, firstCardY, cardWidth, cardHeight, installerAccent);
+  drawGlassDiffCard(canvas, cardX, firstCardY + cardHeight + (height * 0.035), cardWidth, cardHeight, installerSuccess);
+
+  canvas.fillRoundedRect(
+    width * 0.105,
+    height * 0.82,
+    width * 0.79,
+    height * 0.105,
+    18,
+    withAlpha(paperBright, 15),
+  );
+  canvas.strokeRoundedRect(
+    width * 0.105,
+    height * 0.82,
+    width * 0.79,
+    height * 0.105,
+    18,
+    2,
+    withAlpha(paperBright, 28),
+  );
+  drawCapsule(canvas, width * 0.17, height * 0.855, width * 0.28, 9, withAlpha(paperBright, 72));
+  drawCapsule(canvas, width * 0.52, height * 0.855, width * 0.26, 9, withAlpha(installerAccent, 176));
+
+  return canvas;
+}
+
 function drawInstallerSidebar(): Raster {
-  const canvas = new Raster(328, 628, ink);
-  canvas.fillRect(0, 0, canvas.width / 2, 12, coral);
-  canvas.fillRect(canvas.width / 2, 0, canvas.width / 2, 12, blueDeep);
-  canvas.fillRect(0, 12, canvas.width, 2, withAlpha(paperBright, 34));
+  return downsample(drawInstallerRail(328, 628), 2);
+}
 
-  drawAppMark(canvas, 109, 54, 110);
-  canvas.fillRect(46, 210, 236, 2, withAlpha(paperBright, 30));
+function drawInstallerPanel(): Raster {
+  return downsample(drawInstallerRail(368, 712), 2);
+}
 
-  drawCapsule(canvas, 48, 254, 90, 12, withAlpha(coral, 235));
-  drawCapsule(canvas, 174, 254, 104, 12, withAlpha(blue, 220));
-  drawCapsule(canvas, 66, 286, 126, 10, withAlpha(paperBright, 92));
-  drawCapsule(canvas, 204, 286, 56, 10, withAlpha(blue, 165));
-
-  canvas.fillRect(46, 338, 236, 2, withAlpha(paperBright, 30));
-  drawCapsule(canvas, 48, 382, 132, 12, withAlpha(coral, 205));
-  drawCapsule(canvas, 194, 382, 84, 12, withAlpha(blue, 235));
-  drawCapsule(canvas, 78, 414, 60, 10, withAlpha(coral, 145));
-  drawCapsule(canvas, 152, 414, 108, 10, withAlpha(paperBright, 88));
-
-  canvas.fillRect(46, 466, 236, 2, withAlpha(paperBright, 30));
-  drawCapsule(canvas, 48, 510, 78, 12, withAlpha(coral, 225));
-  drawCapsule(canvas, 160, 510, 118, 12, withAlpha(blue, 205));
-  drawCapsule(canvas, 64, 542, 112, 10, withAlpha(paperBright, 84));
-  drawCapsule(canvas, 190, 542, 70, 10, withAlpha(coral, 145));
-  return downsample(canvas, 2);
+function renderInstallerThemeInclude(): string {
+  const defineColor = (name: string, value: string) => `!define ${name} "${value.slice(1).toUpperCase()}"`;
+  return [
+    '; Generated by scripts/generate-installer-assets.ts. Do not edit by hand.',
+    defineColor('COLOR_BG', installerTheme.background),
+    defineColor('COLOR_PANEL', installerTheme.panel),
+    defineColor('COLOR_PANEL_ALT', installerTheme.panelAlt),
+    defineColor('COLOR_TEXT', installerTheme.text),
+    defineColor('COLOR_MUTED', installerTheme.muted),
+    defineColor('COLOR_ACCENT', installerTheme.accent),
+    defineColor('COLOR_ACCENT_STRONG', installerTheme.accentStrong),
+    defineColor('COLOR_ACCENT_SOFT', installerTheme.accentSoft),
+    defineColor('COLOR_BRAND_BG', installerTheme.brandBackground),
+    defineColor('COLOR_BRAND_SURFACE', installerTheme.brandSurface),
+    defineColor('COLOR_BRAND_TEXT', installerTheme.brandText),
+    defineColor('COLOR_BRAND_MUTED', installerTheme.brandMuted),
+    defineColor('COLOR_SUCCESS', installerTheme.success),
+    '',
+  ].join('\n');
 }
 
 function drawIconPng(): Raster {
@@ -506,6 +610,12 @@ async function main() {
   await writeFile(path.join(rootDir, 'assets', 'icon.ico'), encodeIco(icon));
   await writeFile(path.join(rootDir, 'build', 'installerHeader.bmp'), encodeBmp(drawInstallerHeader()));
   await writeFile(path.join(rootDir, 'build', 'installerSidebar.bmp'), encodeBmp(drawInstallerSidebar()));
+  await writeFile(path.join(rootDir, 'build', 'installerPanel.bmp'), encodeBmp(drawInstallerPanel()));
+  await fs.promises.writeFile(
+    path.join(rootDir, 'build', 'installer-theme.nsh'),
+    renderInstallerThemeInclude(),
+    'utf-8',
+  );
 }
 
 void main().catch((error) => {

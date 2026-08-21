@@ -9,7 +9,10 @@ import {
   findWorkbookDiffRegionNavigationIndex,
   findWorkbookDiffRegionIndexForSelection,
   formatWorkbookDiffRegionLabel,
+  formatWorkbookDiffRegionSemanticSummary,
   formatWorkbookDiffRegionSummary,
+  resolveWorkbookDiffRegionChangeKind,
+  shouldShowWorkbookDiffRegionLabelForSide,
 } from '../src/utils/workbook/workbookDiffRegion';
 import { createWorkbookRowLine, createWorkbookSheetLine } from '../src/utils/workbook/workbookDisplay';
 import {
@@ -111,6 +114,47 @@ test('workbook diff regions expose region-level labels and selection lookup', ()
     findWorkbookDiffRegionIndexForSelection(regions, activeRegion?.anchorSelection ?? null),
     0,
   );
+});
+
+test('workbook diff region semantic labels describe change direction and owning pane', () => {
+  const labels = {
+    add: 'Added on right',
+    delete: 'Deleted on right',
+    modify: 'Modified',
+  };
+  const added = buildRegion({
+    rowNumberStart: 164,
+    rowNumberEnd: 168,
+    hasBaseSide: false,
+    hasMineSide: true,
+  });
+  const deleted = buildRegion({
+    rowNumberStart: 20,
+    rowNumberEnd: 21,
+    hasBaseSide: true,
+    hasMineSide: false,
+  });
+  const modified = buildRegion({
+    rowNumberStart: 8,
+    rowNumberEnd: 8,
+    hasBaseSide: true,
+    hasMineSide: true,
+  });
+
+  assert.equal(resolveWorkbookDiffRegionChangeKind(added), 'add');
+  assert.equal(formatWorkbookDiffRegionSemanticSummary(added, labels), 'Added on right A164:A168 · 5×1');
+  assert.equal(shouldShowWorkbookDiffRegionLabelForSide(added, 'base'), false);
+  assert.equal(shouldShowWorkbookDiffRegionLabelForSide(added, 'mine'), true);
+
+  assert.equal(resolveWorkbookDiffRegionChangeKind(deleted), 'delete');
+  assert.equal(formatWorkbookDiffRegionSemanticSummary(deleted, labels), 'Deleted on right A20:A21 · 2×1');
+  assert.equal(shouldShowWorkbookDiffRegionLabelForSide(deleted, 'base'), true);
+  assert.equal(shouldShowWorkbookDiffRegionLabelForSide(deleted, 'mine'), false);
+
+  assert.equal(resolveWorkbookDiffRegionChangeKind(modified), 'modify');
+  assert.equal(formatWorkbookDiffRegionSemanticSummary(modified, labels), 'Modified A8 · 1×1');
+  assert.equal(shouldShowWorkbookDiffRegionLabelForSide(modified, 'base'), true);
+  assert.equal(shouldShowWorkbookDiffRegionLabelForSide(modified, 'mine'), true);
 });
 
 test('buildWorkbookDiffRegions merges corner-touching workbook cells into one visual region', () => {

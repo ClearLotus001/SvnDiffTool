@@ -46,7 +46,7 @@ import {
   type WorkbookSection,
 } from '@/utils/workbook/workbookSections';
 import {
-  formatWorkbookDiffRegionSummary,
+  formatWorkbookDiffRegionSemanticSummary,
 } from '@/utils/workbook/workbookDiffRegion';
 import {
   type WorkbookMetadataMap,
@@ -112,6 +112,7 @@ import {
   findNearestWorkbookVisibleItemIndex,
 } from '@/utils/workbook/workbookRenderItemIndexes';
 import { buildWorkbookRenderIdentity } from '@/utils/workbook/workbookRenderIdentity';
+import { scrollElementForNavigation } from '@/utils/navigation/animatedScroll';
 
 type CompareMode = 'stacked' | 'columns';
 
@@ -448,15 +449,11 @@ const WorkbookComparePanel = memo(({
       ? Math.max(0, (viewportHeight / 2) - (target.rowHeight / 2))
       : 60;
     const nextTop = Math.max(0, targetTop - offset);
-    const distance = Math.abs(container.scrollTop - nextTop);
-    const resolvedBehavior = behavior === 'smart'
-      ? (distance > Math.max(viewportHeight * 4, target.rowHeight * 200) ? 'auto' : 'smooth')
-      : behavior;
 
-    markProgrammaticScroll(420);
-    container.scrollTo({
+    markProgrammaticScroll(640);
+    scrollElementForNavigation(container, {
       top: nextTop,
-      behavior: resolvedBehavior,
+      behavior,
     });
     return true;
   }, [markProgrammaticScroll, rowVirtualDebug.viewportHeight, scrollRef, stackedVirtualOffsets]);
@@ -541,7 +538,7 @@ const WorkbookComparePanel = memo(({
 
     const exactIndex = visibleRowItemIndexByLineIdx.get(lineIdx) ?? -1;
     if (exactIndex >= 0) {
-      markProgrammaticScroll(420);
+      markProgrammaticScroll(640);
       scrollToIndex(exactIndex, align, behavior);
       setPendingScrollTarget((prev) => (
         prev && prev.lineIdx === lineIdx && prev.align === align ? null : prev
@@ -571,7 +568,7 @@ const WorkbookComparePanel = memo(({
           }
         }
       }
-      markProgrammaticScroll(420);
+      markProgrammaticScroll(640);
       scrollToIndex(nearestIndex, align, behavior);
       return true;
     }
@@ -680,31 +677,37 @@ const WorkbookComparePanel = memo(({
         || targetLeftWithinFrozenPane < frozenLeftBoundary
         || targetRightWithinFrozenPane > frozenRightBoundary
       ) {
-        frozenColumnsScroller.scrollLeft = Math.max(
-          0,
-          Math.min(
-            targetLeftWithinFrozenPane - desiredPadding,
-            virtualColumns.fullFrozenWidth - virtualColumns.frozenWidth,
+        scrollElementForNavigation(frozenColumnsScroller, {
+          left: Math.max(
+            0,
+            Math.min(
+              targetLeftWithinFrozenPane - desiredPadding,
+              virtualColumns.fullFrozenWidth - virtualColumns.frozenWidth,
+            ),
           ),
-        );
+          behavior: 'smooth',
+        });
       }
       return true;
     }
 
     if (strategy === 'focus') {
-      markProgrammaticScroll(260);
-      container.scrollLeft = desiredScrollLeft;
+      markProgrammaticScroll(640);
+      scrollElementForNavigation(container, { left: desiredScrollLeft, behavior: 'smooth' });
       return true;
     }
 
     const leftBoundary = container.scrollLeft + frozenWidth + desiredPadding;
     const rightBoundary = container.scrollLeft + container.clientWidth - desiredPadding;
     if (targetLeft < leftBoundary || targetLeft + targetWidth > rightBoundary) {
-      markProgrammaticScroll(260);
+      markProgrammaticScroll(640);
       if (targetLeft < leftBoundary) {
-        container.scrollLeft = desiredScrollLeft;
+        scrollElementForNavigation(container, { left: desiredScrollLeft, behavior: 'smooth' });
       } else {
-        container.scrollLeft = Math.max(0, targetLeft + targetWidth - container.clientWidth + desiredPadding);
+        scrollElementForNavigation(container, {
+          left: Math.max(0, targetLeft + targetWidth - container.clientWidth + desiredPadding),
+          behavior: 'smooth',
+        });
       }
     }
 
@@ -737,7 +740,10 @@ const WorkbookComparePanel = memo(({
           targetLeft < frozenColumnsScroller.scrollLeft + desiredPadding
           || targetRight > frozenColumnsScroller.scrollLeft + virtualColumns.frozenWidth - desiredPadding
         ) {
-          frozenColumnsScroller.scrollLeft = Math.max(0, Math.min(targetLeft - desiredPadding, maxScrollLeft));
+          scrollElementForNavigation(frozenColumnsScroller, {
+            left: Math.max(0, Math.min(targetLeft - desiredPadding, maxScrollLeft)),
+            behavior: 'smooth',
+          });
         }
       }
       return;
@@ -769,11 +775,14 @@ const WorkbookComparePanel = memo(({
     const rightBoundary = container.scrollLeft + container.clientWidth - desiredPadding;
 
     if (targetLeft < leftBoundary || targetRight > rightBoundary) {
-      markProgrammaticScroll(260);
+      markProgrammaticScroll(640);
       if (targetLeft < leftBoundary || targetWidth >= container.clientWidth - frozenWidth - (desiredPadding * 2)) {
-        container.scrollLeft = desiredScrollLeft;
+        scrollElementForNavigation(container, { left: desiredScrollLeft, behavior: 'smooth' });
       } else {
-        container.scrollLeft = Math.max(0, targetRight - container.clientWidth + desiredPadding);
+        scrollElementForNavigation(container, {
+          left: Math.max(0, targetRight - container.clientWidth + desiredPadding),
+          behavior: 'smooth',
+        });
       }
     }
   }, [
@@ -814,7 +823,7 @@ const WorkbookComparePanel = memo(({
   ) => {
     if (!target || target.kind === 'column') {
       return {
-        didScroll: scrollToResolvedLine(fallbackLineIdx, 'center', 'auto'),
+        didScroll: scrollToResolvedLine(fallbackLineIdx, 'center', 'smooth'),
         isExact: true,
       };
     }
@@ -823,20 +832,20 @@ const WorkbookComparePanel = memo(({
     if (mode === 'stacked') {
       const stackedTarget = stackedRowScrollTargetsBySide[target.side].get(target.rowNumber) ?? null;
       if (stackedTarget) {
-        scrollToStackedTarget(stackedTarget, 'center', 'auto');
+        scrollToStackedTarget(stackedTarget, 'center', 'smooth');
         return { didScroll: true, isExact: true };
       }
     }
 
     const rowIndex = rowItemIndexBySide[target.side].get(target.rowNumber) ?? -1;
     if (rowIndex >= 0) {
-      markProgrammaticScroll(420);
-      scrollToIndex(rowIndex, 'center', 'auto');
+      markProgrammaticScroll(640);
+      scrollToIndex(rowIndex, 'center', 'smooth');
       return { didScroll: true, isExact: true };
     }
 
     return {
-      didScroll: scrollToResolvedLine(fallbackLineIdx, 'center', 'auto'),
+      didScroll: scrollToResolvedLine(fallbackLineIdx, 'center', 'smooth'),
       isExact: !rowExists,
     };
   }, [
@@ -1013,8 +1022,8 @@ const WorkbookComparePanel = memo(({
     ? stackedVirtualItems
     : items;
   const scrollToCollapseIndex = useCallback((idx: number, align: 'start' | 'center' = 'start') => {
-    markProgrammaticScroll(360);
-    scrollToIndex(idx, align);
+    markProgrammaticScroll(640);
+    scrollToIndex(idx, align, 'smooth');
   }, [markProgrammaticScroll, scrollToIndex]);
   const {
     activeCollapseIndex,
@@ -1348,6 +1357,14 @@ const WorkbookComparePanel = memo(({
     compareCellsByRowNumber,
     compareMode,
   });
+  const activeRegionOverlayLabel = useMemo(() => formatWorkbookDiffRegionSemanticSummary(
+    activeDiffRegion,
+    {
+      add: t('workbookRegionAddedOnMine'),
+      delete: t('workbookRegionDeletedFromMine'),
+      modify: t('workbookRegionModified'),
+    },
+  ), [activeDiffRegion, t]);
   const activeRegionOverlayProps = useWorkbookCompareOverlayLayout({
     sectionRows,
     showColumnHeader,
@@ -1366,7 +1383,7 @@ const WorkbookComparePanel = memo(({
     frozenWidth: virtualColumns.frozenWidth,
     freezeColumnCount,
     pulseTriggerKey: activeRegionPulseTriggerKey,
-    label: formatWorkbookDiffRegionSummary(activeDiffRegion),
+    label: activeRegionOverlayLabel,
   });
   const bodyRenderProps = useWorkbookCompareBodyRenderProps({
     mode,

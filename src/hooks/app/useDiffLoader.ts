@@ -12,6 +12,7 @@ import type {
 import { EMPTY_COLLAPSE_EXPANSION_STATE, type CollapseExpansionState } from '@/utils/collapse/collapseState';
 import { buildDiffCacheKey } from '@/utils/diff/diffCacheKey';
 import { attachLineBlameToDiffLines } from '@/utils/diff/lineBlame';
+import { materializeCompactTransportDiffData } from '@/utils/diff/compactTextDiffLines';
 import { createEmptyTextLayoutSnapshots, type TextLayoutSnapshotsByMode } from '@/utils/diff/textLayoutState';
 import { isWorkbookFileName, resolveDiffTexts } from '@/utils/diff/diffSource';
 import { computeTextDiffAsync } from '@/utils/diff/computeTextDiffAsync';
@@ -59,7 +60,7 @@ export interface UseDiffLoaderResult {
   beginDiffLoad: () => Promise<number>;
   failDiffLoad: (seq: number, error: unknown) => void;
   applyDiffData: (
-    data: DiffData,
+    transportData: DiffData,
     options?: {
       seq?: number;
       loadingAlreadyStarted?: boolean;
@@ -169,7 +170,7 @@ export default function useDiffLoader({
   ]);
 
   const applyDiffData = useCallback(async (
-    data: DiffData,
+    transportData: DiffData,
     options?: {
       seq?: number;
       loadingAlreadyStarted?: boolean;
@@ -180,6 +181,15 @@ export default function useDiffLoader({
     const seq = options?.seq ?? ++loadSeqRef.current;
     const applyStart = getNow();
     const compareMode = options?.compareMode ?? workbookCompareModeRef.current;
+    recordPerfBridgeEvent('apply-diff-data:start', {
+      seq,
+      compareMode,
+      fileName: transportData.fileName,
+      hasPreparedDiff: Boolean(getPreparedDiffLinesForMode(transportData, compareMode)),
+      source: transportData.perf?.source ?? 'local-dev',
+    });
+    const data = materializeCompactTransportDiffData(transportData);
+    const transportHydrateMs = getNow() - applyStart;
     const preservedWorkbookViewState = options?.preserveWorkbookViewState
       ? {
           activeWorkbookSheetName: workbookUiStateRef.current.activeSheetName,
@@ -190,19 +200,13 @@ export default function useDiffLoader({
       : null;
     const cacheKey = buildDiffCacheKey(data, compareMode);
     const preparedDiffLines = getPreparedDiffLinesForMode(data, compareMode);
-    recordPerfBridgeEvent('apply-diff-data:start', {
-      seq,
-      compareMode,
-      fileName: data.fileName,
-      hasPreparedDiff: Boolean(preparedDiffLines),
-      source: data.perf?.source ?? 'local-dev',
-    });
     debugLog('apply-diff-data:start', {
       seq,
       compareMode,
       cacheKey,
       hasPreparedDiff: Boolean(preparedDiffLines),
       fileName: data.fileName,
+      transportHydrateMs: Number(transportHydrateMs.toFixed(1)),
     });
     if (!options?.loadingAlreadyStarted) {
       diffLoadActions.setError('');
@@ -213,6 +217,9 @@ export default function useDiffLoader({
 
     try {
       const shouldUsePreparedDiff = Boolean(preparedDiffLines);
+      const preparedDiffDuration = isWorkbookFileName(data.fileName || data.baseName || data.mineName)
+        ? (data.perf?.rustDiffMs ?? data.perf?.diffMs ?? 0)
+        : (data.perf?.diffMs ?? data.perf?.rustDiffMs ?? 0);
       let textResolveMs = 0;
       const cachedResult = diffResultCacheRef.current.get(cacheKey);
       const metadataInput: WorkbookMetadataSource = {
@@ -223,7 +230,7 @@ export default function useDiffLoader({
         mineBytes: data.mineBytes,
       };
       const hasMetadataFromPayload = data.baseWorkbookMetadata != null || data.mineWorkbookMetadata != null;
-      const canLoadMetadataRemotely = Boolean(window.svnDiff?.loadWorkbookMetadata && isWorkbookFileName(data.fileName || data.baseName || data.mineName));
+      const canLoadMetadataRemotely = Boolean(window.versora?.loadWorkbookMetadata && isWorkbookFileName(data.fileName || data.baseName || data.mineName));
       const canResolveMetadataLocally = shouldResolveWorkbookMetadata(metadataInput);
       const shouldLoadMetadata = canResolveMetadataLocally || canLoadMetadataRemotely;
       if (!canResolveMetadataLocally && (hasBytePayload(metadataInput.baseBytes) || hasBytePayload(metadataInput.mineBytes))) {
@@ -272,7 +279,7 @@ export default function useDiffLoader({
       };
 
       const scheduleLineBlameTask = () => {
-        const bridge = window.svnDiff;
+        const bridge = window.versora;
         const isLocalFilePair = data.source?.kind === 'local';
         const isVersionedTwoFilePair = Boolean(data.revisionSwitchableSides);
         if (
@@ -328,7 +335,7 @@ export default function useDiffLoader({
             });
             try {
               const result = canLoadMetadataRemotely
-                ? await window.svnDiff!.loadWorkbookMetadata(
+                ? await window.versora!.loadWorkbookMetadata(
                     data.baseRevisionInfo?.id,
                     data.mineRevisionInfo?.id,
                   )
@@ -417,7 +424,7 @@ export default function useDiffLoader({
           ...data.perf,
           textResolveMs,
           metadataMs: 0,
-          diffMs: 0,
+          diffMs: data.perf?.diffMs ?? 0,
           totalAppMs: getNow() - applyStart,
           diffLineCount: cachedDiffLines?.length ?? 0,
         });
@@ -446,7 +453,7 @@ export default function useDiffLoader({
       let diffDuration: number;
       if (shouldUsePreparedDiff) {
         nextDiffLines = preparedDiffLines!;
-        diffDuration = data.perf?.rustDiffMs ?? data.perf?.diffMs ?? 0;
+        diffDuration = preparedDiffDuration;
       } else {
         const shouldUseWorkbookDiff = isWorkbookFileName(data.fileName || data.baseName || data.mineName)
           || (
@@ -491,7 +498,7 @@ export default function useDiffLoader({
         source: data.perf?.source ?? 'local-dev',
         ...data.perf,
         textResolveMs,
-        diffMs: shouldUsePreparedDiff ? (data.perf?.rustDiffMs ?? data.perf?.diffMs ?? 0) : diffDuration,
+        diffMs: shouldUsePreparedDiff ? preparedDiffDuration : diffDuration,
         totalAppMs,
         diffLineCount: nextDiffLines.length,
       });
@@ -503,7 +510,7 @@ export default function useDiffLoader({
         diffLineCount: nextDiffLines.length,
         totalAppMs,
         textResolveMs,
-        diffMs: shouldUsePreparedDiff ? (data.perf?.rustDiffMs ?? data.perf?.diffMs ?? 0) : diffDuration,
+        diffMs: shouldUsePreparedDiff ? preparedDiffDuration : diffDuration,
       });
       debugLog('apply-diff-data:done', {
         seq,
@@ -578,7 +585,7 @@ export default function useDiffLoader({
       });
       return data;
     }
-    if (!window.svnDiff?.loadWorkbookCompareMode) {
+    if (!window.versora?.loadWorkbookCompareMode) {
       throw new Error(`Missing workbook compare mode payload for '${compareMode}'.`);
     }
 
@@ -595,7 +602,7 @@ export default function useDiffLoader({
       baseRevisionId: data.baseRevisionInfo?.id ?? null,
       mineRevisionId: data.mineRevisionInfo?.id ?? null,
     });
-    const payload = await window.svnDiff.loadWorkbookCompareMode(
+    const payload = await window.versora.loadWorkbookCompareMode(
       compareMode,
       data.baseRevisionInfo?.id,
       data.mineRevisionInfo?.id,
@@ -672,10 +679,10 @@ export default function useDiffLoader({
   ]);
 
   const loadElectronWorkingCopyDiff = useCallback(async (filePath: string) => {
-    if (!window.svnDiff?.loadDevWorkingCopyDiff) return;
+    if (!window.versora?.loadDevWorkingCopyDiff) return;
     const seq = await beginDiffLoad();
     try {
-      const nextData = await window.svnDiff.loadDevWorkingCopyDiff(filePath, workbookCompareModeRef.current);
+      const nextData = await window.versora.loadDevWorkingCopyDiff(filePath, workbookCompareModeRef.current);
       if (seq !== loadSeqRef.current) return;
       await applyDiffData(nextData, {
         seq,
@@ -688,8 +695,8 @@ export default function useDiffLoader({
   }, [applyDiffData, beginDiffLoad, failDiffLoad, loadSeqRef, workbookCompareModeRef]);
 
   const handlePickWorkingCopyFile = useCallback(async () => {
-    if (!window.svnDiff?.pickDiffFile) return;
-    const nextFile = await window.svnDiff.pickDiffFile();
+    if (!window.versora?.pickDiffFile) return;
+    const nextFile = await window.versora.pickDiffFile();
     if (!nextFile?.path) return;
     try {
       await loadElectronWorkingCopyDiff(nextFile.path);
@@ -702,18 +709,18 @@ export default function useDiffLoader({
     side: LocalFilePickSide,
     requiredExtension?: string,
   ) => {
-    if (!window.svnDiff?.pickComparableFile) return null;
-    return window.svnDiff.pickComparableFile(side, requiredExtension);
+    if (!window.versora?.pickComparableFile) return null;
+    return window.versora.pickComparableFile(side, requiredExtension);
   }, []);
 
   const handleCompareLocalFiles = useCallback(async (
     basePath: string,
     minePath: string,
   ) => {
-    if (!window.svnDiff?.loadLocalFileDiff) return false;
+    if (!window.versora?.loadLocalFileDiff) return false;
     const seq = await beginDiffLoad();
     try {
-      const nextData = await window.svnDiff.loadLocalFileDiff(
+      const nextData = await window.versora.loadLocalFileDiff(
         basePath,
         minePath,
         workbookCompareModeRef.current,
@@ -731,11 +738,11 @@ export default function useDiffLoader({
   }, [applyDiffData, beginDiffLoad, failDiffLoad, loadSeqRef, workbookCompareModeRef]);
 
   const loadSvnDiffViewerStatus = useCallback(async () => {
-    if (!window.svnDiff?.getSvnDiffViewerStatus) return;
+    if (!window.versora?.getSvnDiffViewerStatus) return;
     setIsLoadingSvnDiffViewerStatus(true);
     setSvnDiffViewerError('');
     try {
-      const nextStatus = await window.svnDiff.getSvnDiffViewerStatus();
+      const nextStatus = await window.versora.getSvnDiffViewerStatus();
       setSvnDiffViewerStatus(nextStatus);
     } catch (error) {
       setSvnDiffViewerError(error instanceof Error ? error.message : String(error));
@@ -750,11 +757,11 @@ export default function useDiffLoader({
   }, [dialogActions, loadSvnDiffViewerStatus]);
 
   const handleApplySvnDiffViewerScope = useCallback(async (scope: SvnDiffViewerScope) => {
-    if (!window.svnDiff?.configureSvnDiffViewer) return;
+    if (!window.versora?.configureSvnDiffViewer) return;
     setApplyingSvnDiffViewerScope(scope);
     setSvnDiffViewerError('');
     try {
-      const nextStatus = await window.svnDiff.configureSvnDiffViewer(scope);
+      const nextStatus = await window.versora.configureSvnDiffViewer(scope);
       setSvnDiffViewerStatus(nextStatus);
     } catch (error) {
       setSvnDiffViewerError(error instanceof Error ? error.message : String(error));
@@ -764,11 +771,11 @@ export default function useDiffLoader({
   }, [setApplyingSvnDiffViewerScope, setSvnDiffViewerError, setSvnDiffViewerStatus]);
 
   const handleRestoreSvnDiffViewerDefault = useCallback(async () => {
-    if (!window.svnDiff?.restoreSvnDefaultDiffViewerConfiguration) return;
+    if (!window.versora?.restoreSvnDefaultDiffViewerConfiguration) return;
     setIsRestoringSvnDiffViewerDefault(true);
     setSvnDiffViewerError('');
     try {
-      const nextStatus = await window.svnDiff.restoreSvnDefaultDiffViewerConfiguration();
+      const nextStatus = await window.versora.restoreSvnDefaultDiffViewerConfiguration();
       setSvnDiffViewerStatus(nextStatus);
     } catch (error) {
       setSvnDiffViewerError(error instanceof Error ? error.message : String(error));
@@ -778,10 +785,10 @@ export default function useDiffLoader({
   }, [setIsRestoringSvnDiffViewerDefault, setSvnDiffViewerError, setSvnDiffViewerStatus]);
 
   const reloadCliDiffData = useCallback(async () => {
-    if (!window.svnDiff?.getDiffData) return;
+    if (!window.versora?.getDiffData) return;
     const seq = await beginDiffLoad();
     try {
-      const data = await window.svnDiff.getDiffData(workbookCompareModeRef.current);
+      const data = await window.versora.getDiffData(workbookCompareModeRef.current);
       if (seq !== loadSeqRef.current) return;
       await applyDiffData(data, {
         seq,

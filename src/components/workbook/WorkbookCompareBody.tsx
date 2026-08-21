@@ -9,7 +9,6 @@ import type {
 import WorkbookActiveRegionOverlayLayer from '@/components/workbook/WorkbookActiveRegionOverlayLayer';
 import WorkbookColumnsCanvasStrip from '@/components/workbook/WorkbookColumnsCanvasStrip';
 import WorkbookHiddenRowsBar from '@/components/workbook/WorkbookHiddenRowsBar';
-import WorkbookSparseGapPlaceholder from '@/components/workbook/WorkbookSparseGapPlaceholder';
 import WorkbookStackedCanvasStrip from '@/components/workbook/WorkbookStackedCanvasStrip';
 
 type WorkbookCompareStackedCanvasProps = Omit<ComponentProps<typeof WorkbookStackedCanvasStrip>, 'groups'>;
@@ -132,29 +131,6 @@ export default function WorkbookCompareBody({
                 });
               }
 
-              if (segment.kind === 'sparse-gap') {
-                return (
-                  <div
-                    key={`sparse-gap-${segment.item.rowNumberStart}-${segment.item.rowNumberEnd}`}
-                    style={{
-                      position: 'absolute',
-                      top: segment.top,
-                      left: 0,
-                      right: 0,
-                      minWidth: minBodyWidth,
-                      height: segment.height,
-                    }}>
-                    <div style={{ position: 'sticky', left: 0, width: viewportWidth, overflow: 'hidden', height: '100%' }}>
-                      <WorkbookSparseGapPlaceholder
-                        count={segment.item.count}
-                        rowNumberStart={segment.item.rowNumberStart}
-                        rowNumberEnd={segment.item.rowNumberEnd}
-                      />
-                    </div>
-                  </div>
-                );
-              }
-
               return null;
             })}
             {stackedCanvasRuns.map((run) => (
@@ -213,29 +189,6 @@ export default function WorkbookCompareBody({
                 pinnedCollapseWidth,
                 onReveal: () => onRevealHiddenRows(segment.item.rowNumbers),
               });
-            }
-
-            if (segment.kind === 'sparse-gap') {
-              return (
-                <div
-                  key={`sparse-gap-${segment.item.rowNumberStart}-${segment.item.rowNumberEnd}`}
-                  style={{
-                    position: 'absolute',
-                    top: segment.top,
-                    left: 0,
-                    right: 0,
-                    minWidth: minBodyWidth,
-                    height: segment.height,
-                  }}>
-                  <div style={{ position: 'sticky', left: 0, width: viewportWidth, overflow: 'hidden', height: '100%' }}>
-                    <WorkbookSparseGapPlaceholder
-                      count={segment.item.count}
-                      rowNumberStart={segment.item.rowNumberStart}
-                      rowNumberEnd={segment.item.rowNumberEnd}
-                    />
-                  </div>
-                </div>
-              );
             }
 
             return (

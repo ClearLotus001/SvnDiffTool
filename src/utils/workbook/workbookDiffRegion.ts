@@ -726,6 +726,50 @@ export function formatWorkbookDiffRegionSummary(
   return `${rangeLabel} · ${rowCount}×${columnCount}`;
 }
 
+export type WorkbookDiffRegionChangeKind = 'add' | 'delete' | 'modify' | 'equal';
+
+export function resolveWorkbookDiffRegionChangeKind(
+  region: WorkbookDiffRegion | null | undefined,
+): WorkbookDiffRegionChangeKind {
+  if (!region) return 'equal';
+  if (region.hasBaseSide && region.hasMineSide) return 'modify';
+  if (region.hasMineSide) return 'add';
+  if (region.hasBaseSide) return 'delete';
+  return 'equal';
+}
+
+export function formatWorkbookDiffRegionSemanticSummary(
+  region: WorkbookDiffRegion | null | undefined,
+  labels: {
+    add: string;
+    delete: string;
+    modify: string;
+  },
+): string {
+  const summary = formatWorkbookDiffRegionSummary(region);
+  if (!summary) return '';
+
+  const kind = resolveWorkbookDiffRegionChangeKind(region);
+  const prefix = kind === 'add'
+    ? labels.add
+    : kind === 'delete'
+      ? labels.delete
+      : kind === 'modify'
+        ? labels.modify
+        : '';
+  return prefix ? `${prefix} ${summary}` : summary;
+}
+
+export function shouldShowWorkbookDiffRegionLabelForSide(
+  region: WorkbookDiffRegion | null | undefined,
+  side: 'base' | 'mine',
+): boolean {
+  const kind = resolveWorkbookDiffRegionChangeKind(region);
+  if (kind === 'add') return side === 'mine';
+  if (kind === 'delete') return side === 'base';
+  return kind === 'modify';
+}
+
 export function workbookDiffRegionContainsSelection(
   region: WorkbookDiffRegion,
   selection: WorkbookSelectedCell | null,

@@ -8,7 +8,9 @@ use std::io;
 use std::path::Path;
 
 use cli::{parse_args, OutputMode};
-use diff::compute_workbook_diff_output;
+use diff::{
+    compute_workbook_diff_output, compute_workbook_diff_outputs, write_workbook_diff_outputs_stream,
+};
 use workbook::{write_workbook_metadata_json, write_workbook_text};
 
 fn main() {
@@ -24,7 +26,7 @@ fn main() {
     let compare_mode = parsed_args.compare_mode;
 
     match output_mode {
-        OutputMode::DiffJson => {
+        OutputMode::DiffJson | OutputMode::DiffJsonBoth | OutputMode::DiffJsonStream => {
             let mut parts = file_path.splitn(2, '\n');
             let base_file_path = parts.next().unwrap_or_default();
             let mine_file_path = parts.next().unwrap_or_default();
@@ -61,6 +63,33 @@ fn main() {
                 }
                 Err(error) => Err(error),
             }
+        }
+        OutputMode::DiffJsonBoth => {
+            let mut parts = file_path.splitn(2, '\n');
+            let base_file_path = parts.next().unwrap_or_default();
+            let mine_file_path = parts.next().unwrap_or_default();
+            match compute_workbook_diff_outputs(base_file_path, mine_file_path) {
+                Ok(diff_output) => {
+                    let stdout = io::stdout();
+                    let mut handle = stdout.lock();
+                    serde_json::to_writer(&mut handle, &diff_output)
+                        .map_err(|error| io::Error::other(error.to_string()))
+                }
+                Err(error) => Err(error),
+            }
+        }
+        OutputMode::DiffJsonStream => {
+            let mut parts = file_path.splitn(2, '\n');
+            let base_file_path = parts.next().unwrap_or_default();
+            let mine_file_path = parts.next().unwrap_or_default();
+            let stdout = io::stdout();
+            let mut handle = stdout.lock();
+            write_workbook_diff_outputs_stream(
+                base_file_path,
+                mine_file_path,
+                &compare_mode,
+                &mut handle,
+            )
         }
     };
 

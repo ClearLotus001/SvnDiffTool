@@ -147,7 +147,7 @@ const FileSlot = memo(({
       <div
         className="local-file-compare-dialog__file"
         data-state={isDraggingFile ? 'dragging' : file ? 'selected' : 'empty'}
-        title={file?.path ?? ''}
+        aria-label={file?.path || undefined}
         aria-live="polite">
         <span
           className={`local-file-compare-dialog__drop-glyph ${file && !isDraggingFile ? 'local-file-compare-dialog__drop-glyph--selected' : ''}`}
@@ -273,7 +273,7 @@ const LocalFileCompareDialog = memo(({
     const droppedFile = files[0]!;
     let droppedPath = '';
     try {
-      droppedPath = window.svnDiff?.getPathForDroppedFile?.(droppedFile)?.trim() ?? '';
+      droppedPath = window.versora?.getPathForDroppedFile?.(droppedFile)?.trim() ?? '';
     } catch {
       droppedPath = '';
     }
@@ -366,15 +366,13 @@ const LocalFileCompareDialog = memo(({
         <div className="local-file-compare-dialog__smart-mode-rules">
           <div
             className="local-file-compare-dialog__smart-mode-rule"
-            data-mode="versioned"
-            title={t('localFileCompareSmartModeVersioned')}>
+            data-mode="versioned">
             <GitBranch size={14} aria-hidden="true" />
             <span>{t('localFileCompareSmartModeVersioned')}</span>
           </div>
           <div
             className="local-file-compare-dialog__smart-mode-rule"
-            data-mode="local"
-            title={t('localFileCompareSmartModePlain')}>
+            data-mode="local">
             <HardDrive size={14} aria-hidden="true" />
             <span>{t('localFileCompareSmartModePlain')}</span>
           </div>
@@ -400,7 +398,6 @@ const LocalFileCompareDialog = memo(({
             disabled={busy || (!baseFile && !mineFile)}
             onClick={handleSwap}
             aria-label={t('localFileCompareSwapFiles')}
-            title={t('localFileCompareSwapFiles')}
             className="local-file-compare-dialog__swap">
             <ArrowLeftRight size={15} />
           </button>

@@ -2,20 +2,14 @@
 !include "FileFunc.nsh"
 !include "nsDialogs.nsh"
 !include "WinMessages.nsh"
+!include "${BUILD_RESOURCES_DIR}\installer-theme.nsh"
 
 !define INSTALLER_BOOTSTRAP_FILE "installer-bootstrap.properties"
 !define INSTALLER_BOOTSTRAP_PREVIOUS_FILE "installer-bootstrap.previous.properties"
 !define INSTALLER_MAINTENANCE_PENDING_FILE "installer-maintenance.pending"
-!define COLOR_BG "F5F7FA"
-!define COLOR_PANEL "FFFFFF"
-!define COLOR_PANEL_ALT "E3E8EE"
-!define COLOR_TEXT "18212B"
-!define COLOR_MUTED "58636F"
-!define COLOR_ACCENT "D65A50"
-!define COLOR_ACCENT2 "208B8D"
 !define MUI_BGCOLOR "${COLOR_BG}"
 !define MUI_TEXTCOLOR "${COLOR_TEXT}"
-!define MUI_FINISHPAGE_LINK_COLOR "${COLOR_ACCENT2}"
+!define MUI_FINISHPAGE_LINK_COLOR "${COLOR_ACCENT}"
 !define MUI_ABORTWARNING
 !define /ifndef INSTALL_REGISTRY_KEY "Software\${APP_GUID}"
 !define /ifndef UNINSTALL_REGISTRY_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINSTALL_APP_KEY}"
@@ -23,7 +17,9 @@
 !ifndef BUILD_UNINSTALLER
 
 !define MUI_CUSTOMFUNCTION_GUIINIT InstallerGuiInit
+!include "getProcessInfo.nsh"
 
+Var pid
 Var ShouldCreateDesktopShortcut
 Var SelectedDiffViewerMode
 Var SelectedCacheParent
@@ -47,6 +43,16 @@ Var InstallerProgressOffset
 Var InstallerProgressTextOffset
 Var InstallerFinishRunCheckbox
 Var InstallerUpgradePreserveLabel
+Var InstallerBrandBitmap
+Var InstallerBrandImageHandle
+Var InstallerFontDisplay
+Var InstallerFontSection
+Var InstallerFontBody
+Var InstallerFontMono
+Var InstallerFontStrong
+Var InstallerFontSmallStrong
+Var InstallerOriginalWidth
+Var InstallerOriginalHeight
 
 !macro MoveResizeInstallerControl HWND PARENT DX DY DW DH
   System::Store "S"
@@ -101,6 +107,42 @@ Var InstallerUpgradePreserveLabel
   SendMessage $1 ${WM_SETTEXT} 0 "STR:${SUBTITLE}"
 !macroend
 
+!macro CreateInstallerBrandRail STEP SECTION
+  ${NSD_CreateBitmap} 0 0 27% 100% ""
+  Pop $InstallerBrandBitmap
+  ${NSD_SetBitmap} $InstallerBrandBitmap "$PLUGINSDIR\installerPanel.bmp" $InstallerBrandImageHandle
+
+  ${NSD_CreateLabel} 4% 83% 20% 7% "VERSORA"
+  Pop $1
+  SendMessage $1 ${WM_SETFONT} $InstallerFontStrong 1
+  SetCtlColors $1 "${COLOR_BRAND_TEXT}" "${COLOR_BRAND_SURFACE}"
+  System::Call 'USER32::SetWindowPos(p$1,p0,i0,i0,i0,i0,i0x13)'
+
+  ${NSD_CreateLabel} 4% 90% 21% 8% "${STEP}  ·  ${SECTION}"
+  Pop $1
+  SendMessage $1 ${WM_SETFONT} $InstallerFontSmallStrong 1
+  SetCtlColors $1 "${COLOR_BRAND_MUTED}" "${COLOR_BRAND_SURFACE}"
+  System::Call 'USER32::SetWindowPos(p$1,p0,i0,i0,i0,i0,i0x13)'
+
+  ${NSD_CreateLabel} 28% 0 1% 100% ""
+  Pop $1
+  SetCtlColors $1 "" "${COLOR_PANEL_ALT}"
+!macroend
+
+!macro CreateInstallerCard X Y W H TONE
+  ${NSD_CreateLabel} ${X} ${Y} ${W} ${H} ""
+  Pop $1
+  SetCtlColors $1 "" "${COLOR_PANEL}"
+  ${NSD_CreateLabel} ${X} ${Y} ${W} 1u ""
+  Pop $1
+  SetCtlColors $1 "" "${TONE}"
+!macroend
+
+!macro StyleInstallerControl HWND FONT TEXTCOLOR BGCOLOR
+  SendMessage ${HWND} ${WM_SETFONT} ${FONT} 1
+  SetCtlColors ${HWND} ${TEXTCOLOR} ${BGCOLOR}
+!macroend
+
 LangString INSTALL_WELCOME_BADGE 1033 "VERSORA  /  VERSION ${VERSION}"
 LangString INSTALL_WELCOME_BADGE 2052 "VERSORA  /  版本 ${VERSION}"
 LangString INSTALL_WELCOME_TITLE 1033 "Install Versora"
@@ -117,6 +159,18 @@ LangString INSTALL_WELCOME_POINT3 1033 "Updates preserve personal settings and m
 LangString INSTALL_WELCOME_POINT3 2052 "后续更新会保留个人设置与受控数据"
 LangString INSTALL_WELCOME_HINT 1033 "Continue to review installation options."
 LangString INSTALL_WELCOME_HINT 2052 "继续查看安装选项。"
+LangString INSTALL_WELCOME_CARD_TITLE 1033 "See every change, without the noise"
+LangString INSTALL_WELCOME_CARD_TITLE 2052 "更清晰地看见每一次变化"
+LangString INSTALL_STEP_OVERVIEW 1033 "OVERVIEW"
+LangString INSTALL_STEP_OVERVIEW 2052 "概览"
+LangString INSTALL_STEP_LOCATION 1033 "LOCATION"
+LangString INSTALL_STEP_LOCATION 2052 "位置"
+LangString INSTALL_STEP_INTEGRATION 1033 "INTEGRATION"
+LangString INSTALL_STEP_INTEGRATION 2052 "集成"
+LangString INSTALL_STEP_UPDATE 1033 "UPDATE"
+LangString INSTALL_STEP_UPDATE 2052 "更新"
+LangString INSTALL_STEP_COMPLETE 1033 "READY"
+LangString INSTALL_STEP_COMPLETE 2052 "就绪"
 
 LangString INSTALL_UPGRADE_TITLE 1033 "Update Versora"
 LangString INSTALL_UPGRADE_TITLE 2052 "更新 Versora"
@@ -140,8 +194,8 @@ LangString INSTALL_UPGRADE_LOCATION_LABEL 1033 "Install location"
 LangString INSTALL_UPGRADE_LOCATION_LABEL 2052 "安装位置"
 LangString INSTALL_UPGRADE_PRESERVE_LABEL 1033 "Preserved"
 LangString INSTALL_UPGRADE_PRESERVE_LABEL 2052 "保留内容"
-LangString INSTALL_UPGRADE_PRESERVE_VALUE 1033 "App settings, shortcuts, managed cache location, and TortoiseSVN preference"
-LangString INSTALL_UPGRADE_PRESERVE_VALUE 2052 "应用设置、快捷方式、受控缓存位置和 TortoiseSVN 接入偏好"
+LangString INSTALL_UPGRADE_PRESERVE_VALUE 1033 "Settings, shortcuts, cache, and TortoiseSVN preference"
+LangString INSTALL_UPGRADE_PRESERVE_VALUE 2052 "设置、快捷方式、缓存路径与 TortoiseSVN 偏好"
 LangString INSTALL_UPGRADE_ACTION 1033 "&Update"
 LangString INSTALL_UPGRADE_ACTION 2052 "更新(&U)"
 LangString INSTALL_REPAIR_ACTION 1033 "&Reinstall"
@@ -157,6 +211,12 @@ LangString INSTALL_PROGRESS_STATUS 1033 "Installation is in progress. You can ke
 LangString INSTALL_PROGRESS_STATUS 2052 "安装正在进行，请保持此窗口打开。"
 LangString INSTALL_PROGRESS_FINALIZING 1033 "Finalizing setup and restoring integrations..."
 LangString INSTALL_PROGRESS_FINALIZING 2052 "正在完成安装并恢复集成配置..."
+LangString INSTALL_CLOSE_PROMPT 1033 "Versora is still running. Setup needs to close it before replacing application files.$\r$\n$\r$\nContinue?"
+LangString INSTALL_CLOSE_PROMPT 2052 "Versora 仍在运行，安装程序需要先关闭它才能替换应用文件。$\r$\n$\r$\n是否继续？"
+LangString INSTALL_CLOSE_PROGRESS 1033 "Closing Versora and its helper processes..."
+LangString INSTALL_CLOSE_PROGRESS 2052 "正在关闭 Versora 及其辅助进程..."
+LangString INSTALL_CLOSE_FAILED 1033 "Setup still cannot close every Versora process.$\r$\n$\r$\nSave your work and end Versora.exe in Task Manager, then click Retry. If Versora is running as administrator, run this installer as administrator too."
+LangString INSTALL_CLOSE_FAILED 2052 "安装程序仍无法关闭全部 Versora 进程。$\r$\n$\r$\n请保存工作并在任务管理器中结束 Versora.exe，然后单击“重试”。如果 Versora 正以管理员权限运行，请也以管理员身份运行本安装程序。"
 LangString INSTALL_MAINTENANCE_FAILED 1033 "Versora files were installed, but setup could not finish configuring managed data and integrations. Retry now, or cancel and run setup again later."
 LangString INSTALL_MAINTENANCE_FAILED 2052 "Versora 文件已安装，但未能完成受控数据与集成配置。请选择立即重试，或取消并稍后重新运行安装程序。"
 LangString INSTALL_FINISH_HEADER_TITLE 1033 "Installation complete"
@@ -165,6 +225,8 @@ LangString INSTALL_FINISH_TITLE 1033 "Versora is ready"
 LangString INSTALL_FINISH_TITLE 2052 "Versora 已准备就绪"
 LangString INSTALL_FINISH_TEXT 1033 "Installation completed successfully. Choose whether to open Versora now, then select Finish."
 LangString INSTALL_FINISH_TEXT 2052 "安装已成功完成。请选择是否立即打开 Versora，然后单击“完成”。"
+LangString INSTALL_FINISH_AFTER_TITLE 1033 "After setup"
+LangString INSTALL_FINISH_AFTER_TITLE 2052 "完成后"
 LangString INSTALL_FINISH_RUN 1033 "Open Versora"
 LangString INSTALL_FINISH_RUN 2052 "打开 Versora"
 LangString INSTALL_FINISH_ACTION 1033 "&Finish"
@@ -240,43 +302,116 @@ Function InstallerAlignHeaderTitle
   System::Store "L"
 FunctionEnd
 
+Function InstallerLayoutFooterButtons
+  System::Store "S"
+  GetDlgItem $R9 $HWNDPARENT 2
+  ${If} $R9 == 0
+    Goto footer_done
+  ${EndIf}
+
+  System::Call 'USER32::GetWindowRect(p$R9,@r0)i.r1'
+  ${If} $1 == 0
+    Goto footer_done
+  ${EndIf}
+  System::Call 'USER32::MapWindowPoints(p0,p$HWNDPARENT,pr0,i2)'
+  System::Call '*$0(i.r1,i.r2,i.r3,i.r4)'
+  IntOp $R8 $3 - $1
+  IntOp $R8 $R8 + 20
+  IntOp $R7 $4 - $2
+  IntOp $R6 $2 + $InstallerHeightDelta
+
+  System::Call 'USER32::GetClientRect(p$HWNDPARENT,@r0)i.r1'
+  ${If} $1 == 0
+    Goto footer_done
+  ${EndIf}
+  System::Call '*$0(i.r1,i.r2,i.r3,i.r4)'
+  IntOp $R5 $3 - $R8
+  IntOp $R5 $R5 - 16
+  IntOp $R4 $R5 - $R8
+  IntOp $R4 $R4 - 12
+  IntOp $R3 $R4 - $R8
+  IntOp $R3 $R3 - 12
+
+  GetDlgItem $0 $HWNDPARENT 2
+  System::Call 'USER32::SetWindowPos(p$0,p0,i$R5,i$R6,i$R8,i$R7,i0x14)'
+  GetDlgItem $0 $HWNDPARENT 1
+  System::Call 'USER32::SetWindowPos(p$0,p0,i$R4,i$R6,i$R8,i$R7,i0x14)'
+  GetDlgItem $0 $HWNDPARENT 3
+  System::Call 'USER32::SetWindowPos(p$0,p0,i$R3,i$R6,i$R8,i$R7,i0x14)'
+
+  footer_done:
+  System::Store "L"
+FunctionEnd
+
 Function InstallerGuiInit
+  InitPluginsDir
+  File /oname=$PLUGINSDIR\installerPanel.bmp "${BUILD_RESOURCES_DIR}\installerPanel.bmp"
+
+  CreateFont $InstallerFontDisplay "Microsoft YaHei UI" "11" "700"
+  CreateFont $InstallerFontSection "Microsoft YaHei UI" "10" "700"
+  CreateFont $InstallerFontBody "Microsoft YaHei UI" "9" "400"
+  CreateFont $InstallerFontMono "Consolas" "9" "400"
+  CreateFont $InstallerFontStrong "Microsoft YaHei UI" "9" "700"
+  CreateFont $InstallerFontSmallStrong "Microsoft YaHei UI" "8" "600"
+
   System::Store "S"
   System::Call 'USER32::GetWindowRect(p$HWNDPARENT,@r0)i.r1'
   ${If} $1 != 0
     System::Call '*$0(i.r1,i.r2,i.r3,i.r4)'
     IntOp $5 $3 - $1
     IntOp $6 $4 - $2
+    StrCpy $InstallerOriginalWidth $5
+    StrCpy $InstallerOriginalHeight $6
 
-    IntOp $7 $5 * 420
+    IntOp $7 $5 * 500
     IntOp $7 $7 / 331
-    IntOp $InstallerWidthDelta $7 - $5
-    IntOp $8 $6 * 265
+    IntOp $8 $6 * 315
     IntOp $8 $8 / 222
-    IntOp $InstallerHeightDelta $8 - $6
 
-    IntOp $5 $InstallerWidthDelta / 2
-    IntOp $6 $InstallerHeightDelta / 2
-    IntOp $1 $1 - $5
-    IntOp $2 $2 - $6
-    ${If} $1 < 0
-      StrCpy $1 0
+    System::Call 'USER32::SystemParametersInfo(i0x30,i0,@r9,i0)i.r0'
+    ${If} $0 != 0
+      System::Call '*$9(i.r1,i.r2,i.r3,i.r4)'
+      IntOp $5 $3 - $1
+      IntOp $6 $4 - $2
+      IntOp $5 $5 - 40
+      IntOp $6 $6 - 40
+      ${If} $7 > $5
+        StrCpy $7 $5
+      ${EndIf}
+      ${If} $8 > $6
+        StrCpy $8 $6
+      ${EndIf}
+      IntOp $5 $3 - $1
+      IntOp $5 $5 - $7
+      IntOp $5 $5 / 2
+      IntOp $5 $5 + $1
+      IntOp $6 $4 - $2
+      IntOp $6 $6 - $8
+      IntOp $6 $6 / 2
+      IntOp $6 $6 + $2
+    ${Else}
+      StrCpy $5 $1
+      StrCpy $6 $2
     ${EndIf}
-    ${If} $2 < 0
-      StrCpy $2 0
-    ${EndIf}
-    System::Call 'USER32::SetWindowPos(p$HWNDPARENT,p0,ir1,ir2,ir7,ir8,i0x14)'
+
+    IntOp $InstallerWidthDelta $7 - $InstallerOriginalWidth
+    IntOp $InstallerHeightDelta $8 - $InstallerOriginalHeight
+    System::Call 'USER32::SetWindowPos(p$HWNDPARENT,p0,ir5,ir6,ir7,ir8,i0x14)'
   ${EndIf}
   System::Store "L"
 
   GetDlgItem $0 $HWNDPARENT 1034
   !insertmacro MoveResizeInstallerControl $0 $HWNDPARENT 0 0 $InstallerWidthDelta 0
+  !insertmacro StyleInstallerControl $0 $InstallerFontStrong "${COLOR_TEXT}" "${COLOR_PANEL}"
   GetDlgItem $0 $HWNDPARENT 1036
   !insertmacro MoveResizeInstallerControl $0 $HWNDPARENT 0 0 $InstallerWidthDelta 0
+  SetCtlColors $0 "" "${COLOR_PANEL_ALT}"
   GetDlgItem $0 $HWNDPARENT 1037
-  !insertmacro MoveResizeInstallerControl $0 $HWNDPARENT 0 0 $InstallerWidthDelta 0
+  !insertmacro MoveResizeInstallerControl $0 $HWNDPARENT 0 -2 $InstallerWidthDelta 8
+  !insertmacro StyleInstallerControl $0 $InstallerFontDisplay "${COLOR_TEXT}" "${COLOR_PANEL}"
   GetDlgItem $0 $HWNDPARENT 1038
-  !insertmacro MoveResizeInstallerControl $0 $HWNDPARENT 0 0 $InstallerWidthDelta 0
+  !insertmacro MoveResizeInstallerControl $0 $HWNDPARENT 0 7 $InstallerWidthDelta 2
+  !insertmacro StyleInstallerControl $0 $InstallerFontBody "${COLOR_MUTED}" "${COLOR_PANEL}"
 
   GetDlgItem $0 $HWNDPARENT 1039
   ShowWindow $0 0
@@ -294,15 +429,21 @@ Function InstallerGuiInit
   ShowWindow $0 0
   GetDlgItem $0 $HWNDPARENT 1035
   !insertmacro MoveResizeInstallerControl $0 $HWNDPARENT 0 $InstallerHeightDelta $InstallerWidthDelta 0
+  SetCtlColors $0 "" "${COLOR_PANEL}"
   GetDlgItem $0 $HWNDPARENT 1045
   !insertmacro MoveResizeInstallerControl $0 $HWNDPARENT 0 $InstallerHeightDelta $InstallerWidthDelta 0
+  SetCtlColors $0 "" "${COLOR_PANEL_ALT}"
 
   GetDlgItem $0 $HWNDPARENT 1
-  !insertmacro MoveResizeInstallerControl $0 $HWNDPARENT $InstallerWidthDelta $InstallerHeightDelta 0 0
+  SendMessage $0 ${WM_SETFONT} $InstallerFontStrong 1
+  SetCtlColors $0 "${COLOR_ACCENT_STRONG}" "${COLOR_PANEL}"
   GetDlgItem $0 $HWNDPARENT 2
-  !insertmacro MoveResizeInstallerControl $0 $HWNDPARENT $InstallerWidthDelta $InstallerHeightDelta 0 0
+  SendMessage $0 ${WM_SETFONT} $InstallerFontStrong 1
+  SetCtlColors $0 "${COLOR_TEXT}" "${COLOR_PANEL}"
   GetDlgItem $0 $HWNDPARENT 3
-  !insertmacro MoveResizeInstallerControl $0 $HWNDPARENT $InstallerWidthDelta $InstallerHeightDelta 0 0
+  SendMessage $0 ${WM_SETFONT} $InstallerFontStrong 1
+  SetCtlColors $0 "${COLOR_TEXT}" "${COLOR_PANEL}"
+  Call InstallerLayoutFooterButtons
 
   Call InstallerAlignHeaderTitle
   SetAutoClose true
@@ -542,6 +683,8 @@ Function InstallerWelcomePageCreate
   SetCtlColors $0 "${COLOR_TEXT}" "${COLOR_BG}"
 
   ${If} $IsUpgradeInstall == "1"
+    !insertmacro CreateInstallerBrandRail "01 / 01" "$(INSTALL_STEP_UPDATE)"
+
     ${If} $ExistingVersion == ""
       StrCpy $ExistingVersion "$(INSTALL_UPGRADE_UNKNOWN_VERSION)"
     ${EndIf}
@@ -556,95 +699,101 @@ Function InstallerWelcomePageCreate
       SendMessage $1 ${WM_SETTEXT} 0 "STR:$(INSTALL_UPGRADE_ACTION)"
     ${EndIf}
 
-    ${NSD_CreateLabel} 0 0 100% 26u "$(INSTALL_UPGRADE_DESC)"
+    ${NSD_CreateLabel} 32% 2u 68% 30u "$(INSTALL_UPGRADE_DESC)"
     Pop $1
-    SetCtlColors $1 "${COLOR_MUTED}" "${COLOR_BG}"
+    !insertmacro StyleInstallerControl $1 $InstallerFontBody "${COLOR_MUTED}" "${COLOR_BG}"
 
-    ${NSD_CreateLabel} 0 34u 100% 1u ""
-    Pop $1
-    SetCtlColors $1 "" "${COLOR_PANEL_ALT}"
+    !insertmacro CreateInstallerCard 32% 42u 68% 156u "${COLOR_ACCENT}"
 
-    ${NSD_CreateLabel} 0 46u 100% 14u "$(INSTALL_UPGRADE_SUMMARY_TITLE)"
+    ${NSD_CreateLabel} 36% 56u 60% 16u "$(INSTALL_UPGRADE_SUMMARY_TITLE)"
     Pop $1
-    CreateFont $3 "Segoe UI" "9" "700"
-    SendMessage $1 ${WM_SETFONT} $3 1
-    SetCtlColors $1 "${COLOR_TEXT}" "${COLOR_BG}"
+    SendMessage $1 ${WM_SETFONT} $InstallerFontSection 1
+    SetCtlColors $1 "${COLOR_TEXT}" "${COLOR_PANEL}"
 
-    CreateFont $4 "Segoe UI" "9" "600"
+    ${NSD_CreateLabel} 36% 84u 14% 16u "$(INSTALL_UPGRADE_CURRENT_LABEL)"
+    Pop $1
+    SendMessage $1 ${WM_SETFONT} $InstallerFontStrong 1
+    SetCtlColors $1 "${COLOR_MUTED}" "${COLOR_PANEL}"
+    ${NSD_CreateLabel} 52% 84u 44% 16u "$ExistingVersion"
+    Pop $1
+    !insertmacro StyleInstallerControl $1 $InstallerFontMono "${COLOR_TEXT}" "${COLOR_PANEL}"
 
-    ${NSD_CreateLabel} 0 70u 24% 14u "$(INSTALL_UPGRADE_CURRENT_LABEL)"
+    ${NSD_CreateLabel} 36% 108u 14% 16u "$(INSTALL_UPGRADE_TARGET_LABEL)"
     Pop $1
-    SendMessage $1 ${WM_SETFONT} $4 1
-    SetCtlColors $1 "${COLOR_MUTED}" "${COLOR_BG}"
-    ${NSD_CreateLabel} 28% 70u 72% 14u "$ExistingVersion"
+    SendMessage $1 ${WM_SETFONT} $InstallerFontStrong 1
+    SetCtlColors $1 "${COLOR_MUTED}" "${COLOR_PANEL}"
+    ${NSD_CreateLabel} 52% 108u 44% 16u "${VERSION}"
     Pop $1
-    SetCtlColors $1 "${COLOR_TEXT}" "${COLOR_BG}"
+    !insertmacro StyleInstallerControl $1 $InstallerFontMono "${COLOR_ACCENT_STRONG}" "${COLOR_PANEL}"
 
-    ${NSD_CreateLabel} 0 92u 24% 14u "$(INSTALL_UPGRADE_TARGET_LABEL)"
+    ${NSD_CreateLabel} 36% 132u 14% 18u "$(INSTALL_UPGRADE_LOCATION_LABEL)"
     Pop $1
-    SendMessage $1 ${WM_SETFONT} $4 1
-    SetCtlColors $1 "${COLOR_MUTED}" "${COLOR_BG}"
-    ${NSD_CreateLabel} 28% 92u 72% 14u "${VERSION}"
-    Pop $1
-    SetCtlColors $1 "${COLOR_TEXT}" "${COLOR_BG}"
-
-    ${NSD_CreateLabel} 0 114u 24% 18u "$(INSTALL_UPGRADE_LOCATION_LABEL)"
-    Pop $1
-    SendMessage $1 ${WM_SETFONT} $4 1
-    SetCtlColors $1 "${COLOR_MUTED}" "${COLOR_BG}"
-    ${NSD_CreateLabel} 28% 114u 72% 14u "$INSTDIR"
+    SendMessage $1 ${WM_SETFONT} $InstallerFontStrong 1
+    SetCtlColors $1 "${COLOR_MUTED}" "${COLOR_PANEL}"
+    ${NSD_CreateLabel} 52% 132u 44% 18u "$INSTDIR"
     Pop $1
     ${NSD_AddStyle} $1 ${SS_PATHELLIPSIS}
-    SetCtlColors $1 "${COLOR_TEXT}" "${COLOR_BG}"
+    !insertmacro StyleInstallerControl $1 $InstallerFontMono "${COLOR_TEXT}" "${COLOR_PANEL}"
 
-    ${NSD_CreateLabel} 0 140u 100% 1u ""
+    ${NSD_CreateLabel} 36% 158u 60% 1u ""
     Pop $1
     SetCtlColors $1 "" "${COLOR_PANEL_ALT}"
 
-    ${NSD_CreateLabel} 0 152u 24% 24u "$(INSTALL_UPGRADE_PRESERVE_LABEL)"
+    ${NSD_CreateLabel} 36% 170u 14% 24u "$(INSTALL_UPGRADE_PRESERVE_LABEL)"
     Pop $InstallerUpgradePreserveLabel
-    SendMessage $InstallerUpgradePreserveLabel ${WM_SETFONT} $4 1
-    SetCtlColors $InstallerUpgradePreserveLabel "${COLOR_MUTED}" "${COLOR_BG}"
-    ${NSD_CreateLabel} 28% 152u 72% 28u "$(INSTALL_UPGRADE_PRESERVE_VALUE)"
+    SendMessage $InstallerUpgradePreserveLabel ${WM_SETFONT} $InstallerFontStrong 1
+    SetCtlColors $InstallerUpgradePreserveLabel "${COLOR_MUTED}" "${COLOR_PANEL}"
+    ${NSD_CreateLabel} 52% 170u 44% 26u "$(INSTALL_UPGRADE_PRESERVE_VALUE)"
     Pop $1
-    SetCtlColors $1 "${COLOR_TEXT}" "${COLOR_BG}"
+    !insertmacro StyleInstallerControl $1 $InstallerFontBody "${COLOR_TEXT}" "${COLOR_PANEL}"
     ${NSD_CreateTimer} InstallerRefreshUpgradeSummary 10
   ${Else}
     !insertmacro SetInstallerHeader "$(INSTALL_WELCOME_TITLE)" "$(INSTALL_WELCOME_BADGE)"
+    !insertmacro CreateInstallerBrandRail "01 / 03" "$(INSTALL_STEP_OVERVIEW)"
 
-    ${NSD_CreateLabel} 0 0 100% 20u "$(INSTALL_WELCOME_DESC)"
+    ${NSD_CreateLabel} 32% 2u 68% 20u "$(INSTALL_WELCOME_CARD_TITLE)"
     Pop $1
-    SetCtlColors $1 "${COLOR_MUTED}" "${COLOR_BG}"
-
-    ${NSD_CreateLabel} 0 28u 100% 1u ""
-    Pop $1
-    SetCtlColors $1 "" "${COLOR_PANEL_ALT}"
-
-    ${NSD_CreateLabel} 0 44u 100% 14u "$(INSTALL_WELCOME_FEATURES_TITLE)"
-    Pop $1
-    CreateFont $3 "Segoe UI" "9" "700"
-    SendMessage $1 ${WM_SETFONT} $3 1
+    SendMessage $1 ${WM_SETFONT} $InstallerFontSection 1
     SetCtlColors $1 "${COLOR_TEXT}" "${COLOR_BG}"
 
-    ${NSD_CreateLabel} 0 68u 100% 16u "$(INSTALL_WELCOME_POINT1)"
+    ${NSD_CreateLabel} 32% 28u 68% 24u "$(INSTALL_WELCOME_DESC)"
     Pop $1
-    SetCtlColors $1 "${COLOR_TEXT}" "${COLOR_BG}"
+    !insertmacro StyleInstallerControl $1 $InstallerFontBody "${COLOR_MUTED}" "${COLOR_BG}"
 
-    ${NSD_CreateLabel} 0 92u 100% 16u "$(INSTALL_WELCOME_POINT2)"
-    Pop $1
-    SetCtlColors $1 "${COLOR_TEXT}" "${COLOR_BG}"
+    !insertmacro CreateInstallerCard 32% 62u 68% 116u "${COLOR_ACCENT}"
 
-    ${NSD_CreateLabel} 0 116u 100% 16u "$(INSTALL_WELCOME_POINT3)"
+    ${NSD_CreateLabel} 36% 76u 60% 16u "$(INSTALL_WELCOME_FEATURES_TITLE)"
     Pop $1
-    SetCtlColors $1 "${COLOR_TEXT}" "${COLOR_BG}"
+    SendMessage $1 ${WM_SETFONT} $InstallerFontStrong 1
+    SetCtlColors $1 "${COLOR_TEXT}" "${COLOR_PANEL}"
 
-    ${NSD_CreateLabel} 0 144u 100% 1u ""
+    ${NSD_CreateLabel} 36% 102u 7% 16u "01"
     Pop $1
-    SetCtlColors $1 "" "${COLOR_PANEL_ALT}"
+    SendMessage $1 ${WM_SETFONT} $InstallerFontSmallStrong 1
+    SetCtlColors $1 "${COLOR_ACCENT_STRONG}" "${COLOR_PANEL}"
+    ${NSD_CreateLabel} 44% 100u 52% 20u "$(INSTALL_WELCOME_POINT1)"
+    Pop $1
+    !insertmacro StyleInstallerControl $1 $InstallerFontBody "${COLOR_TEXT}" "${COLOR_PANEL}"
 
-    ${NSD_CreateLabel} 0 158u 100% 16u "$(INSTALL_WELCOME_HINT)"
+    ${NSD_CreateLabel} 36% 130u 7% 16u "02"
     Pop $1
-    SetCtlColors $1 "${COLOR_MUTED}" "${COLOR_BG}"
+    SendMessage $1 ${WM_SETFONT} $InstallerFontSmallStrong 1
+    SetCtlColors $1 "${COLOR_SUCCESS}" "${COLOR_PANEL}"
+    ${NSD_CreateLabel} 44% 128u 52% 20u "$(INSTALL_WELCOME_POINT2)"
+    Pop $1
+    !insertmacro StyleInstallerControl $1 $InstallerFontBody "${COLOR_TEXT}" "${COLOR_PANEL}"
+
+    ${NSD_CreateLabel} 36% 158u 7% 16u "03"
+    Pop $1
+    SendMessage $1 ${WM_SETFONT} $InstallerFontSmallStrong 1
+    SetCtlColors $1 "${COLOR_ACCENT_STRONG}" "${COLOR_PANEL}"
+    ${NSD_CreateLabel} 44% 156u 52% 20u "$(INSTALL_WELCOME_POINT3)"
+    Pop $1
+    !insertmacro StyleInstallerControl $1 $InstallerFontBody "${COLOR_TEXT}" "${COLOR_PANEL}"
+
+    ${NSD_CreateLabel} 32% 190u 68% 18u "$(INSTALL_WELCOME_HINT)"
+    Pop $1
+    !insertmacro StyleInstallerControl $1 $InstallerFontBody "${COLOR_MUTED}" "${COLOR_BG}"
   ${EndIf}
 
   nsDialogs::Show
@@ -666,39 +815,36 @@ Function InstallerLocationPageCreate
 
   SetCtlColors $0 "${COLOR_TEXT}" "${COLOR_BG}"
   !insertmacro SetInstallerHeader "$(INSTALL_OPTIONS_TITLE)" "$(INSTALL_OPTIONS_DESC)"
+  !insertmacro CreateInstallerBrandRail "02 / 03" "$(INSTALL_STEP_LOCATION)"
 
-  ${NSD_CreateLabel} 0 0 100% 1u ""
+  !insertmacro CreateInstallerCard 32% 4u 68% 112u "${COLOR_ACCENT}"
+
+  ${NSD_CreateLabel} 36% 20u 60% 16u "$(INSTALL_OPTIONS_INSTALL_DIR)"
   Pop $0
-  SetCtlColors $0 "" "${COLOR_PANEL_ALT}"
+  SendMessage $0 ${WM_SETFONT} $InstallerFontSection 1
+  SetCtlColors $0 "${COLOR_TEXT}" "${COLOR_PANEL}"
 
-  ${NSD_CreateLabel} 0 16u 100% 14u "$(INSTALL_OPTIONS_INSTALL_DIR)"
-  Pop $0
-  CreateFont $2 "Segoe UI" "9" "700"
-  SendMessage $0 ${WM_SETFONT} $2 1
-  SetCtlColors $0 "${COLOR_TEXT}" "${COLOR_BG}"
-
-  ${NSD_CreateText} 0 36u 78% 16u "$INSTDIR"
+  ${NSD_CreateText} 36% 46u 46% 20u "$INSTDIR"
   Pop $InstallOptionsInstallDirText
-  SetCtlColors $InstallOptionsInstallDirText "${COLOR_TEXT}" "${COLOR_PANEL}"
-  ${NSD_CreateButton} 81% 35u 19% 18u "$(INSTALL_OPTIONS_INSTALL_BROWSE)"
+  !insertmacro StyleInstallerControl $InstallOptionsInstallDirText $InstallerFontMono "${COLOR_TEXT}" "${COLOR_PANEL}"
+  ${NSD_CreateButton} 84% 45u 12% 22u "$(INSTALL_OPTIONS_INSTALL_BROWSE)"
   Pop $InstallOptionsInstallBrowseButton
+  SendMessage $InstallOptionsInstallBrowseButton ${WM_SETFONT} $InstallerFontSmallStrong 1
   ${NSD_OnClick} $InstallOptionsInstallBrowseButton InstallerOptionsBrowseInstallDir
-  ${NSD_CreateLabel} 0 60u 100% 26u "$(INSTALL_OPTIONS_INSTALL_HELP)"
+  ${NSD_CreateLabel} 36% 78u 60% 26u "$(INSTALL_OPTIONS_INSTALL_HELP)"
   Pop $0
-  SetCtlColors $0 "${COLOR_MUTED}" "${COLOR_BG}"
+  !insertmacro StyleInstallerControl $0 $InstallerFontBody "${COLOR_MUTED}" "${COLOR_PANEL}"
 
-  ${NSD_CreateLabel} 0 96u 100% 1u ""
+  !insertmacro CreateInstallerCard 32% 132u 68% 68u "${COLOR_SUCCESS}"
+
+  ${NSD_CreateLabel} 36% 148u 60% 16u "$(INSTALL_OPTIONS_SHORTCUTS)"
   Pop $0
-  SetCtlColors $0 "" "${COLOR_PANEL_ALT}"
+  SendMessage $0 ${WM_SETFONT} $InstallerFontSection 1
+  SetCtlColors $0 "${COLOR_TEXT}" "${COLOR_PANEL}"
 
-  ${NSD_CreateLabel} 0 110u 100% 14u "$(INSTALL_OPTIONS_SHORTCUTS)"
-  Pop $0
-  SendMessage $0 ${WM_SETFONT} $2 1
-  SetCtlColors $0 "${COLOR_TEXT}" "${COLOR_BG}"
-
-  ${NSD_CreateCheckbox} 0 134u 100% 16u "$(INSTALL_OPTIONS_DESKTOP_SHORTCUT)"
+  ${NSD_CreateCheckbox} 36% 176u 60% 18u "$(INSTALL_OPTIONS_DESKTOP_SHORTCUT)"
   Pop $InstallOptionsDesktopShortcutCheckbox
-  SetCtlColors $InstallOptionsDesktopShortcutCheckbox "${COLOR_TEXT}" "${COLOR_BG}"
+  !insertmacro StyleInstallerControl $InstallOptionsDesktopShortcutCheckbox $InstallerFontBody "${COLOR_TEXT}" "${COLOR_PANEL}"
   ${If} $ShouldCreateDesktopShortcut == "0"
     ${NSD_SetState} $InstallOptionsDesktopShortcutCheckbox ${BST_UNCHECKED}
   ${Else}
@@ -738,29 +884,31 @@ Function InstallerIntegrationPageCreate
 
   SetCtlColors $0 "${COLOR_TEXT}" "${COLOR_BG}"
   !insertmacro SetInstallerHeader "$(INSTALL_INTEGRATION_TITLE)" "$(INSTALL_INTEGRATION_DESC)"
+  !insertmacro CreateInstallerBrandRail "03 / 03" "$(INSTALL_STEP_INTEGRATION)"
 
-  ${NSD_CreateLabel} 0 0 100% 1u ""
+  !insertmacro CreateInstallerCard 32% 4u 68% 118u "${COLOR_ACCENT}"
+
+  ${NSD_CreateLabel} 36% 16u 60% 16u "$(INSTALL_OPTIONS_DIFF_GROUP)"
   Pop $0
-  SetCtlColors $0 "" "${COLOR_PANEL_ALT}"
+  SendMessage $0 ${WM_SETFONT} $InstallerFontSection 1
+  SetCtlColors $0 "${COLOR_TEXT}" "${COLOR_PANEL}"
 
-  ${NSD_CreateLabel} 0 12u 100% 14u "$(INSTALL_OPTIONS_DIFF_GROUP)"
-  Pop $0
-  CreateFont $2 "Segoe UI" "9" "700"
-  SendMessage $0 ${WM_SETFONT} $2 1
-  SetCtlColors $0 "${COLOR_TEXT}" "${COLOR_BG}"
-
-  ${NSD_CreateRadioButton} 0 32u 100% 14u "$(INSTALL_OPTIONS_DIFF_KEEP)"
+  ${NSD_CreateRadioButton} 36% 40u 60% 17u "$(INSTALL_OPTIONS_DIFF_KEEP)"
   Pop $InstallOptionsDiffKeepRadio
-  ${NSD_CreateRadioButton} 0 48u 100% 14u "$(INSTALL_OPTIONS_DIFF_TEXT)"
+  ${NSD_CreateRadioButton} 36% 59u 60% 17u "$(INSTALL_OPTIONS_DIFF_TEXT)"
   Pop $InstallOptionsDiffTextRadio
-  ${NSD_CreateRadioButton} 0 64u 100% 14u "$(INSTALL_OPTIONS_DIFF_WORKBOOK)"
+  ${NSD_CreateRadioButton} 36% 78u 60% 17u "$(INSTALL_OPTIONS_DIFF_WORKBOOK)"
   Pop $InstallOptionsDiffWorkbookRadio
-  ${NSD_CreateRadioButton} 0 80u 100% 14u "$(INSTALL_OPTIONS_DIFF_ALL)"
+  ${NSD_CreateRadioButton} 36% 97u 60% 17u "$(INSTALL_OPTIONS_DIFF_ALL)"
   Pop $InstallOptionsDiffAllRadio
-  SetCtlColors $InstallOptionsDiffKeepRadio "${COLOR_TEXT}" "${COLOR_BG}"
-  SetCtlColors $InstallOptionsDiffTextRadio "${COLOR_TEXT}" "${COLOR_BG}"
-  SetCtlColors $InstallOptionsDiffWorkbookRadio "${COLOR_TEXT}" "${COLOR_BG}"
-  SetCtlColors $InstallOptionsDiffAllRadio "${COLOR_TEXT}" "${COLOR_BG}"
+  SetCtlColors $InstallOptionsDiffKeepRadio "${COLOR_TEXT}" "${COLOR_PANEL}"
+  SetCtlColors $InstallOptionsDiffTextRadio "${COLOR_TEXT}" "${COLOR_PANEL}"
+  SetCtlColors $InstallOptionsDiffWorkbookRadio "${COLOR_TEXT}" "${COLOR_PANEL}"
+  SetCtlColors $InstallOptionsDiffAllRadio "${COLOR_TEXT}" "${COLOR_PANEL}"
+  SendMessage $InstallOptionsDiffKeepRadio ${WM_SETFONT} $InstallerFontBody 1
+  SendMessage $InstallOptionsDiffTextRadio ${WM_SETFONT} $InstallerFontBody 1
+  SendMessage $InstallOptionsDiffWorkbookRadio ${WM_SETFONT} $InstallerFontBody 1
+  SendMessage $InstallOptionsDiffAllRadio ${WM_SETFONT} $InstallerFontBody 1
 
   ${If} $SelectedDiffViewerMode == "text-only"
     ${NSD_SetState} $InstallOptionsDiffTextRadio ${BST_CHECKED}
@@ -772,27 +920,25 @@ Function InstallerIntegrationPageCreate
     ${NSD_SetState} $InstallOptionsDiffKeepRadio ${BST_CHECKED}
   ${EndIf}
 
-  ${NSD_CreateLabel} 0 102u 100% 1u ""
-  Pop $0
-  SetCtlColors $0 "" "${COLOR_PANEL_ALT}"
+  !insertmacro CreateInstallerCard 32% 138u 68% 92u "${COLOR_SUCCESS}"
 
-  ${NSD_CreateLabel} 0 114u 100% 14u "$(INSTALL_OPTIONS_CACHE_GROUP)"
+  ${NSD_CreateLabel} 36% 150u 60% 16u "$(INSTALL_OPTIONS_CACHE_GROUP)"
   Pop $0
-  CreateFont $2 "Segoe UI" "9" "700"
-  SendMessage $0 ${WM_SETFONT} $2 1
-  SetCtlColors $0 "${COLOR_TEXT}" "${COLOR_BG}"
-  ${NSD_CreateLabel} 0 134u 100% 12u "$(INSTALL_OPTIONS_CACHE_PARENT)"
+  SendMessage $0 ${WM_SETFONT} $InstallerFontSection 1
+  SetCtlColors $0 "${COLOR_TEXT}" "${COLOR_PANEL}"
+  ${NSD_CreateLabel} 36% 174u 60% 14u "$(INSTALL_OPTIONS_CACHE_PARENT)"
   Pop $0
-  SetCtlColors $0 "${COLOR_MUTED}" "${COLOR_BG}"
-  ${NSD_CreateText} 0 150u 78% 16u "$SelectedCacheParent"
+  !insertmacro StyleInstallerControl $0 $InstallerFontBody "${COLOR_MUTED}" "${COLOR_PANEL}"
+  ${NSD_CreateText} 36% 192u 46% 20u "$SelectedCacheParent"
   Pop $InstallOptionsCacheParentText
-  SetCtlColors $InstallOptionsCacheParentText "${COLOR_TEXT}" "${COLOR_PANEL}"
-  ${NSD_CreateButton} 81% 149u 19% 18u "$(INSTALL_OPTIONS_CACHE_BROWSE)"
+  !insertmacro StyleInstallerControl $InstallOptionsCacheParentText $InstallerFontMono "${COLOR_TEXT}" "${COLOR_PANEL}"
+  ${NSD_CreateButton} 84% 191u 12% 22u "$(INSTALL_OPTIONS_CACHE_BROWSE)"
   Pop $1
+  SendMessage $1 ${WM_SETFONT} $InstallerFontSmallStrong 1
   ${NSD_OnClick} $1 InstallerOptionsBrowseCacheParent
-  ${NSD_CreateLabel} 0 172u 100% 12u "$(INSTALL_OPTIONS_CACHE_HELP)"
+  ${NSD_CreateLabel} 36% 216u 60% 12u "$(INSTALL_OPTIONS_CACHE_HELP)"
   Pop $0
-  SetCtlColors $0 "${COLOR_MUTED}" "${COLOR_BG}"
+  !insertmacro StyleInstallerControl $0 $InstallerFontBody "${COLOR_MUTED}" "${COLOR_PANEL}"
 
   nsDialogs::Show
 FunctionEnd
@@ -839,6 +985,7 @@ Function InstallerProgressPageShow
   ${EndIf}
 
   !insertmacro MoveResizeInstallerControl $0 $HWNDPARENT 0 0 $InstallerWidthDelta $InstallerHeightDelta
+  SetCtlColors $0 "${COLOR_TEXT}" "${COLOR_BG}"
 
   ${If} $IsUpgradeInstall == "1"
     !insertmacro SetInstallerHeader "$(INSTALL_PROGRESS_UPDATE_TITLE)" "$(INSTALL_PROGRESS_SUBTITLE)"
@@ -848,7 +995,7 @@ Function InstallerProgressPageShow
 
   GetDlgItem $1 $0 1006
   SendMessage $1 ${WM_SETTEXT} 0 "STR:$(INSTALL_PROGRESS_STATUS)"
-  SetCtlColors $1 "${COLOR_MUTED}" "${COLOR_BG}"
+  !insertmacro StyleInstallerControl $1 $InstallerFontBody "${COLOR_MUTED}" "${COLOR_BG}"
   !insertmacro MoveResizeInstallerControl $1 $0 0 $InstallerProgressTextOffset $InstallerWidthDelta 0
 
   GetDlgItem $1 $0 1004
@@ -869,6 +1016,7 @@ Function InstallerFinishPageCreate
 
   SetCtlColors $0 "${COLOR_TEXT}" "${COLOR_BG}"
   !insertmacro SetInstallerHeader "$(INSTALL_FINISH_HEADER_TITLE)" "$(INSTALL_FINISH_TITLE)"
+  !insertmacro CreateInstallerBrandRail "DONE" "$(INSTALL_STEP_COMPLETE)"
 
   GetDlgItem $1 $HWNDPARENT 1
   GetDlgItem $2 $HWNDPARENT 2
@@ -880,24 +1028,32 @@ Function InstallerFinishPageCreate
   GetDlgItem $2 $HWNDPARENT 3
   ShowWindow $2 0
 
-  ${NSD_CreateLabel} 0 36u 100% 20u "$(INSTALL_FINISH_TITLE)"
-  Pop $1
-  CreateFont $3 "Segoe UI" "11" "700"
-  SendMessage $1 ${WM_SETFONT} $3 1
-  SetCtlColors $1 "${COLOR_TEXT}" "${COLOR_BG}"
+  !insertmacro CreateInstallerCard 32% 20u 68% 205u "${COLOR_SUCCESS}"
 
-  ${NSD_CreateLabel} 0 70u 100% 34u "$(INSTALL_FINISH_TEXT)"
+  ${NSD_CreateLabel} 36% 46u 60% 24u "$(INSTALL_FINISH_TITLE)"
   Pop $1
-  SetCtlColors $1 "${COLOR_MUTED}" "${COLOR_BG}"
+  SendMessage $1 ${WM_SETFONT} $InstallerFontDisplay 1
+  SetCtlColors $1 "${COLOR_TEXT}" "${COLOR_PANEL}"
 
-  ${NSD_CreateLabel} 0 116u 100% 1u ""
+  ${NSD_CreateLabel} 36% 86u 60% 38u "$(INSTALL_FINISH_TEXT)"
+  Pop $1
+  !insertmacro StyleInstallerControl $1 $InstallerFontBody "${COLOR_MUTED}" "${COLOR_PANEL}"
+
+  ${NSD_CreateLabel} 36% 140u 60% 1u ""
   Pop $1
   SetCtlColors $1 "" "${COLOR_PANEL_ALT}"
 
-  ${NSD_CreateCheckbox} 0 132u 100% 18u "$(INSTALL_FINISH_RUN)"
+  ${NSD_CreateLabel} 36% 156u 60% 16u "$(INSTALL_FINISH_AFTER_TITLE)"
+  Pop $1
+  !insertmacro StyleInstallerControl $1 $InstallerFontStrong "${COLOR_MUTED}" "${COLOR_PANEL}"
+
+  ${NSD_CreateCheckbox} 36% 182u 60% 22u "$(INSTALL_FINISH_RUN)"
   Pop $InstallerFinishRunCheckbox
-  SetCtlColors $InstallerFinishRunCheckbox "${COLOR_TEXT}" "${COLOR_BG}"
+  !insertmacro StyleInstallerControl $InstallerFinishRunCheckbox $InstallerFontBody "${COLOR_TEXT}" "${COLOR_PANEL}"
   ${NSD_SetState} $InstallerFinishRunCheckbox ${BST_UNCHECKED}
+  EnableWindow $InstallerFinishRunCheckbox 1
+  ShowWindow $InstallerFinishRunCheckbox ${SW_SHOW}
+  System::Call 'USER32::SetWindowPos(p$InstallerFinishRunCheckbox,p0,i0,i0,i0,i0,i0x13)'
 
   nsDialogs::Show
 FunctionEnd
@@ -908,6 +1064,70 @@ Function InstallerFinishPageLeave
     Call StartApp
   ${EndIf}
 FunctionEnd
+
+!macro customCheckAppRunning
+  ${GetProcessInfo} 0 $pid $1 $2 $3 $4
+  ${If} $3 != "${APP_EXECUTABLE_FILENAME}"
+    !insertmacro IS_POWERSHELL_AVAILABLE
+    StrCpy $R2 0
+
+    !insertmacro FIND_PROCESS "${APP_EXECUTABLE_FILENAME}" $R0
+    ${If} $R0 != 0
+      Goto versora_close_done
+    ${EndIf}
+
+      ${If} $R2 == 0
+        ${If} $IsInAppUpdate == "1"
+          StrCpy $R3 0
+          versora_close_graceful_wait:
+            Sleep 250
+            !insertmacro FIND_PROCESS "${APP_EXECUTABLE_FILENAME}" $R0
+            ${If} $R0 != 0
+              Goto versora_close_done
+            ${EndIf}
+            IntOp $R3 $R3 + 1
+            ${If} $R3 < 16
+              Goto versora_close_graceful_wait
+            ${EndIf}
+        ${Else}
+          MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(INSTALL_CLOSE_PROMPT)" /SD IDCANCEL IDOK versora_close_request IDCANCEL versora_close_abort
+        ${EndIf}
+      ${EndIf}
+
+    versora_close_request:
+      DetailPrint "$(INSTALL_CLOSE_PROGRESS)"
+      nsExec::Exec `"$CmdPath" /C taskkill /T /IM "${APP_EXECUTABLE_FILENAME}" /FI "PID ne $pid" /FI "USERNAME eq %USERNAME%"`
+      Pop $0
+      !insertmacro KILL_PROCESS "${APP_EXECUTABLE_FILENAME}" 0
+      Sleep 750
+
+    versora_close_force:
+      DetailPrint "$(INSTALL_CLOSE_PROGRESS)"
+      !insertmacro KILL_PROCESS "${APP_EXECUTABLE_FILENAME}" 1
+      nsExec::Exec `"$CmdPath" /C taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}" /FI "PID ne $pid" /FI "USERNAME eq %USERNAME%"`
+      Pop $0
+
+      StrCpy $R3 0
+      versora_close_force_wait:
+        Sleep 500
+        !insertmacro FIND_PROCESS "${APP_EXECUTABLE_FILENAME}" $R0
+        ${If} $R0 != 0
+          Goto versora_close_done
+        ${EndIf}
+        IntOp $R3 $R3 + 1
+        ${If} $R3 < 20
+          Goto versora_close_force_wait
+        ${EndIf}
+
+      IntOp $R2 $R2 + 1
+      MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(INSTALL_CLOSE_FAILED)" /SD IDCANCEL IDRETRY versora_close_force IDCANCEL versora_close_abort
+
+    versora_close_abort:
+      Quit
+
+    versora_close_done:
+  ${EndIf}
+!macroend
 
 !macro customInit
   StrCpy $ShouldCreateDesktopShortcut "1"

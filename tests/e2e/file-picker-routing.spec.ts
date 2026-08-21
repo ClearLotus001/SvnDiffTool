@@ -4,14 +4,14 @@ test('toolbar switch file keeps single working-copy and two-file sessions separa
   await page.addInitScript(() => {
     window.localStorage.setItem('svn-excel-diff-tool.locale', 'zh-CN');
     (window as Window & { __pickDiffFileCalls?: number }).__pickDiffFileCalls = 0;
-    window.svnDiff = {
-      getLaunchState: () => new Promise(() => {}),
+    window.versora = {
+      getLaunchContext: () => new Promise(() => {}),
       pickDiffFile: async () => {
         const state = window as Window & { __pickDiffFileCalls?: number };
         state.__pickDiffFileCalls = (state.__pickDiffFileCalls ?? 0) + 1;
         return null;
       },
-    } as NonNullable<typeof window.svnDiff>;
+    } as NonNullable<typeof window.versora>;
   });
   const testBaseUrl = process.env.SVN_DIFF_E2E_BASE_URL ?? '';
   await page.goto(`${testBaseUrl}/?__e2e=1`);

@@ -1,7 +1,7 @@
-import type { SearchMatch } from '@/types';
 import {
   buildSearchPattern,
-  findMatchesInSearchableLines,
+  scanMatchesInSearchableLines,
+  type SearchScanResult,
 } from '@/engine/text/search';
 import { createLatestWorkerClient } from '@/utils/async/latestWorkerClient';
 import { scheduleWorkerWarmup } from '@/utils/async/workerWarmup';
@@ -28,7 +28,7 @@ interface TextSearchWorkerSearchRequest {
 interface TextSearchWorkerSuccess {
   ok: true;
   requestId: number;
-  matches: SearchMatch[];
+  result: SearchScanResult;
 }
 
 interface TextSearchWorkerFailure {
@@ -47,12 +47,12 @@ interface TextSearchRequestInput {
 function computeSearchMatchesSync({
   searchableLines,
   options,
-}: TextSearchRequestInput): SearchMatch[] {
+}: TextSearchRequestInput): SearchScanResult {
   const pattern = buildSearchPattern(options.query, {
     isRegex: options.isRegex,
     isCaseSensitive: options.isCaseSensitive,
   });
-  return findMatchesInSearchableLines(searchableLines, pattern);
+  return scanMatchesInSearchableLines(searchableLines, pattern);
 }
 
 let workerSearchableLines: string[] | null = null;
@@ -61,7 +61,7 @@ const textSearchWorkerClient = createLatestWorkerClient<
   TextSearchRequestInput,
   TextSearchWorkerSearchRequest,
   TextSearchWorkerResponse,
-  SearchMatch[]
+  SearchScanResult
 >({
   createWorker: () => new Worker(
     new URL('../../workers/text/textSearchWorker.ts', import.meta.url),
@@ -85,7 +85,7 @@ const textSearchWorkerClient = createLatestWorkerClient<
   } satisfies TextSearchWorkerSearchRequest),
   parseResponse: (response) => (
     response.ok
-      ? { ok: true, result: response.matches }
+      ? { ok: true, result: response.result }
       : { ok: false, error: response.error }
   ),
   computeWithoutWorker: computeSearchMatchesSync,
@@ -105,7 +105,9 @@ scheduleWorkerWarmup(() => {
 export function computeSearchMatchesAsync(
   searchableLines: string[],
   options: SearchOptions,
-): Promise<SearchMatch[]> {
-  if (!options.query) return Promise.resolve([]);
+): Promise<SearchScanResult> {
+  if (!options.query) {
+    return Promise.resolve({ matches: [], totalCount: 0, truncated: false });
+  }
   return textSearchWorkerClient.compute({ searchableLines, options });
 }

@@ -17,7 +17,6 @@ import WorkbookActiveRegionOverlayLayer from '@/components/workbook/WorkbookActi
 import WorkbookPaneCanvasStrip from '@/components/workbook/WorkbookPaneCanvasStrip';
 import WorkbookHiddenRowsBar from '@/components/workbook/WorkbookHiddenRowsBar';
 import WorkbookHorizontalPane from '@/components/workbook/WorkbookHorizontalPane';
-import WorkbookSparseGapPlaceholder from '@/components/workbook/WorkbookSparseGapPlaceholder';
 
 interface WorkbookHorizontalRenderPaneProps {
   paneRef: RefObject<HTMLDivElement | null>;
@@ -242,29 +241,6 @@ export default function WorkbookHorizontalRenderPane({
                     <WorkbookHiddenRowsBar
                       count={segment.item.count}
                       onReveal={() => onRevealHiddenRows(segment.item.rowNumbers)}
-                    />
-                  </div>
-                </div>
-              );
-            }
-
-            if (segment.kind === 'sparse-gap') {
-              return (
-                <div
-                  key={`${side}-sparse-gap-${segment.item.rowNumberStart}-${segment.item.rowNumberEnd}`}
-                  style={{
-                    position: 'absolute',
-                    top: segment.top,
-                    left: 0,
-                    right: 0,
-                    minWidth: '100%',
-                    height: segment.height,
-                  }}>
-                  <div style={{ position: 'sticky', left: 0, width: paneViewportWidth, overflow: 'hidden', height: '100%' }}>
-                    <WorkbookSparseGapPlaceholder
-                      count={segment.item.count}
-                      rowNumberStart={segment.item.rowNumberStart}
-                      rowNumberEnd={segment.item.rowNumberEnd}
                     />
                   </div>
                 </div>

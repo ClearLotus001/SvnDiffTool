@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { scrollElementForNavigation } from '@/utils/navigation/animatedScroll';
 
 export interface VariableVirtualDebugInfo {
   viewportHeight: number;
@@ -20,6 +21,7 @@ interface UseVariableVirtualOptions {
   overscanMin?: number;
   overscanFactor?: number;
   syncKey?: string | number | null;
+  getScrollFollowers?: (() => readonly HTMLElement[]) | undefined;
 }
 
 const DEFAULT_OVERSCAN_MIN = 12;
@@ -95,6 +97,7 @@ export function useVariableVirtual(
   const overscanMin = options.overscanMin ?? DEFAULT_OVERSCAN_MIN;
   const overscanFactor = options.overscanFactor ?? DEFAULT_OVERSCAN_FACTOR;
   const syncKey = options.syncKey ?? null;
+  const getScrollFollowers = options.getScrollFollowers;
   const [viewH, setViewH] = useState(600);
   const [rangeState, setRangeState] = useState({ startIdx: 0, endIdx: 0, offsetTop: 0, overscan: overscanMin });
   const latestScrollTopRef = useRef(0);
@@ -195,10 +198,14 @@ export function useVariableVirtual(
     latestScrollTopRef.current = 0;
     const el = scrollRef.current;
     if (el && el.scrollTop !== 0) {
-      el.scrollTo({ top: 0, behavior: 'auto' });
+      scrollElementForNavigation(el, {
+        top: 0,
+        behavior: 'auto',
+        linkedElements: getScrollFollowers?.(),
+      });
     }
     applyRange(0, viewHRef.current);
-  }, [applyRange, scrollRef, syncKey]);
+  }, [applyRange, getScrollFollowers, scrollRef, syncKey]);
 
   const effectiveRangeState = useMemo(() => (
     syncKeyRef.current !== syncKey
@@ -225,15 +232,12 @@ export function useVariableVirtual(
       ? Math.max(0, (viewH / 2) - (itemHeight / 2))
       : 60;
     const nextTop = Math.max(0, itemTop - offset);
-    const distance = Math.abs(el.scrollTop - nextTop);
-    const resolvedBehavior = behavior === 'smart'
-      ? (distance > Math.max(viewH * 4, itemHeight * 200) ? 'auto' : 'smooth')
-      : behavior;
-    el.scrollTo({
+    scrollElementForNavigation(el, {
       top: nextTop,
-      behavior: resolvedBehavior,
+      behavior,
+      linkedElements: getScrollFollowers?.(),
     });
-  }, [averageHeight, heights, prefixSums, scrollRef, viewH]);
+  }, [averageHeight, getScrollFollowers, heights, prefixSums, scrollRef, viewH]);
 
   return {
     totalH,

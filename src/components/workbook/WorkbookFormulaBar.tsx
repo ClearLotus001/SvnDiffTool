@@ -4,6 +4,7 @@ import { useI18n } from '@/context/i18n';
 import { useThemeTokens } from '@/context/theme';
 import useElementWidth from '@/hooks/ui/useElementWidth';
 import { cssVar } from '@/theme/cssUtils';
+import Tooltip from '@/components/shared/Tooltip';
 import type { WorkbookFreezeState, WorkbookMergeRange, WorkbookSelectionState } from '@/types';
 import { findWorkbookMergeRange } from '@/utils/workbook/workbookMergeLayout';
 import { getWorkbookColumnLabel } from '@/utils/workbook/workbookSections';
@@ -56,6 +57,13 @@ function formatWorkbookCellRange(
   const start = `${getWorkbookColumnLabel(startCol)}${startRow}`;
   const end = `${getWorkbookColumnLabel(endCol)}${endRow}`;
   return start === end ? start : `${start}:${end}`;
+}
+
+function estimateFormulaValueFieldWidth(value: string, fontSize: number): number {
+  const weightedLength = Array.from(value).reduce((total, char) => (
+    total + (/^[\x20-\x7E]$/.test(char) ? 0.62 : 1)
+  ), 0);
+  return Math.max(180, Math.min(480, Math.ceil((weightedLength * fontSize) + 82)));
 }
 
 function resolveWorkbookSelectionAddress(
@@ -170,6 +178,9 @@ const WorkbookFormulaBar = memo(({
     freezeState?.rowNumber ? t('formulaFreezeRows', { count: freezeState.rowNumber }) : '',
     freezeState?.colCount ? t('formulaFreezeCols', { count: freezeState.colCount }) : '',
   ].filter(Boolean).join(' · ') || t('formulaFreezeDefault');
+  const displayValue = primarySelection?.value || t('formulaBarEmptyValue');
+  const formulaValue = primarySelection?.formula || t('formulaBarEmpty');
+  const valueFieldWidth = estimateFormulaValueFieldWidth(displayValue, sizes.ui);
 
   const ActionButton = ({
     label,
@@ -213,7 +224,7 @@ const WorkbookFormulaBar = memo(({
         className="grid gap-2 items-start min-w-0"
         style={{
           gridTemplateColumns: isRegularLayout
-            ? 'minmax(0, auto) minmax(280px, 1fr) minmax(0, auto)'
+            ? 'minmax(0, auto) minmax(360px, 760px) minmax(0, 1fr)'
             : 'minmax(0, 1fr)',
         }}>
         <div
@@ -293,55 +304,77 @@ const WorkbookFormulaBar = memo(({
         </div>
 
         <div
-          className="grid gap-2 min-w-0"
+          className="flex gap-2 min-w-0"
           style={{
-            gridTemplateColumns: isStackedLayout
-              ? 'minmax(0, 1fr)'
-              : 'minmax(180px, 240px) minmax(0, 1fr)',
+            width: '100%',
+            maxWidth: isRegularLayout ? 760 : undefined,
+            flexWrap: isStackedLayout ? 'wrap' : 'nowrap',
           }}>
-          <div
-            className="inline-flex items-center max-w-full h-[30px] px-3 rounded-[10px]"
-            style={{
-              minWidth: isStackedLayout ? 0 : 180,
-              border: `1px solid ${cssVar('border')}`,
-              background: cssVar('bg2'),
-              color: cssVar('t1'),
-              fontFamily: FONT_UI,
-              fontSize: sizes.ui,
+          <Tooltip
+            content={displayValue}
+            maxWidth={520}
+            anchorStyle={{
+              display: 'flex',
+              flex: isStackedLayout ? '1 1 100%' : `0 1 ${valueFieldWidth}px`,
+              minWidth: isStackedLayout ? 0 : Math.min(180, valueFieldWidth),
+              maxWidth: isStackedLayout ? '100%' : 480,
             }}>
-            <span className="whitespace-nowrap" style={{ color: cssVar('t2') }}>{t('workbookCellValue')}:</span>
-            <span
-              className="ml-2 overflow-hidden text-ellipsis whitespace-nowrap font-semibold"
-              style={{ color: cssVar('t0') }}>
-              {primarySelection?.value || t('formulaBarEmptyValue')}
-            </span>
-          </div>
-
-          <div
-            className="flex items-center min-w-0 h-[30px] px-3 rounded-[10px] overflow-hidden"
-            style={{
-              border: `1px solid ${cssVar('border')}`,
-              background: cssVar('bg2'),
-            }}>
-            <span
-              className="shrink-0 font-bold uppercase tracking-wider"
+            <div
+              data-testid="formula-value-field"
+              className="inline-flex items-center w-full max-w-full h-[30px] px-3 rounded-[10px] overflow-hidden"
               style={{
-                color: cssVar('acc2'),
+                border: `1px solid ${cssVar('border')}`,
+                background: cssVar('bg2'),
+                color: cssVar('t1'),
                 fontFamily: FONT_UI,
-                fontSize: sizes.meta,
-              }}>
-              fx
-            </span>
-            <span
-              className="ml-2.5 overflow-hidden text-ellipsis whitespace-nowrap"
-              style={{
-                fontFamily: FONT_CODE,
                 fontSize: sizes.ui,
-                color: primarySelection?.formula ? cssVar('t0') : cssVar('t2'),
               }}>
-              {primarySelection?.formula || t('formulaBarEmpty')}
-            </span>
-          </div>
+              <span className="whitespace-nowrap" style={{ color: cssVar('t2') }}>{t('workbookCellValue')}:</span>
+              <span
+                className="ml-2 overflow-hidden text-ellipsis whitespace-nowrap font-semibold"
+                style={{ color: cssVar('t0') }}>
+                {displayValue}
+              </span>
+            </div>
+          </Tooltip>
+
+          <Tooltip
+            content={primarySelection?.formula ? formulaValue : undefined}
+            maxWidth={620}
+            disabled={!primarySelection?.formula}
+            anchorStyle={{
+              display: 'flex',
+              flex: isStackedLayout ? '1 1 100%' : '1 1 240px',
+              minWidth: isStackedLayout ? 0 : 180,
+              maxWidth: isRegularLayout ? 420 : '100%',
+            }}>
+            <div
+              data-testid="formula-expression-field"
+              className="flex items-center w-full min-w-0 h-[30px] px-3 rounded-[10px] overflow-hidden"
+              style={{
+                border: `1px solid ${cssVar('border')}`,
+                background: cssVar('bg2'),
+              }}>
+              <span
+                className="shrink-0 font-bold uppercase tracking-wider"
+                style={{
+                  color: cssVar('acc2'),
+                  fontFamily: FONT_UI,
+                  fontSize: sizes.meta,
+                }}>
+                fx
+              </span>
+              <span
+                className="ml-2.5 overflow-hidden text-ellipsis whitespace-nowrap"
+                style={{
+                  fontFamily: FONT_CODE,
+                  fontSize: sizes.ui,
+                  color: primarySelection?.formula ? cssVar('t0') : cssVar('t2'),
+                }}>
+                {formulaValue}
+              </span>
+            </div>
+          </Tooltip>
         </div>
 
         <div className="min-w-0" style={!isRegularLayout ? { gridColumn: '1 / -1' } : undefined}>

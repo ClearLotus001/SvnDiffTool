@@ -68,7 +68,7 @@ import type {
 import { ROW_H } from '@/hooks/virtualization/useVirtual';
 import type { WorkbookMergeRange } from '@/utils/workbook/workbookMeta';
 import type { WorkbookCanvasHoverCell } from '@/components/workbook/WorkbookCanvasHoverTooltip';
-import useWorkbookCanvasHoverController from '@/components/workbook/useWorkbookCanvasHoverController';
+import useWorkbookCanvasHoverController, { resolveWorkbookCanvasHoverForCanvas } from '@/components/workbook/useWorkbookCanvasHoverController';
 import useWorkbookCanvasSelectionInteractions from '@/components/workbook/useWorkbookCanvasSelectionInteractions';
 import type { WorkbookCompareStateByRow } from '@/utils/workbook/workbookPanelHelpers';
 
@@ -839,7 +839,7 @@ const WorkbookPaneCanvasStrip = memo(({
           value: selected.value,
           formula: selected.formula,
         },
-        hover: compareCell ? {
+        hover: {
           key: `${side}-${anchorEntry.rowNumber}-${anchorColumn}`,
           anchorRect: {
             left: canvasRect.left + columnX,
@@ -851,13 +851,14 @@ const WorkbookPaneCanvasStrip = memo(({
           },
           address: selected.address,
           displayValue: selected.value,
+          wrapText: Boolean(mergeDrawInfo.region),
           compareCell,
-        } : null,
+        },
       };
     }
     return {
       selection: selected,
-      hover: compareCell ? {
+      hover: {
         key: `${side}-${anchorEntry.rowNumber}-${anchorColumn}`,
         anchorRect: {
           left: canvasRect.left + columnX,
@@ -869,8 +870,9 @@ const WorkbookPaneCanvasStrip = memo(({
         },
         address: selected.address,
         displayValue: selected.value,
+        wrapText: Boolean(mergeDrawInfo.region),
         compareCell,
-      } : null,
+      },
     };
   };
 
@@ -885,7 +887,7 @@ const WorkbookPaneCanvasStrip = memo(({
       clientY - canvasRect.top,
       canvasRect,
     );
-    return hit?.hover ?? null;
+    return resolveWorkbookCanvasHoverForCanvas(canvas, hit?.hover ?? null, sizes.ui);
   };
 
   const { handleMouseMove, clearHover, hasActiveHover } = useWorkbookCanvasHoverController(resolveHoverAtPointer, onHoverChange);
@@ -935,6 +937,8 @@ const WorkbookPaneCanvasStrip = memo(({
   return (
     <canvas
       ref={canvasRef}
+      data-testid={`workbook-pane-canvas-${side}`}
+      data-workbook-cell-canvas="true"
       onPointerDown={selectionInteractions.handlePointerDown}
       onPointerMove={selectionInteractions.handlePointerMove}
       onPointerUp={selectionInteractions.handlePointerUp}

@@ -18,10 +18,6 @@ import {
   getWorkbookSplitRowNumber,
 } from '@/utils/workbook/workbookNavigation';
 import {
-  injectWorkbookSparseGapItems,
-  type WorkbookSparseRowRange,
-} from '@/utils/workbook/workbookSparseGaps';
-import {
   buildCollapsedItems,
   type CollapsibleRowBlock,
 } from '@/utils/collapse/collapsibleRows';
@@ -102,45 +98,6 @@ const horizontalItemHeightsSharedCache = new WeakMap<SplitRow[], Map<string, num
 
 function getNow() {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
-}
-
-function resolveWorkbookHorizontalItemRowRange(
-  item: WorkbookHorizontalRenderItem,
-): WorkbookSparseRowRange | null {
-  if (item.kind === 'sparse-gap') {
-    return {
-      rowNumberStart: item.rowNumberStart,
-      rowNumberEnd: item.rowNumberEnd,
-    };
-  }
-
-  if (item.kind === 'split-line') {
-    const rowNumber = getWorkbookSplitRowNumber(item.row);
-    return rowNumber == null
-      ? null
-      : {
-        rowNumberStart: rowNumber,
-        rowNumberEnd: rowNumber,
-      };
-  }
-
-  if (item.kind === 'split-collapse') {
-    return item.rowNumberStart != null && item.rowNumberEnd != null
-      ? {
-        rowNumberStart: item.rowNumberStart,
-        rowNumberEnd: item.rowNumberEnd,
-      }
-      : null;
-  }
-
-  const rowNumberStart = item.rowNumbers[0] ?? null;
-  const rowNumberEnd = item.rowNumbers[item.rowNumbers.length - 1] ?? null;
-  return rowNumberStart != null && rowNumberEnd != null
-    ? {
-      rowNumberStart,
-      rowNumberEnd,
-    }
-    : null;
 }
 
 export function useWorkbookHorizontalDerivedState({
@@ -342,7 +299,6 @@ export function useWorkbookHorizontalDerivedState({
       collapseCtx,
       hiddenRowsSignature,
       expandedBlocksSignature,
-      activeWorkbookSection?.rowCount ?? null,
     ]);
     const cached = getWorkbookSharedCacheEntry(cacheBySectionRows, cacheKey);
     if (cached) return cached;
@@ -353,28 +309,17 @@ export function useWorkbookHorizontalDerivedState({
       if (item.kind === 'hidden-rows') {
         return item.rowNumbers.some((rowNumber) => rowNumber > freezeRowNumber);
       }
-      if (item.kind === 'sparse-gap') {
-        return item.rowNumberEnd > freezeRowNumber;
-      }
       const rowNumber = getWorkbookSplitRowNumber(item.row);
       return rowNumber == null || rowNumber > freezeRowNumber;
     });
-    const value = injectWorkbookSparseGapItems(visibleItems, {
-      firstExpectedRowNumber: freezeRowNumber + 1,
-      ...(activeWorkbookSection?.rowCount != null
-        ? { lastExpectedRowNumber: activeWorkbookSection.rowCount }
-        : {}),
-      resolveRowRange: resolveWorkbookHorizontalItemRowRange,
-    });
     const nextValue = {
-      value,
+      value: visibleItems,
       duration: getNow() - start,
     };
     setWorkbookSharedCacheEntry(cacheBySectionRows, cacheKey, nextValue);
     return nextValue;
   }, [
     activeSheetCacheKey,
-    activeWorkbookSection?.rowCount,
     collapseCtx,
     expandedBlocksSignature,
     freezeRowNumber,
@@ -395,17 +340,15 @@ export function useWorkbookHorizontalDerivedState({
       collapseCtx,
       hiddenRowsSignature,
       expandedBlocksSignature,
-      activeWorkbookSection?.rowCount ?? null,
     ]);
     const cached = getWorkbookSharedCacheEntry(cacheBySectionRows, cacheKey);
     if (cached) return cached;
 
-    const next = items.map((item) => item.kind === 'sparse-gap' ? item.count * ROW_H : ROW_H);
+    const next = items.map(() => ROW_H);
     setWorkbookSharedCacheEntry(cacheBySectionRows, cacheKey, next);
     return next;
   }, [
     activeSheetCacheKey,
-    activeWorkbookSection?.rowCount,
     collapseCtx,
     expandedBlocksSignature,
     freezeRowNumber,

@@ -87,6 +87,11 @@ test('local diff keeps compare-mode and metadata loaders usable after initial lo
     await fs.writeFile(minePath, Buffer.from(buildWorkbookZip('Thing', [['ID', 'Name'], ['10001', 'Bravo']])));
 
     const initial = await buildLocalDiffData(basePath, minePath, 'strict');
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if ([...workbookCompareCache.keys()].some((key) => key.includes('compare:content'))) break;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    const compareCacheKeysAfterInitialLoad = [...workbookCompareCache.keys()];
     const strictPayload = await loadWorkbookCompareModeData('strict');
     const contentPayload = await loadWorkbookCompareModeData('content');
     const metadataPayload = await loadWorkbookMetadataData();
@@ -94,6 +99,8 @@ test('local diff keeps compare-mode and metadata loaders usable after initial lo
     const contentSnapshot = contentPayload.analysisSnapshot ?? null;
 
     assert.ok((initial.analysisSnapshotsByMode?.strict?.workbookAnalysis?.diffLinesByMode.strict?.length ?? 0) > 0);
+    assert.equal(compareCacheKeysAfterInitialLoad.some((key) => key.includes('compare:strict')), true);
+    assert.equal(compareCacheKeysAfterInitialLoad.some((key) => key.includes('compare:content')), true);
     assert.equal(Object.keys(initial.analysisSnapshotsByMode?.strict?.workbookAnalysis?.metadata.base?.sheets ?? {}).length, 1);
     assert.equal(Object.keys(initial.analysisSnapshotsByMode?.strict?.workbookAnalysis?.metadata.mine?.sheets ?? {}).length, 1);
     assert.equal(strictPayload.analysisSnapshot, strictSnapshot);

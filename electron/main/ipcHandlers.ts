@@ -6,7 +6,12 @@ import { electronT } from '../i18n.js';
 import { wasLaunchedAfterUpdateFromArgv } from '../maintenance.js';
 import { AUTO_EXIT_AFTER_LOAD_MS, USE_NATIVE_WINDOW_CONTROLS } from './constants.js';
 import { logDebugTiming } from './logger.js';
-import { getAppUpdater, getMainWindow } from './state.js';
+import {
+  consumePendingLaunchDiffRequest,
+  getAppUpdater,
+  getHasPendingLaunchDiffRequest,
+  getMainWindow,
+} from './state.js';
 import { getStartupPalette, readStartupAppearance, writeStartupAppearance } from './startupAppearance.js';
 import {
   buildDiffData,
@@ -54,7 +59,6 @@ import {
 } from './gitOperations.js';
 import type {
   LaunchContextPayload,
-  LaunchStatePayload,
   RevisionOptionsQuery,
   TitleBarOverlayPayload,
   WorkbookCompareMode,
@@ -79,10 +83,6 @@ function safeHandle(
   });
 }
 
-let launchStateInFlight:
-  | { compareMode: WorkbookCompareMode; promise: Promise<LaunchStatePayload> }
-  | null = null;
-
 function getWindowFrameStateSnapshot() {
   return {
     isMaximized: Boolean(getMainWindow()?.isMaximized()),
@@ -91,6 +91,7 @@ function getWindowFrameStateSnapshot() {
 
 function buildLaunchContextPayload(): LaunchContextPayload {
   return {
+    hasDiffRequest: getHasPendingLaunchDiffRequest(),
     isDevMode: process.env.NODE_ENV === 'development',
     usesNativeWindowControls: USE_NATIVE_WINDOW_CONTROLS,
     windowFrameState: getWindowFrameStateSnapshot(),
@@ -117,44 +118,15 @@ export function registerIpcHandlers(): void {
     buildLaunchContextPayload()
   ));
 
-  safeHandle('get-launch-state', async (_, ...args: unknown[]) => {
-    const payload = args[0] as { compareMode?: WorkbookCompareMode } | undefined;
-    const compareMode = payload?.compareMode ?? 'strict';
-
-    if (launchStateInFlight?.compareMode === compareMode) {
-      return launchStateInFlight.promise;
-    }
-
-    clearActiveGitWorkingFileSession();
-    clearActiveTwoFileVersionSession();
-    const promise = (async (): Promise<LaunchStatePayload> => ({
-      ...buildLaunchContextPayload(),
-      diffData: projectTransportDiffData(await buildDiffData({
-        workbookCompareMode: compareMode,
-      })),
-    }))();
-
-    launchStateInFlight = {
-      compareMode,
-      promise,
-    };
-
-    try {
-      return await promise;
-    } finally {
-      if (launchStateInFlight?.promise === promise) {
-        launchStateInFlight = null;
-      }
-    }
-  });
-
   safeHandle('get-diff-data', async (_, ...args: unknown[]) => {
     const payload = args[0] as { compareMode?: WorkbookCompareMode } | undefined;
     clearActiveGitWorkingFileSession();
     clearActiveTwoFileVersionSession();
-    return projectTransportDiffData(await buildDiffData({
+    const data = await buildDiffData({
       workbookCompareMode: payload?.compareMode ?? 'strict',
-    }));
+    });
+    consumePendingLaunchDiffRequest();
+    return projectTransportDiffData(data);
   });
 
   safeHandle('load-revision-diff', async (_, ...args: unknown[]) => {

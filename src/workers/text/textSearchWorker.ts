@@ -1,6 +1,10 @@
 /// <reference lib="webworker" />
 
-import { buildSearchPattern, findMatchesInSearchableLines } from '@/engine/text/search';
+import {
+  buildSearchPattern,
+  scanMatchesInSearchableLines,
+  type SearchScanResult,
+} from '@/engine/text/search';
 
 interface TextSearchWorkerSetLinesRequest {
   type: 'set-lines';
@@ -20,7 +24,7 @@ type TextSearchWorkerRequest = TextSearchWorkerSetLinesRequest | TextSearchWorke
 interface TextSearchWorkerSuccess {
   ok: true;
   requestId: number;
-  matches: ReturnType<typeof findMatchesInSearchableLines>;
+  result: SearchScanResult;
 }
 
 interface TextSearchWorkerFailure {
@@ -45,11 +49,11 @@ self.onmessage = (event: MessageEvent<TextSearchWorkerRequest>) => {
       isRegex: request.isRegex,
       isCaseSensitive: request.isCaseSensitive,
     });
-    const matches = findMatchesInSearchableLines(searchableLines, pattern);
+    const result = scanMatchesInSearchableLines(searchableLines, pattern);
     const response: TextSearchWorkerResponse = {
       ok: true,
       requestId: request.requestId,
-      matches,
+      result,
     };
     self.postMessage(response);
   } catch (error) {

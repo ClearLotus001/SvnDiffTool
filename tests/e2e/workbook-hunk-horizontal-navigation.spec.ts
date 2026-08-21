@@ -63,6 +63,55 @@ test('clicking a single workbook hunk again scrolls both panes to its off-screen
   expect(Math.abs((scrollLefts[0] ?? 0) - (scrollLefts[1] ?? 0))).toBeLessThanOrEqual(1);
 });
 
+test('switching distant workbook hunks updates focus, viewport, and active overlay together', async ({ page }) => {
+  const baseRows = Array.from({ length: 200 }, (_, index) => [
+    `Row ${index + 1}`,
+    `Stable ${index + 1}`,
+  ]);
+  const mineRows = baseRows.map((row) => [...row]);
+  mineRows[9]![1] = 'Changed row 10';
+  mineRows[179]![1] = 'Changed row 180';
+
+  await page.goto('/?__e2e=1');
+  await page.waitForFunction(() => Boolean(window.__SVN_DIFF_E2E__));
+  await page.evaluate(async ({ baseContent, mineContent }) => {
+    await window.__SVN_DIFF_E2E__!.loadWorkbookDiff({
+      fileName: 'distant-navigation.xlsx',
+      baseName: 'distant-base.xlsx',
+      mineName: 'distant-mine.xlsx',
+      layout: 'split-h',
+      collapseCtx: false,
+      baseContent,
+      mineContent,
+    });
+  }, {
+    baseContent: buildWorkbook(baseRows),
+    mineContent: buildWorkbook(mineRows),
+  });
+  await page.waitForFunction(() => window.__SVN_DIFF_E2E__?.getSnapshot().isWorkbookMode === true);
+
+  const paneScrollers = page.locator('.overflow-auto.relative');
+  await expect(paneScrollers).toHaveCount(2);
+  await expect(page.getByText('1/2', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: /^(?:涓嬩竴涓樊寮傚潡|Next hunk) \(F7\)$/ }).click();
+  await expect(page.getByText('2/2', { exact: true }).first()).toBeVisible();
+  await expect.poll(() => paneScrollers.first().evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+
+  const overlayCanvases = page.locator('[data-pulse] canvas');
+  await expect(overlayCanvases).toHaveCount(2);
+  await expect.poll(() => overlayCanvases.first().evaluate((canvas) => {
+    if (!(canvas instanceof HTMLCanvasElement)) return false;
+    const context = canvas.getContext('2d');
+    if (!context || canvas.width <= 0 || canvas.height <= 0) return false;
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    for (let index = 3; index < pixels.length; index += 4) {
+      if ((pixels[index] ?? 0) > 0) return true;
+    }
+    return false;
+  })).toBe(true);
+});
+
 test('workbook minimap markers stay aligned when the table leaves bottom whitespace', async ({ page }) => {
   await loadWideWorkbookDiff(page);
 

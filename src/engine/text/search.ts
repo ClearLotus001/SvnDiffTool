@@ -7,6 +7,14 @@ export interface SearchOptions {
   isCaseSensitive: boolean;
 }
 
+export interface SearchScanResult {
+  matches: SearchMatch[];
+  totalCount: number;
+  truncated: boolean;
+}
+
+const MAX_MATERIALIZED_SEARCH_MATCHES = 100_000;
+
 export function buildSearchPattern(
   query: string,
   options: SearchOptions,
@@ -32,8 +40,18 @@ export function findMatchesInSearchableLines(
   lines: readonly string[],
   pattern: RegExp | null,
 ): SearchMatch[] {
-  if (!pattern) return [];
+  return scanMatchesInSearchableLines(lines, pattern, Number.POSITIVE_INFINITY).matches;
+}
+
+export function scanMatchesInSearchableLines(
+  lines: readonly string[],
+  pattern: RegExp | null,
+  maxMaterializedMatches = MAX_MATERIALIZED_SEARCH_MATCHES,
+): SearchScanResult {
+  if (!pattern) return { matches: [], totalCount: 0, truncated: false };
   const results: SearchMatch[] = [];
+  let totalCount = 0;
+  const materializedLimit = Math.max(0, Math.floor(maxMaterializedMatches));
 
   for (let lineIdx = 0; lineIdx < lines.length; lineIdx += 1) {
     const content = lines[lineIdx] ?? '';
@@ -43,12 +61,15 @@ export function findMatchesInSearchableLines(
     try {
       let match: RegExpExecArray | null;
       while ((match = pattern.exec(content)) !== null) {
-        results.push({
-          lineIdx,
-          start: match.index,
-          end: match.index + match[0].length,
-          workbookTarget: null,
-        });
+        totalCount += 1;
+        if (results.length < materializedLimit) {
+          results.push({
+            lineIdx,
+            start: match.index,
+            end: match.index + match[0].length,
+            workbookTarget: null,
+          });
+        }
         if (match[0].length === 0) pattern.lastIndex += 1;
       }
     } catch {
@@ -56,7 +77,11 @@ export function findMatchesInSearchableLines(
     }
   }
 
-  return results;
+  return {
+    matches: results,
+    totalCount,
+    truncated: totalCount > results.length,
+  };
 }
 
 export function navigateSearch(

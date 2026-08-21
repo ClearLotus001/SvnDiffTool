@@ -18,7 +18,12 @@ import {
 import { DEV_PROFILE_ROOT } from './main/constants';
 import { registerIpcHandlers } from './main/ipcHandlers';
 import { writeExternalDiffDebugLog } from './main/logger';
-import { getMainWindow, initAppUpdater, setActiveCliArgs } from './main/state';
+import {
+  getMainWindow,
+  initAppUpdater,
+  setActiveCliArgs,
+  setHasPendingLaunchDiffRequest,
+} from './main/state';
 import {
   createWindow,
   focusMainWindow,
@@ -50,6 +55,7 @@ if (gotSingleInstanceLock) {
   parsedStartupCliArgs = resolveLaunchCliArgsFromArgv(process.argv);
   cliArgs = parsedStartupCliArgs ?? { ...EMPTY_CLI_ARGS };
   setActiveCliArgs(cliArgs);
+  setHasPendingLaunchDiffRequest(parsedStartupCliArgs !== null);
 }
 
 writeExternalDiffDebugLog('process-start', {
@@ -193,6 +199,7 @@ if (maintenanceMode) {
     });
     if (nextArgs) {
       setActiveCliArgs(nextArgs);
+      setHasPendingLaunchDiffRequest(true);
       notifyCliArgsUpdated();
     }
     focusMainWindow();

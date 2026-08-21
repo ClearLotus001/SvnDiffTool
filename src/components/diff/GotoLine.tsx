@@ -1,5 +1,5 @@
 // src/components/GotoLine.tsx
-import { memo, useState, useEffect, useRef } from 'react';
+import { memo, useState, useEffect, useRef, type CSSProperties } from 'react';
 import { useI18n } from '@/context/i18n';
 import DialogFrame from '@/components/shared/DialogFrame';
 import type { AnimatedVisibilityState } from '@/hooks/ui/useAnimatedVisibility';
@@ -57,7 +57,7 @@ const GotoLine = memo(({
   return (
     <DialogFrame
       animationState={animationState}
-      className="w-[340px] max-w-[calc(100vw-32px)] rounded-[14px] p-[18px] bg-bg-surface-solid border border-border-strong shadow-2xl font-ui">
+      className="goto-line-dialog w-[340px] max-w-[calc(100vw-32px)] rounded-[14px] p-[18px] bg-bg-surface-solid border border-border-strong shadow-2xl font-ui">
       <div className="text-[15px] text-text-title mb-1.5 font-bold">
         {t('gotoTitle')}
       </div>
@@ -107,18 +107,26 @@ const GotoLine = memo(({
           {t('gotoCancel')}
         </button>
         <button
+          type="button"
+          data-testid="goto-line-submit"
           onClick={go}
           disabled={!isValidLine}
+          style={{
+            '--liquid-control-fill': 'var(--btn-active-bg)',
+            '--liquid-control-fill-hover': 'var(--btn-active-bg)',
+            '--liquid-control-fill-pressed': 'var(--btn-active-bg)',
+          } as CSSProperties}
           className={`
-            h-[34px] px-4 min-w-[76px] rounded-lg
-            border-none text-[14px] font-ui font-bold
+            goto-line-dialog__submit
+            h-[34px] px-4 min-w-[76px]
+            text-[14px] font-ui font-bold
             transition-all duration-150
             ${isValidLine
               ? 'bg-[var(--acc2)] text-[var(--btn-active-text)] cursor-pointer hover:-translate-y-px hover:brightness-105 active:scale-[0.97] shadow-[0_16px_30px_-24px_var(--acc2)]'
               : 'bg-bg-elevated text-text-secondary cursor-not-allowed'
             }
           `}>
-          {t('gotoGo')}
+          <span className="relative z-[1]">{t('gotoGo')}</span>
         </button>
       </div>
     </DialogFrame>

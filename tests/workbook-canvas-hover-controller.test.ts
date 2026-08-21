@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isWorkbookCanvasPointerInsideHoverAnchor } from '../src/components/workbook/useWorkbookCanvasHoverController';
+import {
+  isWorkbookCanvasPointerInsideHoverAnchor,
+  resolveWorkbookCanvasHoverVisibility,
+} from '../src/components/workbook/useWorkbookCanvasHoverController';
 import type { WorkbookCanvasHoverCell } from '../src/components/workbook/WorkbookCanvasHoverTooltip';
 
 const hover: WorkbookCanvasHoverCell = {
@@ -34,4 +37,24 @@ test('isWorkbookCanvasPointerInsideHoverAnchor uses the hover anchor as a half-o
   assert.equal(isWorkbookCanvasPointerInsideHoverAnchor(hover, 90, 30), false);
   assert.equal(isWorkbookCanvasPointerInsideHoverAnchor(hover, 30, 44), false);
   assert.equal(isWorkbookCanvasPointerInsideHoverAnchor(null, 30, 30), false);
+});
+
+test('resolveWorkbookCanvasHoverVisibility opens unchanged cells only when their text is clipped', () => {
+  const measureText = (value: string) => value.length * 10;
+  const unchangedHover: WorkbookCanvasHoverCell = {
+    ...hover,
+    displayValue: 'short',
+    compareCell: undefined,
+  };
+  assert.equal(resolveWorkbookCanvasHoverVisibility(unchangedHover, 12, measureText), null);
+
+  const clipped = resolveWorkbookCanvasHoverVisibility({
+    ...unchangedHover,
+    displayValue: 'a description that is wider than the cell',
+  }, 12, measureText);
+  assert.equal(clipped?.isTextTruncated, true);
+  assert.equal(clipped?.displayValue, 'a description that is wider than the cell');
+
+  const compareHover = resolveWorkbookCanvasHoverVisibility(hover, 12, measureText);
+  assert.equal(compareHover?.key, hover.key);
 });

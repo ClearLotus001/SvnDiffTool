@@ -211,17 +211,17 @@ const StatsBar = memo(({
       className="
         app-stats-bar
         bg-bg-surface-solid border-t border-border-default
-        min-h-[38px] shrink-0 w-full min-w-0
-        text-[13px] text-text-secondary font-ui relative z-[18]
+        min-h-[30px] shrink-0 w-full min-w-0
+        text-[11px] text-text-secondary font-ui relative z-[18]
         overflow-hidden
       "
       style={{ boxShadow: `0 -1px 0 var(--border-color), 0 -10px 24px -24px var(--border-strong)` }}>
-      <div className="flex items-center gap-3 min-w-0 py-1.5 px-2.5">
+      <div className="flex items-center gap-2 min-w-0 py-1 px-2">
         <div className="relative flex-1 min-w-0">
           <div
             ref={scrollRef}
             className={`flex-1 min-w-0 ${SCROLL_RAIL_CLASS}`}>
-            <div className="inline-flex items-center gap-2 min-w-max pr-1">
+            <div className="inline-flex items-center gap-1.5 min-w-max pr-1">
               {metric(addedPalette, `+${stats.add + stats.chg}`, t('statsAdded'))}
               {metric(deletedPalette, `-${stats.del + stats.chg}`, t('statsRemoved'))}
               {metric(modifiedPalette, `~${stats.chg}`, t('statsModified'))}
@@ -338,13 +338,13 @@ const StatsBar = memo(({
           )}
         </div>
 
-        <div className="inline-flex items-center justify-end gap-2 shrink-0 min-w-0 ml-auto pl-3 border-l border-border-default text-right">
-          <span className="whitespace-nowrap font-ui text-[13px] text-text-title font-semibold shrink-0">
+        <div className="inline-flex items-center justify-end gap-1.5 shrink-0 min-w-0 ml-auto pl-2 border-l border-border-default text-right">
+          <span className="whitespace-nowrap font-ui text-[11px] text-text-title font-semibold shrink-0">
             {t('statsLines', { count: totalLines })}
           </span>
           <span aria-hidden="true" className="app-stats-divider-dot shrink-0" />
           <Tooltip content={t('statsHints')} maxWidth={420}>
-            <span className="max-w-[42vw] overflow-hidden text-ellipsis whitespace-nowrap font-ui text-[12px] text-text-secondary cursor-default text-right">
+            <span className="max-w-[42vw] overflow-hidden text-ellipsis whitespace-nowrap font-ui text-[10px] text-text-secondary cursor-default text-right">
               {t('statsHints')}
             </span>
           </Tooltip>

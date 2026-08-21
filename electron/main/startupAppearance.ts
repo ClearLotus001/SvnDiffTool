@@ -105,7 +105,9 @@ function isLocale(value: unknown): value is StartupLocale {
 
 function getDefaultStartupAppearance(runtime: StartupElectronRuntime | null): StartupAppearance {
   return {
-    themeKey: runtime?.nativeTheme.shouldUseDarkColors ? 'dark' : 'light',
+    // Keep the native window background aligned with the renderer's persisted
+    // settings fallback, which is dark even on a light operating-system theme.
+    themeKey: 'dark',
     locale: runtime ? resolveStartupLocale(runtime.app.getLocale()) : resolveFallbackStartupLocale(),
   };
 }
@@ -159,7 +161,7 @@ export function getStartupPalette(themeKey: StartupThemeKey): StartupPalette {
   switch (themeKey) {
     case 'light':
       return {
-        backgroundColor: '#f4f4f5',
+        backgroundColor: '#f5f7fb',
         titleBarColor: '#ffffff',
         titleBarSymbolColor: '#09090b',
       };
@@ -172,7 +174,7 @@ export function getStartupPalette(themeKey: StartupThemeKey): StartupPalette {
     case 'dark':
     default:
       return {
-        backgroundColor: '#09090b',
+        backgroundColor: '#08090d',
         titleBarColor: '#09090b',
         titleBarSymbolColor: '#fafafa',
       };

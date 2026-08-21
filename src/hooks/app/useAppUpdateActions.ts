@@ -3,27 +3,27 @@ import type { TranslationFn } from '@/context/i18n';
 
 export default function useAppUpdateActions(t: TranslationFn) {
   const handleCheckForAppUpdate = useCallback(() => {
-    void window.svnDiff?.checkForAppUpdate?.({ manual: true });
+    void window.versora?.checkForAppUpdate?.({ manual: true });
   }, []);
 
   const handleDownloadAppUpdate = useCallback(() => {
-    void window.svnDiff?.downloadAppUpdate?.();
+    void window.versora?.downloadAppUpdate?.();
   }, []);
 
   const handleInstallDownloadedUpdate = useCallback(() => {
-    if (!window.svnDiff?.installDownloadedUpdate) return;
+    if (!window.versora?.installDownloadedUpdate) return;
     const confirmed = window.confirm(t('toolbarUpdateInstallConfirm'));
     if (!confirmed) return;
-    void window.svnDiff.installDownloadedUpdate();
+    void window.versora.installDownloadedUpdate();
   }, [t]);
 
   const handleLaunchUninstaller = useCallback(async () => {
-    if (!window.svnDiff?.launchUninstaller) return;
+    if (!window.versora?.launchUninstaller) return;
     const confirmed = window.confirm(t('aboutUninstallConfirm'));
     if (!confirmed) return;
 
     try {
-      await window.svnDiff.launchUninstaller();
+      await window.versora.launchUninstaller();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       window.alert(`${t('aboutUninstallError')}\n${message}`);

@@ -30,6 +30,7 @@ export const RENDERER_TRANSLATION_PARAM_KEYS = {
   "revisionPickerResultsLoaded": ["visible", "total"],
   "revisionPickerScopedTo": ["date"],
   "searchResultsSummary": ["count"],
+  "searchResultsTruncatedSummary": ["total", "shown"],
   "searchScopeCurrentSheetTitle": ["name"],
   "statsLines": ["count"],
   "statsLineSelectionLabel": ["count"],
@@ -54,7 +55,5 @@ export const RENDERER_TRANSLATION_PARAM_KEYS = {
   "workbookSheetTabTooltipCurrentName": ["name"],
   "workbookSheetTabTooltipName": ["name"],
   "workbookSheetTabTooltipPreviousName": ["name"],
-  "workbookSparseGapLabel": ["count"],
-  "workbookSparseGapRange": ["start", "end"],
   "workbookStackedMergeNoticeTitle": ["count"],
 } as const;

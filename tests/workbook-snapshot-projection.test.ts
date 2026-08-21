@@ -218,6 +218,106 @@ test('prepareWorkbookProjection can project unchanged workbook sections from del
   assert.deepEqual(projection.navigationRegions, []);
 });
 
+test('prepareWorkbookProjection preserves separate visual regions when equal row deltas are omitted', () => {
+  const rowCount = 51;
+  const changedRowNumbers = new Set([10, 50]);
+  const diffLines: DiffLine[] = [
+    createDiffLine('equal', createWorkbookSheetLine('Sheet1'), createWorkbookSheetLine('Sheet1'), null),
+    ...Array.from({ length: rowCount }, (_, index) => {
+      const rowNumber = index + 1;
+      const baseValue = `Value-${rowNumber}`;
+      const mineValue = changedRowNumbers.has(rowNumber) ? `Changed-${rowNumber}` : baseValue;
+      return createDiffLine(
+        'equal',
+        createWorkbookRowLine(rowNumber, [baseValue]),
+        createWorkbookRowLine(rowNumber, [mineValue]),
+        rowNumber,
+      );
+    }),
+  ];
+  const makeEqualAnchor = (rowNumber: number) => ({
+    lineIdx: rowNumber,
+    lineIdxs: [rowNumber],
+    leftLineIdx: rowNumber,
+    rightLineIdx: rowNumber,
+    baseRowNumber: rowNumber,
+    mineRowNumber: rowNumber,
+    cellDeltas: [],
+    changedColumns: [],
+    strictOnlyColumns: [],
+    changedCount: 0,
+    hasChanges: false,
+    tone: 'equal' as const,
+  });
+  const makeChangedRow = (rowNumber: number) => ({
+    lineIdx: rowNumber,
+    lineIdxs: [rowNumber],
+    leftLineIdx: rowNumber,
+    rightLineIdx: rowNumber,
+    baseRowNumber: rowNumber,
+    mineRowNumber: rowNumber,
+    cellDeltas: [{
+      column: 0,
+      baseCell: { value: `Value-${rowNumber}`, formula: '' },
+      mineCell: { value: `Changed-${rowNumber}`, formula: '' },
+      changed: true,
+      masked: false,
+      strictOnly: false,
+      kind: 'modify' as const,
+      hasBaseContent: true,
+      hasMineContent: true,
+      hasContent: true,
+    }],
+    changedColumns: [0],
+    strictOnlyColumns: [],
+    changedCount: 1,
+    hasChanges: true,
+    tone: 'mixed' as const,
+  });
+  const workbookDelta: WorkbookPrecomputedDeltaPayload = {
+    compareMode: 'strict',
+    sections: [{
+      name: 'Sheet1',
+      hasBaseSide: true,
+      hasMineSide: true,
+      startLineIdx: 0,
+      endLineIdx: rowCount,
+      maxColumns: 1,
+      rowCount,
+      firstDataLineIdx: 1,
+      firstDataRowNumber: 1,
+      rows: [
+        makeEqualAnchor(1),
+        makeChangedRow(10),
+        makeChangedRow(50),
+        makeEqualAnchor(rowCount),
+      ],
+    }],
+  };
+
+  const projection = prepareWorkbookProjection({
+    diffLines: diffLines as MainDiffLine[],
+    workbookDelta: workbookDelta as MainWorkbookPrecomputedDeltaPayload,
+    compareMode: 'strict',
+    baseWorkbookMetadata: null,
+    mineWorkbookMetadata: null,
+  });
+
+  assert.equal(projection.navigationRegions.length, 2);
+  assert.deepEqual(
+    projection.navigationRegions.map((region) => region.startRowIndex),
+    [9, 49],
+  );
+  assert.deepEqual(
+    projection.navigationRegions.map((region) => region.anchorSelection?.rowNumber),
+    [10, 50],
+  );
+  assert.deepEqual(
+    projection.navigationRegions.map((region) => region.patches.length),
+    [1, 1],
+  );
+});
+
 test('prepareWorkbookProjection compresses whole-sheet additions and deletions into structural regions', () => {
   const diffLines: DiffLine[] = [
     createDiffLine('delete', createWorkbookSheetLine('Removed'), null, null),

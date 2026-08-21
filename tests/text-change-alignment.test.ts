@@ -7,8 +7,13 @@ import {
   buildReplacementPairIndex,
   summarizeDiffChanges,
 } from '../src/engine/text/textChangeAlignment';
+import { alignTextChangeBlock as alignSharedTextChangeBlock } from '../shared/textChangeAlignment';
 import { buildSplitRows } from '../src/engine/text/diff';
-import { buildSearchPattern, findMatchesInSearchableLines } from '../src/engine/text/search';
+import {
+  buildSearchPattern,
+  findMatchesInSearchableLines,
+  scanMatchesInSearchableLines,
+} from '../src/engine/text/search';
 
 function makeDeleteLine(base: string, baseLineNo: number): DiffLine {
   return {
@@ -101,6 +106,16 @@ test('alignTextChangeBlock treats short code token edits as replacements', () =>
       isReplacement: pair.isReplacement,
     })),
     [{ deleteIndex: 0, addIndex: 0, isReplacement: true }],
+  );
+});
+
+test('renderer and shared main-process text alignment use the same implementation', () => {
+  const deleteLines = ['return a', 'const stable = true;'];
+  const addLines = ['return b', 'const inserted = true;', 'const stable = false;'];
+
+  assert.deepEqual(
+    alignSharedTextChangeBlock(deleteLines, addLines),
+    alignTextChangeBlock(deleteLines, addLines),
   );
 });
 
@@ -208,4 +223,13 @@ test('findMatchesInSearchableLines returns stable line indexes without diff obje
       { lineIdx: 2, start: 13, end: 19 },
     ],
   );
+});
+
+test('scanMatchesInSearchableLines counts all matches while bounding materialized results', () => {
+  const pattern = buildSearchPattern('x', { isRegex: false, isCaseSensitive: true });
+  const result = scanMatchesInSearchableLines(['xxxx', 'xx'], pattern, 3);
+
+  assert.equal(result.totalCount, 6);
+  assert.equal(result.matches.length, 3);
+  assert.equal(result.truncated, true);
 });

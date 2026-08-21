@@ -6,6 +6,7 @@ import {
   resolveWorkbookCompareModePayload,
   resolveWorkbookMetadataPairPayload,
 } from './filePayload.js';
+import { estimateWorkbookComparePayloadMemoryBytes } from './cache.js';
 import {
   prepareWorkbookProjection,
   projectWorkbookDeltaForSnapshot,
@@ -19,9 +20,16 @@ import type {
 } from './types.js';
 
 const ANALYSIS_SNAPSHOT_CACHE_LIMIT = 8;
+const ANALYSIS_SNAPSHOT_CACHE_MAX_BYTES = 160 * 1024 * 1024;
 
-const analysisSnapshotCache = new Map<string, DiffAnalysisSnapshot>();
+interface AnalysisSnapshotCacheEntry {
+  snapshot: DiffAnalysisSnapshot;
+  memoryBytes: number;
+}
+
+const analysisSnapshotCache = new Map<string, AnalysisSnapshotCacheEntry>();
 const analysisSnapshotInFlight = new Map<string, Promise<DiffAnalysisSnapshot>>();
+const analysisSnapshotMemoryEstimateCache = new WeakMap<DiffAnalysisSnapshot, number>();
 const WORKBOOK_METADATA_ONLY_PAYLOAD_OPTIONS = {
   includeWorkbookText: false,
   includeWorkbookBytes: false,
@@ -85,19 +93,96 @@ export function getInFlightAnalysisSnapshot(
   return analysisSnapshotInFlight.get(buildAnalysisSnapshotCacheKey(input)) ?? null;
 }
 
-function touchAnalysisSnapshot(key: string, snapshot: DiffAnalysisSnapshot): DiffAnalysisSnapshot {
+function estimateStringBytes(value: string | null | undefined): number {
+  return value ? Buffer.byteLength(value, 'utf-8') : 0;
+}
+
+export function estimateAnalysisSnapshotMemoryBytes(snapshot: DiffAnalysisSnapshot): number {
+  const cachedEstimate = analysisSnapshotMemoryEstimateCache.get(snapshot);
+  if (cachedEstimate != null) return cachedEstimate;
+
+  const textAnalysis = snapshot.textAnalysis;
+  if (textAnalysis) {
+    const diffBytes = estimateWorkbookComparePayloadMemoryBytes({
+      compareMode: snapshot.compareMode,
+      diffLines: textAnalysis.diffLines,
+      workbookDelta: null,
+      perf: null,
+    });
+    const descriptorBytes = textAnalysis.splitRowDescriptors.reduce((total, descriptor) => (
+      total + 48 + (descriptor.lineIdxs.length * 8)
+    ), 0);
+    const estimatedBytes = diffBytes
+      + descriptorBytes
+      + (textAnalysis.replacementPairs.length * 24)
+      + 128;
+    analysisSnapshotMemoryEstimateCache.set(snapshot, estimatedBytes);
+    return estimatedBytes;
+  }
+
+  const workbookAnalysis = snapshot.workbookAnalysis;
+  if (!workbookAnalysis) {
+    analysisSnapshotMemoryEstimateCache.set(snapshot, 128);
+    return 128;
+  }
+  const compareMode = snapshot.compareMode;
+  const diffLines = workbookAnalysis.diffLinesByMode[compareMode] ?? null;
+  const workbookDelta = workbookAnalysis.workbookDeltaByMode[compareMode] ?? null;
+  const payloadBytes = estimateWorkbookComparePayloadMemoryBytes({
+    compareMode,
+    diffLines,
+    workbookDelta,
+    baseMetadata: workbookAnalysis.metadata.base,
+    mineMetadata: workbookAnalysis.metadata.mine,
+    perf: workbookAnalysis.perf,
+  });
+  const sections = workbookAnalysis.sectionsByMode?.[compareMode] ?? [];
+  const sectionBytes = sections.reduce((total, section) => (
+    total + estimateStringBytes(section.name) + estimateStringBytes(section.displayName) + 192
+  ), 0);
+  const regions = workbookAnalysis.navigationRegionsByMode?.[compareMode] ?? [];
+  const regionBytes = regions.reduce((total, region) => (
+    total
+      + estimateStringBytes(region.id)
+      + estimateStringBytes(region.sheetName)
+      + (region.patches.length * 160)
+      + 256
+  ), 0);
+  const estimatedBytes = payloadBytes + sectionBytes + regionBytes + 256;
+  analysisSnapshotMemoryEstimateCache.set(snapshot, estimatedBytes);
+  return estimatedBytes;
+}
+
+function touchAnalysisSnapshot(
+  key: string,
+  entry: AnalysisSnapshotCacheEntry,
+): DiffAnalysisSnapshot {
   if (analysisSnapshotCache.has(key)) {
     analysisSnapshotCache.delete(key);
   }
-  analysisSnapshotCache.set(key, snapshot);
-  return snapshot;
+  analysisSnapshotCache.set(key, entry);
+  return entry.snapshot;
 }
 
 function rememberAnalysisSnapshot(key: string, snapshot: DiffAnalysisSnapshot) {
-  touchAnalysisSnapshot(key, snapshot);
-  while (analysisSnapshotCache.size > ANALYSIS_SNAPSHOT_CACHE_LIMIT) {
+  const memoryBytes = estimateAnalysisSnapshotMemoryBytes(snapshot);
+  if (memoryBytes > ANALYSIS_SNAPSHOT_CACHE_MAX_BYTES) {
+    return;
+  }
+  touchAnalysisSnapshot(key, { snapshot, memoryBytes });
+
+  let totalBytes = 0;
+  analysisSnapshotCache.forEach((entry) => {
+    totalBytes += entry.memoryBytes;
+  });
+  while (
+    analysisSnapshotCache.size > ANALYSIS_SNAPSHOT_CACHE_LIMIT
+    || totalBytes > ANALYSIS_SNAPSHOT_CACHE_MAX_BYTES
+  ) {
     const oldestKey = analysisSnapshotCache.keys().next().value;
     if (!oldestKey) break;
+    const oldestEntry = analysisSnapshotCache.get(oldestKey);
+    if (oldestEntry) totalBytes -= oldestEntry.memoryBytes;
     analysisSnapshotCache.delete(oldestKey);
   }
 }

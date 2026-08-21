@@ -18,25 +18,49 @@ function wrapWorkbookCanvasLine(
   line: string,
   maxWidth: number,
   measureText: (value: string) => number,
+  segmentLimit = Number.POSITIVE_INFINITY,
 ): string[] {
   if (!line) return [''];
   if (maxWidth <= 0 || measureText(line) <= maxWidth) return [line];
 
+  const chars = Array.from(line);
   const wrapped: string[] = [];
-  let current = '';
-
-  Array.from(line).forEach((char) => {
-    const candidate = `${current}${char}`;
-    if (current && measureText(candidate) > maxWidth) {
-      wrapped.push(current);
-      current = char;
-      return;
+  let start = 0;
+  const safeSegmentLimit = Math.max(1, segmentLimit);
+  while (start < chars.length && wrapped.length < safeSegmentLimit) {
+    let low = 1;
+    let high = chars.length - start;
+    let best = 1;
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2);
+      const candidate = chars.slice(start, start + middle).join('');
+      if (measureText(candidate) <= maxWidth) {
+        best = middle;
+        low = middle + 1;
+      } else {
+        high = middle - 1;
+      }
     }
-    current = candidate;
-  });
-
-  if (current) wrapped.push(current);
+    wrapped.push(chars.slice(start, start + best).join(''));
+    start += best;
+  }
   return wrapped.length > 0 ? wrapped : [line];
+}
+
+function wrapWorkbookCanvasTextLines(
+  logicalLines: string[],
+  maxWidth: number,
+  maxSegments: number,
+  measureText: (value: string) => number,
+): string[] {
+  const wrapped: string[] = [];
+  const safeMaxSegments = Math.max(1, maxSegments);
+  for (const line of logicalLines) {
+    const remainingSegments = safeMaxSegments - wrapped.length;
+    if (remainingSegments <= 0) break;
+    wrapped.push(...wrapWorkbookCanvasLine(line, maxWidth, measureText, remainingSegments));
+  }
+  return wrapped;
 }
 
 function ellipsizeWorkbookCanvasLine(
@@ -45,14 +69,24 @@ function ellipsizeWorkbookCanvasLine(
   measureText: (value: string) => number,
 ): string {
   if (maxWidth <= 0) return '…';
-  if (measureText(line) <= maxWidth) return line;
+  if (measureText(`${line}…`) <= maxWidth) return `${line}…`;
 
-  let current = line;
-  while (current.length > 0 && measureText(`${current}…`) > maxWidth) {
-    current = current.slice(0, -1);
+  const chars = Array.from(line);
+  let low = 0;
+  let high = chars.length;
+  let best = 0;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const candidate = `${chars.slice(0, middle).join('')}…`;
+    if (measureText(candidate) <= maxWidth) {
+      best = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
   }
 
-  return current ? `${current}…` : '…';
+  return best > 0 ? `${chars.slice(0, best).join('')}…` : '…';
 }
 
 export function layoutWorkbookCanvasTextLines(params: {
@@ -65,15 +99,54 @@ export function layoutWorkbookCanvasTextLines(params: {
   const logicalLines = splitWorkbookCanvasTextLines(value);
   if (logicalLines.length === 0) return [];
 
-  const wrapped = logicalLines.flatMap(line => wrapWorkbookCanvasLine(line, maxWidth, measureText));
+  const safeMaxLines = Math.max(1, maxLines);
+  const wrapped = wrapWorkbookCanvasTextLines(
+    logicalLines,
+    maxWidth,
+    safeMaxLines + 1,
+    measureText,
+  );
   if (wrapped.length <= maxLines) return wrapped;
 
-  const clipped = wrapped.slice(0, Math.max(1, maxLines));
+  const clipped = wrapped.slice(0, safeMaxLines);
   const lastLine = clipped[clipped.length - 1] ?? '';
   clipped[clipped.length - 1] = measureText(`${lastLine}…`) <= maxWidth
     ? `${lastLine}…`
     : ellipsizeWorkbookCanvasLine(lastLine, maxWidth, measureText);
   return clipped;
+}
+
+export function isWorkbookCanvasTextTruncated(params: {
+  value: string;
+  maxWidth: number;
+  maxLines?: number;
+  wrapText?: boolean;
+  measureText: (value: string) => number;
+}): boolean {
+  const {
+    value,
+    maxWidth,
+    maxLines = 1,
+    wrapText = false,
+    measureText,
+  } = params;
+  const normalized = normalizeWorkbookCanvasText(value).trim();
+  if (!normalized) return false;
+  if (maxWidth <= 0) return true;
+
+  if (!wrapText) {
+    return measureText(normalized.replace(/\n/g, ' / ')) > maxWidth;
+  }
+
+  const logicalLines = splitWorkbookCanvasTextLines(normalized);
+  const safeMaxLines = Math.max(1, maxLines);
+  const wrapped = wrapWorkbookCanvasTextLines(
+    logicalLines,
+    maxWidth,
+    safeMaxLines + 1,
+    measureText,
+  );
+  return wrapped.length > safeMaxLines;
 }
 
 const workbookCanvasFontMetricCache = new Map<string, { ascent: number; descent: number }>();

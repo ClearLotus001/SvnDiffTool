@@ -26,6 +26,10 @@ export const REMOTE_HEAD_ID = '__remote_head__';
 export const TRAILING_PAREN_VERSION = /\(([^)]+)\)\s*$/;
 export const KEYWORD_VERSION = /\b(?:r|rev|revision|ver|version|v)\s*[:#-]?\s*([0-9][\w.-]*)\b/i;
 export const RUST_MAX_BUFFER = 256 * 1024 * 1024;
+const configuredRustCommandTimeoutMs = Number(process.env.SVN_DIFF_RUST_TIMEOUT_MS ?? 120_000);
+export const RUST_COMMAND_TIMEOUT_MS = Number.isFinite(configuredRustCommandTimeoutMs)
+  ? Math.max(1_000, configuredRustCommandTimeoutMs)
+  : 120_000;
 export const SVN_TEXT_MAX_BUFFER = 64 * 1024 * 1024;
 export const SVN_BINARY_MAX_BUFFER = 256 * 1024 * 1024;
 export const FILE_PAYLOAD_CACHE_LIMIT = 12;

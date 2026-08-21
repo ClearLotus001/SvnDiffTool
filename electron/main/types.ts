@@ -88,6 +88,20 @@ export interface DiffLine {
   mineBlame?: LineBlameInfo | null;
 }
 
+export interface CompactTextDiffLines {
+  version: 1;
+  types: Uint8Array;
+  baseLineNumbers: Int32Array;
+  mineLineNumbers: Int32Array;
+  texts: string[];
+  mineTextOverrides: Array<[lineIdx: number, text: string]>;
+  charSpans: Array<[
+    lineIdx: number,
+    baseCharSpans: CharSpan[] | null,
+    mineCharSpans: CharSpan[] | null,
+  ]>;
+}
+
 export interface DiffPerformanceMetrics {
   source: 'cli' | 'revision-switch' | 'local-dev';
   mainLoadMs?: number;
@@ -104,6 +118,7 @@ export interface DiffPerformanceMetrics {
 
 export interface PreparedTextAnalysis {
   diffLines: DiffLine[];
+  compactDiffLines?: CompactTextDiffLines;
   stats: {
     add: number;
     del: number;
@@ -152,15 +167,12 @@ export interface WindowFrameState {
 }
 
 export interface LaunchContextPayload {
+  hasDiffRequest: boolean;
   isDevMode: boolean;
   usesNativeWindowControls: boolean;
   windowFrameState: WindowFrameState;
   launchedAfterUpdate: boolean;
   updateState: AppUpdateState;
-}
-
-export interface LaunchStatePayload extends LaunchContextPayload {
-  diffData: DiffData;
 }
 
 export interface BuildDiffDataOptions {

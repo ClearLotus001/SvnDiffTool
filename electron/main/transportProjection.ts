@@ -1,8 +1,10 @@
-import type { DiffData } from './types.js';
+import { compactTextDiffLines } from './compactTextDiffLines.js';
+import type { CompactTextDiffLines, DiffData, DiffLine } from './types.js';
 
 const MAX_SYNTAX_HIGHLIGHT_TOTAL_CHARS = 300_000;
 const MAX_SYNTAX_HIGHLIGHT_LINES = 8_000;
 const MAX_SYNTAX_HIGHLIGHT_LINE_LENGTH = 2_000;
+const MIN_COMPACT_TEXT_DIFF_LINES = 2_048;
 
 function getLineStats(text: string): { lineCount: number; longestLineLength: number } {
   if (!text) {
@@ -57,9 +59,35 @@ export function projectTransportDiffData(data: DiffData): DiffData {
   const shouldStripRawText = shouldStripRawTextTransport(data);
   if (!shouldStripRawText) return data;
 
+  const compactCache = new WeakMap<DiffLine[], CompactTextDiffLines | null>();
+  const analysisSnapshotsByMode = data.analysisSnapshotsByMode
+    ? Object.fromEntries(Object.entries(data.analysisSnapshotsByMode).map(([mode, snapshot]) => {
+        if (!snapshot?.textAnalysis) return [mode, snapshot];
+        const diffLines = snapshot.textAnalysis.diffLines;
+        let compactDiffLines: CompactTextDiffLines | null = null;
+        if (diffLines.length >= MIN_COMPACT_TEXT_DIFF_LINES) {
+          const cached = compactCache.get(diffLines);
+          compactDiffLines = cached === undefined
+            ? compactTextDiffLines(diffLines)
+            : cached;
+          if (cached === undefined) compactCache.set(diffLines, compactDiffLines);
+        }
+        return [mode, {
+          ...snapshot,
+          textAnalysis: {
+            ...snapshot.textAnalysis,
+            diffLines: compactDiffLines ? [] : diffLines,
+            ...(compactDiffLines ? { compactDiffLines } : {}),
+            splitRowDescriptors: [],
+          },
+        }];
+      })) as DiffData['analysisSnapshotsByMode']
+    : data.analysisSnapshotsByMode;
+
   return {
     ...data,
     baseContent: null,
     mineContent: null,
+    analysisSnapshotsByMode,
   };
 }

@@ -28,10 +28,11 @@ async function loadSvnConfigFixture(page: Page) {
       workbookExtensions: ['.xlsx', '.xls'],
     };
 
-    Object.defineProperty(window, 'svnDiff', {
+    Object.defineProperty(window, 'versora', {
       configurable: true,
       value: {
         getLaunchContext: async () => ({
+          hasDiffRequest: false,
           isDevMode: true,
           usesNativeWindowControls: false,
           windowFrameState: { isMaximized: true },

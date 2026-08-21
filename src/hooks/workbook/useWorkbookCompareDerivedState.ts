@@ -17,11 +17,6 @@ import {
   getWorkbookSplitRowNumber,
 } from '@/utils/workbook/workbookNavigation';
 import {
-  injectWorkbookSparseGapItems,
-  type WorkbookSparseGapItem,
-  type WorkbookSparseRowRange,
-} from '@/utils/workbook/workbookSparseGaps';
-import {
   buildCollapsedItems,
   type CollapsibleRowBlock,
 } from '@/utils/collapse/collapsibleRows';
@@ -59,8 +54,7 @@ import { ROW_H } from '@/hooks/virtualization/useVirtual';
 export type WorkbookCompareRenderItem =
   | { kind: 'row'; row: SplitRow; lineIdx: number }
   | { kind: 'collapse'; blockId: string; count: number; fromIdx: number; toIdx: number; hiddenStart: number; hiddenEnd: number; expandStep: number; rowNumberStart: number | null; rowNumberEnd: number | null }
-  | { kind: 'hidden-rows'; rows: SplitRow[]; rowNumbers: number[]; count: number }
-  | WorkbookSparseGapItem;
+  | { kind: 'hidden-rows'; rows: SplitRow[]; rowNumbers: number[]; count: number };
 
 type WorkbookStackedStaticRow = Pick<WorkbookCanvasRenderRow, 'row' | 'renderMode' | 'height'>;
 
@@ -77,8 +71,7 @@ export type WorkbookStackedVirtualItem =
     mineTrack: Array<{ sourceRowIndex: number; rowNumber: number }>;
   }
   | { kind: 'collapse'; item: Extract<WorkbookCompareRenderItem, { kind: 'collapse' }>; height: number; sourceItemIndex: number }
-  | { kind: 'hidden-rows'; item: Extract<WorkbookCompareRenderItem, { kind: 'hidden-rows' }>; height: number; sourceItemIndex: number }
-  | { kind: 'sparse-gap'; item: WorkbookSparseGapItem; height: number; sourceItemIndex: number };
+  | { kind: 'hidden-rows'; item: Extract<WorkbookCompareRenderItem, { kind: 'hidden-rows' }>; height: number; sourceItemIndex: number };
 
 export interface WorkbookStackedScrollTarget {
   itemIndex: number;
@@ -170,45 +163,6 @@ function createEmptyWorkbookIndexBySide() {
     base: new Map<number, number>(),
     mine: new Map<number, number>(),
   };
-}
-
-function resolveWorkbookCompareItemRowRange(
-  item: WorkbookCompareRenderItem,
-): WorkbookSparseRowRange | null {
-  if (item.kind === 'sparse-gap') {
-    return {
-      rowNumberStart: item.rowNumberStart,
-      rowNumberEnd: item.rowNumberEnd,
-    };
-  }
-
-  if (item.kind === 'row') {
-    const rowNumber = getWorkbookSplitRowNumber(item.row);
-    return rowNumber == null
-      ? null
-      : {
-        rowNumberStart: rowNumber,
-        rowNumberEnd: rowNumber,
-      };
-  }
-
-  if (item.kind === 'collapse') {
-    return item.rowNumberStart != null && item.rowNumberEnd != null
-      ? {
-        rowNumberStart: item.rowNumberStart,
-        rowNumberEnd: item.rowNumberEnd,
-      }
-      : null;
-  }
-
-  const rowNumberStart = item.rowNumbers[0] ?? null;
-  const rowNumberEnd = item.rowNumbers[item.rowNumbers.length - 1] ?? null;
-  return rowNumberStart != null && rowNumberEnd != null
-    ? {
-      rowNumberStart,
-      rowNumberEnd,
-    }
-    : null;
 }
 
 function buildWorkbookStackedBandScrollTarget(
@@ -504,21 +458,11 @@ export function useWorkbookCompareDerivedState({
       if (item.kind === 'hidden-rows') {
         return item.rowNumbers.some((rowNumber) => rowNumber > freezeRowNumber);
       }
-      if (item.kind === 'sparse-gap') {
-        return item.rowNumberEnd > freezeRowNumber;
-      }
       const rowNumber = getWorkbookSplitRowNumber(item.row);
       return rowNumber == null || rowNumber > freezeRowNumber;
     });
-    const value = injectWorkbookSparseGapItems(visibleItems, {
-      firstExpectedRowNumber: freezeRowNumber + 1,
-      ...(activeWorkbookSection?.rowCount != null
-        ? { lastExpectedRowNumber: activeWorkbookSection.rowCount }
-        : {}),
-      resolveRowRange: resolveWorkbookCompareItemRowRange,
-    });
     const nextResult = {
-      value,
+      value: visibleItems,
       duration: getNow() - start,
     };
     setWorkbookSharedCacheEntry(cacheBySectionRows, cacheKey, nextResult);
@@ -528,7 +472,6 @@ export function useWorkbookCompareDerivedState({
     collapseCtx,
     expandedBlocksSignature,
     freezeRowNumber,
-    activeWorkbookSection?.rowCount,
     hiddenRowsSignature,
     renderItemsMeasured.value,
     sectionRows,
@@ -555,7 +498,6 @@ export function useWorkbookCompareDerivedState({
       if (cached) return cached;
 
       const next = items.map((item) => {
-        if (item.kind === 'sparse-gap') return item.count * ROW_H;
         if (item.kind === 'collapse' || item.kind === 'hidden-rows') return ROW_H;
         return mode === 'stacked'
           ? getStackedWorkbookRowRenderHeight(item.row, rowHeight, ROW_H)
@@ -754,17 +696,6 @@ export function useWorkbookCompareDerivedState({
           kind: 'hidden-rows',
           item,
           height: ROW_H,
-          sourceItemIndex: index,
-        });
-        return;
-      }
-
-      if (item.kind === 'sparse-gap') {
-        flushRows();
-        next.push({
-          kind: 'sparse-gap',
-          item,
-          height: itemHeights[index] ?? (item.count * ROW_H),
           sourceItemIndex: index,
         });
         return;

@@ -31,7 +31,11 @@ import {
   formatWorkbookDiffRegionSummary,
 } from '@/utils/workbook/workbookDiffRegion';
 import { getWorkbookSharedExpandedBlocks } from '@/utils/workbook/workbookLayoutState';
-import { buildWorkbookLineSheetContexts, getWorkbookSections } from '@/utils/workbook/workbookSections';
+import {
+  buildWorkbookLineSheetContexts,
+  getWorkbookSections,
+  resolveWorkbookSheetNameForLineContext,
+} from '@/utils/workbook/workbookSections';
 import { resolveWorkbookSearchMatchTarget } from '@/utils/workbook/workbookNavigation';
 import {
   applyWorkbookRegionVersionLabels,
@@ -57,6 +61,7 @@ const WORKBOOK_FILE_EXTENSION_RE = /\.(xlsx|xlsm|xltx|xltm|xlsb|xls)$/i;
 const EMPTY_SEARCH_MATCHES: SearchMatch[] = [];
 const EMPTY_SEARCHABLE_LINES: string[] = [];
 const EMPTY_MODIFIED_WORKBOOK_SHEET_NAMES = new Set<string>();
+const SEARCH_REQUEST_DEBOUNCE_MS = 90;
 
 function isWorkbookFileCandidate(name: string): boolean {
   return WORKBOOK_FILE_EXTENSION_RE.test(name.trim());
@@ -70,6 +75,8 @@ export default function useAppViewModel({
 }: UseAppViewModelArgs) {
   const searchSeqRef = useRef(0);
   const [allSearchMatches, setAllSearchMatches] = useState<SearchMatch[]>(EMPTY_SEARCH_MATCHES);
+  const [allSearchMatchCount, setAllSearchMatchCount] = useState(0);
+  const [searchResultsTruncated, setSearchResultsTruncated] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   // ── Read state directly from Zustand store ──────────────────────────
   const compareContext = useAppStore((s) => s.compareContext);
@@ -103,8 +110,21 @@ export default function useAppViewModel({
     [baseName, fileName, mineName],
   );
   const preparedTextAnalysis = useMemo(
-    () => getPreparedTextAnalysisForMode(currentDiffData, workbookCompareMode)
-      ?? (!isWorkbookCandidate && diffLines.length > 0 ? prepareTextDiffAnalysisFromDiffLines(diffLines) : null),
+    () => {
+      const transported = getPreparedTextAnalysisForMode(currentDiffData, workbookCompareMode);
+      if (
+        transported
+        && (
+          transported.diffLines.length === 0
+          || transported.splitRowDescriptors.length > 0
+        )
+      ) {
+        return transported;
+      }
+      return !isWorkbookCandidate && diffLines.length > 0
+        ? prepareTextDiffAnalysisFromDiffLines(diffLines)
+        : null;
+    },
     [currentDiffData, diffLines, isWorkbookCandidate, workbookCompareMode],
   );
   const preparedWorkbookSections = useMemo(
@@ -236,49 +256,83 @@ export default function useAppViewModel({
   );
   const hasSearchQuery = searchQ.trim().length > 0;
   const shouldBuildWorkbookLineSheetContexts = Boolean(searchPattern) && isWorkbookCandidate;
-  const searchableLines = useMemo(
-    () => (hasSearchQuery ? diffLines.map(getSearchableLineContent) : EMPTY_SEARCHABLE_LINES),
-    [diffLines, hasSearchQuery],
-  );
   const workbookLineSheetContexts = useMemo(
     () => (shouldBuildWorkbookLineSheetContexts ? buildWorkbookLineSheetContexts(diffLines) : []),
     [diffLines, shouldBuildWorkbookLineSheetContexts],
   );
+  const searchableLines = useMemo(() => {
+    if (!hasSearchQuery) return EMPTY_SEARCHABLE_LINES;
+    const limitToActiveWorkbookSheet = isWorkbookCandidate
+      && searchWorkbookScope === 'sheet'
+      && Boolean(activeWorkbookSheetName)
+      && workbookLineSheetContexts.length > 0;
+    return diffLines.map((line, lineIdx) => (
+      !limitToActiveWorkbookSheet
+      || resolveWorkbookSheetNameForLineContext({
+        line,
+        context: workbookLineSheetContexts[lineIdx],
+        preferredSheetName: activeWorkbookSheetName,
+      }) === activeWorkbookSheetName
+        ? getSearchableLineContent(line)
+        : ''
+    ));
+  }, [
+    activeWorkbookSheetName,
+    diffLines,
+    hasSearchQuery,
+    isWorkbookCandidate,
+    searchWorkbookScope,
+    workbookLineSheetContexts,
+  ]);
   useEffect(() => {
     const seq = ++searchSeqRef.current;
     if (!searchPattern || !hasSearchQuery) {
       setAllSearchMatches(EMPTY_SEARCH_MATCHES);
+      setAllSearchMatchCount(0);
+      setSearchResultsTruncated(false);
       setIsSearching(false);
       return;
     }
 
-    setIsSearching(true);
-    setAllSearchMatches(EMPTY_SEARCH_MATCHES);
+    // Keep the previous result set mounted during the debounce window. This
+    // avoids collapsing and rebuilding the floating panel on every keystroke.
+    setIsSearching(false);
 
-    void computeSearchMatchesAsync(searchableLines, {
-      query: searchQ,
-      isRegex: searchRx,
-      isCaseSensitive: searchCs,
-    }).then((matches) => {
+    const timeoutId = window.setTimeout(() => {
       if (seq !== searchSeqRef.current) return;
-      setIsSearching(false);
-      if (!isWorkbookCandidate || workbookLineSheetContexts.length === 0) {
-        setAllSearchMatches(matches);
-        return;
-      }
-      setAllSearchMatches(matches.map((match) => ({
-        ...match,
-        workbookTarget: resolveWorkbookSearchMatchTarget(
-          diffLines[match.lineIdx] ?? null,
-          match,
-          workbookLineSheetContexts[match.lineIdx] ?? null,
-        ),
-      })));
-    }).catch(() => {
-      if (seq !== searchSeqRef.current) return;
-      setIsSearching(false);
-      setAllSearchMatches(EMPTY_SEARCH_MATCHES);
-    });
+      setIsSearching(true);
+      void computeSearchMatchesAsync(searchableLines, {
+        query: searchQ,
+        isRegex: searchRx,
+        isCaseSensitive: searchCs,
+      }).then((result) => {
+        if (seq !== searchSeqRef.current) return;
+        const matches = result.matches;
+        setIsSearching(false);
+        setAllSearchMatchCount(result.totalCount);
+        setSearchResultsTruncated(result.truncated);
+        if (!isWorkbookCandidate || workbookLineSheetContexts.length === 0) {
+          setAllSearchMatches(matches);
+          return;
+        }
+        setAllSearchMatches(matches.map((match) => ({
+          ...match,
+          workbookTarget: resolveWorkbookSearchMatchTarget(
+            diffLines[match.lineIdx] ?? null,
+            match,
+            workbookLineSheetContexts[match.lineIdx] ?? null,
+          ),
+        })));
+      }).catch(() => {
+        if (seq !== searchSeqRef.current) return;
+        setIsSearching(false);
+        setAllSearchMatches(EMPTY_SEARCH_MATCHES);
+        setAllSearchMatchCount(0);
+        setSearchResultsTruncated(false);
+      });
+    }, SEARCH_REQUEST_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timeoutId);
   }, [
     diffLines,
     hasSearchQuery,
@@ -323,6 +377,7 @@ export default function useAppViewModel({
     }
     return allSearchMatches.filter((match) => match.workbookTarget?.sheetName === activeWorkbookSheetName);
   }, [activeWorkbookSheetName, allSearchMatches, isWorkbookMode, searchWorkbookScope]);
+  const searchMatchCount = allSearchMatchCount;
   const workbookDiffRegions = useMemo<WorkbookDiffRegion[]>(
     () => {
       if (!isWorkbookMode) return [];
@@ -424,7 +479,7 @@ export default function useAppViewModel({
     noResultsLabel: t('searchNoResults'),
   }), [baseRoleTitle, diffLines, mineRoleTitle, searchMatches, t]);
 
-  const canLaunchUninstaller = isElectron && !isDevMode && typeof window.svnDiff?.launchUninstaller === 'function';
+  const canLaunchUninstaller = isElectron && !isDevMode && typeof window.versora?.launchUninstaller === 'function';
 
   useEffect(() => {
     setActiveSearchIdx((prev) => {
@@ -575,6 +630,8 @@ export default function useAppViewModel({
     searchJumpNonce,
     isSearching,
     searchMatches,
+    searchMatchCount,
+    searchResultsTruncated,
     searchResultItemResolver,
     workbookSections,
     workbookSectionRowIndex,

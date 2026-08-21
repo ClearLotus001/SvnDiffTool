@@ -24,14 +24,12 @@ const STACKED_BODY_CANVAS_RUN_MAX_HEIGHT = ROW_H * 128;
 export type WorkbookCompareStackedBodySegment =
   | { kind: 'rows'; group: WorkbookCanvasRenderGroup; top: number; height: number }
   | { kind: 'collapse'; item: Extract<WorkbookCompareRenderItem, { kind: 'collapse' }>; top: number; height: number; sourceItemIndex: number }
-  | { kind: 'hidden-rows'; item: Extract<WorkbookCompareRenderItem, { kind: 'hidden-rows' }>; top: number; height: number }
-  | { kind: 'sparse-gap'; item: Extract<WorkbookCompareRenderItem, { kind: 'sparse-gap' }>; top: number; height: number };
+  | { kind: 'hidden-rows'; item: Extract<WorkbookCompareRenderItem, { kind: 'hidden-rows' }>; top: number; height: number };
 
 export type WorkbookCompareColumnsBodySegment =
   | { kind: 'rows'; rows: WorkbookColumnsCanvasRow[]; top: number; height: number }
   | { kind: 'collapse'; item: Extract<WorkbookCompareRenderItem, { kind: 'collapse' }>; top: number; height: number; sourceItemIndex: number }
-  | { kind: 'hidden-rows'; item: Extract<WorkbookCompareRenderItem, { kind: 'hidden-rows' }>; top: number; height: number }
-  | { kind: 'sparse-gap'; item: Extract<WorkbookCompareRenderItem, { kind: 'sparse-gap' }>; top: number; height: number };
+  | { kind: 'hidden-rows'; item: Extract<WorkbookCompareRenderItem, { kind: 'hidden-rows' }>; top: number; height: number };
 
 export interface WorkbookCompareStackedCanvasRun {
   key: string;
@@ -133,16 +131,6 @@ export function useWorkbookCompareBodyLayout({
         return;
       }
 
-      if (segment.kind === 'sparse-gap') {
-        segments.push({
-          kind: 'sparse-gap',
-          item: (segment.item as Extract<WorkbookStackedVirtualItem, { kind: 'sparse-gap' }>).item,
-          top: segment.top,
-          height: segment.height,
-        });
-        return;
-      }
-
       if (segment.kind !== 'rows') return;
       const item = segment.item as Extract<WorkbookStackedVirtualItem, { kind: 'rows' }>;
       const rows = mapWorkbookProjectedBodyRows({
@@ -236,10 +224,9 @@ export function useWorkbookCompareBodyLayout({
       resolveItemKind: (item) => {
         if (item.kind === 'row') return 'row';
         if (item.kind === 'collapse') return 'collapse';
-        if (item.kind === 'hidden-rows') return 'hidden-rows';
-        return 'sparse-gap';
+        return 'hidden-rows';
       },
-      resolveItemHeight: (item) => item.kind === 'sparse-gap' ? item.count * ROW_H : ROW_H,
+      resolveItemHeight: () => ROW_H,
       resolveRow: (item) => item.kind === 'row' ? item.row : null,
       buildStaticRow: (item) => ({
         row: (item as Extract<WorkbookCompareRenderItem, { kind: 'row' }>).row,
@@ -278,16 +265,6 @@ export function useWorkbookCompareBodyLayout({
         segments.push({
           kind: 'hidden-rows',
           item: segment.item as Extract<WorkbookCompareRenderItem, { kind: 'hidden-rows' }>,
-          top: segment.top,
-          height: segment.height,
-        });
-        return;
-      }
-
-      if (segment.kind === 'sparse-gap') {
-        segments.push({
-          kind: 'sparse-gap',
-          item: segment.item as Extract<WorkbookCompareRenderItem, { kind: 'sparse-gap' }>,
           top: segment.top,
           height: segment.height,
         });

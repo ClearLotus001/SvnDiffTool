@@ -158,10 +158,12 @@ async function main() {
 
   const devServerPort = await findAvailablePort(5173);
   const devServerUrl = `http://${devServerHost}:${devServerPort}`;
+  const devBuildEpochMs = Date.now();
   const childEnv: NodeJS.ProcessEnv = {
     ...process.env,
     NODE_ENV: 'development',
     DEV_SERVER_URL: devServerUrl,
+    VERSORA_DEV_BUILD_EPOCH_MS: String(devBuildEpochMs),
   };
 
   console.log(`[dev-app] renderer url: ${devServerUrl}`);

@@ -5,6 +5,8 @@ pub enum OutputMode {
     Text,
     MetadataJson,
     DiffJson,
+    DiffJsonBoth,
+    DiffJsonStream,
 }
 
 pub struct ParsedArgs {
@@ -57,6 +59,40 @@ pub fn parse_args() -> Result<ParsedArgs, String> {
             };
             Ok(ParsedArgs {
                 output_mode: OutputMode::DiffJson,
+                file_path: format!("{base_path}\n{mine_path}"),
+                compare_mode,
+            })
+        }
+        Some("--diff-json-both") => {
+            let base_path = args.next().ok_or_else(|| {
+                "Usage: svn_excel_parser --diff-json-both <base-workbook-path> <mine-workbook-path>"
+                    .to_string()
+            })?;
+            let mine_path = args.next().ok_or_else(|| {
+                "Usage: svn_excel_parser --diff-json-both <base-workbook-path> <mine-workbook-path>"
+                    .to_string()
+            })?;
+            Ok(ParsedArgs {
+                output_mode: OutputMode::DiffJsonBoth,
+                file_path: format!("{base_path}\n{mine_path}"),
+                compare_mode: "both".to_string(),
+            })
+        }
+        Some("--diff-json-stream") => {
+            let base_path = args.next().ok_or_else(|| {
+                "Usage: svn_excel_parser --diff-json-stream <base-workbook-path> <mine-workbook-path> <strict|content>"
+                    .to_string()
+            })?;
+            let mine_path = args.next().ok_or_else(|| {
+                "Usage: svn_excel_parser --diff-json-stream <base-workbook-path> <mine-workbook-path> <strict|content>"
+                    .to_string()
+            })?;
+            let compare_mode = normalize_compare_mode(&args.next().ok_or_else(|| {
+                "Usage: svn_excel_parser --diff-json-stream <base-workbook-path> <mine-workbook-path> <strict|content>"
+                    .to_string()
+            })?)?;
+            Ok(ParsedArgs {
+                output_mode: OutputMode::DiffJsonStream,
                 file_path: format!("{base_path}\n{mine_path}"),
                 compare_mode,
             })

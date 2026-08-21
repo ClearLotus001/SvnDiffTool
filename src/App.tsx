@@ -217,6 +217,12 @@ export default function App() {
   const closeAllDialogs = dialogActions.closeAll;
   const previousShowSearchRef = useRef(showSearch);
   const [installedUpdateVersion, setInstalledUpdateVersion] = useState<string | null>(null);
+  const suppressTransientTooltips = showSearch
+    || showGoto
+    || showHelp
+    || showAbout
+    || showSvnConfig
+    || showLocalFileCompare;
 
   const diffLoad = useDiffLoadState();
   const { state: diffLoadState } = diffLoad;
@@ -302,6 +308,8 @@ export default function App() {
     searchJumpNonce,
     isSearching,
     searchMatches,
+    searchMatchCount,
+    searchResultsTruncated,
     searchResultItemResolver,
     workbookSections,
     workbookSectionRowIndex,
@@ -654,7 +662,7 @@ export default function App() {
   const handleInitialVisualReady = useCallback(() => {
     if (startupRevealRequestedRef.current) return;
     startupRevealRequestedRef.current = true;
-    window.svnDiff?.notifyRendererReady?.();
+    window.versora?.notifyRendererReady?.();
   }, []);
   const handleToggleGoto = useCallback(() => setShowGoto((v: boolean) => !v), [setShowGoto]);
   const handleToggleHelp = useCallback(() => setShowHelp((v: boolean) => !v), [setShowHelp]);
@@ -776,6 +784,8 @@ export default function App() {
               workbookSearchScope={searchWorkbookScope}
               activeSheetName={activeWorkbookSheetName}
               matchCount={searchMatches.length}
+              totalMatchCount={searchMatchCount}
+              resultsTruncated={searchResultsTruncated}
               activeIdx={activeSearchIdx}
               isSearching={isSearching}
               resolveResult={searchResultItemResolver}
@@ -864,6 +874,7 @@ export default function App() {
             loadError={loadError}
             isElectron={isElectron}
             isLoadingDiff={isLoadingDiff}
+            suppressWorkbookTooltips={suppressTransientTooltips}
             isWorkbookMode={isWorkbookMode}
             layout={layout}
             panelProps={panelProps}

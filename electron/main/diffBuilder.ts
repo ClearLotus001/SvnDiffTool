@@ -6,6 +6,7 @@ import {
   SPECIAL_MINE_ID,
 } from './constants.js';
 import {
+  estimateAnalysisSnapshotMemoryBytes,
   getInFlightAnalysisSnapshot,
   peekAnalysisSnapshot,
   peekWorkbookAnalysisSnapshot,
@@ -54,6 +55,7 @@ import {
 import type {
   BuildDiffDataOptions,
   CliArgs,
+  DiffAnalysisSnapshot,
   DiffData,
   FilePayload,
   ReadFilePayloadOptions,
@@ -92,6 +94,7 @@ const EMPTY_FILE_PAYLOAD: FilePayload = {
   },
 };
 const WORKBOOK_ALTERNATE_SNAPSHOT_WARMUP_DELAY_MS = 2_000;
+const WORKBOOK_ALTERNATE_SNAPSHOT_WARMUP_MAX_BYTES = 64 * 1024 * 1024;
 
 function createWorkbookPayloadOptions(
   isWorkbook: boolean,
@@ -438,8 +441,24 @@ function scheduleWorkbookAlternateSnapshotWarmup(
     basePayload?: FilePayload;
     minePayload?: FilePayload;
   },
+  currentSnapshot?: DiffAnalysisSnapshot,
 ): void {
   if (!context) return;
+
+  const currentSnapshotBytes = currentSnapshot
+    ? estimateAnalysisSnapshotMemoryBytes(currentSnapshot)
+    : 0;
+  if (currentSnapshotBytes > WORKBOOK_ALTERNATE_SNAPSHOT_WARMUP_MAX_BYTES) {
+    logDebugTiming('workbook-analysis-warmup:skipped', {
+      fileName: context.resolvedFileName,
+      sourceIdentity: context.sourceIdentity,
+      compareMode: getAlternateWorkbookCompareMode(currentMode),
+      reason: 'snapshot-byte-budget',
+      currentSnapshotBytes,
+      maxBytes: WORKBOOK_ALTERNATE_SNAPSHOT_WARMUP_MAX_BYTES,
+    });
+    return;
+  }
 
   const targetMode = getAlternateWorkbookCompareMode(currentMode);
   const timer = setTimeout(() => {
@@ -789,7 +808,7 @@ export async function buildDiffData(options: BuildDiffDataOptions = {}): Promise
     scheduleWorkbookAlternateSnapshotWarmup(workbookRequestContext, workbookCompareMode, {
       basePayload,
       minePayload,
-    });
+    }, analysisSnapshot);
   }
 
   return {
@@ -1012,7 +1031,7 @@ export async function buildLiteralLocalDiffData(
     scheduleWorkbookAlternateSnapshotWarmup(workbookRequestContext, workbookCompareMode, {
       basePayload,
       minePayload,
-    });
+    }, analysisSnapshot);
   }
 
   return {
@@ -1235,7 +1254,7 @@ async function buildVersionedTwoFileDiffData(
     scheduleWorkbookAlternateSnapshotWarmup(workbookRequestContext, workbookCompareMode, {
       basePayload,
       minePayload,
-    });
+    }, analysisSnapshot);
   }
 
   return {

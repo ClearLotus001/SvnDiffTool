@@ -8,6 +8,7 @@ import type {
 import { clearTokenCache } from '@/engine/text/tokenizer';
 import { debugLog, hasBytePayload, waitForNextPaint } from '@/hooks/app/helpers';
 import { recordPerfBridgeEvent } from '@/utils/app/perfBridge';
+import { getTransportTextDiffLineCount } from '@/utils/diff/compactTextDiffLines';
 import type { DiffLoadController, RevisionQueryController } from '@/hooks/app/contracts';
 import { useAppStore } from '@/store/appStore';
 
@@ -63,9 +64,9 @@ export default function useElectronLifecycleEffects({
         return;
       }
 
-      if (!window.svnDiff?.isDevMode) return;
+      if (!window.versora?.isDevMode) return;
       try {
-        const nextIsDevMode = await window.svnDiff.isDevMode();
+        const nextIsDevMode = await window.versora.isDevMode();
         if (!cancelled) {
           setIsDevMode(Boolean(nextIsDevMode));
         }
@@ -121,7 +122,8 @@ export default function useElectronLifecycleEffects({
 
     const loadData = async () => {
       debugLog('electron-lifecycle:load-data:start');
-      if (!window.svnDiff?.getLaunchContext && !window.svnDiff?.getLaunchState) {
+      const bridge = window.versora;
+      if (!bridge) {
         if (!cancelled) {
           debugLog('electron-lifecycle:bridge-missing');
           setIsElectron(false);
@@ -130,7 +132,7 @@ export default function useElectronLifecycleEffects({
           diffLoadActions.setError('Electron bridge is unavailable.');
           diffLoadActions.setMetrics(null);
         }
-        return undefined;
+        return;
       }
 
       setIsElectron(true);
@@ -138,121 +140,80 @@ export default function useElectronLifecycleEffects({
       let seq = 0;
       try {
         seq = ++loadSeqRef.current;
-        let data: DiffData | null = null;
+        debugLog('electron-lifecycle:get-launch-context:request', { seq });
+        const launchContext = await bridge.getLaunchContext();
+        debugLog('electron-lifecycle:get-launch-context:resolved', {
+          seq,
+          cancelled,
+          currentSeq: loadSeqRef.current,
+        });
+        if (cancelled || seq !== loadSeqRef.current) return;
 
-        if (window.svnDiff?.getLaunchContext) {
-          debugLog('electron-lifecycle:get-launch-context:request', { seq });
-          const launchContext = await window.svnDiff.getLaunchContext();
-          debugLog('electron-lifecycle:get-launch-context:resolved', {
-            seq,
-            cancelled,
-            currentSeq: loadSeqRef.current,
-          });
-          if (cancelled || seq !== loadSeqRef.current) return undefined;
+        applyLaunchContext(launchContext);
 
-          applyLaunchContext(launchContext);
-
-          diffLoadActions.setError('');
-          diffLoadActions.setLoading(true);
-          diffLoadActions.setLoaded(false);
-          diffLoadActions.setPhase('loading');
-          await waitForNextPaint();
-          if (cancelled || seq !== loadSeqRef.current) return undefined;
-
-          if (!window.svnDiff?.getDiffData) {
-            throw new Error('Electron diff loader is unavailable.');
-          }
-          debugLog('electron-lifecycle:get-diff-data:request', {
-            seq,
-            compareMode: workbookCompareModeRef.current,
-          });
-          recordPerfBridgeEvent('diff-payload:request', {
-            reason: 'launch',
-            transport: 'get-diff-data',
-            seq,
-            compareMode: workbookCompareModeRef.current,
-          });
-          data = await window.svnDiff.getDiffData(workbookCompareModeRef.current);
-          debugLog('electron-lifecycle:get-diff-data:resolved', {
-            seq,
-            cancelled,
-            currentSeq: loadSeqRef.current,
-            hasDiffData: Boolean(data),
-            fileName: data?.fileName ?? '',
-          });
-          recordPerfBridgeEvent('diff-payload:ready', {
-            reason: 'launch',
-            transport: 'get-diff-data',
-            seq,
-            compareMode: workbookCompareModeRef.current,
-            hasDiffData: Boolean(data),
-            fileName: data?.fileName ?? '',
-          });
-        } else if (window.svnDiff?.getLaunchState) {
-          debugLog('electron-lifecycle:get-launch-state:request', { seq });
-          recordPerfBridgeEvent('diff-payload:request', {
-            reason: 'launch',
-            transport: 'get-launch-state',
-            seq,
-            compareMode: workbookCompareModeRef.current,
-          });
-          const launchState = await window.svnDiff.getLaunchState(workbookCompareModeRef.current);
-          debugLog('electron-lifecycle:get-launch-state:resolved', {
-            seq,
-            cancelled,
-            currentSeq: loadSeqRef.current,
-            hasDiffData: Boolean(launchState?.diffData),
-            fileName: launchState?.diffData?.fileName ?? '',
-          });
-          recordPerfBridgeEvent('diff-payload:ready', {
-            reason: 'launch',
-            transport: 'get-launch-state',
-            seq,
-            compareMode: workbookCompareModeRef.current,
-            hasDiffData: Boolean(launchState?.diffData),
-            fileName: launchState?.diffData?.fileName ?? '',
-          });
-          if (cancelled || seq !== loadSeqRef.current) return undefined;
-
-          applyLaunchContext(launchState);
-
-          diffLoadActions.setError('');
-          diffLoadActions.setLoading(true);
-          diffLoadActions.setLoaded(false);
-          diffLoadActions.setPhase('loading');
-          await waitForNextPaint();
-          if (cancelled || seq !== loadSeqRef.current) return undefined;
-
-          data = launchState.diffData;
+        if (!launchContext.hasDiffRequest) {
+          applyEmptyLaunchState(seq);
+          return;
         }
 
-        if (cancelled || seq !== loadSeqRef.current || !data) return undefined;
+        diffLoadActions.setError('');
+        diffLoadActions.setLoading(true);
+        diffLoadActions.setLoaded(false);
+        diffLoadActions.setPhase('loading');
+        await waitForNextPaint();
+        if (cancelled || seq !== loadSeqRef.current) return;
 
-        const strictSnapshotDiffLines = data.analysisSnapshotsByMode?.strict?.textAnalysis?.diffLines.length
-          ?? data.analysisSnapshotsByMode?.strict?.workbookAnalysis?.diffLinesByMode.strict?.length
-          ?? 0;
-        const contentSnapshotDiffLines = data.analysisSnapshotsByMode?.content?.textAnalysis?.diffLines.length
-          ?? data.analysisSnapshotsByMode?.content?.workbookAnalysis?.diffLinesByMode.content?.length
-          ?? 0;
+        debugLog('electron-lifecycle:get-diff-data:request', {
+          seq,
+          compareMode: workbookCompareModeRef.current,
+        });
+        recordPerfBridgeEvent('diff-payload:request', {
+          reason: 'launch',
+          transport: 'get-diff-data',
+          seq,
+          compareMode: workbookCompareModeRef.current,
+        });
+        const data = await bridge.getDiffData(workbookCompareModeRef.current);
+        debugLog('electron-lifecycle:get-diff-data:resolved', {
+          seq,
+          cancelled,
+          currentSeq: loadSeqRef.current,
+          fileName: data.fileName ?? '',
+        });
+        recordPerfBridgeEvent('diff-payload:ready', {
+          reason: 'launch',
+          transport: 'get-diff-data',
+          seq,
+          compareMode: workbookCompareModeRef.current,
+          fileName: data.fileName ?? '',
+        });
+
+        if (cancelled || seq !== loadSeqRef.current) return;
+
+        const strictSnapshotDiffLines = Math.max(
+          getTransportTextDiffLineCount(data.analysisSnapshotsByMode?.strict?.textAnalysis),
+          data.analysisSnapshotsByMode?.strict?.workbookAnalysis?.diffLinesByMode.strict?.length ?? 0,
+        );
+        const contentSnapshotDiffLines = Math.max(
+          getTransportTextDiffLineCount(data.analysisSnapshotsByMode?.content?.textAnalysis),
+          data.analysisSnapshotsByMode?.content?.workbookAnalysis?.diffLinesByMode.content?.length ?? 0,
+        );
 
         const hasDiffPayload = Boolean(
-          data
-          && (
-            typeof data.baseContent === 'string'
-            || typeof data.mineContent === 'string'
-            || hasBytePayload(data.baseBytes)
-            || hasBytePayload(data.mineBytes)
-            || strictSnapshotDiffLines > 0
-            || contentSnapshotDiffLines > 0
-          )
+          typeof data.baseContent === 'string'
+          || typeof data.mineContent === 'string'
+          || hasBytePayload(data.baseBytes)
+          || hasBytePayload(data.mineBytes)
+          || strictSnapshotDiffLines > 0
+          || contentSnapshotDiffLines > 0
         );
-        debugLog('electron-lifecycle:launch-state:evaluated', {
+        debugLog('electron-lifecycle:launch-data:evaluated', {
           seq,
           hasDiffPayload,
-          baseContentType: typeof data?.baseContent,
-          mineContentType: typeof data?.mineContent,
-          baseBytes: hasBytePayload(data?.baseBytes) ? data.baseBytes.byteLength : 0,
-          mineBytes: hasBytePayload(data?.mineBytes) ? data.mineBytes.byteLength : 0,
+          baseContentType: typeof data.baseContent,
+          mineContentType: typeof data.mineContent,
+          baseBytes: hasBytePayload(data.baseBytes) ? data.baseBytes.byteLength : 0,
+          mineBytes: hasBytePayload(data.mineBytes) ? data.mineBytes.byteLength : 0,
           strictSnapshotDiffLines,
           contentSnapshotDiffLines,
         });
@@ -285,21 +246,12 @@ export default function useElectronLifecycleEffects({
         }
       }
 
-      return undefined;
     };
 
-    let cleanup: (() => void) | undefined;
-    void loadData()
-      .then((fn) => {
-        cleanup = fn;
-      })
-      .catch(() => {
-        cleanup = undefined;
-      });
+    void loadData();
     return () => {
       cancelled = true;
       debugLog('electron-lifecycle:bootstrap-effect:cleanup');
-      cleanup?.();
     };
   }, [
     applyDiffData,
@@ -323,17 +275,17 @@ export default function useElectronLifecycleEffects({
   ]);
 
   useEffect(() => {
-    if (!window.svnDiff?.onCliArgsUpdated) return;
-    return window.svnDiff.onCliArgsUpdated(() => {
+    if (!window.versora?.onCliArgsUpdated) return;
+    return window.versora.onCliArgsUpdated(() => {
       void reloadCliDiffData();
     });
   }, [reloadCliDiffData]);
 
   useEffect(() => {
-    if (!window.svnDiff?.onWindowFrameStateChanged) return;
+    if (!window.versora?.onWindowFrameStateChanged) return;
 
     let cancelled = false;
-    const unsubscribe = window.svnDiff.onWindowFrameStateChanged((nextState) => {
+    const unsubscribe = window.versora.onWindowFrameStateChanged((nextState) => {
       if (cancelled) return;
       setIsWindowMaximized(Boolean(nextState?.isMaximized));
     });
@@ -345,10 +297,10 @@ export default function useElectronLifecycleEffects({
   }, [setIsWindowMaximized]);
 
   useEffect(() => {
-    if (!window.svnDiff?.onAppUpdateState) return;
+    if (!window.versora?.onAppUpdateState) return;
 
     let cancelled = false;
-    const unsubscribe = window.svnDiff.onAppUpdateState((nextState) => {
+    const unsubscribe = window.versora.onAppUpdateState((nextState) => {
       if (cancelled) return;
       setAppUpdateState(nextState);
     });

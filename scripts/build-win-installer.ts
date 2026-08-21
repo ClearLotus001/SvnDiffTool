@@ -148,7 +148,7 @@ async function main() {
 
   const copiedArtifacts = await copyReleaseArtifacts(artifactsOutputDir, releaseDir);
   await updatePackageSizeReport(rootDir, version, {
-    innerInstaller: {
+    installer: {
       installerFileName: path.basename(installerPath),
       installerBytes: await getFileSizeBytes(installerPath),
       winUnpackedBytes: await getDirectorySizeBytes(winUnpackedDir),

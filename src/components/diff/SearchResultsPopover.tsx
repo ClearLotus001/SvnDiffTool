@@ -31,6 +31,8 @@ function getResultsGridTemplateColumns(isWorkbookMode: boolean) {
 interface SearchResultsPopoverProps {
   isWorkbookMode: boolean;
   resultCount: number;
+  totalResultCount: number;
+  resultsTruncated: boolean;
   resolveResult: (index: number) => SearchResultItem | null;
   activeIdx: number;
   isSearching: boolean;
@@ -82,11 +84,18 @@ function renderHighlightedText(text: string, pattern: RegExp | null, active = fa
     nodes.push(
       <mark
         key={`hit-${match.index}`}
-        className="rounded-[4px] px-0.5 text-inherit"
+        data-search-highlight="true"
+        data-search-highlight-active={active ? 'true' : 'false'}
+        className="px-0.5 font-semibold text-inherit"
         style={{
-          background: active ? cssAlpha('searchHl', '68') : cssAlpha('searchHl', '38'),
+          borderRadius: 3,
+          boxDecorationBreak: 'clone',
+          WebkitBoxDecorationBreak: 'clone',
+          background: active ? cssAlpha('searchHl', '70') : cssAlpha('searchHl', '3d'),
           color: cssVar('t0'),
-          boxShadow: active ? `inset 0 0 0 1px ${cssAlpha('searchHl', '78')}` : undefined,
+          boxShadow: active
+            ? `inset 0 0 0 1px ${cssAlpha('searchHl', '78')}`
+            : `inset 0 0 0 1px ${cssAlpha('searchHl', '40')}`,
         }}>
         {value}
       </mark>,
@@ -121,6 +130,8 @@ function renderBadge(
 const SearchResultsPopover = memo(({
   isWorkbookMode,
   resultCount,
+  totalResultCount,
+  resultsTruncated,
   resolveResult,
   activeIdx,
   isSearching,
@@ -177,17 +188,23 @@ const SearchResultsPopover = memo(({
     if (!scrollElement) return;
     if (activeIdx < 0 || activeIdx >= resultCount) return;
 
-    const itemTop = activeIdx * SEARCH_RESULT_ITEM_H;
-    const itemBottom = itemTop + SEARCH_RESULT_ITEM_H;
-    const viewportTop = scrollElement.scrollTop;
-    const viewportBottom = viewportTop + scrollElement.clientHeight;
+    const scrollStyle = getComputedStyle(scrollElement);
+    const paddingTop = Number.parseFloat(scrollStyle.paddingTop) || 0;
+    const paddingBottom = Number.parseFloat(scrollStyle.paddingBottom) || 0;
+    const itemTop = paddingTop + (activeIdx * SEARCH_RESULT_ITEM_H);
+    const itemBottom = itemTop + SEARCH_RESULT_ROW_H;
+    const viewportTop = scrollElement.scrollTop + paddingTop;
+    const viewportBottom = scrollElement.scrollTop + scrollElement.clientHeight - paddingBottom;
 
     if (itemTop < viewportTop) {
-      scrollElement.scrollTo({ top: itemTop, behavior: 'auto' });
+      scrollElement.scrollTo({ top: Math.max(0, itemTop - paddingTop), behavior: 'auto' });
       return;
     }
     if (itemBottom > viewportBottom) {
-      scrollElement.scrollTo({ top: itemBottom - scrollElement.clientHeight, behavior: 'auto' });
+      scrollElement.scrollTo({
+        top: itemBottom - scrollElement.clientHeight + paddingBottom,
+        behavior: 'auto',
+      });
     }
   }, [activeIdx, resultCount]);
 
@@ -281,7 +298,12 @@ const SearchResultsPopover = memo(({
         <div className="min-w-0">
           <div className="text-[12px] font-bold text-text-title">{t('searchResultsTitle')}</div>
           <div className="text-[11px] text-text-secondary">
-            {t('searchResultsSummary', { count: resultCount })}
+            {resultsTruncated
+              ? t('searchResultsTruncatedSummary', {
+                  shown: resultCount,
+                  total: totalResultCount,
+                })
+              : t('searchResultsSummary', { count: resultCount })}
           </div>
         </div>
         <div className="flex items-center gap-2 text-[11px] text-text-secondary">
@@ -338,13 +360,14 @@ const SearchResultsPopover = memo(({
         <div
           ref={scrollRef}
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+          data-testid="search-results-scroll"
           className="relative h-[360px] overflow-y-auto overflow-x-hidden px-2 py-2">
-          <div style={{ height: visibleWindow.totalHeight }}>
+          <div style={{ position: 'relative', height: visibleWindow.totalHeight }}>
             <div
-              className="grid gap-1.5"
+              data-testid="search-results-window"
+              className="absolute left-0 right-0 grid gap-1.5"
               style={{
-                transform: `translateY(${visibleWindow.offsetTop}px)`,
-                willChange: 'transform',
+                top: visibleWindow.offsetTop,
               }}>
               {visibleItems.map(({ index, item }) => {
                 const isActive = index === activeIdx;
@@ -352,6 +375,9 @@ const SearchResultsPopover = memo(({
                   <button
                     key={`${item.scopeKey}:${index}`}
                     type="button"
+                    data-search-result-index={index}
+                    data-search-result-active={isActive ? 'true' : 'false'}
+                    aria-current={isActive ? 'true' : undefined}
                     onMouseDown={(event) => {
                       event.preventDefault();
                       onRequestFocusInput?.();
@@ -367,8 +393,6 @@ const SearchResultsPopover = memo(({
                       boxShadow: isActive
                         ? `0 10px 22px -20px ${cssAlpha('searchHl', '6e')}, inset 0 0 0 1px ${cssAlpha('searchHl', '6e')}`
                         : `0 6px 14px -18px ${cssAlpha('border2', '78')}`,
-                      contentVisibility: 'auto',
-                      containIntrinsicSize: `${SEARCH_RESULT_ROW_H}px`,
                     }}>
                     <div
                       className="grid items-center gap-2.5"
@@ -391,6 +415,7 @@ const SearchResultsPopover = memo(({
                             </div>
                           </div>
                           <div
+                            data-search-result-preview="true"
                             className="min-w-0 text-[12px] leading-[1.4] text-text-title"
                             style={{
                               display: '-webkit-box',
@@ -409,6 +434,7 @@ const SearchResultsPopover = memo(({
                             {item.locationLabel}
                           </div>
                           <div
+                            data-search-result-preview="true"
                             className="min-w-0 text-[12px] leading-[1.4] text-text-title"
                             style={{
                               display: '-webkit-box',

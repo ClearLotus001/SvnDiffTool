@@ -388,19 +388,19 @@ interface WorkbookDiffRegionOverlayProps {
   pulseTriggerKey?: string | null;
   label?: string;
   /**
-   * When provided, the canvas is positioned in content-space at this Y offset
+   * The canvas is positioned in content-space at this Y offset
    * (non-sticky). Boxes are mapped to canvas coordinates by subtracting this
    * anchor instead of scrollTop, so the compositor scrolls the canvas together
    * with the workbook content, eliminating the 1-frame desync that sticky
    * positioning causes during compositor-driven scroll.
    */
-  canvasAnchorTop?: number;
-  canvasHeight?: number;
+  canvasAnchorTop: number;
+  canvasHeight: number;
   /**
    * Called when the current scrollTop falls outside the canvas buffer range.
    * The parent should update canvasAnchorTop accordingly.
    */
-  onRepositionNeeded?: (scrollTop: number) => void;
+  onRepositionNeeded: (scrollTop: number) => void;
 }
 
 function ellipsizeCanvasText(
@@ -440,7 +440,7 @@ const WorkbookDiffRegionOverlay = memo(({
   pulseTriggerKey = null,
   label,
   canvasAnchorTop,
-  canvasHeight: canvasHeightProp,
+  canvasHeight,
   onRepositionNeeded,
 }: WorkbookDiffRegionOverlayProps) => {
   const T = useThemeTokens();
@@ -451,10 +451,7 @@ const WorkbookDiffRegionOverlay = memo(({
   const scrollRafRef = useRef(0);
   const [pulseNonce, setPulseNonce] = useState(0);
   const [pulseProgress, setPulseProgress] = useState(1);
-  const isContentSpaceMode = canvasAnchorTop != null;
-  const effectiveCanvasHeight = isContentSpaceMode
-    ? (canvasHeightProp ?? viewportHeight)
-    : viewportHeight;
+  const effectiveCanvasHeight = canvasHeight;
 
   useEffect(() => {
     if (!pulseTriggerKey) {
@@ -490,7 +487,7 @@ const WorkbookDiffRegionOverlay = memo(({
 
       const scrollLeft = Math.max(0, scroller.scrollLeft);
       const scrollTop = Math.max(0, scroller.scrollTop);
-      const anchorTop = isContentSpaceMode ? (canvasAnchorTop ?? 0) : 0;
+      const anchorTop = canvasAnchorTop;
 
       // In content-space mode the canvas lives inside the scrollable content
       // (not sticky), so the compositor scrolls it together with the workbook
@@ -499,23 +496,15 @@ const WorkbookDiffRegionOverlay = memo(({
       // the 1-frame visual lag caused by compositor-driven scroll.
       const mapBoxesToCanvasSpace = (boxes: WorkbookDiffRegionOverlayBox[]) => boxes
         .map((box) => {
-          if (isContentSpaceMode) {
-            // Frozen rows have viewport-relative top (< stickyHeaderHeight).
-            // Convert them to content-space first (add scrollTop), then to
-            // canvas-space (subtract anchorTop) so they remain visible.
-            if (box.top < stickyHeaderHeight) {
-              return { ...box, top: box.top + scrollTop - anchorTop };
-            }
-            return {
-              ...box,
-              top: box.top - anchorTop,
-            };
+          // Frozen rows have viewport-relative top (< stickyHeaderHeight).
+          // Convert them to content-space first (add scrollTop), then to
+          // canvas-space (subtract anchorTop) so they remain visible.
+          if (box.top < stickyHeaderHeight) {
+            return { ...box, top: box.top + scrollTop - anchorTop };
           }
           return {
             ...box,
-            top: box.top < stickyHeaderHeight
-              ? box.top
-              : box.top - scrollTop,
+            top: box.top - anchorTop,
           };
         })
         .filter((box) => (
@@ -731,7 +720,7 @@ const WorkbookDiffRegionOverlay = memo(({
       ctx.restore();
     };
     drawRef.current('layout');
-  }, [T, canvasAnchorTop, debugRegionId, effectiveCanvasHeight, isContentSpaceMode, label, pulseNonce, pulseProgress, resolveBoxSet, scrollRef, stickyHeaderHeight, viewportHeight, viewportWidth]);
+  }, [T, canvasAnchorTop, debugRegionId, effectiveCanvasHeight, label, pulseNonce, pulseProgress, resolveBoxSet, scrollRef, stickyHeaderHeight, viewportHeight, viewportWidth]);
 
   useEffect(() => {
     const scroller = scrollRef.current;
@@ -746,46 +735,29 @@ const WorkbookDiffRegionOverlay = memo(({
     };
 
     const handleScroll = () => {
-      if (isContentSpaceMode) {
-        // In content-space mode the compositor scrolls the canvas with the
-        // workbook content, so we only need to redraw when:
-        // 1. The horizontal scroll position changed (column visibility)
-        // 2. The viewport has scrolled outside the canvas buffer range
-        const scrollLeft = Math.max(0, scroller.scrollLeft);
-        const scrollTop = Math.max(0, scroller.scrollTop);
-        const anchor = canvasAnchorTop ?? 0;
-        const canvasH = canvasHeightProp ?? viewportHeight;
-        const outOfBounds = scrollTop < anchor || scrollTop + viewportHeight > anchor + canvasH;
+      // The compositor scrolls the canvas with the workbook content, so redraw
+      // only for horizontal column changes or when the buffer must move.
+      const scrollLeft = Math.max(0, scroller.scrollLeft);
+      const scrollTop = Math.max(0, scroller.scrollTop);
+      const outOfBounds = scrollTop < canvasAnchorTop
+        || scrollTop + viewportHeight > canvasAnchorTop + canvasHeight;
 
-        // Keep the canvas container horizontally aligned with the viewport.
-        // The parent uses `position: sticky; left: 0` so the browser
-        // compositor handles horizontal alignment natively — no JS update
-        // needed here.
-
-        if (outOfBounds) {
-          onRepositionNeeded?.(scrollTop);
-          return;
-        }
-
-        if (scrollLeft !== lastScrollLeftRef.current) {
-          lastScrollLeftRef.current = scrollLeft;
-          scheduleDraw('scroll');
-        }
+      if (outOfBounds) {
+        onRepositionNeeded(scrollTop);
         return;
       }
 
-      // Legacy sticky mode: redraw synchronously every scroll event so the
-      // overlay stays attached to the workbook canvas during vertical
-      // scrolling.
-      scheduleDraw('scroll');
+      if (scrollLeft !== lastScrollLeftRef.current) {
+        lastScrollLeftRef.current = scrollLeft;
+        scheduleDraw('scroll');
+      }
     };
-
     scroller.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
       scroller.removeEventListener('scroll', handleScroll);
       if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
     };
-  }, [canvasAnchorTop, canvasHeightProp, isContentSpaceMode, onRepositionNeeded, scrollRef, viewportHeight]);
+  }, [canvasAnchorTop, canvasHeight, onRepositionNeeded, scrollRef, viewportHeight]);
 
   if (viewportWidth <= 0 || viewportHeight <= 0) return null;
 

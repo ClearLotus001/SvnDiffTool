@@ -23,6 +23,7 @@ import type { AppUpdateState } from '@/types/update';
 import type { ThemeKey } from '@/types/theme';
 
 export interface LaunchContextPayload {
+  hasDiffRequest: boolean;
   isDevMode: boolean;
   usesNativeWindowControls: boolean;
   windowFrameState: WindowFrameState;
@@ -30,15 +31,10 @@ export interface LaunchContextPayload {
   updateState: AppUpdateState;
 }
 
-export interface LaunchStatePayload extends LaunchContextPayload {
-  diffData: DiffData;
-}
-
 export interface VersoraBridge {
   notifyRendererReady?(): void;
   saveStartupAppearance?(appearance: { themeKey?: ThemeKey; locale?: 'zh-CN' | 'en-US' }): void;
   getLaunchContext(): Promise<LaunchContextPayload>;
-  getLaunchState(compareMode?: WorkbookCompareMode): Promise<LaunchStatePayload>;
   getDiffData(compareMode?: WorkbookCompareMode): Promise<DiffData>;
   loadRevisionDiff(baseRevisionId: string, mineRevisionId: string, compareMode?: WorkbookCompareMode): Promise<DiffData>;
   loadTwoFileRevisionDiff(baseRevisionId: string, mineRevisionId: string, compareMode?: WorkbookCompareMode): Promise<DiffData>;
@@ -80,12 +76,8 @@ export interface VersoraBridge {
   openExternal(url: string): void;
 }
 
-/** @deprecated Use VersoraBridge. Kept for external integration compatibility. */
-export type SvnDiffBridge = VersoraBridge;
-
 declare global {
   interface Window {
     versora?: VersoraBridge;
-    svnDiff?: VersoraBridge;
   }
 }

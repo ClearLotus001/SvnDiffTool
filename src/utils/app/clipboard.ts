@@ -9,8 +9,8 @@ export async function copyText(text: string): Promise<boolean> {
     // Fall through to the Electron clipboard bridge.
   }
 
-  if (window.svnDiff) {
-    window.svnDiff.writeClipboardText(text);
+  if (window.versora) {
+    window.versora.writeClipboardText(text);
     return true;
   }
 

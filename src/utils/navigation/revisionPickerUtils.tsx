@@ -6,15 +6,16 @@ import { FONT_CODE, FONT_SIZE, FONT_UI } from '@/constants/typography';
 import type { Locale } from '@/context/i18n';
 
 export const RP_UI = {
-  triggerPadding: '0 8px',
-  triggerHeight: 26,
-  triggerRadius: 999,
+  triggerPadding: '0 6px',
+  triggerHeight: 20,
+  triggerRadius: 5,
   metaSize: 10,
   inputHeight: 34,
   actionHeight: 32,
   rowLeftWidth: 108,
   rowPadding: '8px 12px',
-  panelWidth: 'min(712px, calc(100vw - 40px))',
+  panelPreferredWidth: 712,
+  panelMinWidth: 360,
   panelRadius: 18,
   listMaxHeight: 334,
   topActionWidth: 124,

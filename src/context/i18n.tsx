@@ -42,7 +42,7 @@ export function I18nProvider({ children, initialLocale }: I18nProviderProps) {
   }, [locale]);
 
   useEffect(() => {
-    window.svnDiff?.saveStartupAppearance?.({ locale });
+    window.versora?.saveStartupAppearance?.({ locale });
   }, [locale]);
 
   useEffect(() => {

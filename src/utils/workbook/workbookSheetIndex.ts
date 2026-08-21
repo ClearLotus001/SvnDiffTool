@@ -311,7 +311,7 @@ export function buildWorkbookSectionRowIndexFromPrecomputedDelta(
     const section = sectionPayloadByName.get(sectionName);
     if (!section) return undefined;
 
-    const rows: SplitRow[] = section.rows.flatMap((row) => {
+    const explicitRows: SplitRow[] = section.rows.flatMap((row) => {
       const leftLine = row.leftLineIdx != null ? (diffLines[row.leftLineIdx] ?? null) : null;
       const rightLine = row.rightLineIdx != null ? (diffLines[row.rightLineIdx] ?? null) : null;
       const leftContext = row.leftLineIdx != null ? lineSheetContextLookup.get(row.leftLineIdx) : null;
@@ -361,6 +361,40 @@ export function buildWorkbookSectionRowIndexFromPrecomputedDelta(
           : buildWorkbookRowDelta(scopedLeft, scopedRight, undefined, payload.compareMode),
       }];
     });
+    const explicitLineIdxSet = new Set(
+      explicitRows.flatMap((row) => row.lineIdxs),
+    );
+    const sectionStartLineIdx = section.startLineIdx ?? 0;
+    const sectionEndLineIdx = section.endLineIdx ?? sectionStartLineIdx;
+    const implicitEqualRows = diffLines
+      .slice(sectionStartLineIdx + 1, sectionEndLineIdx + 1)
+      .flatMap((line, localIndex): SplitRow[] => {
+        const lineIdx = sectionStartLineIdx + 1 + localIndex;
+        if (line.type !== 'equal' || explicitLineIdxSet.has(lineIdx)) return [];
+        const context = lineSheetContextLookup.get(lineIdx);
+        const parsedBase = line.base ? parseWorkbookDisplayLine(line.base) : null;
+        const parsedMine = line.mine ? parseWorkbookDisplayLine(line.mine) : null;
+        const keepLeft = parsedBase?.kind === 'row' && context?.baseSheetName === section.name;
+        const keepRight = parsedMine?.kind === 'row' && context?.mineSheetName === section.name;
+        if (!keepLeft && !keepRight) return [];
+
+        const scopedLeft = keepLeft ? makeSideScopedLine(line, 'base') : null;
+        const scopedRight = keepRight ? makeSideScopedLine(line, 'mine') : null;
+        return [{
+          left: scopedLeft,
+          right: scopedRight,
+          lineIdx,
+          lineIdxs: [lineIdx],
+          workbookRowDelta: buildWorkbookRowDelta(
+            scopedLeft,
+            scopedRight,
+            undefined,
+            payload.compareMode,
+          ),
+        }];
+      });
+    const rows = [...explicitRows, ...implicitEqualRows]
+      .sort((left, right) => left.lineIdx - right.lineIdx);
     return { rows };
   });
 

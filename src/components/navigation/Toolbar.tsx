@@ -541,13 +541,13 @@ const Toolbar = memo((props: ToolbarProps) => {
 
         {isElectron && !usesNativeWindowControls && (
           <Group>
-            <Btn onClick={() => window.svnDiff!.windowMinimize()} tooltip={t('toolbarWindowMinimizeTitle')} compact>
+            <Btn onClick={() => window.versora!.windowMinimize()} tooltip={t('toolbarWindowMinimizeTitle')} compact>
               <Icon name="windowMinimize" />
             </Btn>
-            <Btn onClick={() => window.svnDiff!.windowMaximize()} tooltip={windowMaximizeTooltip} compact>
+            <Btn onClick={() => window.versora!.windowMaximize()} tooltip={windowMaximizeTooltip} compact>
               <Icon name={isWindowMaximized ? 'windowRestore' : 'windowMaximize'} />
             </Btn>
-            <Btn onClick={() => window.svnDiff!.windowClose()} tooltip={t('toolbarWindowCloseTitle')} compact>
+            <Btn onClick={() => window.versora!.windowClose()} tooltip={t('toolbarWindowCloseTitle')} compact>
               <Icon name="windowClose" />
             </Btn>
           </Group>

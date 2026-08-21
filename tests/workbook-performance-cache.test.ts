@@ -22,6 +22,7 @@ import {
   setWorkbookSharedCacheEntry,
 } from '../src/utils/workbook/workbookSharedCache';
 import type { SplitRow } from '../src/types/view';
+import type { DiffLine } from '../src/types/diff';
 import type { WorkbookPrecomputedDeltaPayload, WorkbookRowDelta } from '../src/types/workbook';
 
 function buildPrecomputedRowDelta(columnCount = 8): WorkbookRowDelta {
@@ -322,6 +323,50 @@ test('hydrateWorkbookRowDelta preserves payload arrays and lazily materializes t
   assert.equal(hydrated.cellDeltas.get(0)?.kind, 'modify');
   assert.equal(hydrated.miniMapTone, 'modify');
   assert.deepEqual(hydrated.miniMapPaintTones, ['modify']);
+});
+
+test('precomputed workbook index reconstructs omitted equal rows from diff lines', () => {
+  const diffLines: DiffLine[] = [
+    {
+      type: 'equal',
+      base: createWorkbookSheetLine('Thing'),
+      mine: createWorkbookSheetLine('Thing'),
+      baseLineNo: null,
+      mineLineNo: null,
+      baseCharSpans: null,
+      mineCharSpans: null,
+    },
+    ...[1, 2, 3].map((rowNumber): DiffLine => ({
+      type: 'equal',
+      base: createWorkbookRowLine(rowNumber, [`ID-${rowNumber}`]),
+      mine: createWorkbookRowLine(rowNumber, [`ID-${rowNumber}`]),
+      baseLineNo: rowNumber,
+      mineLineNo: rowNumber,
+      baseCharSpans: null,
+      mineCharSpans: null,
+    })),
+  ];
+  const payload: WorkbookPrecomputedDeltaPayload = {
+    compareMode: 'strict',
+    sections: [{
+      name: 'Thing',
+      hasBaseSide: true,
+      hasMineSide: true,
+      startLineIdx: 0,
+      endLineIdx: 3,
+      maxColumns: 1,
+      rowCount: 3,
+      firstDataLineIdx: 1,
+      firstDataRowNumber: 1,
+      rows: [],
+    }],
+  };
+
+  const rows = buildWorkbookSectionRowIndexFromPrecomputedDelta(diffLines, payload)
+    .get('Thing')?.rows ?? [];
+
+  assert.deepEqual(rows.map((row) => row.lineIdx), [1, 2, 3]);
+  assert.equal(rows.every((row) => row.workbookRowDelta?.hasChanges === false), true);
 });
 
 test('compact structural row deltas retain row semantics without rebuilding per-cell maps', () => {

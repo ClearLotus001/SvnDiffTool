@@ -50,6 +50,20 @@ export interface DiffLine {
   mineBlame?: LineBlameInfo | null;
 }
 
+export interface CompactTextDiffLines {
+  version: 1;
+  types: Uint8Array;
+  baseLineNumbers: Int32Array;
+  mineLineNumbers: Int32Array;
+  texts: string[];
+  mineTextOverrides: Array<[lineIdx: number, text: string]>;
+  charSpans: Array<[
+    lineIdx: number,
+    baseCharSpans: CharSpan[] | null,
+    mineCharSpans: CharSpan[] | null,
+  ]>;
+}
+
 export interface TextDiffStats {
   add: number;
   del: number;
@@ -63,6 +77,7 @@ export interface TextDiffPresentation {
 
 export interface PreparedTextAnalysis {
   diffLines: DiffLine[];
+  compactDiffLines?: CompactTextDiffLines;
   stats: TextDiffStats;
   replacementPairs: TextReplacementPair[];
   splitRowDescriptors: SplitRowDescriptor[];

@@ -34,7 +34,7 @@ interface UseWorkbookHorizontalPaneRenderPropsParams {
   stickyHeaderHeight: number;
   activeRegionOverlayVisibleRowFrames: Map<number, { top: number; height: number }>;
   activeRegionPulseTriggerKey: string | null;
-  overlayLabel: string;
+  overlayLabels: Record<WorkbookHorizontalPaneSide, string>;
   selection: WorkbookSelectionState;
   onSelectionRequest: (request: WorkbookSelectionRequest) => void;
   onHoverChange: (hover: WorkbookCanvasHoverCell | null) => void;
@@ -65,7 +65,7 @@ export function useWorkbookHorizontalPaneRenderProps({
   stickyHeaderHeight,
   activeRegionOverlayVisibleRowFrames,
   activeRegionPulseTriggerKey,
-  overlayLabel,
+  overlayLabels,
   selection,
   onSelectionRequest,
   onHoverChange,
@@ -136,7 +136,7 @@ export function useWorkbookHorizontalPaneRenderProps({
           resolveFocusPatchBoundsModes: () => [...boundsModes],
           filterPatch,
           pulseTriggerKey: activeRegionPulseTriggerKey,
-          ...(side === 'left' ? { label: overlayLabel } : {}),
+          ...(overlayLabels[side] ? { label: overlayLabels[side] } : {}),
         },
       };
     };
@@ -166,7 +166,7 @@ export function useWorkbookHorizontalPaneRenderProps({
     mineVersion,
     onHoverChange,
     onSelectionRequest,
-    overlayLabel,
+    overlayLabels,
     paneVirtualColumnsBySide,
     rightScrollRef,
     selection,

@@ -78,7 +78,7 @@ Versora 是 SvnDiffTool 的后续版本。它保留了成熟的文本和工作�
 
 ## 兼容性与数据迁移
 
-- 保留 `window.svnDiff` 兼容桥，同时提供新的 `window.versora` 桥
+- Electron 渲染进程仅通过 `window.versora` 使用桥接能力
 - 新设置使用 `versora.*` 键，并兼容读取旧 `svn-excel-diff-tool.*` 设置
 - 新缓存目录为 `Versora/Cache`；升级时可识别并迁移旧 `SvnDiffTool/Cache`
 - Windows `appId` 保持不变，以延续安装升级和自动更新链路

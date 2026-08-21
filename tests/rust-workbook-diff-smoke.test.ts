@@ -222,6 +222,38 @@ function buildWorkbookZip(sheetName: string, rows: string[][]) {
   });
 }
 
+function normalizeRustWorkbookDiffBothOutput(output: string): {
+  strict: RustWorkbookDiffOutput;
+  content: RustWorkbookDiffOutput;
+} {
+  const parsed = JSON.parse(output) as { s?: unknown; c?: unknown };
+  return {
+    strict: normalizeRustWorkbookDiffOutput(JSON.stringify(parsed.s ?? null)),
+    content: normalizeRustWorkbookDiffOutput(JSON.stringify(parsed.c ?? null)),
+  };
+}
+
+function buildSparseWorkbookZip(
+  sheetName: string,
+  rowReference: string,
+  cellsXml: string,
+) {
+  return zipSync({
+    'xl/workbook.xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+      <workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+        <sheets>
+          <sheet name="${escapeXml(sheetName)}" sheetId="1" r:id="rId1" />
+        </sheets>
+      </workbook>`),
+    'xl/_rels/workbook.xml.rels': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+      <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+        <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml" />
+      </Relationships>`),
+    'xl/worksheets/sheet1.xml': strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+      <worksheet><sheetData><row r="${rowReference}">${cellsXml}</row></sheetData></worksheet>`),
+  });
+}
+
 function buildMergedWorkbookZip(sheetName: string, rows: string[][], mergeRefs: string[]) {
   const sheetRows = rows.map((cells, rowIndex) => {
     const cellXml = cells.map((value, columnIndex) => {
@@ -643,6 +675,7 @@ test('rust workbook diff handles large aligned workbooks without stack overflow'
 
   assert.equal(diffLines.length >= rows.length, true);
   assert.equal(diffLines.every(line => line.type === 'equal'), true);
+  assert.ok((diffOutput.workbookDelta?.sections[0]?.rows.length ?? Number.POSITIVE_INFINITY) <= 2);
 });
 
 test('rust workbook diff keeps duplicate blank rows aligned after an insertion', async (t) => {
@@ -812,4 +845,203 @@ test('rust workbook diff can emit content-mode equality for whitespace-only chan
     true,
   );
   assert.equal(diffOutput.diffLines.every((line) => line.type === 'equal'), true);
+});
+
+test('rust workbook diff preserves sparse row numbers without materializing every gap', async (t) => {
+  const parserPath = join(process.cwd(), 'rust', 'target', 'release', process.platform === 'win32' ? 'svn_excel_parser.exe' : 'svn_excel_parser');
+  if (!existsSync(parserPath)) {
+    t.skip('rust parser binary not built');
+    return;
+  }
+
+  const os = await import('node:os');
+  const fs = await import('node:fs/promises');
+  const tempDir = await fs.mkdtemp(join(os.tmpdir(), 'rust-workbook-diff-sparse-'));
+  const workbookPath = join(tempDir, 'sparse.xlsx');
+  const workbook = buildSparseWorkbookZip(
+    'Sparse',
+    '58043',
+    '<c r="A58043" t="inlineStr"><is><t>tail</t></is></c>',
+  );
+  await fs.writeFile(workbookPath, Buffer.from(workbook));
+
+  const output = execFileSync(parserPath, ['--diff-json', workbookPath, workbookPath], {
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  const diffOutput = normalizeRustWorkbookDiffOutput(output);
+  const rowLines = diffOutput.diffLines
+    .map((line) => parseWorkbookRowLine(line))
+    .filter((row): row is NonNullable<typeof row> => row != null);
+
+  assert.equal(rowLines.length, 1);
+  assert.equal(rowLines[0]?.rowNumber, 58043);
+  assert.equal(diffOutput.workbookDelta?.sections[0]?.rows.length, 1);
+  assert.equal(diffOutput.workbookDelta?.sections[0]?.rowCount, 58043);
+});
+
+test('rust workbook diff bounds invalid OOXML row and column references', async (t) => {
+  const parserPath = join(process.cwd(), 'rust', 'target', 'release', process.platform === 'win32' ? 'svn_excel_parser.exe' : 'svn_excel_parser');
+  if (!existsSync(parserPath)) {
+    t.skip('rust parser binary not built');
+    return;
+  }
+
+  const os = await import('node:os');
+  const fs = await import('node:fs/promises');
+  const tempDir = await fs.mkdtemp(join(os.tmpdir(), 'rust-workbook-diff-bounds-'));
+  const workbookPath = join(tempDir, 'bounds.xlsx');
+  const workbook = buildSparseWorkbookZip(
+    'Bounds',
+    '999999999',
+    [
+      '<c r="A1" t="inlineStr"><is><t>OK</t></is></c>',
+      '<c r="XFE1" t="inlineStr"><is><t>OUT_OF_BOUNDS</t></is></c>',
+    ].join(''),
+  );
+  await fs.writeFile(workbookPath, Buffer.from(workbook));
+
+  const output = execFileSync(parserPath, ['--diff-json', workbookPath, workbookPath], {
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+    timeout: 5_000,
+  });
+  const diffOutput = normalizeRustWorkbookDiffOutput(output);
+  const rowLines = diffOutput.diffLines
+    .map((line) => parseWorkbookRowLine(line))
+    .filter((row): row is NonNullable<typeof row> => row != null);
+
+  assert.equal(rowLines.length, 1);
+  assert.equal(rowLines[0]?.rowNumber, 1);
+  assert.equal(rowLines[0]?.cells[0]?.value, 'OK');
+  assert.equal(rowLines[0]?.cells.some((cell) => cell.value === 'OUT_OF_BOUNDS'), false);
+});
+
+test('rust workbook diff bounds duplicate-row LCS work after an insertion', { timeout: 10_000 }, async (t) => {
+  const parserPath = join(process.cwd(), 'rust', 'target', 'release', process.platform === 'win32' ? 'svn_excel_parser.exe' : 'svn_excel_parser');
+  if (!existsSync(parserPath)) {
+    t.skip('rust parser binary not built');
+    return;
+  }
+
+  const os = await import('node:os');
+  const fs = await import('node:fs/promises');
+  const tempDir = await fs.mkdtemp(join(os.tmpdir(), 'rust-workbook-diff-duplicate-guard-'));
+  const basePath = join(tempDir, 'base.xlsx');
+  const minePath = join(tempDir, 'mine.xlsx');
+  const blanks = Array.from({ length: 3_200 }, () => [] as string[]);
+  await fs.writeFile(basePath, Buffer.from(buildWorkbookZip('Thing', [
+    ['Header'],
+    ['Anchor'],
+    ...blanks,
+    ['Tail'],
+  ])));
+  await fs.writeFile(minePath, Buffer.from(buildWorkbookZip('Thing', [
+    ['Header'],
+    [],
+    ['Anchor'],
+    ...blanks,
+    ['Tail'],
+  ])));
+
+  const output = execFileSync(parserPath, ['--diff-json', basePath, minePath], {
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: 8_000,
+  });
+  const diffOutput = normalizeRustWorkbookDiffOutput(output);
+  const rows = buildWorkbookSectionRowIndex(
+    diffOutput.diffLines,
+    getWorkbookSections(diffOutput.diffLines),
+  ).get('Thing')?.rows ?? [];
+  const preview = rows.slice(0, 3).map((row) => ({
+    left: parseWorkbookRowLine(row.left)?.cells[0]?.value ?? null,
+    right: parseWorkbookRowLine(row.right)?.cells[0]?.value ?? null,
+  }));
+
+  assert.deepEqual(preview, [
+    { left: 'Header', right: 'Header' },
+    { left: null, right: null },
+    { left: 'Anchor', right: 'Anchor' },
+  ]);
+});
+
+test('rust workbook diff indexes large merge-range sets by row', { timeout: 10_000 }, async (t) => {
+  const parserPath = join(process.cwd(), 'rust', 'target', 'release', process.platform === 'win32' ? 'svn_excel_parser.exe' : 'svn_excel_parser');
+  if (!existsSync(parserPath)) {
+    t.skip('rust parser binary not built');
+    return;
+  }
+
+  const os = await import('node:os');
+  const fs = await import('node:fs/promises');
+  const tempDir = await fs.mkdtemp(join(os.tmpdir(), 'rust-workbook-diff-merge-index-'));
+  const basePath = join(tempDir, 'base.xlsx');
+  const minePath = join(tempDir, 'mine.xlsx');
+  const rowCount = 2_000;
+  const baseRows = Array.from({ length: rowCount }, (_, index) => [`Group-${index + 1}`, '']);
+  const mineRows = baseRows.map((row) => [...row]);
+  for (let rowIndex = 99; rowIndex < rowCount; rowIndex += 100) {
+    mineRows[rowIndex]![0] = `Updated-${rowIndex + 1}`;
+  }
+  const mergeRefs = Array.from({ length: rowCount }, (_, index) => `A${index + 1}:B${index + 1}`);
+  await fs.writeFile(basePath, Buffer.from(buildMergedWorkbookZip('Thing', baseRows, mergeRefs)));
+  await fs.writeFile(minePath, Buffer.from(buildMergedWorkbookZip('Thing', mineRows, mergeRefs)));
+
+  const output = execFileSync(parserPath, ['--diff-json', basePath, minePath], {
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: 8_000,
+  });
+  const diffOutput = normalizeRustWorkbookDiffOutput(output);
+  const changedRows = diffOutput.workbookDelta?.sections[0]?.rows.filter(
+    (row) => row.changedColumns.length > 0,
+  ) ?? [];
+
+  assert.equal(changedRows.length, 20);
+  assert.equal(changedRows.every((row) => row.changedColumns.includes(0)), true);
+});
+
+test('rust dual-mode protocol matches independent strict and content results', async (t) => {
+  const parserPath = join(process.cwd(), 'rust', 'target', 'release', process.platform === 'win32' ? 'svn_excel_parser.exe' : 'svn_excel_parser');
+  if (!existsSync(parserPath)) {
+    t.skip('rust parser binary not built');
+    return;
+  }
+
+  const os = await import('node:os');
+  const fs = await import('node:fs/promises');
+  const tempDir = await fs.mkdtemp(join(os.tmpdir(), 'rust-workbook-diff-both-'));
+  const basePath = join(tempDir, 'base.xlsx');
+  const minePath = join(tempDir, 'mine.xlsx');
+  await fs.writeFile(basePath, Buffer.from(buildWorkbookZip('Thing', [
+    ['ID', 'Flag', 'Status'],
+    ['10001', ' ', 'Open'],
+    ['10002', 'A', 'Open'],
+  ])));
+  await fs.writeFile(minePath, Buffer.from(buildWorkbookZip('Thing', [
+    ['ID', 'Flag', 'Status'],
+    ['10001', '', 'Open'],
+    ['10002', 'B', 'Closed'],
+  ])));
+
+  const strict = normalizeRustWorkbookDiffOutput(execFileSync(parserPath, [
+    '--diff-json', basePath, minePath, '--compare-mode', 'strict',
+  ], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }));
+  const content = normalizeRustWorkbookDiffOutput(execFileSync(parserPath, [
+    '--diff-json', basePath, minePath, '--compare-mode', 'content',
+  ], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }));
+  const both = normalizeRustWorkbookDiffBothOutput(execFileSync(parserPath, [
+    '--diff-json-both', basePath, minePath,
+  ], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }));
+  const streamedLines = execFileSync(parserPath, [
+    '--diff-json-stream', basePath, minePath, 'strict',
+  ], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+    .trim()
+    .split(/\r?\n/);
+
+  assert.deepEqual(both.strict, strict);
+  assert.deepEqual(both.content, content);
+  assert.deepEqual(normalizeRustWorkbookDiffOutput(streamedLines[0] ?? ''), strict);
+  assert.deepEqual(normalizeRustWorkbookDiffOutput(streamedLines[1] ?? ''), content);
 });

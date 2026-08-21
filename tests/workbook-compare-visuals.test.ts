@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { getThemeTokensSnapshot } from '../src/theme';
 import { getWorkbookCompareCellsTone } from '../src/utils/workbook/workbookCompareTone';
 const lightTheme = getThemeTokensSnapshot('light');
+const darkTheme = getThemeTokensSnapshot('dark');
 
 import {
   getWorkbookCompareHintVisual,
@@ -19,6 +20,25 @@ const changedCell = {
   changed: true,
   masked: false,
 };
+
+test('unchanged workbook cells bind directly to the selected light and dark theme surfaces', () => {
+  const resolveEqual = (theme: typeof lightTheme) => resolveWorkbookCompareCellVisual({
+    theme,
+    compareCell: undefined,
+    side: 'base',
+    hasEntry: true,
+    hasContent: true,
+    hasBaseRow: true,
+    hasMineRow: true,
+    defaultTextColor: theme.t0,
+  });
+
+  assert.equal(resolveEqual(lightTheme).background, lightTheme.bg1);
+  assert.equal(resolveEqual(lightTheme).textColor, lightTheme.t0);
+  assert.equal(resolveEqual(darkTheme).background, darkTheme.bg1);
+  assert.equal(resolveEqual(darkTheme).textColor, darkTheme.t0);
+  assert.notEqual(resolveEqual(lightTheme).background, resolveEqual(darkTheme).background);
+});
 
 test('paired workbook changes use the yellow modify palette', () => {
   const visual = resolveWorkbookCompareCellVisual({

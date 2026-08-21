@@ -280,8 +280,12 @@ const WorkbookCanvasHeaderStrip = memo(({
       ctx.moveTo(0, height - 0.5);
       ctx.lineTo(contentRight, height - 0.5);
       ctx.stroke();
-      const borderRegistry = createWorkbookCanvasBorderRegistry();
-      const deferredFocusDraws: Array<() => void> = [];
+      const scrollBorderRegistry = createWorkbookCanvasBorderRegistry();
+      const frozenBorderRegistry = createWorkbookCanvasBorderRegistry();
+      const deferredFocusDraws = {
+        floating: [] as Array<() => void>,
+        frozen: [] as Array<() => void>,
+      };
 
       const { contentLeft, frozenWidth, frozenEntries, floatingEntries } = headerColumnPartition;
       const layerViewports = getWorkbookCanvasLayerViewports({
@@ -290,7 +294,14 @@ const WorkbookCanvasHeaderStrip = memo(({
         frozenWidth,
       });
       const scrollViewport = layerViewports.scroll ?? layerViewports.content;
-      const drawColumn = (entry: HorizontalVirtualColumnEntry) => {
+      const drawColumn = (
+        entry: HorizontalVirtualColumnEntry,
+        layer: 'floating' | 'frozen',
+      ) => {
+        const borderRegistry = layer === 'floating'
+          ? scrollBorderRegistry
+          : frozenBorderRegistry;
+        const deferredFocusDrawBucket = deferredFocusDraws[layer];
         const pairWidth = mode === 'single'
           ? entry.width
           : mode === 'paired-wide'
@@ -371,7 +382,7 @@ const WorkbookCanvasHeaderStrip = memo(({
           });
           if (isSelectedColumn) {
             const focusAccent = primarySelection?.side === 'base' ? T.acc2 : T.acc;
-            deferredFocusDraws.push(() => {
+            deferredFocusDrawBucket.push(() => {
               ctx.strokeStyle = `${focusAccent}96`;
               ctx.lineWidth = 2;
               ctx.strokeRect(drawX + 1, 1, pairWidth - 2, height - 2);
@@ -402,7 +413,7 @@ const WorkbookCanvasHeaderStrip = memo(({
       if (scrollViewport.width > 0) {
         clipWorkbookCanvasToViewport(ctx, scrollViewport, 0, height, () => {
           floatingEntries.forEach((entry) => {
-            drawColumn(entry);
+            drawColumn(entry, 'floating');
           });
         });
       }
@@ -412,13 +423,23 @@ const WorkbookCanvasHeaderStrip = memo(({
         ctx.fillRect(layerViewports.frozen.left, 0, layerViewports.frozen.width, height);
         clipWorkbookCanvasToViewport(ctx, layerViewports.frozen, 0, height, () => {
           frozenEntries.forEach((entry) => {
-            drawColumn(entry);
+            drawColumn(entry, 'frozen');
           });
         });
       }
 
-      borderRegistry.flush(ctx);
-      deferredFocusDraws.forEach((drawFocus) => drawFocus());
+      if (scrollViewport.width > 0) {
+        clipWorkbookCanvasToViewport(ctx, scrollViewport, 0, height, () => {
+          scrollBorderRegistry.flush(ctx);
+          deferredFocusDraws.floating.forEach((drawFocus) => drawFocus());
+        });
+      }
+      if (layerViewports.frozen) {
+        clipWorkbookCanvasToViewport(ctx, layerViewports.frozen, 0, height, () => {
+          frozenBorderRegistry.flush(ctx);
+          deferredFocusDraws.frozen.forEach((drawFocus) => drawFocus());
+        });
+      }
 
       resolveHiddenIndicatorLayouts(currentScrollLeft).forEach((indicator) => {
         ctx.fillStyle = T.bg0;
@@ -617,6 +638,7 @@ const WorkbookCanvasHeaderStrip = memo(({
     <>
       <canvas
         ref={canvasRef}
+        data-workbook-column-header-canvas="true"
         onPointerDown={handlePointerDown}
         onClick={handleClick}
         onContextMenu={handleContextMenu}

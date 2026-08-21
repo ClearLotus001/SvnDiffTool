@@ -202,11 +202,12 @@ export function useWorkbookHorizontalNavigationEffects({
       ? (rowItemIndexBySide[anchorSide].get(anchorRowNumber) ?? -1)
       : -1;
     if (targetRowIndex >= 0) {
-      markProgrammaticScroll('left', 420);
-      scrollToIndex(targetRowIndex, 'start', 'auto');
+      markProgrammaticScroll('left', 640);
+      markProgrammaticScroll('right', 640);
+      scrollToIndex(targetRowIndex, 'start', 'smooth');
       requestAnimationFrame(() => syncScrollPosition('left'));
     } else {
-      scrollToResolvedLine(activeDiffRegion.lineStartIdx, 'start', 'auto');
+      scrollToResolvedLine(activeDiffRegion.lineStartIdx, 'start', 'smooth');
     }
 
     focusWorkbookDiffRegion(activeDiffRegion);
@@ -255,7 +256,8 @@ export function useWorkbookHorizontalNavigationEffects({
     const idx = rowItemIndexBySide[selectedCell.side].get(selectedCell.rowNumber) ?? -1;
     if (idx >= 0) {
       lastAutoRowKeyRef.current = selectionKey;
-      markProgrammaticScroll('left', 360);
+      markProgrammaticScroll('left', 640);
+      markProgrammaticScroll('right', 640);
       scrollToIndex(idx, 'center', 'smart');
       requestAnimationFrame(() => syncScrollPosition('left'));
     }

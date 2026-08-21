@@ -31,6 +31,7 @@ import type { WorkbookSectionRowIndex } from '@/utils/workbook/workbookSheetInde
 import type { WorkbookSection } from '@/utils/workbook/workbookSections';
 import type { WorkbookContextMenuSection } from '@/components/workbook/WorkbookContextMenu';
 import type { UnifiedPanelProps } from '@/components/diff/UnifiedPanel';
+import { waitForNextPaint } from '@/hooks/app/helpers';
 import {
   revealWorkbookColumns,
   revealWorkbookRows,
@@ -52,6 +53,7 @@ interface AppContentProps {
   loadError: string;
   isElectron: boolean;
   isLoadingDiff: boolean;
+  suppressWorkbookTooltips: boolean;
   isWorkbookMode: boolean;
   layout: LayoutMode;
   panelProps: AppPanelProps;
@@ -111,22 +113,12 @@ function InitialVisualReadySignal({
     if (!onReady) return undefined;
 
     let cancelled = false;
-    const useAnimationFrame = typeof requestAnimationFrame === 'function';
-    const handle = useAnimationFrame
-      ? requestAnimationFrame(() => {
-          if (!cancelled) onReady();
-        })
-      : window.setTimeout(() => {
-          if (!cancelled) onReady();
-        }, 0);
+    void waitForNextPaint().then(() => {
+      if (!cancelled) onReady();
+    });
 
     return () => {
       cancelled = true;
-      if (useAnimationFrame && typeof cancelAnimationFrame === 'function') {
-        cancelAnimationFrame(handle);
-        return;
-      }
-      clearTimeout(handle);
     };
   }, [onReady]);
 
@@ -153,6 +145,17 @@ function renderLoadingState(loadingLabel: string, onReady?: () => void) {
   );
 }
 
+function renderBootstrappingState() {
+  return (
+    <div
+      data-testid="app-bootstrapping-state"
+      aria-hidden="true"
+      className="flex-1 w-full min-w-0 min-h-0 bg-bg-base"
+      style={{ background: 'var(--boot-bg, #08090D)' }}
+    />
+  );
+}
+
 function renderLazyPanel(content: ReactNode, loadingLabel: string, onReady?: () => void) {
   return (
     <Suspense fallback={renderLoadingState(loadingLabel, onReady)}>
@@ -166,7 +169,7 @@ function renderLazyPanel(content: ReactNode, loadingLabel: string, onReady?: () 
 
 export default function AppContent({
   loadingLabel, loadPhase, hasLoadedDiff, loadError,
-  isElectron, isLoadingDiff, isWorkbookMode, layout, panelProps,
+  isElectron, isLoadingDiff, suppressWorkbookTooltips, isWorkbookMode, layout, panelProps,
   textLayoutSnapshots, onTextLayoutSnapshotChange,
   textSharedExpandedBlocks, onTextExpandedBlocksChange,
   baseRoleTitle, mineRoleTitle, baseVersionLabel, mineVersionLabel,
@@ -195,7 +198,11 @@ export default function AppContent({
     onCloseWorkbookContextMenu();
   };
 
-  if (!hasLoadedDiff && (loadPhase === 'loading' || loadPhase === 'bootstrapping')) {
+  if (!hasLoadedDiff && loadPhase === 'bootstrapping') {
+    return renderBootstrappingState();
+  }
+
+  if (!hasLoadedDiff && loadPhase === 'loading') {
     return renderLoadingState(loadingLabel, onInitialVisualReady);
   }
 
@@ -301,7 +308,7 @@ export default function AppContent({
                   onExpandedBlocksChange={onWorkbookExpandedBlocksChange}
                   showPerfDebug={isDevMode}
                   showHiddenColumns={showHiddenColumns}
-                  tooltipDisabled={isLoadingDiff}
+                  tooltipDisabled={isLoadingDiff || suppressWorkbookTooltips}
                   layoutSnapshot={workbookComparePanelSnapshot}
                   onLayoutSnapshotChange={onWorkbookLayoutSnapshotChange}
                 />,
@@ -343,7 +350,7 @@ export default function AppContent({
                   onExpandedBlocksChange={onWorkbookExpandedBlocksChange}
                   showPerfDebug={isDevMode}
                   showHiddenColumns={showHiddenColumns}
-                  tooltipDisabled={isLoadingDiff}
+                  tooltipDisabled={isLoadingDiff || suppressWorkbookTooltips}
                   layoutSnapshot={workbookLayoutSnapshots['split-h'] as WorkbookHorizontalLayoutSnapshot | null}
                   onLayoutSnapshotChange={onWorkbookLayoutSnapshotChange}
                 />,

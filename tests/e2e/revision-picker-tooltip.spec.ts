@@ -21,7 +21,7 @@ const mineRevision = {
 };
 
 test('revision picker uses the app tooltip and hides it before opening the timeline', async ({ page }) => {
-  await page.addInitScript('window.svnDiff = { getLaunchState: () => new Promise(() => {}) }');
+  await page.addInitScript('window.versora = { getLaunchContext: () => new Promise(() => {}) }');
   await page.goto('/?__e2e=1');
   await page.waitForFunction(() => Boolean(window.__SVN_DIFF_E2E__));
   await page.evaluate(async ({ base, mine }) => {

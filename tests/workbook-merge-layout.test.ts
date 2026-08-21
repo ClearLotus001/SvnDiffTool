@@ -52,6 +52,13 @@ test('findWorkbookMergeRange resolves cells inside a merged area', () => {
   assert.equal(findWorkbookMergeRange(mergeRanges, 5, 2), null);
 });
 
+test('findWorkbookMergeRange resolves very tall sparse merges without expanding every row', () => {
+  const ranges = [{ startRow: 1, endRow: 1_048_576, startCol: 0, endCol: 1 }];
+
+  assert.equal(findWorkbookMergeRange(ranges, 1_048_576, 1), ranges[0]);
+  assert.equal(findWorkbookMergeRange(ranges, 524_288, 2), null);
+});
+
 test('getWorkbookSelectionSpanForSelection expands a cell selection to the merged range', () => {
   const span = getWorkbookSelectionSpanForSelection({
     kind: 'cell',

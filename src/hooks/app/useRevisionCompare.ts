@@ -90,7 +90,7 @@ export default function useRevisionCompare({
       targetSide?: LocalFilePickSide;
     },
   ) => {
-    if (!window.svnDiff?.queryRevisionOptions) return;
+    if (!window.versora?.queryRevisionOptions) return;
     const seq = ++revisionQuerySeqRef.current;
     const append = Boolean(options?.append);
 
@@ -111,7 +111,7 @@ export default function useRevisionCompare({
       const targetSide = compareContext === 'literal_two_file_compare'
         ? options?.targetSide
         : undefined;
-      const payload = await window.svnDiff.queryRevisionOptions({
+      const payload = await window.versora.queryRevisionOptions({
         ...query,
         ...(targetSide ? { targetSide } : {}),
       });
@@ -149,7 +149,7 @@ export default function useRevisionCompare({
   ]);
 
   const handleLoadMoreRevisionOptions = useCallback((targetSide: LocalFilePickSide) => {
-    if (!window.svnDiff?.queryRevisionOptions) return;
+    if (!window.versora?.queryRevisionOptions) return;
     if (revisionState.isLoadingMoreRevisions || !revisionState.revisionHasMore || !revisionState.revisionNextBeforeId) return;
     void queryRevisionOptionsPage(
       {
@@ -170,7 +170,7 @@ export default function useRevisionCompare({
   ]);
 
   const handleEnsureRevisionOptionsLoaded = useCallback((targetSide: LocalFilePickSide) => {
-    if (!window.svnDiff?.queryRevisionOptions) return;
+    if (!window.versora?.queryRevisionOptions) return;
     const nextScope = compareContext === 'literal_two_file_compare' ? targetSide : 'shared';
     if (revisionOptionsScopeRef.current === nextScope && revisionOptions.length > 0) return;
     if (revisionState.revisionOptionsStatus === 'loading') return;
@@ -208,7 +208,7 @@ export default function useRevisionCompare({
   ]);
 
   const handleRevisionDateTimeQuery = useCallback((targetSide: LocalFilePickSide, nextDateTime: string) => {
-    if (!window.svnDiff?.queryRevisionOptions) return;
+    if (!window.versora?.queryRevisionOptions) return;
     const trimmed = nextDateTime.trim();
     void queryRevisionOptionsPage(
       trimmed
@@ -232,7 +232,7 @@ export default function useRevisionCompare({
     nextBaseRevisionId: string,
     nextMineRevisionId: string,
   ) => {
-    const bridge = window.svnDiff;
+    const bridge = window.versora;
     if (!bridge) return;
     revisionActions.setSwitching(true);
     const seq = await beginDiffLoad();
@@ -269,7 +269,7 @@ export default function useRevisionCompare({
   ]);
 
   const handleResetRevisionCompare = useCallback(async () => {
-    const bridge = window.svnDiff;
+    const bridge = window.versora;
     if (!bridge || !resetPair) return;
     if (!resetPair.baseRevisionId && !resetPair.mineRevisionId) return;
 

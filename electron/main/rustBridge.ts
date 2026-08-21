@@ -1,10 +1,10 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { promisify } from 'node:util';
-import { APP_ROOT, RUST_MAX_BUFFER, RUST_PARSER_NAME, SVN_BINARY_MAX_BUFFER, SVN_TEXT_MAX_BUFFER } from './constants.js';
-import { logRustDebugStderr } from './logger.js';
+import { APP_ROOT, RUST_COMMAND_TIMEOUT_MS, RUST_MAX_BUFFER, RUST_PARSER_NAME, SVN_BINARY_MAX_BUFFER, SVN_TEXT_MAX_BUFFER } from './constants.js';
+import { logDebugTiming, logRustDebugStderr } from './logger.js';
 import { logMainWarn } from '../logging.js';
 import type {
   DiffLine,
@@ -33,12 +33,14 @@ async function execFileTextCommand(
   file: string,
   args: string[],
   maxBuffer: number,
+  timeout?: number,
 ): Promise<{ ok: boolean; stdout: string; stderr: string }> {
   try {
     const result = await execFileAsync(file, args, {
       encoding: 'utf-8',
       windowsHide: true,
       maxBuffer,
+      ...(timeout != null ? { timeout } : {}),
     }) as { stdout: string; stderr: string };
 
     return {
@@ -124,7 +126,12 @@ export async function tryParseWorkbookWithRust(
 
   const parseStart = performance.now();
   try {
-    const result = await execFileTextCommand(parserPath, [filePath], RUST_MAX_BUFFER);
+    const result = await execFileTextCommand(
+      parserPath,
+      [filePath],
+      RUST_MAX_BUFFER,
+      RUST_COMMAND_TIMEOUT_MS,
+    );
     const parseMs = performance.now() - parseStart;
     logRustDebugStderr('rust-parser', result.stderr);
 
@@ -210,20 +217,39 @@ export async function tryResolveWorkbookMetadataWithRust(
 
   const parseStart = performance.now();
   try {
-    const result = await execFileTextCommand(parserPath, ['--metadata-json', filePath], RUST_MAX_BUFFER);
-    const parseMs = performance.now() - parseStart;
+    const result = await execFileTextCommand(
+      parserPath,
+      ['--metadata-json', filePath],
+      RUST_MAX_BUFFER,
+      RUST_COMMAND_TIMEOUT_MS,
+    );
+    const commandMs = performance.now() - parseStart;
     logRustDebugStderr('rust-parser-metadata', result.stderr);
 
     if (!result.ok || !result.stdout.trim()) {
       if (result.stderr.trim()) {
         logMainWarn('rust-parser-metadata', result.stderr.trim());
       }
-      return { metadata: null, parseMs };
+      return { metadata: null, parseMs: commandMs };
     }
 
+    const jsonParseStart = performance.now();
     const parsed = JSON.parse(result.stdout) as unknown;
+    const jsonParseMs = performance.now() - jsonParseStart;
+    const normalizeStart = performance.now();
+    const metadata = normalizeWorkbookMetadata(parsed);
+    const normalizeMs = performance.now() - normalizeStart;
+    const parseMs = performance.now() - parseStart;
+    logDebugTiming('rust-bridge-metadata:done', {
+      filePath,
+      commandMs: Number(commandMs.toFixed(1)),
+      jsonParseMs: Number(jsonParseMs.toFixed(1)),
+      normalizeMs: Number(normalizeMs.toFixed(1)),
+      totalMs: Number(parseMs.toFixed(1)),
+      stdoutBytes: Buffer.byteLength(result.stdout, 'utf-8'),
+    });
     return {
-      metadata: normalizeWorkbookMetadata(parsed),
+      metadata,
       parseMs,
     };
   } catch (error) {
@@ -606,6 +632,7 @@ function normalizeRustWorkbookDiffPayload(
   };
 }
 
+
 export async function tryResolveWorkbookDiffWithRust(
   baseFilePath: string,
   mineFilePath: string,
@@ -636,8 +663,9 @@ export async function tryResolveWorkbookDiffWithRust(
       parserPath,
       ['--diff-json', baseFilePath, mineFilePath, '--compare-mode', compareMode],
       RUST_MAX_BUFFER,
+      RUST_COMMAND_TIMEOUT_MS,
     );
-    const parseMs = performance.now() - parseStart;
+    const commandMs = performance.now() - parseStart;
     logRustDebugStderr('rust-parser-diff', result.stderr);
     if (!result.ok || !result.stdout.trim()) {
       if (result.stderr.trim()) logMainWarn('rust-parser-diff', result.stderr.trim());
@@ -647,12 +675,29 @@ export async function tryResolveWorkbookDiffWithRust(
         baseMetadata: null,
         mineMetadata: null,
         metadataMs: null,
-        parseMs,
+        parseMs: commandMs,
       };
     }
 
+    const jsonParseStart = performance.now();
     const parsed = JSON.parse(result.stdout) as unknown;
+    const jsonParseMs = performance.now() - jsonParseStart;
+    const normalizeStart = performance.now();
     const normalized = normalizeRustWorkbookDiffPayload(parsed);
+    const normalizeMs = performance.now() - normalizeStart;
+    const parseMs = performance.now() - parseStart;
+    logDebugTiming('rust-bridge-diff:done', {
+      baseFilePath,
+      mineFilePath,
+      compareMode,
+      commandMs: Number(commandMs.toFixed(1)),
+      jsonParseMs: Number(jsonParseMs.toFixed(1)),
+      normalizeMs: Number(normalizeMs.toFixed(1)),
+      totalMs: Number(parseMs.toFixed(1)),
+      stdoutBytes: Buffer.byteLength(result.stdout, 'utf-8'),
+      diffLineCount: normalized.diffLines?.length ?? 0,
+      sectionCount: normalized.workbookDelta?.sections.length ?? 0,
+    });
     return {
       diffLines: normalized.diffLines,
       workbookDelta: normalized.workbookDelta,
@@ -673,5 +718,186 @@ export async function tryResolveWorkbookDiffWithRust(
       parseMs: performance.now() - parseStart,
     };
   }
+}
+
+
+export function tryResolveWorkbookDiffStreamWithRust(
+  baseFilePath: string,
+  mineFilePath: string,
+  primaryMode: WorkbookCompareMode,
+  onAlternate?: (result: {
+    compareMode: WorkbookCompareMode;
+    diffLines: DiffLine[] | null;
+    workbookDelta: WorkbookPrecomputedDeltaPayload | null;
+    baseMetadata: WorkbookMetadataMap | null;
+    mineMetadata: WorkbookMetadataMap | null;
+    metadataMs: number | null;
+    parseMs: number;
+  }) => void,
+): Promise<{
+  diffLines: DiffLine[] | null;
+  workbookDelta: WorkbookPrecomputedDeltaPayload | null;
+  baseMetadata: WorkbookMetadataMap | null;
+  mineMetadata: WorkbookMetadataMap | null;
+  metadataMs: number | null;
+  parseMs: number;
+}> {
+  const parserPath = resolveRustParserPath();
+  if (!parserPath) {
+    return Promise.resolve({
+      diffLines: null,
+      workbookDelta: null,
+      baseMetadata: null,
+      mineMetadata: null,
+      metadataMs: null,
+      parseMs: 0,
+    });
+  }
+
+  return new Promise((resolve) => {
+    const parseStart = performance.now();
+    const alternateMode: WorkbookCompareMode = primaryMode === 'strict' ? 'content' : 'strict';
+    const child = spawn(
+      parserPath,
+      ['--diff-json-stream', baseFilePath, mineFilePath, primaryMode],
+      {
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    child.stdout.setEncoding('utf-8');
+    child.stderr.setEncoding('utf-8');
+
+    let stdoutBuffer = '';
+    let stderr = '';
+    let primaryResolved = false;
+    let lineIndex = 0;
+    let terminated = false;
+    const emptyResult = () => ({
+      diffLines: null,
+      workbookDelta: null,
+      baseMetadata: null,
+      mineMetadata: null,
+      metadataMs: null,
+      parseMs: performance.now() - parseStart,
+    });
+    const timeoutId = setTimeout(() => {
+      terminated = true;
+      child.kill();
+      if (!primaryResolved) {
+        primaryResolved = true;
+        resolve(emptyResult());
+      }
+      logMainWarn('rust-parser-diff-stream', `timed out after ${RUST_COMMAND_TIMEOUT_MS}ms`);
+    }, RUST_COMMAND_TIMEOUT_MS);
+    timeoutId.unref?.();
+
+    const handleLine = (line: string) => {
+      if (!line.trim()) return;
+      const jsonParseStart = performance.now();
+      try {
+        const parsed = JSON.parse(line) as unknown;
+        const jsonParseMs = performance.now() - jsonParseStart;
+        const normalizeStart = performance.now();
+        const normalized = normalizeRustWorkbookDiffPayload(parsed);
+        const normalizeMs = performance.now() - normalizeStart;
+        const parseMs = performance.now() - parseStart;
+        const result = {
+          diffLines: normalized.diffLines,
+          workbookDelta: normalized.workbookDelta,
+          baseMetadata: normalized.baseMetadata,
+          mineMetadata: normalized.mineMetadata,
+          metadataMs: normalized.metadataMs,
+          parseMs,
+        };
+        if (lineIndex === 0) {
+          primaryResolved = true;
+          resolve(result);
+          logDebugTiming('rust-bridge-diff-stream:primary', {
+            primaryMode,
+            totalMs: Number(parseMs.toFixed(1)),
+            jsonParseMs: Number(jsonParseMs.toFixed(1)),
+            normalizeMs: Number(normalizeMs.toFixed(1)),
+            stdoutBytes: Buffer.byteLength(line, 'utf-8'),
+          });
+        } else if (lineIndex === 1) {
+          try {
+            onAlternate?.({ compareMode: alternateMode, ...result });
+          } catch (error) {
+            logMainWarn(
+              'rust-parser-diff-stream',
+              'alternate callback failed:',
+              error instanceof Error ? error.message : String(error),
+            );
+          }
+          logDebugTiming('rust-bridge-diff-stream:alternate', {
+            alternateMode,
+            totalMs: Number(parseMs.toFixed(1)),
+            jsonParseMs: Number(jsonParseMs.toFixed(1)),
+            normalizeMs: Number(normalizeMs.toFixed(1)),
+            stdoutBytes: Buffer.byteLength(line, 'utf-8'),
+          });
+        }
+        lineIndex += 1;
+      } catch (error) {
+        logMainWarn(
+          'rust-parser-diff-stream',
+          'decode failed:',
+          error instanceof Error ? error.message : String(error),
+        );
+        if (!primaryResolved) {
+          primaryResolved = true;
+          resolve(emptyResult());
+        }
+      }
+    };
+    const drainLines = () => {
+      let lineEnd = stdoutBuffer.indexOf('\n');
+      while (lineEnd >= 0) {
+        const line = stdoutBuffer.slice(0, lineEnd);
+        stdoutBuffer = stdoutBuffer.slice(lineEnd + 1);
+        handleLine(line);
+        lineEnd = stdoutBuffer.indexOf('\n');
+      }
+    };
+
+    child.stdout.on('data', (chunk: string) => {
+      stdoutBuffer += chunk;
+      if (Buffer.byteLength(stdoutBuffer, 'utf-8') > RUST_MAX_BUFFER) {
+        terminated = true;
+        child.kill();
+        logMainWarn('rust-parser-diff-stream', 'output exceeded buffer limit');
+        if (!primaryResolved) {
+          primaryResolved = true;
+          resolve(emptyResult());
+        }
+        return;
+      }
+      drainLines();
+    });
+    child.stderr.on('data', (chunk: string) => {
+      if (stderr.length < 1024 * 1024) stderr += chunk;
+    });
+    child.on('error', (error) => {
+      clearTimeout(timeoutId);
+      logMainWarn('rust-parser-diff-stream', error.message);
+      if (!primaryResolved) {
+        primaryResolved = true;
+        resolve(emptyResult());
+      }
+    });
+    child.on('close', (code) => {
+      clearTimeout(timeoutId);
+      if (stdoutBuffer.trim()) handleLine(stdoutBuffer);
+      logRustDebugStderr('rust-parser-diff-stream', stderr);
+      if (!primaryResolved) {
+        primaryResolved = true;
+        resolve(emptyResult());
+      }
+      if (!terminated && code !== 0) {
+        logMainWarn('rust-parser-diff-stream', stderr.trim() || `exited with code ${code}`);
+      }
+    });
+  });
 }
 

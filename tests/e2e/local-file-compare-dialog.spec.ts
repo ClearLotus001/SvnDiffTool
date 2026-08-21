@@ -3,10 +3,11 @@ import { expect, test } from '@playwright/test';
 test('two-file dialog explains automatic Git/SVN detection and local fallback behavior', async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem('svn-excel-diff-tool.locale', 'zh-CN');
-    window.svnDiff = {
+    window.versora = {
       getPathForDroppedFile: (file: File) => `E:\\Dropped\\${file.name}`,
       loadLocalFileDiff: () => new Promise<never>(() => {}),
-      getLaunchState: async () => ({
+      getLaunchContext: async () => ({
+        hasDiffRequest: false,
         isDevMode: true,
         usesNativeWindowControls: false,
         windowFrameState: { isMaximized: true },
@@ -24,28 +25,28 @@ test('two-file dialog explains automatic Git/SVN detection and local fallback be
           lastCheckedAt: null,
           errorMessage: null,
         },
-        diffData: {
-          svnUrl: '',
-          fileName: '',
-          baseName: '',
-          mineName: '',
-          launchBaseName: '',
-          launchMineName: '',
-          compareContext: 'literal_two_file_compare',
-          baseContent: null,
-          mineContent: null,
-          baseBytes: null,
-          mineBytes: null,
-          revisionOptions: null,
-          baseRevisionInfo: null,
-          mineRevisionInfo: null,
-          canSwitchRevisions: false,
-          workbookArtifactDiff: null,
-          sourceNoticeCode: null,
-          perf: null,
-        },
       }),
-    } as unknown as NonNullable<typeof window.svnDiff>;
+      getDiffData: async () => ({
+        svnUrl: '',
+        fileName: '',
+        baseName: '',
+        mineName: '',
+        launchBaseName: '',
+        launchMineName: '',
+        compareContext: 'literal_two_file_compare',
+        baseContent: null,
+        mineContent: null,
+        baseBytes: null,
+        mineBytes: null,
+        revisionOptions: null,
+        baseRevisionInfo: null,
+        mineRevisionInfo: null,
+        canSwitchRevisions: false,
+        workbookArtifactDiff: null,
+        sourceNoticeCode: null,
+        perf: null,
+      }),
+    } as unknown as NonNullable<typeof window.versora>;
   });
   const testBaseUrl = process.env.SVN_DIFF_E2E_BASE_URL ?? '';
   await page.goto(`${testBaseUrl}/?__e2e=1`);
@@ -56,6 +57,7 @@ test('two-file dialog explains automatic Git/SVN detection and local fallback be
   await openDialog.click();
 
   await expect(page.getByRole('heading', { name: '对比两份文件', exact: true })).toBeVisible();
+  await expect(page.locator('.local-file-compare-dialog [title]')).toHaveCount(0);
   await expect(page.getByText('自动选择对比来源', { exact: true })).toBeVisible();
   const versionedRule = page.getByText('Git / SVN：逐侧识别，并支持历史版本切换。', { exact: true });
   const plainRule = page.getByText('普通文件：直接对比当前内容；仅版本库一侧可切换。', { exact: true });

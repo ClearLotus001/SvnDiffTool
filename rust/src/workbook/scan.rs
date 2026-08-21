@@ -1,4 +1,4 @@
-use super::rows::build_row_line_and_signature;
+use super::rows::{build_row_line_and_signature, build_row_line_and_signature_owned};
 use super::*;
 
 #[derive(Clone, Copy)]
@@ -83,7 +83,6 @@ pub(super) struct SemanticFingerprintSink {
 }
 
 pub(super) struct FullRowsSink {
-    compare_mode: String,
     rows: Vec<WorkbookRowEntry>,
     current_row_cells: Vec<WorkbookCellSnapshotJson>,
 }
@@ -133,9 +132,8 @@ impl EncodedSheetRowSink for SemanticFingerprintSink {
 }
 
 impl FullRowsSink {
-    pub(super) fn new(compare_mode: &str) -> Self {
+    pub(super) fn new() -> Self {
         Self {
-            compare_mode: compare_mode.to_string(),
             rows: Vec::new(),
             current_row_cells: Vec::new(),
         }
@@ -147,7 +145,7 @@ pub(super) trait FullSheetRowSink {
 
     fn push_empty_row(&mut self, row_number: usize);
     fn start_row(&mut self, row_number: usize);
-    fn push_cell(&mut self, column: usize, snapshot: &WorkbookCellSnapshotJson);
+    fn push_cell(&mut self, column: usize, snapshot: WorkbookCellSnapshotJson);
     fn finish_row(&mut self, row_number: usize);
     fn finish(self) -> Self::Output;
 }
@@ -156,34 +154,29 @@ impl FullSheetRowSink for FullRowsSink {
     type Output = Vec<WorkbookRowEntry>;
 
     fn push_empty_row(&mut self, row_number: usize) {
-        self.rows.push(build_row_line_and_signature(
-            row_number,
-            &[],
-            &self.compare_mode,
-        ));
+        self.rows
+            .push(build_row_line_and_signature(row_number, &[]));
     }
 
     fn start_row(&mut self, _row_number: usize) {
         self.current_row_cells.clear();
     }
 
-    fn push_cell(&mut self, column: usize, snapshot: &WorkbookCellSnapshotJson) {
+    fn push_cell(&mut self, column: usize, snapshot: WorkbookCellSnapshotJson) {
         while self.current_row_cells.len() + 1 < column {
             self.current_row_cells.push(WorkbookCellSnapshotJson {
                 value: String::new(),
                 formula: String::new(),
             });
         }
-        self.current_row_cells.push(snapshot.clone());
+        self.current_row_cells.push(snapshot);
     }
 
     fn finish_row(&mut self, row_number: usize) {
-        self.rows.push(build_row_line_and_signature(
+        self.rows.push(build_row_line_and_signature_owned(
             row_number,
-            &self.current_row_cells,
-            &self.compare_mode,
+            std::mem::take(&mut self.current_row_cells),
         ));
-        self.current_row_cells.clear();
     }
 
     fn finish(self) -> Self::Output {
@@ -222,16 +215,23 @@ impl EncodedSheetRowSink for SemanticFingerprintWithTextRowsSink {
     }
 }
 
-pub(super) fn parse_column_number_from_ref_bytes(bytes: &[u8]) -> usize {
+pub(super) fn parse_column_number_from_ref_bytes(bytes: &[u8]) -> Option<usize> {
     let mut value = 0usize;
+    let mut found_letter = false;
     for byte in bytes {
         let upper = byte.to_ascii_uppercase();
         if !upper.is_ascii_alphabetic() {
             break;
         }
-        value = (value * 26) + (upper as usize - b'A' as usize + 1);
+        found_letter = true;
+        value = value
+            .checked_mul(26)?
+            .checked_add(upper as usize - b'A' as usize + 1)?;
+        if value > MAX_WORKBOOK_COLUMN_COUNT {
+            return None;
+        }
     }
-    value.max(1)
+    found_letter.then_some(value)
 }
 
 pub(super) fn parse_row_number_from_attr_bytes(bytes: &[u8], fallback_row_number: usize) -> usize {
@@ -245,11 +245,10 @@ pub(super) fn parse_row_number_from_attr_bytes(bytes: &[u8], fallback_row_number
                 .saturating_add((byte - b'0') as usize);
         }
     }
-    if found_digit {
-        value.max(1)
-    } else {
-        fallback_row_number.max(1)
+    if found_digit && value > 0 && value <= MAX_WORKBOOK_ROW_NUMBER {
+        return value;
     }
+    fallback_row_number.clamp(1, MAX_WORKBOOK_ROW_NUMBER)
 }
 
 pub(super) fn parse_row_number_attr(event: &BytesStart<'_>, fallback_row_number: usize) -> usize {
@@ -264,8 +263,8 @@ pub(super) fn parse_row_number_attr(event: &BytesStart<'_>, fallback_row_number:
 pub(super) fn parse_text_cell_attrs(
     event: &BytesStart<'_>,
     fallback_column: usize,
-) -> (usize, TextCellType) {
-    let mut column = fallback_column.max(1);
+) -> (Option<usize>, TextCellType) {
+    let mut column = Some(fallback_column.clamp(1, MAX_WORKBOOK_COLUMN_COUNT));
     let mut cell_type = TextCellType::Other;
 
     for attribute in event.attributes().flatten() {
@@ -437,7 +436,7 @@ pub(super) fn scan_text_sheet_rows_fast(
     let mut shared_string_indices = HashSet::new();
     let mut next_row_number = 1usize;
     let mut current_row_number = 0usize;
-    let mut current_cell_column = 1usize;
+    let mut current_cell_column = Some(1usize);
     let mut current_cell_type = TextCellType::Other;
     let mut current_cell_value = String::new();
     let mut current_cell_formula = String::new();
@@ -446,13 +445,16 @@ pub(super) fn scan_text_sheet_rows_fast(
     let mut capture_target: Option<CaptureTarget> = None;
     let mut row_open = false;
 
-    let finalize_cell = |current_cell_column: usize,
+    let finalize_cell = |current_cell_column: Option<usize>,
                          current_cell_type: TextCellType,
                          current_cell_value: &str,
                          current_cell_formula: &str,
                          current_row_line: &mut String,
                          last_written_column: &mut usize,
                          shared_string_indices: &mut HashSet<usize>| {
+        let Some(current_cell_column) = current_cell_column else {
+            return;
+        };
         match current_cell_type {
             TextCellType::SharedString => {
                 let Some(index) = current_cell_value.trim().parse::<usize>().ok() else {
@@ -567,18 +569,11 @@ pub(super) fn scan_text_sheet_rows_fast(
             Ok(Event::Empty(event)) => match event.name().as_ref() {
                 b"row" => {
                     let row_number = parse_row_number_attr(&event, next_row_number);
-                    while next_row_number < row_number {
-                        rows.push(WorkbookTextRowEntry {
-                            raw_line: format!("{}\t{}", ROW_PREFIX, next_row_number),
-                            row_number: next_row_number,
-                        });
-                        next_row_number += 1;
-                    }
                     rows.push(WorkbookTextRowEntry {
                         raw_line: format!("{}\t{}", ROW_PREFIX, row_number),
                         row_number,
                     });
-                    next_row_number = row_number + 1;
+                    next_row_number = row_number.saturating_add(1);
                 }
                 b"c" => {
                     (current_cell_column, current_cell_type) =
@@ -613,18 +608,11 @@ pub(super) fn scan_text_sheet_rows_fast(
                     );
                 }
                 b"row" if row_open => {
-                    while next_row_number < current_row_number {
-                        rows.push(WorkbookTextRowEntry {
-                            raw_line: format!("{}\t{}", ROW_PREFIX, next_row_number),
-                            row_number: next_row_number,
-                        });
-                        next_row_number += 1;
-                    }
                     rows.push(WorkbookTextRowEntry {
                         raw_line: std::mem::take(&mut current_row_line),
                         row_number: current_row_number,
                     });
-                    next_row_number = current_row_number + 1;
+                    next_row_number = current_row_number.saturating_add(1);
                     row_open = false;
                 }
                 _ => {}
@@ -681,7 +669,7 @@ pub(super) fn scan_encoded_sheet_rows<S: EncodedSheetRowSink>(
     let mut reader = XmlReader::from_str(sheet_xml);
     let mut next_row_number = 1usize;
     let mut current_row_number = 0usize;
-    let mut current_cell_column = 1usize;
+    let mut current_cell_column = Some(1usize);
     let mut current_cell_type = TextCellType::Other;
     let mut current_cell_value = String::new();
     let mut current_cell_formula = String::new();
@@ -689,12 +677,15 @@ pub(super) fn scan_encoded_sheet_rows<S: EncodedSheetRowSink>(
     let mut capture_target: Option<CaptureTarget> = None;
     let mut row_open = false;
 
-    let finalize_cell = |current_cell_column: usize,
+    let finalize_cell = |current_cell_column: Option<usize>,
                          current_cell_type: TextCellType,
                          current_cell_value: &str,
                          current_cell_formula: &str,
                          sink: &mut S,
                          last_written_column: &mut usize| {
+        let Some(current_cell_column) = current_cell_column else {
+            return;
+        };
         if matches!(current_cell_type, TextCellType::SharedString) {
             if let Ok(index) = current_cell_value.trim().parse::<usize>() {
                 sink.observe_shared_string_index(index);
@@ -743,12 +734,8 @@ pub(super) fn scan_encoded_sheet_rows<S: EncodedSheetRowSink>(
             Ok(Event::Empty(event)) => match event.name().as_ref() {
                 b"row" => {
                     let row_number = parse_row_number_attr(&event, next_row_number);
-                    while next_row_number < row_number {
-                        sink.push_empty_row(next_row_number);
-                        next_row_number += 1;
-                    }
                     sink.push_empty_row(row_number);
-                    next_row_number = row_number + 1;
+                    next_row_number = row_number.saturating_add(1);
                 }
                 b"c" => {
                     (current_cell_column, current_cell_type) =
@@ -781,12 +768,8 @@ pub(super) fn scan_encoded_sheet_rows<S: EncodedSheetRowSink>(
                     );
                 }
                 b"row" if row_open => {
-                    while next_row_number < current_row_number {
-                        sink.push_empty_row(next_row_number);
-                        next_row_number += 1;
-                    }
                     sink.finish_row(current_row_number);
-                    next_row_number = current_row_number + 1;
+                    next_row_number = current_row_number.saturating_add(1);
                     row_open = false;
                 }
                 _ => {}
@@ -840,7 +823,7 @@ pub(super) fn scan_full_sheet_rows<S: FullSheetRowSink>(
     let mut reader = XmlReader::from_str(sheet_xml);
     let mut next_row_number = 1usize;
     let mut current_row_number = 0usize;
-    let mut current_cell_column = 1usize;
+    let mut current_cell_column = Some(1usize);
     let mut current_cell_type = TextCellType::Other;
     let mut current_cell_value = String::new();
     let mut current_cell_formula = String::new();
@@ -848,12 +831,15 @@ pub(super) fn scan_full_sheet_rows<S: FullSheetRowSink>(
     let mut capture_target: Option<CaptureTarget> = None;
     let mut row_open = false;
 
-    let finalize_cell = |current_cell_column: usize,
+    let finalize_cell = |current_cell_column: Option<usize>,
                          current_cell_type: TextCellType,
                          current_cell_value: &str,
                          current_cell_formula: &str,
                          sink: &mut S,
                          last_written_column: &mut usize| {
+        let Some(current_cell_column) = current_cell_column else {
+            return;
+        };
         let Some(snapshot) = build_scanned_cell_snapshot(
             current_cell_type,
             current_cell_value,
@@ -864,7 +850,7 @@ pub(super) fn scan_full_sheet_rows<S: FullSheetRowSink>(
         };
 
         let column = current_cell_column.max(last_written_column.saturating_add(1));
-        sink.push_cell(column, &snapshot);
+        sink.push_cell(column, snapshot);
         *last_written_column = column;
     };
 
@@ -897,12 +883,8 @@ pub(super) fn scan_full_sheet_rows<S: FullSheetRowSink>(
             Ok(Event::Empty(event)) => match event.name().as_ref() {
                 b"row" => {
                     let row_number = parse_row_number_attr(&event, next_row_number);
-                    while next_row_number < row_number {
-                        sink.push_empty_row(next_row_number);
-                        next_row_number += 1;
-                    }
                     sink.push_empty_row(row_number);
-                    next_row_number = row_number + 1;
+                    next_row_number = row_number.saturating_add(1);
                 }
                 b"c" => {
                     (current_cell_column, current_cell_type) =
@@ -935,12 +917,8 @@ pub(super) fn scan_full_sheet_rows<S: FullSheetRowSink>(
                     );
                 }
                 b"row" if row_open => {
-                    while next_row_number < current_row_number {
-                        sink.push_empty_row(next_row_number);
-                        next_row_number += 1;
-                    }
                     sink.finish_row(current_row_number);
-                    next_row_number = current_row_number + 1;
+                    next_row_number = current_row_number.saturating_add(1);
                     row_open = false;
                 }
                 _ => {}

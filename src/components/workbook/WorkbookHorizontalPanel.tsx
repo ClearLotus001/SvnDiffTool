@@ -53,7 +53,8 @@ import {
   type WorkbookSection,
 } from '@/utils/workbook/workbookSections';
 import {
-  formatWorkbookDiffRegionSummary,
+  formatWorkbookDiffRegionSemanticSummary,
+  shouldShowWorkbookDiffRegionLabelForSide,
 } from '@/utils/workbook/workbookDiffRegion';
 import {
   buildWorkbookSearchSelectionFromTarget,
@@ -119,6 +120,7 @@ import {
 } from '@/utils/workbook/workbookPanelHelpers';
 import { findNearestWorkbookVisibleItemIndex } from '@/utils/workbook/workbookRenderItemIndexes';
 import { buildWorkbookRenderIdentity } from '@/utils/workbook/workbookRenderIdentity';
+import { scrollElementForNavigation } from '@/utils/navigation/animatedScroll';
 
 export interface WorkbookHorizontalPanelProps {
   diffLines: DiffLine[];
@@ -280,6 +282,14 @@ const WorkbookHorizontalPanel = memo(({
       scrollSyncCountRef.current += 1;
     },
   });
+  const getBodyScrollFollowers = useCallback(
+    () => (rightScrollRef.current ? [rightScrollRef.current] : []),
+    [rightScrollRef],
+  );
+  const getFrozenRowsScrollFollowers = useCallback(
+    () => (rightFrozenRowsScrollRef.current ? [rightFrozenRowsScrollRef.current] : []),
+    [],
+  );
   const {
     expandedBlocks,
     setExpandedBlocks,
@@ -442,7 +452,12 @@ const WorkbookHorizontalPanel = memo(({
   const { totalH, startIdx, endIdx, offsetTop: rowWindowOffsetTop, scrollToIndex, debug: rowVirtualDebug } = useVariableVirtual(
     rowVirtualHeights,
     leftScrollRef as RefObject<HTMLDivElement | null>,
-    { overscanMin: 12, overscanFactor: 1.5, syncKey: activeWorkbookSection?.name ?? '' },
+    {
+      overscanMin: 12,
+      overscanFactor: 1.5,
+      syncKey: activeWorkbookSection?.name ?? '',
+      getScrollFollowers: getBodyScrollFollowers,
+    },
   );
   const activeSheetName = activeWorkbookSection?.name ?? '';
   const resolveColumnWidth = useCallback(
@@ -537,6 +552,7 @@ const WorkbookHorizontalPanel = memo(({
       overscanMin: 12,
       overscanFactor: 1.5,
       syncKey: `${activeWorkbookSection?.name ?? ''}:${freezeRowNumber}:frozen`,
+      getScrollFollowers: getFrozenRowsScrollFollowers,
     },
   );
   const visibleFrozenCanvasRows = useMemo(
@@ -647,7 +663,8 @@ const WorkbookHorizontalPanel = memo(({
   ) => {
     const exactIndex = visibleRowItemIndexByLineIdx.get(lineIdx) ?? -1;
     if (exactIndex >= 0) {
-      markProgrammaticScroll('left', 420);
+      markProgrammaticScroll('left', 640);
+      markProgrammaticScroll('right', 640);
       scrollToIndex(exactIndex, align, behavior);
       requestAnimationFrame(() => syncScrollPosition('left'));
       setPendingScrollTarget((prev) => (
@@ -661,7 +678,8 @@ const WorkbookHorizontalPanel = memo(({
     }
     const nearestIndex = findNearestWorkbookVisibleItemIndex(renderItemIndexes, lineIdx);
     if (nearestIndex >= 0) {
-      markProgrammaticScroll('left', 420);
+      markProgrammaticScroll('left', 640);
+      markProgrammaticScroll('right', 640);
       scrollToIndex(nearestIndex, align, behavior);
       requestAnimationFrame(() => syncScrollPosition('left'));
       return true;
@@ -685,6 +703,7 @@ const WorkbookHorizontalPanel = memo(({
   ) => {
     if (cell.kind === 'row') return true;
     const sourceSide = cell.side === 'base' ? 'left' : 'right';
+    const targetSide = sourceSide === 'left' ? 'right' : 'left';
     const source = sourceSide === 'left' ? leftScrollRef.current : rightScrollRef.current;
     const target = sourceSide === 'left' ? rightScrollRef.current : leftScrollRef.current;
     const paneVirtualColumns = paneVirtualColumnsBySide[sourceSide];
@@ -716,34 +735,49 @@ const WorkbookHorizontalPanel = memo(({
         || targetLeftWithinFrozenPane < frozenLeftBoundary
         || targetRightWithinFrozenPane > frozenRightBoundary
       ) {
-        frozenColumnsScroller.scrollLeft = Math.max(
-          0,
-          Math.min(
-            targetLeftWithinFrozenPane - desiredPadding,
-            paneVirtualColumns.fullFrozenWidth - paneVirtualColumns.frozenWidth,
+        scrollElementForNavigation(frozenColumnsScroller, {
+          left: Math.max(
+            0,
+            Math.min(
+              targetLeftWithinFrozenPane - desiredPadding,
+              paneVirtualColumns.fullFrozenWidth - paneVirtualColumns.frozenWidth,
+            ),
           ),
-        );
+          behavior: 'smooth',
+        });
       }
       return true;
     }
 
     if (strategy === 'focus') {
-      markProgrammaticScroll(sourceSide, 260);
-      source.scrollLeft = desiredScrollLeft;
-      if (target) target.scrollLeft = source.scrollLeft;
+      markProgrammaticScroll(sourceSide, 640);
+      markProgrammaticScroll(targetSide, 640);
+      scrollElementForNavigation(source, {
+        left: desiredScrollLeft,
+        behavior: 'smooth',
+        linkedElements: target ? [target] : [],
+      });
       return true;
     }
 
     const leftBoundary = source.scrollLeft + frozenWidth + desiredPadding;
     const rightBoundary = source.scrollLeft + source.clientWidth - desiredPadding;
     if (targetLeft < leftBoundary || targetLeft + targetWidth > rightBoundary) {
-      markProgrammaticScroll(sourceSide, 260);
+      markProgrammaticScroll(sourceSide, 640);
+      markProgrammaticScroll(targetSide, 640);
       if (targetLeft < leftBoundary) {
-        source.scrollLeft = desiredScrollLeft;
+        scrollElementForNavigation(source, {
+          left: desiredScrollLeft,
+          behavior: 'smooth',
+          linkedElements: target ? [target] : [],
+        });
       } else {
-        source.scrollLeft = Math.max(0, targetLeft + targetWidth - source.clientWidth + desiredPadding);
+        scrollElementForNavigation(source, {
+          left: Math.max(0, targetLeft + targetWidth - source.clientWidth + desiredPadding),
+          behavior: 'smooth',
+          linkedElements: target ? [target] : [],
+        });
       }
-      if (target) target.scrollLeft = source.scrollLeft;
     }
 
     return true;
@@ -759,6 +793,7 @@ const WorkbookHorizontalPanel = memo(({
   const focusWorkbookDiffRegion = useCallback((region: WorkbookDiffRegion) => {
     const resolvedSide: 'base' | 'mine' = region.hasBaseSide ? 'base' : 'mine';
     const sourceSide = resolvedSide === 'base' ? 'left' : 'right';
+    const targetSide = sourceSide === 'left' ? 'right' : 'left';
     const source = sourceSide === 'left' ? leftScrollRef.current : rightScrollRef.current;
     const target = sourceSide === 'left' ? rightScrollRef.current : leftScrollRef.current;
     const paneVirtualColumns = paneVirtualColumnsBySide[sourceSide];
@@ -777,7 +812,10 @@ const WorkbookHorizontalPanel = memo(({
           targetLeft < frozenColumnsScroller.scrollLeft + desiredPadding
           || targetRight > frozenColumnsScroller.scrollLeft + paneVirtualColumns.frozenWidth - desiredPadding
         ) {
-          frozenColumnsScroller.scrollLeft = Math.max(0, Math.min(targetLeft - desiredPadding, maxScrollLeft));
+          scrollElementForNavigation(frozenColumnsScroller, {
+            left: Math.max(0, Math.min(targetLeft - desiredPadding, maxScrollLeft)),
+            behavior: 'smooth',
+          });
         }
       }
       return;
@@ -802,13 +840,21 @@ const WorkbookHorizontalPanel = memo(({
     const rightBoundary = source.scrollLeft + source.clientWidth - desiredPadding;
 
     if (targetLeft < leftBoundary || targetRight > rightBoundary) {
-      markProgrammaticScroll(sourceSide, 260);
+      markProgrammaticScroll(sourceSide, 640);
+      markProgrammaticScroll(targetSide, 640);
       if (targetLeft < leftBoundary || targetWidth >= source.clientWidth - frozenWidth - (desiredPadding * 2)) {
-        source.scrollLeft = desiredScrollLeft;
+        scrollElementForNavigation(source, {
+          left: desiredScrollLeft,
+          behavior: 'smooth',
+          linkedElements: target ? [target] : [],
+        });
       } else {
-        source.scrollLeft = Math.max(0, targetRight - source.clientWidth + desiredPadding);
+        scrollElementForNavigation(source, {
+          left: Math.max(0, targetRight - source.clientWidth + desiredPadding),
+          behavior: 'smooth',
+          linkedElements: target ? [target] : [],
+        });
       }
-      if (target) target.scrollLeft = source.scrollLeft;
     }
   }, [
     freezeColumnCount,
@@ -838,7 +884,7 @@ const WorkbookHorizontalPanel = memo(({
   ) => {
     if (!target || target.kind === 'column') {
       return {
-        didScroll: scrollToResolvedLine(fallbackLineIdx, 'center', 'auto'),
+        didScroll: scrollToResolvedLine(fallbackLineIdx, 'center', 'smooth'),
         isExact: true,
       };
     }
@@ -846,14 +892,15 @@ const WorkbookHorizontalPanel = memo(({
     const rowExists = rowEntryByRowNumber[target.side].has(target.rowNumber);
     const rowIndex = rowItemIndexBySide[target.side].get(target.rowNumber) ?? -1;
     if (rowIndex >= 0) {
-      markProgrammaticScroll('left', 420);
-      scrollToIndex(rowIndex, 'center', 'auto');
+      markProgrammaticScroll('left', 640);
+      markProgrammaticScroll('right', 640);
+      scrollToIndex(rowIndex, 'center', 'smooth');
       requestAnimationFrame(() => syncScrollPosition('left'));
       return { didScroll: true, isExact: true };
     }
 
     return {
-      didScroll: scrollToResolvedLine(fallbackLineIdx, 'center', 'auto'),
+      didScroll: scrollToResolvedLine(fallbackLineIdx, 'center', 'smooth'),
       isExact: !rowExists,
     };
   }, [
@@ -988,8 +1035,9 @@ const WorkbookHorizontalPanel = memo(({
   });
   const miniMapSegments = miniMapMeasured.value;
   const scrollToCollapseIndex = useCallback((idx: number, align: 'start' | 'center' = 'start') => {
-    markProgrammaticScroll('left', 360);
-    scrollToIndex(idx, align);
+    markProgrammaticScroll('left', 640);
+    markProgrammaticScroll('right', 640);
+    scrollToIndex(idx, align, 'smooth');
     requestAnimationFrame(() => syncScrollPosition('left'));
   }, [markProgrammaticScroll, scrollToIndex, syncScrollPosition]);
   const {
@@ -1267,6 +1315,22 @@ const WorkbookHorizontalPanel = memo(({
     mineCompareCellsByRowNumber: compareCellsByRowNumber.mine,
     compareMode,
   });
+  const activeRegionSemanticLabel = useMemo(() => formatWorkbookDiffRegionSemanticSummary(
+    activeDiffRegion,
+    {
+      add: t('workbookRegionAddedOnMine'),
+      delete: t('workbookRegionDeletedFromMine'),
+      modify: t('workbookRegionModified'),
+    },
+  ), [activeDiffRegion, t]);
+  const activeRegionOverlayLabels = useMemo(() => ({
+    left: shouldShowWorkbookDiffRegionLabelForSide(activeDiffRegion, 'base')
+      ? activeRegionSemanticLabel
+      : '',
+    right: shouldShowWorkbookDiffRegionLabelForSide(activeDiffRegion, 'mine')
+      ? activeRegionSemanticLabel
+      : '',
+  }), [activeDiffRegion, activeRegionSemanticLabel]);
   const paneRenderPropsBySide = useWorkbookHorizontalPaneRenderProps({
     paneVirtualColumnsBySide,
     leftScrollRef: leftScrollRef as RefObject<HTMLDivElement | null>,
@@ -1279,7 +1343,7 @@ const WorkbookHorizontalPanel = memo(({
     stickyHeaderHeight,
     activeRegionOverlayVisibleRowFrames,
     activeRegionPulseTriggerKey,
-    overlayLabel: formatWorkbookDiffRegionSummary(activeDiffRegion),
+    overlayLabels: activeRegionOverlayLabels,
     selection,
     onSelectionRequest,
     onHoverChange: setHoveredCanvasCell,

@@ -8,6 +8,7 @@ import type {
   WorkbookMergeRange,
   WorkbookMetadataMap,
   WorkbookPrecomputedDeltaPayload,
+  WorkbookRowDeltaPayload,
   WorkbookSection,
   WorkbookSelectedCell,
 } from './types.js';
@@ -545,13 +546,28 @@ function getWorkbookColumnLabel(index: number): string {
   return label;
 }
 
+const workbookMergeRangesByRowCache = new WeakMap<
+  ReadonlyArray<WorkbookMergeRange>,
+  Map<number, WorkbookMergeRange[]>
+>();
+
 function getWorkbookMergeRangesForRow(
   mergedRanges: ReadonlyArray<WorkbookMergeRange>,
   rowNumber: number,
 ): WorkbookMergeRange[] {
-  return mergedRanges
+  let rows = workbookMergeRangesByRowCache.get(mergedRanges);
+  if (!rows) {
+    rows = new Map();
+    workbookMergeRangesByRowCache.set(mergedRanges, rows);
+  }
+  const cached = rows.get(rowNumber);
+  if (cached) return cached;
+
+  const ranges = mergedRanges
     .filter((range) => rowNumber >= range.startRow && rowNumber <= range.endRow)
     .sort((left, right) => left.startCol - right.startCol || left.endCol - right.endCol);
+  rows.set(rowNumber, ranges);
+  return ranges;
 }
 
 function findWorkbookMergeRange(
@@ -589,6 +605,117 @@ function resolveWorkbookRowIndex(
 ): number {
   if (rowNumber == null) return fallbackIndex;
   return rowIndexByNumber.get(rowNumber) ?? fallbackIndex;
+}
+
+interface WorkbookFullSectionRowIndexes {
+  rowIndexByLineIdx: Map<number, number>;
+  baseRowIndexByNumber: Map<number, number>;
+  mineRowIndexByNumber: Map<number, number>;
+}
+
+function buildWorkbookFullSectionRowIndexes(
+  section: WorkbookSection,
+  diffLines: DiffLine[],
+  sectionRows: WorkbookRowDeltaPayload[],
+): WorkbookFullSectionRowIndexes {
+  const rowIndexByLineIdx = new Map<number, number>();
+  const baseRowIndexByNumber = new Map<number, number>();
+  const mineRowIndexByNumber = new Map<number, number>();
+  const pairedLineIdx = new Map<number, number>();
+
+  sectionRows.forEach((row) => {
+    if (
+      row.leftLineIdx != null
+      && row.rightLineIdx != null
+      && row.leftLineIdx !== row.rightLineIdx
+    ) {
+      pairedLineIdx.set(row.leftLineIdx, row.rightLineIdx);
+      pairedLineIdx.set(row.rightLineIdx, row.leftLineIdx);
+    }
+  });
+
+  const sectionStartLineIdx = Math.max(0, section.startLineIdx);
+  const sectionEndLineIdx = Math.min(diffLines.length - 1, section.endLineIdx);
+  let rowIndex = 0;
+
+  const recordLineRows = (lineIdx: number, targetRowIndex: number) => {
+    const line = diffLines[lineIdx];
+    if (!line) return false;
+    const baseRowNumber = line.baseLineNo;
+    const mineRowNumber = line.mineLineNo ?? (line.type === 'equal' ? line.baseLineNo : null);
+    if (baseRowNumber == null && mineRowNumber == null) return false;
+
+    rowIndexByLineIdx.set(lineIdx, targetRowIndex);
+    if (baseRowNumber != null) baseRowIndexByNumber.set(baseRowNumber, targetRowIndex);
+    if (mineRowNumber != null) mineRowIndexByNumber.set(mineRowNumber, targetRowIndex);
+    return true;
+  };
+
+  for (let lineIdx = sectionStartLineIdx; lineIdx <= sectionEndLineIdx; lineIdx += 1) {
+    if (rowIndexByLineIdx.has(lineIdx)) continue;
+    const line = diffLines[lineIdx];
+    if (!line) continue;
+
+    let mateLineIdx = pairedLineIdx.get(lineIdx) ?? null;
+    if (mateLineIdx == null && line.type === 'delete') {
+      const nextLineIdx = lineIdx + 1;
+      if (nextLineIdx <= sectionEndLineIdx && diffLines[nextLineIdx]?.type === 'add') {
+        mateLineIdx = nextLineIdx;
+      }
+    }
+
+    const hasCurrentRow = recordLineRows(lineIdx, rowIndex);
+    if (!hasCurrentRow) continue;
+    if (
+      mateLineIdx != null
+      && mateLineIdx >= sectionStartLineIdx
+      && mateLineIdx <= sectionEndLineIdx
+    ) {
+      recordLineRows(mateLineIdx, rowIndex);
+    }
+    rowIndex += 1;
+  }
+
+  // Synthetic/fallback payloads may describe rows whose raw diff lines were
+  // not retained. Preserve the legacy full-payload ordinal only when the
+  // complete diff-line scan could not provide a real visual index.
+  sectionRows.forEach((row, fallbackIndex) => {
+    if (row.baseRowNumber != null && !baseRowIndexByNumber.has(row.baseRowNumber)) {
+      baseRowIndexByNumber.set(row.baseRowNumber, fallbackIndex);
+    }
+    if (row.mineRowNumber != null && !mineRowIndexByNumber.has(row.mineRowNumber)) {
+      mineRowIndexByNumber.set(row.mineRowNumber, fallbackIndex);
+    }
+  });
+
+  return {
+    rowIndexByLineIdx,
+    baseRowIndexByNumber,
+    mineRowIndexByNumber,
+  };
+}
+
+function resolveWorkbookPayloadRowIndex(
+  row: WorkbookRowDeltaPayload,
+  fallbackIndex: number,
+  indexes: WorkbookFullSectionRowIndexes,
+): number {
+  if (row.baseRowNumber != null) {
+    const resolved = indexes.baseRowIndexByNumber.get(row.baseRowNumber);
+    if (resolved != null) return resolved;
+  }
+  if (row.mineRowNumber != null) {
+    const resolved = indexes.mineRowIndexByNumber.get(row.mineRowNumber);
+    if (resolved != null) return resolved;
+  }
+  const lineIdxs = row.lineIdxs.length > 0
+    ? row.lineIdxs
+    : [row.leftLineIdx, row.rightLineIdx].filter((value): value is number => value != null);
+  for (const lineIdx of lineIdxs) {
+    const resolved = indexes.rowIndexByLineIdx.get(lineIdx);
+    if (resolved != null) return resolved;
+  }
+  return fallbackIndex;
 }
 
 function buildFallbackCellDeltaPayload(
@@ -1081,7 +1208,7 @@ function buildWorkbookSectionNavigationRegions(params: {
   ));
   if (changedSectionRows.length === 0) return [];
 
-  const sectionRowIndexByRow = new Map(sectionRows.map((row, rowIndex) => [row, rowIndex]));
+  const fullRowIndexes = buildWorkbookFullSectionRowIndexes(section, diffLines, sectionRows);
   const changedLineIdxs = new Set(
     changedSectionRows.flatMap((row) => (
       row.lineIdxs.length > 0
@@ -1110,7 +1237,7 @@ function buildWorkbookSectionNavigationRegions(params: {
     return value;
   };
 
-  const rowInfos = changedSectionRows.map((row) => {
+  const rowInfos = changedSectionRows.map((row, changedRowIndex) => {
     const leftLine = row.leftLineIdx != null ? (diffLines[row.leftLineIdx] ?? null) : null;
     const rightLine = row.rightLineIdx != null ? (diffLines[row.rightLineIdx] ?? null) : null;
     const parsedLeftRows = row.leftLineIdx != null ? getParsedChangedRows(row.leftLineIdx) : null;
@@ -1120,7 +1247,7 @@ function buildWorkbookSectionNavigationRegions(params: {
 
     return {
       row,
-      rowIndex: sectionRowIndexByRow.get(row) ?? 0,
+      rowIndex: resolveWorkbookPayloadRowIndex(row, changedRowIndex, fullRowIndexes),
       baseRow,
       mineRow,
       baseRowNumber: row.baseRowNumber ?? baseRow?.rowNumber ?? null,
@@ -1130,12 +1257,7 @@ function buildWorkbookSectionNavigationRegions(params: {
     };
   });
 
-  const baseRowIndexByNumber = new Map<number, number>();
-  const mineRowIndexByNumber = new Map<number, number>();
-  sectionRows.forEach((row, rowIndex) => {
-    if (row.baseRowNumber != null) baseRowIndexByNumber.set(row.baseRowNumber, rowIndex);
-    if (row.mineRowNumber != null) mineRowIndexByNumber.set(row.mineRowNumber, rowIndex);
-  });
+  const { baseRowIndexByNumber, mineRowIndexByNumber } = fullRowIndexes;
 
   const nodes: WorkbookDiffRegionNode[] = [];
 

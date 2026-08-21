@@ -19,32 +19,27 @@ function formatBytes(bytes: number): string {
 }
 
 function formatArtifactList(report: PackageSizeReport): string[] {
-  const artifacts = report.innerInstaller?.artifacts ?? [];
+  const artifacts = report.installer?.artifacts ?? [];
   return artifacts.map((artifact) => `  - ${artifact.fileName}: ${formatBytes(artifact.bytes)}`);
 }
 
 function assertCiExpectations(report: PackageSizeReport) {
   const failures: string[] = [];
-  const outerSetup = report.outerSetup;
-  const innerInstaller = report.innerInstaller;
+  const installer = report.installer;
 
-  const installerArtifactBytes = outerSetup?.setupBytes ?? innerInstaller?.installerBytes;
-  if (installerArtifactBytes == null) {
+  if (!installer) {
     failures.push('Missing Windows installer metrics.');
-  } else if (installerArtifactBytes > MAX_INSTALLER_ARTIFACT_BYTES) {
-    failures.push(`Windows installer exceeds limit: ${formatBytes(installerArtifactBytes)} > ${formatBytes(MAX_INSTALLER_ARTIFACT_BYTES)}.`);
-  }
-
-  if (!innerInstaller) {
-    failures.push('Missing inner installer metrics.');
   } else {
-    const keptLocales = innerInstaller.localesKept.join(',');
+    if (installer.installerBytes > MAX_INSTALLER_ARTIFACT_BYTES) {
+      failures.push(`Windows installer exceeds limit: ${formatBytes(installer.installerBytes)} > ${formatBytes(MAX_INSTALLER_ARTIFACT_BYTES)}.`);
+    }
+    const keptLocales = installer.localesKept.join(',');
     const expectedLocales = EXPECTED_ELECTRON_LOCALES.join(',');
     if (keptLocales !== expectedLocales) {
       failures.push(`Unexpected Electron locales retained: [${keptLocales}] (expected [${expectedLocales}]).`);
     }
-    if (innerInstaller.localesBytes > MAX_INNER_LOCALES_BYTES) {
-      failures.push(`Electron locales exceed limit: ${formatBytes(innerInstaller.localesBytes)} > ${formatBytes(MAX_INNER_LOCALES_BYTES)}.`);
+    if (installer.localesBytes > MAX_INNER_LOCALES_BYTES) {
+      failures.push(`Electron locales exceed limit: ${formatBytes(installer.localesBytes)} > ${formatBytes(MAX_INNER_LOCALES_BYTES)}.`);
     }
   }
 
@@ -62,21 +57,14 @@ async function main() {
   console.log(`Package size report for v${report.version}`);
   console.log(`Generated at: ${report.generatedAt}`);
 
-  if (report.innerInstaller) {
+  if (report.installer) {
     console.log('\nWindows installer assets:');
-    console.log(`  - Installer: ${report.innerInstaller.installerFileName} (${formatBytes(report.innerInstaller.installerBytes)})`);
-    console.log(`  - win-unpacked: ${formatBytes(report.innerInstaller.winUnpackedBytes)}`);
-    console.log(`  - app.asar: ${formatBytes(report.innerInstaller.appAsarBytes)}`);
-    console.log(`  - Electron locales: ${formatBytes(report.innerInstaller.localesBytes)} [${report.innerInstaller.localesKept.join(', ')}]`);
+    console.log(`  - Installer: ${report.installer.installerFileName} (${formatBytes(report.installer.installerBytes)})`);
+    console.log(`  - win-unpacked: ${formatBytes(report.installer.winUnpackedBytes)}`);
+    console.log(`  - app.asar: ${formatBytes(report.installer.appAsarBytes)}`);
+    console.log(`  - Electron locales: ${formatBytes(report.installer.localesBytes)} [${report.installer.localesKept.join(', ')}]`);
     console.log('  - Release artifacts:');
     formatArtifactList(report).forEach((line) => console.log(line));
-  }
-
-  if (report.outerSetup) {
-    console.log('\nLegacy outer setup:');
-    console.log(`  - Artifact: ${report.outerSetup.setupFileName} (${formatBytes(report.outerSetup.setupBytes)})`);
-    console.log(`  - win-unpacked: ${formatBytes(report.outerSetup.winUnpackedBytes)}`);
-    console.log(`  - app.asar: ${formatBytes(report.outerSetup.appAsarBytes)}`);
   }
 
   if (hasCiFlag()) {

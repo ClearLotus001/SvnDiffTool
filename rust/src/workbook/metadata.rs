@@ -16,8 +16,12 @@ fn parse_sheet_metadata_from_xml(_sheet_name: &str, sheet_xml: &str) -> Workbook
                         let mut refs = range_ref.split(':');
                         let first_ref = refs.next().unwrap_or_default().trim();
                         let last_ref = refs.next().unwrap_or(first_ref).trim();
-                        row_count = row_count.max(get_row_number(last_ref));
-                        max_columns = max_columns.max(get_column_index(last_ref) + 1);
+                        if let Some(last_row) = try_get_row_number(last_ref) {
+                            row_count = row_count.max(last_row);
+                        }
+                        if let Some(last_column) = try_get_column_index(last_ref) {
+                            max_columns = max_columns.max(last_column + 1);
+                        }
                         saw_dimension = row_count > 0 || max_columns > 0;
                     }
                 }
@@ -33,8 +37,8 @@ fn parse_sheet_metadata_from_xml(_sheet_name: &str, sheet_xml: &str) -> Workbook
                         .and_then(|value| value.parse::<usize>().ok())
                         .unwrap_or(min)
                         .max(min);
-                    if hidden {
-                        for column in min - 1..=max - 1 {
+                    if hidden && min <= MAX_WORKBOOK_COLUMN_COUNT {
+                        for column in min - 1..=max.min(MAX_WORKBOOK_COLUMN_COUNT) - 1 {
                             hidden_columns.insert(column);
                         }
                     }
@@ -43,14 +47,17 @@ fn parse_sheet_metadata_from_xml(_sheet_name: &str, sheet_xml: &str) -> Workbook
                     if !saw_dimension {
                         let row_number = decode_attr_value(&reader, &event, b"r")
                             .and_then(|value| value.parse::<usize>().ok())
-                            .unwrap_or(row_count + 1);
+                            .filter(|value| *value > 0 && *value <= MAX_WORKBOOK_ROW_NUMBER)
+                            .unwrap_or_else(|| (row_count + 1).min(MAX_WORKBOOK_ROW_NUMBER));
                         row_count = row_count.max(row_number);
                     }
                 }
                 b"c" => {
                     if !saw_dimension {
                         if let Some(cell_ref) = decode_attr_value(&reader, &event, b"r") {
-                            max_columns = max_columns.max(get_column_index(&cell_ref) + 1);
+                            if let Some(column) = try_get_column_index(&cell_ref) {
+                                max_columns = max_columns.max(column + 1);
+                            }
                         }
                     }
                 }

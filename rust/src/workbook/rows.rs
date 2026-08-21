@@ -3,57 +3,82 @@ use super::*;
 pub(super) fn build_row_line_and_signature(
     row_number: usize,
     cells: &[WorkbookCellSnapshotJson],
-    compare_mode: &str,
 ) -> WorkbookRowEntry {
-    let encoded_cells: Vec<String> = cells
-        .iter()
-        .map(|cell| {
-            encode_cell(
-                &cell.value,
-                (!cell.formula.is_empty()).then_some(cell.formula.as_str()),
-            )
-        })
-        .collect();
-    let raw_line = if cells.is_empty() {
-        format!("{}\t{}", ROW_PREFIX, row_number)
-    } else {
-        format!(
-            "{}\t{}\t{}",
-            ROW_PREFIX,
-            row_number,
-            encoded_cells.join("\t")
-        )
-    };
-    let mut trimmed_cells = cells.to_vec();
-    while let Some(last_cell) = trimmed_cells.last() {
-        if has_workbook_cell_content(last_cell, compare_mode) {
-            break;
-        }
-        trimmed_cells.pop();
-    }
-    let signature = trimmed_cells
-        .iter()
-        .map(|cell| {
-            encode_cell(
-                &cell.value,
-                (!cell.formula.is_empty()).then_some(cell.formula.as_str()),
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\t");
+    let (raw_line, strict_signature, content_signature) = build_row_strings(row_number, cells);
 
     WorkbookRowEntry {
         raw_line,
-        signature,
+        strict_signature,
+        content_signature,
         row_number,
         cells: cells.to_vec(),
     }
 }
 
+pub(super) fn build_row_line_and_signature_owned(
+    row_number: usize,
+    cells: Vec<WorkbookCellSnapshotJson>,
+) -> WorkbookRowEntry {
+    let (raw_line, strict_signature, content_signature) = build_row_strings(row_number, &cells);
+    WorkbookRowEntry {
+        raw_line,
+        strict_signature,
+        content_signature,
+        row_number,
+        cells,
+    }
+}
+
+fn build_row_strings(
+    row_number: usize,
+    cells: &[WorkbookCellSnapshotJson],
+) -> (String, String, String) {
+    let strict_signature_cell_count = cells
+        .iter()
+        .rposition(|cell| has_workbook_cell_content(cell, "strict"))
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    let content_signature_cell_count = cells
+        .iter()
+        .rposition(|cell| has_workbook_cell_content(cell, "content"))
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    let mut raw_line = format!("{}\t{}", ROW_PREFIX, row_number);
+    let mut strict_signature = String::new();
+    let mut content_signature = String::new();
+    for (index, cell) in cells.iter().enumerate() {
+        let encoded = encode_cell(
+            &cell.value,
+            (!cell.formula.is_empty()).then_some(cell.formula.as_str()),
+        );
+        raw_line.push('\t');
+        raw_line.push_str(&encoded);
+        if index < strict_signature_cell_count {
+            if index > 0 {
+                strict_signature.push('\t');
+            }
+            strict_signature.push_str(&encoded);
+        }
+        if index < content_signature_cell_count {
+            if index > 0 {
+                content_signature.push('\t');
+            }
+            if cell.value.trim().is_empty() && !cell.value.is_empty() {
+                content_signature.push_str(&encode_cell(
+                    "",
+                    (!cell.formula.is_empty()).then_some(cell.formula.as_str()),
+                ));
+            } else {
+                content_signature.push_str(&encoded);
+            }
+        }
+    }
+    (raw_line, strict_signature, content_signature)
+}
+
 pub(super) fn collect_workbook_row_entries(
     range: &Range<Data>,
     formulas: Option<&Range<String>>,
-    compare_mode: &str,
 ) -> Vec<WorkbookRowEntry> {
     let (start_row, start_col) = range.start().unwrap_or((0, 0));
     let mut result = Vec::new();
@@ -93,7 +118,6 @@ pub(super) fn collect_workbook_row_entries(
         result.push(build_row_line_and_signature(
             (abs_row + 1) as usize,
             &row_cells,
-            compare_mode,
         ));
     }
 

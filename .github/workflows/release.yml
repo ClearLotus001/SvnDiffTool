@@ -179,6 +179,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -206,6 +208,37 @@ jobs:
 
       - name: Build and publish Windows installer/update assets
         run: npx tsx scripts/build-win-installer.ts --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish release notes
+        run: |
+          $currentTag = "${{ github.ref_name }}"
+          $previousTag = git tag --sort=-version:refname |
+            Where-Object { $_ -ne $currentTag } |
+            Select-Object -First 1
+
+          $range = if ($previousTag) { "$previousTag..$currentTag" } else { $currentTag }
+          $commits = @(git log $range --no-merges --pretty=format:'- %s (`%h`)')
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to collect commits for release notes from $range."
+          }
+          if ($commits.Count -eq 0) {
+            $commits = @("- $currentTag")
+          }
+
+          $notes = @(
+            '## 更新内容 / What''s Changed'
+            ''
+          ) + $commits
+          if ($previousTag) {
+            $notes += @(
+              ''
+              "**完整变更 / Full Changelog**: https://github.com/${{ github.repository }}/compare/$previousTag...$currentTag"
+            )
+          }
+
+          $notes -join "`n" | gh release edit $currentTag --notes-file - --repo "${{ github.repository }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

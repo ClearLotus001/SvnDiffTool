@@ -4,6 +4,8 @@ use serde::Serialize;
 pub const SHEET_PREFIX: &str = "@@sheet";
 pub const ROW_PREFIX: &str = "@@row";
 pub const FORMULA_SEPARATOR: char = '\u{001F}';
+pub const MAX_WORKBOOK_ROW_NUMBER: usize = 1_048_576;
+pub const MAX_WORKBOOK_COLUMN_COUNT: usize = 16_384;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct WorkbookMergeRange {
@@ -46,9 +48,20 @@ pub struct WorkbookCellSnapshotJson {
 #[derive(Debug, Clone)]
 pub struct WorkbookRowEntry {
     pub raw_line: String,
-    pub signature: String,
+    pub strict_signature: String,
+    pub content_signature: String,
     pub row_number: usize,
     pub cells: Vec<WorkbookCellSnapshotJson>,
+}
+
+impl WorkbookRowEntry {
+    pub fn signature(&self, compare_mode: &str) -> &str {
+        if compare_mode == "content" {
+            &self.content_signature
+        } else {
+            &self.strict_signature
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -155,6 +168,14 @@ pub struct WorkbookDiffOutputJson {
     pub perf: Option<WorkbookDiffPerfJson>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct WorkbookDiffBothOutputJson {
+    #[serde(rename = "s")]
+    pub strict: WorkbookDiffOutputJson,
+    #[serde(rename = "c")]
+    pub content: WorkbookDiffOutputJson,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct WorkbookDiffPerfJson {
     #[serde(rename = "md")]
@@ -251,24 +272,6 @@ pub fn has_workbook_cell_content(cell: &WorkbookCellSnapshotJson, compare_mode: 
     !normalized_value.is_empty() || !cell.formula.is_empty()
 }
 
-pub fn workbook_cells_differ(
-    left_cell: &WorkbookCellSnapshotJson,
-    right_cell: &WorkbookCellSnapshotJson,
-    compare_mode: &str,
-) -> bool {
-    let left_value = if compare_mode == "content" && left_cell.value.trim().is_empty() {
-        ""
-    } else {
-        left_cell.value.as_str()
-    };
-    let right_value = if compare_mode == "content" && right_cell.value.trim().is_empty() {
-        ""
-    } else {
-        right_cell.value.as_str()
-    };
-    left_value != right_value || left_cell.formula != right_cell.formula
-}
-
 pub fn get_formula_for_position(
     formulas: &Range<String>,
     abs_row: u32,
@@ -288,22 +291,40 @@ pub fn get_formula_for_position(
         .filter(|formula| !formula.is_empty())
 }
 
-pub fn get_column_index(cell_ref: &str) -> usize {
-    let letters: String = cell_ref
-        .chars()
-        .take_while(|ch| ch.is_ascii_alphabetic())
-        .collect::<String>()
-        .to_ascii_uppercase();
+pub fn try_get_column_index(cell_ref: &str) -> Option<usize> {
+    let letters = cell_ref
+        .as_bytes()
+        .iter()
+        .take_while(|byte| byte.is_ascii_alphabetic());
     let mut value = 0usize;
-    for ch in letters.chars() {
-        value = (value * 26) + (ch as usize - 'A' as usize + 1);
+    let mut found_letter = false;
+    for byte in letters {
+        found_letter = true;
+        let upper = byte.to_ascii_uppercase();
+        value = value
+            .checked_mul(26)?
+            .checked_add((upper - b'A' + 1) as usize)?;
+        if value > MAX_WORKBOOK_COLUMN_COUNT {
+            return None;
+        }
     }
-    value.saturating_sub(1)
+    found_letter.then_some(value - 1)
 }
 
-pub fn get_row_number(cell_ref: &str) -> usize {
-    let digits: String = cell_ref.chars().filter(|ch| ch.is_ascii_digit()).collect();
-    digits.parse::<usize>().unwrap_or(1).max(1)
+pub fn try_get_row_number(cell_ref: &str) -> Option<usize> {
+    let mut value = 0usize;
+    let mut found_digit = false;
+    for byte in cell_ref.as_bytes() {
+        if !byte.is_ascii_digit() {
+            continue;
+        }
+        found_digit = true;
+        value = value.checked_mul(10)?.checked_add((byte - b'0') as usize)?;
+        if value > MAX_WORKBOOK_ROW_NUMBER {
+            return None;
+        }
+    }
+    (found_digit && value > 0).then_some(value)
 }
 
 pub fn parse_merge_range(range_ref: &str) -> Option<WorkbookMergeRange> {
@@ -311,11 +332,19 @@ pub fn parse_merge_range(range_ref: &str) -> Option<WorkbookMergeRange> {
     let start_ref = parts.next()?.trim();
     let end_ref = parts.next().unwrap_or(start_ref).trim();
 
+    let start_row = try_get_row_number(start_ref)?;
+    let end_row = try_get_row_number(end_ref)?;
+    let start_col = try_get_column_index(start_ref)?;
+    let end_col = try_get_column_index(end_ref)?;
+    if start_row > end_row || start_col > end_col {
+        return None;
+    }
+
     Some(WorkbookMergeRange {
-        start_row: get_row_number(start_ref),
-        end_row: get_row_number(end_ref),
-        start_col: get_column_index(start_ref),
-        end_col: get_column_index(end_ref),
+        start_row,
+        end_row,
+        start_col,
+        end_col,
     })
 }
 

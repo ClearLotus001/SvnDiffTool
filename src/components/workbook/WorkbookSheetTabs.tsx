@@ -84,7 +84,7 @@ const WorkbookSheetTabs = memo(({
 
     return (
       <span
-        className="inline-flex items-center rounded-full border px-2 py-0.5 font-ui text-[11px] font-semibold leading-4 whitespace-nowrap"
+        className="inline-flex items-center h-5 rounded-[5px] border px-1.5 font-ui text-[10px] font-semibold leading-none whitespace-nowrap"
         style={{
           background: visual.background,
           borderColor: visual.border,
@@ -146,22 +146,26 @@ const WorkbookSheetTabs = memo(({
 
   return (
     <div
-      className="flex flex-nowrap items-end gap-2 pt-1.5 px-2.5 shrink-0 relative z-[16] border-t border-border-default overflow-hidden"
+      data-testid="workbook-sheet-tabs"
+      className="flex flex-nowrap items-end gap-1.5 py-0.5 px-2 shrink-0 relative z-[40] isolate border-t border-border-default overflow-visible"
       style={{
         background: `linear-gradient(180deg, ${cssVar('bg1')} 0%, ${cssVar('bg0')} 100%)`,
         boxShadow: `0 -1px 0 ${cssVar('border')}, 0 -10px 22px -24px ${cssVar('border2')}`,
       }}>
-      <div ref={menuRef} className="relative shrink-0">
+      <div ref={menuRef} className="relative z-[2] shrink-0">
         <button
           type="button"
+          data-testid="workbook-sheet-menu-trigger"
+          aria-expanded={menuOpen}
           onClick={() => setMenuOpen((open) => !open)}
-          className="size-8 rounded-[10px] border border-border-default bg-bg-surface-hover text-text-primary cursor-pointer inline-flex items-center justify-center hover:text-accent hover:border-accent active:scale-95 transition-all duration-150"
+          className="size-7 rounded-[6px] border border-border-default bg-bg-surface-hover text-text-primary cursor-pointer inline-flex items-center justify-center hover:text-accent hover:border-accent active:scale-95 transition-all duration-150"
           style={{ boxShadow: `0 10px 18px -18px ${cssVar('border2')}` }}>
-          <Menu size={14} />
+          <Menu size={13} />
         </button>
         {menuOpen && (
           <div
-            className="absolute left-0 bottom-[calc(100%+8px)] min-w-[220px] max-h-80 overflow-y-auto p-1.5 rounded-[14px] border border-border-default bg-bg-surface-solid grid gap-1 z-20"
+            data-testid="workbook-sheet-menu"
+            className="motion-floating-panel app-themed-scrollbar absolute left-0 bottom-[calc(100%+7px)] min-w-[220px] max-h-80 overflow-y-auto p-1.5 rounded-[12px] border border-border-default bg-bg-surface-solid grid gap-1 z-[96]"
             style={{ boxShadow: `0 16px 40px -24px ${cssVar('border2')}` }}>
             {sections.map((section, index) => {
               const active = index === activeIndex;
@@ -185,7 +189,7 @@ const WorkbookSheetTabs = memo(({
                       onSelect(index);
                       setMenuOpen(false);
                     }}
-                    className="w-full h-[34px] px-3 rounded-[10px] cursor-pointer font-ui text-left whitespace-nowrap overflow-hidden text-ellipsis flex items-center gap-2 transition-all duration-150 hover:brightness-110"
+                    className="w-full h-[30px] px-2.5 rounded-[6px] cursor-pointer font-ui text-left whitespace-nowrap overflow-hidden text-ellipsis flex items-center gap-1.5 transition-all duration-150 hover:brightness-110"
                     style={{
                       fontSize: sizes.ui,
                       border: `1px solid ${active ? palette.border : modified ? palette.softBackground : 'transparent'}`,
@@ -247,12 +251,13 @@ const WorkbookSheetTabs = memo(({
                 surface="bare">
                 <button
                   type="button"
+                  data-testid="workbook-sheet-tab"
                   onClick={() => onSelect(index)}
-                  className="h-8 px-3.5 rounded-t-[10px] border-b-0 cursor-pointer font-ui whitespace-nowrap shrink-0 inline-flex items-center gap-2 max-w-[240px] transition-all duration-150"
+                  className="h-7 px-3 rounded-t-[7px] border-b-0 cursor-pointer font-ui whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 max-w-[220px] transition-all duration-150"
                   style={{
                     borderLeft: `1px solid ${active || modified ? palette.border : cssVar('border')}`,
                     borderRight: `1px solid ${active || modified ? palette.border : cssVar('border')}`,
-                    borderTop: `2px solid ${active ? palette.accent : modified ? palette.border : 'transparent'}`,
+                    borderTop: `1px solid ${active ? palette.accent : modified ? palette.border : 'transparent'}`,
                     background: active
                       ? `linear-gradient(180deg, ${palette.softBackground} 0%, ${cssVar('bg1')} 65%)`
                       : modified
@@ -266,7 +271,7 @@ const WorkbookSheetTabs = memo(({
                       : modified
                         ? `0 -6px 14px -12px ${palette.shadow}`
                         : 'none',
-                    transform: active ? 'translateY(1px)' : 'none',
+                    transform: active ? 'translateY(0.5px)' : 'none',
                   }}>
                   {badge && (
                     <span

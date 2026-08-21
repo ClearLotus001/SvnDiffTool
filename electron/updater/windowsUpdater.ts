@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { autoUpdater, type ProgressInfo, type UpdateDownloadedEvent } from 'electron-updater';
 import type { PlatformUpdater } from './platformUpdater';
+import { normalizeReleaseNotes } from './releaseNotes';
 import {
   createAppUpdateState,
   normalizeAppUpdatePlatform,
@@ -16,24 +17,6 @@ interface PersistedUpdaterState {
 }
 
 const UP_TO_DATE_TO_IDLE_MS = 4_000;
-
-function normalizeReleaseNotes(value: unknown): string | null {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed || null;
-  }
-  if (!Array.isArray(value)) return null;
-
-  const notes = value
-    .map((item) => {
-      if (!item || typeof item !== 'object') return '';
-      const note = (item as { note?: unknown }).note;
-      return typeof note === 'string' ? note.trim() : '';
-    })
-    .filter(Boolean);
-
-  return notes.length > 0 ? notes.join('\n\n') : null;
-}
 
 function toIsoString(value: number): string {
   return new Date(value).toISOString();

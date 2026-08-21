@@ -99,6 +99,7 @@ export function prepareTextDiffAnalysisFromDiffLines(diffLines: DiffLine[]): Pre
   return next;
 }
 
+
 export function buildReplacementPairIndexFromPairs(
   replacementPairs: readonly TextReplacementPair[],
 ): Map<number, number> {

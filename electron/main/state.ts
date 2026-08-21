@@ -24,6 +24,7 @@ let _mainWindow: BrowserWindow | null = null;
 let _cachedSvnTarget: string | null | undefined;
 let _cachedTimelineTarget: string | null | undefined;
 let _activeCliArgs: CliArgs = { ...EMPTY_CLI_ARGS };
+let _hasPendingLaunchDiffRequest = false;
 
 export function getMainWindow(): BrowserWindow | null {
   return _mainWindow;
@@ -60,6 +61,20 @@ export function setActiveCliArgs(nextArgs: CliArgs): void {
   cachedRevisionOptionPages.clear();
   clearSvnProbeCaches();
   writeExternalDiffDebugLog('active-cli-args-updated', _activeCliArgs);
+}
+
+export function getHasPendingLaunchDiffRequest(): boolean {
+  return _hasPendingLaunchDiffRequest;
+}
+
+export function setHasPendingLaunchDiffRequest(value: boolean): void {
+  _hasPendingLaunchDiffRequest = value;
+}
+
+export function consumePendingLaunchDiffRequest(): boolean {
+  const pending = _hasPendingLaunchDiffRequest;
+  _hasPendingLaunchDiffRequest = false;
+  return pending;
 }
 
 // ---------------------------------------------------------------------------

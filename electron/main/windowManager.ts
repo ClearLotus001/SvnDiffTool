@@ -10,7 +10,7 @@ import { getMainWindow, setMainWindow } from './state.js';
 import { resolveIconPath } from './svnHelpers.js';
 import type { AppUpdateState } from './types.js';
 
-const INITIAL_SHOW_FALLBACK_MS = 2500;
+const INITIAL_SHOW_FALLBACK_MS = process.env.NODE_ENV === 'development' ? 10_000 : 2_500;
 const WINDOWED_STARTUP_INSET = 14;
 const WINDOW_CORNER_RADIUS = 18;
 const NATIVE_ROUNDED_CORNERS_MIN_WINDOWS_BUILD = 22000;

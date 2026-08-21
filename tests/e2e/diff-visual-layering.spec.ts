@@ -60,6 +60,42 @@ test('split diff preserves semantic color under selected rows and renders stripe
   await expect(emptyCell).toHaveAttribute('style', /repeating-linear-gradient\(135deg/);
 });
 
+test('text diff accents sit on the content edge after the line-number gutter', async ({ page }) => {
+  await loadSplitInsertion(page);
+
+  const splitRow = page.locator('[data-copy-side="mine"][data-line-idx="0"]').first();
+  const splitAccent = splitRow.locator('[data-diff-row-accent="true"]');
+  const splitContent = splitRow.locator('[data-diff-row-content="true"]');
+
+  await expect(splitAccent).toBeVisible();
+  await expect(splitContent).toBeVisible();
+
+  const [splitAccentBox, splitContentBox] = await Promise.all([
+    splitAccent.boundingBox(),
+    splitContent.boundingBox(),
+  ]);
+  expect(splitAccentBox).not.toBeNull();
+  expect(splitContentBox).not.toBeNull();
+  expect(Math.abs(splitAccentBox!.x - splitContentBox!.x)).toBeLessThanOrEqual(0.5);
+
+  await loadUnifiedModification(page);
+
+  const unifiedRow = page.locator('[data-line-idx="1"]').first();
+  const unifiedAccent = unifiedRow.locator('[data-diff-row-accent="true"]');
+  const unifiedContent = unifiedRow.locator('[data-diff-row-content="true"]');
+
+  await expect(unifiedAccent).toBeVisible();
+  await expect(unifiedContent).toBeVisible();
+
+  const [unifiedAccentBox, unifiedContentBox] = await Promise.all([
+    unifiedAccent.boundingBox(),
+    unifiedContent.boundingBox(),
+  ]);
+  expect(unifiedAccentBox).not.toBeNull();
+  expect(unifiedContentBox).not.toBeNull();
+  expect(Math.abs(unifiedAccentBox!.x - unifiedContentBox!.x)).toBeLessThanOrEqual(0.5);
+});
+
 test('logical text selection keeps character diff highlight visible', async ({ page }) => {
   await loadUnifiedModification(page);
 

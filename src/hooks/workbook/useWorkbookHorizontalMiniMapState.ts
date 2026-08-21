@@ -78,14 +78,6 @@ export function useWorkbookHorizontalMiniMapState({
         };
       }
 
-      if (item.kind === 'sparse-gap') {
-        return {
-          tone: 'equal',
-          height: item.count * ROW_H,
-          lineIdxs: [],
-        };
-      }
-
       const descriptor = getWorkbookMiniMapDescriptor(item.row, visibleColumns, compareMode);
       return {
         tone: descriptor.tone,

@@ -10,8 +10,8 @@ import {
 } from '@/utils/workbook/workbookPanelHelpers';
 import type { WorkbookRowFrame } from '@/utils/workbook/workbookVisibleRowFrames';
 
-type WorkbookLinearBodyItemKind = 'row' | 'collapse' | 'hidden-rows' | 'sparse-gap';
-type WorkbookGroupedBodyItemKind = 'rows' | 'collapse' | 'hidden-rows' | 'sparse-gap';
+type WorkbookLinearBodyItemKind = 'row' | 'collapse' | 'hidden-rows';
+type WorkbookGroupedBodyItemKind = 'rows' | 'collapse' | 'hidden-rows';
 
 export interface WorkbookProjectedRowState {
   isSearchMatch: boolean;
@@ -36,7 +36,7 @@ export type WorkbookLinearBodyBaseSegment<TItem, TStaticRow extends object> =
     height: number;
   }
   | {
-    kind: 'collapse' | 'hidden-rows' | 'sparse-gap';
+    kind: 'collapse' | 'hidden-rows';
     item: TItem;
     top: number;
     height: number;
@@ -71,7 +71,7 @@ export type WorkbookGroupedBodyBaseSegment<TItem, TStaticRow extends object> =
     height: number;
   }
   | {
-    kind: 'collapse' | 'hidden-rows' | 'sparse-gap';
+    kind: 'collapse' | 'hidden-rows';
     item: TItem;
     top: number;
     height: number;

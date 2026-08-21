@@ -24,7 +24,9 @@ export interface WorkbookCanvasHoverCell {
   };
   address?: string;
   displayValue?: string;
-  compareCell: WorkbookCompareCellState;
+  compareCell: WorkbookCompareCellState | null | undefined;
+  wrapText?: boolean;
+  isTextTruncated?: boolean;
 }
 
 interface WorkbookCanvasHoverTooltipProps {
@@ -102,11 +104,13 @@ const WorkbookCanvasHoverTooltip = memo(({
             )}
           </div>
         )}
-        <WorkbookCompareTooltip
-          compareCell={hover.compareCell}
-          baseTitle={baseTitle}
-          mineTitle={mineTitle}
-        />
+        {hover.compareCell && (
+          <WorkbookCompareTooltip
+            compareCell={hover.compareCell}
+            baseTitle={baseTitle}
+            mineTitle={mineTitle}
+          />
+        )}
         <TooltipArrow
           actualPlacement={layout.actualPlacement}
           left={layout.arrowOffset}

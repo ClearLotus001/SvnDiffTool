@@ -181,7 +181,7 @@ function buildSection(title: string, content: string): string {
 }
 
 function resolveBridgeAvailability(): string {
-  return window.svnDiff ? 'electron-bridge: available' : 'electron-bridge: unavailable';
+  return window.versora ? 'electron-bridge: available' : 'electron-bridge: unavailable';
 }
 
 export function buildRendererDiagnosticReport({

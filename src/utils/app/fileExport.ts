@@ -31,9 +31,9 @@ function triggerBrowserDownload(content: string, fileName: string): TextExportRe
 }
 
 export async function exportTextFile(content: string, defaultFileName: string): Promise<TextExportResult> {
-  if (window.svnDiff?.saveDiagnosticReport) {
+  if (window.versora?.saveDiagnosticReport) {
     try {
-      const filePath = await window.svnDiff.saveDiagnosticReport(content, defaultFileName);
+      const filePath = await window.versora.saveDiagnosticReport(content, defaultFileName);
       return filePath
         ? {
             status: 'saved',
