@@ -1,5 +1,5 @@
 import type { SharedCharSpan } from '../../../shared/textMyers';
-import { computeCharDiff, isSingleCharacterReplacement } from '../../../shared/textMyers';
+import { computeCharDiff, shouldHighlightCharacterDiffText } from '../../../shared/textMyers';
 import type { ThemeTokens } from '@/theme/tokens';
 import type { WorkbookCellDelta } from '@/types';
 import { normalizeWorkbookCanvasText } from '@/utils/workbook/workbookCanvasText';
@@ -38,8 +38,14 @@ function buildWholeTextFallback(
   mineValue: string,
 ): Pick<WorkbookCanvasCellTextDiff, 'baseSpans' | 'mineSpans'> {
   return {
-    baseSpans: [{ highlight: baseValue !== '', text: baseText }],
-    mineSpans: [{ highlight: mineValue !== '', text: mineText }],
+    baseSpans: [{
+      highlight: baseValue !== '' && shouldHighlightCharacterDiffText(baseValue),
+      text: baseText,
+    }],
+    mineSpans: [{
+      highlight: mineValue !== '' && shouldHighlightCharacterDiffText(mineValue),
+      text: mineText,
+    }],
   };
 }
 
@@ -61,7 +67,7 @@ export function getWorkbookCanvasCellTextDiff(
   const baseDiffText = compareCell.baseCell.value === '' ? '' : baseText;
   const mineDiffText = compareCell.mineCell.value === '' ? '' : mineText;
   const computed = computeCharDiff(baseDiffText, mineDiffText)
-    ?? (isSingleCharacterReplacement(baseDiffText, mineDiffText)
+    ?? (!shouldHighlightCharacterDiffText(baseDiffText) && !shouldHighlightCharacterDiffText(mineDiffText)
       ? null
       : buildWholeTextFallback(
           baseText,

@@ -28,3 +28,17 @@ test('character diff leaves one-character replacements on row-level highlighting
   assert.equal(lines.find(line => line.type === 'delete')?.baseCharSpans, null);
   assert.equal(lines.find(line => line.type === 'add')?.mineCharSpans, null);
 });
+
+test('character diff suppresses only the one-character side of an asymmetric replacement', () => {
+  assert.deepEqual(computeCharDiff('6', 'CustomHDAvatar'), {
+    baseSpans: [{ highlight: false, text: '6' }],
+    mineSpans: [{ highlight: true, text: 'CustomHDAvatar' }],
+  });
+});
+
+test('character diff keeps a single whitespace character visible', () => {
+  assert.deepEqual(computeCharDiff(' ', ''), {
+    baseSpans: [{ highlight: true, text: ' ' }],
+    mineSpans: [],
+  });
+});

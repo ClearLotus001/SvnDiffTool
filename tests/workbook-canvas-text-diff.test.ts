@@ -54,6 +54,14 @@ test('workbook canvas text diff leaves one-character replacements on cell-level 
   assert.equal(getWorkbookCanvasCellTextDiff(createCellDelta('开', '关')), null);
 });
 
+test('workbook canvas text diff suppresses only the one-character side of an asymmetric replacement', () => {
+  const diff = getWorkbookCanvasCellTextDiff(createCellDelta('6', 'CustomHDAvatar'));
+
+  assert.ok(diff);
+  assert.deepEqual(diff.baseSpans, [{ highlight: false, text: '6' }]);
+  assert.deepEqual(diff.mineSpans, [{ highlight: true, text: 'CustomHDAvatar' }]);
+});
+
 test('workbook canvas text diff preserves and highlights whitespace-only changes', () => {
   const diff = getWorkbookCanvasCellTextDiff(createCellDelta(
     '2026-06-13 00:00:00',

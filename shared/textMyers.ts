@@ -49,12 +49,12 @@ function mergeOps(ops: DiffOp[]): DiffOp[] {
   return merged;
 }
 
-export function isSingleCharacterReplacement(baseText: string, mineText: string): boolean {
-  return Array.from(baseText).length === 1 && Array.from(mineText).length === 1;
+export function shouldHighlightCharacterDiffText(text: string): boolean {
+  const characters = Array.from(text);
+  return characters.length > 1 || (characters.length === 1 && /^\s$/u.test(characters[0]!));
 }
 
 export function computeCharDiff(deletedLine: string, addedLine: string): { baseSpans: SharedCharSpan[]; mineSpans: SharedCharSpan[] } | null {
-  if (isSingleCharacterReplacement(deletedLine, addedLine)) return null;
   if (deletedLine.length > CHAR_DIFF_LIMIT || addedLine.length > CHAR_DIFF_LIMIT) return null;
   const ops = mergeOps(myersOps(deletedLine, addedLine));
   const baseSpans: SharedCharSpan[] = [], mineSpans: SharedCharSpan[] = [];
@@ -64,5 +64,13 @@ export function computeCharDiff(deletedLine: string, addedLine: string): { baseS
     else mineSpans.push({ highlight: true, text: op.text });
   }
   const merge = (spans: SharedCharSpan[]) => spans.reduce<SharedCharSpan[]>((acc, span) => { const last = acc[acc.length - 1]; if (last?.highlight === span.highlight) last.text += span.text; else acc.push({ ...span }); return acc; }, []);
-  return { baseSpans: merge(baseSpans), mineSpans: merge(mineSpans) };
+  const resolveSideSpans = (spans: SharedCharSpan[], text: string) => (
+    shouldHighlightCharacterDiffText(text)
+      ? merge(spans)
+      : text ? [{ highlight: false, text }] : []
+  );
+  const resolvedBaseSpans = resolveSideSpans(baseSpans, deletedLine);
+  const resolvedMineSpans = resolveSideSpans(mineSpans, addedLine);
+  if (![...resolvedBaseSpans, ...resolvedMineSpans].some((span) => span.highlight)) return null;
+  return { baseSpans: resolvedBaseSpans, mineSpans: resolvedMineSpans };
 }
