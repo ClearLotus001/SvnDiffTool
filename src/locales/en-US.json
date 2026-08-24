@@ -269,6 +269,8 @@
   "revisionPickerNoDateResults": "No revisions were committed on {date}",
   "revisionPickerNoDateResultsHint": "Pick another date or clear the filter to view the full timeline",
   "revisionPickerSearchRangeHint": "Load older revisions to extend the search range",
+  "revisionPickerSameVersionTitle": "Same revision",
+  "revisionPickerSameVersionHint": "Both sides use the same revision, so no diff needs to be loaded. Choose another revision.",
   "lineBlameVersion": "Version {version}",
   "lineBlameAuthor": "Author: {author}",
   "lineBlameDate": "Committed: {date}",

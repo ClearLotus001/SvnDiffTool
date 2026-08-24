@@ -1,5 +1,5 @@
 import type { SharedCharSpan } from '../../../shared/textMyers';
-import { computeCharDiff } from '../../../shared/textMyers';
+import { computeCharDiff, isSingleCharacterReplacement } from '../../../shared/textMyers';
 import type { ThemeTokens } from '@/theme/tokens';
 import type { WorkbookCellDelta } from '@/types';
 import { normalizeWorkbookCanvasText } from '@/utils/workbook/workbookCanvasText';
@@ -31,7 +31,7 @@ export function formatWorkbookCanvasCellText(value: string): string {
   return normalizeWorkbookCanvasText(value || '\u00A0').replace(/\n/g, ' / ');
 }
 
-function buildStrictWhitespaceFallback(
+function buildWholeTextFallback(
   baseText: string,
   mineText: string,
   baseValue: string,
@@ -58,15 +58,17 @@ export function getWorkbookCanvasCellTextDiff(
   const cached = workbookCanvasCellTextDiffCache.get(compareCell);
   if (cached?.baseText === baseText && cached.mineText === mineText) return cached.diff;
 
-  const computed = computeCharDiff(baseText, mineText)
-    ?? (compareCell.strictOnly
-      ? buildStrictWhitespaceFallback(
+  const baseDiffText = compareCell.baseCell.value === '' ? '' : baseText;
+  const mineDiffText = compareCell.mineCell.value === '' ? '' : mineText;
+  const computed = computeCharDiff(baseDiffText, mineDiffText)
+    ?? (isSingleCharacterReplacement(baseDiffText, mineDiffText)
+      ? null
+      : buildWholeTextFallback(
           baseText,
           mineText,
           compareCell.baseCell.value,
           compareCell.mineCell.value,
-        )
-      : null);
+        ));
   const diff = computed
     ? { baseText, mineText, baseSpans: computed.baseSpans, mineSpans: computed.mineSpans }
     : null;

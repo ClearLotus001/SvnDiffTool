@@ -5,6 +5,7 @@ import type { DiffData, LayoutMode, LineBlameLine, SvnRevisionInfo } from '@/typ
 
 interface E2ERevisionPayload {
   source?: DiffData['source'];
+  compareContext?: DiffData['compareContext'];
   basePath?: string;
   minePath?: string;
   revisionOptions?: SvnRevisionInfo[] | null;
@@ -81,7 +82,7 @@ export function buildE2EDiffData(payload: E2ELoadTextDiffPayload): DiffData {
     mineName,
     launchBaseName: baseName,
     launchMineName: mineName,
-    compareContext: 'literal_two_file_compare',
+    compareContext: payload.compareContext ?? 'literal_two_file_compare',
     baseContent: payload.baseContent,
     mineContent: payload.mineContent,
     baseBytes: null,
@@ -122,7 +123,7 @@ export function buildE2EWorkbookDiffData(payload: E2ELoadWorkbookDiffPayload): D
     mineName,
     launchBaseName: baseName,
     launchMineName: mineName,
-    compareContext: 'literal_two_file_compare',
+    compareContext: payload.compareContext ?? 'literal_two_file_compare',
     baseContent: payload.baseContent,
     mineContent: payload.mineContent,
     baseBytes: null,

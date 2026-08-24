@@ -34,8 +34,9 @@ interface RevisionPickerProps {
   isLoadingMore?: boolean;
   queryDateTime?: string;
   queryError?: string;
+  showSameRevisionNotice?: boolean;
   isSearchingDateTime?: boolean;
-  onChange?: ((nextId: string) => void) | undefined;
+  onChange?: ((nextId: string) => boolean | void) | undefined;
   onOpen?: (() => void) | undefined;
   onLoadMore?: (() => void) | undefined;
   onQueryDateTime?: ((value: string) => void) | undefined;
@@ -51,7 +52,8 @@ function CalendarGlyph({ color }: { color: string }) {
 
 const RevisionPicker = memo(({
   align, accent, title, value, options, disabled = false, isLoading = false, hasMore = false,
-  isLoadingMore = false, queryDateTime = '', queryError = '', isSearchingDateTime = false,
+  isLoadingMore = false, queryDateTime = '', queryError = '', showSameRevisionNotice = false,
+  isSearchingDateTime = false,
   onChange, onOpen, onLoadMore, onQueryDateTime,
 }: RevisionPickerProps) => {
   const themeKey = useTheme();
@@ -379,6 +381,36 @@ const RevisionPicker = memo(({
                 </button>
               </div>
             </div>
+            {showSameRevisionNotice && (
+              <div
+                role="status"
+                aria-live="polite"
+                data-testid={`revision-picker-same-version-notice-${align}`}
+                className="flex items-start gap-2.5 rounded-[10px] border px-2.5 py-2 text-left"
+                style={{
+                  borderColor: cssAlpha('chgBrd', '72'),
+                  background: `linear-gradient(135deg, ${cssAlpha('chgBrd', '18')} 0%, ${cssAlpha('chgBrd', '0a')} 100%)`,
+                }}>
+                <span
+                  aria-hidden="true"
+                  className="mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-full font-code text-[10px] font-black"
+                  style={{
+                    color: cssVar('chgTx'),
+                    background: cssAlpha('chgBrd', '20'),
+                    boxShadow: `inset 0 0 0 1px ${cssAlpha('chgBrd', '55')}`,
+                  }}>
+                  !
+                </span>
+                <span className="grid min-w-0 gap-0.5 font-ui">
+                  <span className="text-[11px] font-bold text-text-title">
+                    {t('revisionPickerSameVersionTitle')}
+                  </span>
+                  <span className="text-[10px] leading-relaxed text-text-secondary">
+                    {t('revisionPickerSameVersionHint')}
+                  </span>
+                </span>
+              </div>
+            )}
             {queryError && <span className="text-diff-remove-text text-[10px] font-ui">{queryError}</span>}
           </div>
 
@@ -416,7 +448,10 @@ const RevisionPicker = memo(({
                   hovered={option.id === hoveredId}
                   searchQuery={deferredSearchQuery}
                   highlightStyle={highlightStyle}
-                  onSelect={(id) => { onChange?.(id); setOpen(false); }}
+                  onSelect={(id) => {
+                    const shouldClose = onChange?.(id);
+                    if (shouldClose !== false) setOpen(false);
+                  }}
                   onHover={setHoveredId}
                   onLeave={(id) => setHoveredId((c) => (c === id ? '' : c))}
                 />

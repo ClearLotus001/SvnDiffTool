@@ -49,12 +49,14 @@ function mergeOps(ops: DiffOp[]): DiffOp[] {
   return merged;
 }
 
+export function isSingleCharacterReplacement(baseText: string, mineText: string): boolean {
+  return Array.from(baseText).length === 1 && Array.from(mineText).length === 1;
+}
+
 export function computeCharDiff(deletedLine: string, addedLine: string): { baseSpans: SharedCharSpan[]; mineSpans: SharedCharSpan[] } | null {
+  if (isSingleCharacterReplacement(deletedLine, addedLine)) return null;
   if (deletedLine.length > CHAR_DIFF_LIMIT || addedLine.length > CHAR_DIFF_LIMIT) return null;
   const ops = mergeOps(myersOps(deletedLine, addedLine));
-  let changed = 0, total = 0;
-  for (const op of ops) { total += op.text.length; if (op.type !== 'equal') changed += op.text.length; }
-  if (total > 0 && changed / total > 0.85) return null;
   const baseSpans: SharedCharSpan[] = [], mineSpans: SharedCharSpan[] = [];
   for (const op of ops) {
     if (op.type === 'equal') { baseSpans.push({ highlight: false, text: op.text }); mineSpans.push({ highlight: false, text: op.text }); }

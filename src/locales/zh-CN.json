@@ -269,6 +269,8 @@
   "revisionPickerNoDateResults": "{date} 暂无提交记录",
   "revisionPickerNoDateResultsHint": "请重新选择日期，或清除筛选后查看全部记录",
   "revisionPickerSearchRangeHint": "可继续加载更早记录，扩大搜索范围",
+  "revisionPickerSameVersionTitle": "版本相同",
+  "revisionPickerSameVersionHint": "两侧选择了同一个版本，无需加载差异。请选择其他版本。",
   "lineBlameVersion": "版本 {version}",
   "lineBlameAuthor": "修改人：{author}",
   "lineBlameDate": "提交时间：{date}",

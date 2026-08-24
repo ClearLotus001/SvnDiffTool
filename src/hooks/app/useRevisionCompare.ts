@@ -11,6 +11,7 @@ import type {
 import { debugLog, mergeRevisionOptions } from '@/hooks/app/helpers';
 import type { RevisionQueryController } from '@/hooks/app/contracts';
 import { useAppStore } from '@/store/appStore';
+import { shouldSkipSameRevisionCompare } from '@/utils/navigation/revisionCompareSelection';
 
 interface UseRevisionCompareArgs {
   revisionOptionsRef: MutableRefObject<SvnRevisionInfo[]>;
@@ -232,6 +233,17 @@ export default function useRevisionCompare({
     nextBaseRevisionId: string,
     nextMineRevisionId: string,
   ) => {
+    if (shouldSkipSameRevisionCompare(
+      compareContext === 'literal_two_file_compare',
+      nextBaseRevisionId,
+      nextMineRevisionId,
+    )) {
+      revisionActions.setSwitching(false);
+      debugLog('revision-compare:skipped-same-revision', {
+        revisionId: nextBaseRevisionId.trim(),
+      });
+      return;
+    }
     const bridge = window.versora;
     if (!bridge) return;
     revisionActions.setSwitching(true);

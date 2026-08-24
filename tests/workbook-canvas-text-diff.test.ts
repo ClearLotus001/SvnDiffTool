@@ -42,6 +42,18 @@ test('workbook canvas text diff highlights only the changed date characters', ()
   assert.equal(diff.mineSpans.filter(span => span.highlight).map(span => span.text).join(''), '50');
 });
 
+test('workbook canvas text diff highlights both complete values when short text has no shared characters', () => {
+  const diff = getWorkbookCanvasCellTextDiff(createCellDelta('暗夜', '原色'));
+
+  assert.ok(diff);
+  assert.deepEqual(diff.baseSpans, [{ highlight: true, text: '暗夜' }]);
+  assert.deepEqual(diff.mineSpans, [{ highlight: true, text: '原色' }]);
+});
+
+test('workbook canvas text diff leaves one-character replacements on cell-level highlighting', () => {
+  assert.equal(getWorkbookCanvasCellTextDiff(createCellDelta('开', '关')), null);
+});
+
 test('workbook canvas text diff preserves and highlights whitespace-only changes', () => {
   const diff = getWorkbookCanvasCellTextDiff(createCellDelta(
     '2026-06-13 00:00:00',
@@ -59,7 +71,7 @@ test('workbook canvas text diff preserves and highlights whitespace-only changes
   }));
   assert.ok(blankDiff);
   assert.deepEqual(blankDiff.baseSpans, [{ highlight: true, text: ' ' }]);
-  assert.deepEqual(blankDiff.mineSpans, [{ highlight: false, text: '\u00A0' }]);
+  assert.deepEqual(blankDiff.mineSpans, []);
 });
 
 test('workbook canvas text diff leaves pure add and delete cells on whole-cell semantics', () => {

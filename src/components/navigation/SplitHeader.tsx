@@ -6,6 +6,7 @@ import { TEXT_DIFF_MINIMAP_WIDTH } from '@/constants/layout';
 import { useAppStore } from '@/store/appStore';
 import { cssAlpha } from '@/theme/cssUtils';
 import { extractDisplayName, extractVersionLabel } from '@/utils/diff/diffMeta';
+import { shouldSkipSameRevisionCompare } from '@/utils/navigation/revisionCompareSelection';
 import RevisionPicker from '@/components/navigation/RevisionPicker';
 import RevisionLogHoverCard from '@/components/navigation/RevisionLogHoverCard';
 import Tooltip from '@/components/shared/Tooltip';
@@ -95,6 +96,7 @@ const SplitHeader = memo(({
   const textSplitHeaderRatio = useAppStore((s) => s.textSplitHeaderRatio);
   const copyTimerRef = useRef<number | null>(null);
   const [copiedSide, setCopiedSide] = useState<'base' | 'mine' | null>(null);
+  const [sameRevisionNoticeSide, setSameRevisionNoticeSide] = useState<'base' | 'mine' | null>(null);
   const baseVersion = baseValueLabel.trim() || baseRevisionInfo?.revision || extractVersionLabel(baseName) || t('commonBase');
   const mineVersion = mineValueLabel.trim() || mineRevisionInfo?.revision || extractVersionLabel(mineName) || t('commonMine');
   const baseDisplayName = isTwoFileCompare ? baseName.trim() : extractDisplayName(baseName);
@@ -252,12 +254,27 @@ const SplitHeader = memo(({
         isLoadingMore={isLoadingMoreRevisions}
         queryDateTime={revisionQueryDateTime}
         queryError={revisionQueryError}
+        showSameRevisionNotice={sameRevisionNoticeSide === side}
         isSearchingDateTime={isSearchingRevisionDateTime}
-        onOpen={() => onOpenRevisionPicker?.(side)}
+        onOpen={() => {
+          setSameRevisionNoticeSide(null);
+          onOpenRevisionPicker?.(side);
+        }}
         onChange={(nextId) => {
           if (!nextId) return;
-          if (side === 'base') { onRevisionChange?.(nextId, otherId || mineRevisionInfo?.id || nextId); return; }
-          onRevisionChange?.(otherId || baseRevisionInfo?.id || nextId, nextId);
+          const nextBaseId = side === 'base'
+            ? nextId
+            : otherId || baseRevisionInfo?.id || nextId;
+          const nextMineId = side === 'mine'
+            ? nextId
+            : otherId || mineRevisionInfo?.id || nextId;
+          if (shouldSkipSameRevisionCompare(isTwoFileCompare, nextBaseId, nextMineId)) {
+            setSameRevisionNoticeSide(side);
+            return false;
+          }
+          setSameRevisionNoticeSide(null);
+          onRevisionChange?.(nextBaseId, nextMineId);
+          return true;
         }}
         onLoadMore={() => onLoadMoreRevisions?.(side)}
         onQueryDateTime={(value) => onRevisionDateTimeQuery?.(side, value)}
