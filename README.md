@@ -1,121 +1,151 @@
 # Versora
 
-[中文](./README.md) | [English](./README.en.md) | [下载最新版本](https://github.com/ClearLotus001/Versora/releases/latest)
+[![CI](https://github.com/ClearLotus001/Versora/actions/workflows/ci-review-gates.yml/badge.svg)](https://github.com/ClearLotus001/Versora/actions/workflows/ci-review-gates.yml)
+[![Latest release](https://img.shields.io/github/v/release/ClearLotus001/Versora?display_name=tag)](https://github.com/ClearLotus001/Versora/releases/latest)
+[![Platform](https://img.shields.io/badge/platform-Windows-0078D4)](https://github.com/ClearLotus001/Versora/releases/latest)
+[![License](https://img.shields.io/github/license/ClearLotus001/Versora)](./LICENSE)
 
-> 面向 Windows 的文件比较工作台，用一套界面审阅文本、Excel、Git 版本与 SVN 修订。
+[中文](./README.md) · [English](./README.en.md)
 
-Versora 提供成熟的文本和工作簿查看能力，同时把 Git、SVN 与普通本地文件统一为可独立识别的比较来源。
+**看清每一次变化。** Versora 是一款面向 Windows 的开源文件差异审阅工具，可在同一工作台中比较文本、Excel 工作簿、Git 版本和 SVN 修订。
 
-## 下载与运行
+它既能直接比较两份本地文件，也能识别每一侧的版本控制来源，在不切换工具的情况下查看历史版本、工作副本改动和行级归属。
 
-- 支持平台：Windows
-- 安装包：[GitHub Releases](https://github.com/ClearLotus001/Versora/releases)
-- 安装版支持应用内更新，并可选择接入 TortoiseSVN
+## 获取 Versora
 
-安装后可从首页选择以下入口：
+前往 [GitHub Releases](https://github.com/ClearLotus001/Versora/releases/latest) 下载最新版 Windows 安装包。安装版支持：
 
-1. **打开工作副本文件**：自动识别 Git、SVN 或普通本地文件。
-2. **对比两份文件**：选择两份扩展名相同的文本文件或 Excel 工作簿。
-3. **接入 TortoiseSVN**：将 Versora 配置为外部 Diff Viewer。
+- 中文与英文界面
+- 应用内检查、下载和安装更新
+- 可选的 TortoiseSVN 外部 Diff Viewer 接入
 
-## 主要能力
+## 快速开始
+
+安装并启动后，从首页选择一种工作方式：
+
+| 入口 | 适用场景 | Versora 的行为 |
+|---|---|---|
+| **打开工作副本文件** | 审阅单个受版本控制的文件或本地文件 | 自动识别来源；比较仓库版本与工作副本，或直接打开本地内容 |
+| **对比两份文件** | 比较任意两份本地文本或工作簿 | 分别识别左右来源；两份文件需具有相同扩展名 |
+| **接入 TortoiseSVN** | 从 TortoiseSVN 直接打开差异 | 配置全部文件、仅文本或仅工作簿模式 |
+
+进入差异视图后，可切换布局、搜索内容、跳转差异块；当文件来自 Git 或 SVN 时，还可以通过顶部版本选择器查看历史版本。
+
+## 功能概览
 
 ### 文本比较
 
-- 统一视图、左右分栏和上下分栏
-- 行级与字符级高亮、语法着色和空白字符显示
-- 折叠未变化区域、全文搜索、差异导航、跳转与复制
-- Git/SVN 来源徽标，左右文件独立识别
-- 行级版本归属：显示版本、修改人和提交时间；未提交行标记为 `WC*`
-- 版本归属仅在存在 Git/SVN 工作副本或修订上下文时显示
+- 统一、左右分栏和上下分栏三种布局
+- 行级与字符级差异高亮
+- 语法着色和空白字符显示
+- 未变化区域折叠、全文搜索、行号跳转和差异导航
+- 文本选择、复制和行范围操作
+- Git/SVN 来源标识与行级归属信息
 
-### Excel 工作簿
+### Excel 工作簿比较
 
-- 面向 `.xlsx`、`.xlsm`、`.xltx`、`.xltm` 等 OOXML 工作簿的专用表格视图
-- 工作表、行、列、单元格和公式变化
-- 严格模式与内容模式
-- 公式栏、冻结窗格、隐藏行列、差异区域导航和迷你地图
+- 面向 `.xlsx`、`.xlsm`、`.xltx`、`.xltm` 的专用表格视图
+- 识别工作表、行、列、单元格和公式变化
+- 严格模式与内容模式：可选择保留或忽略纯空白差异
+- 公式栏、冻结窗格、隐藏行列、工作表标签和差异区域导航
+- 迷你地图与多种工作簿布局
 - Rust 加速解析与差异计算
-- 大型差异使用虚拟滚动、结构区域压缩和精简 IPC 载荷，避免一次性渲染或传输全部单元格状态
+- 通过虚拟滚动和按需渲染流畅浏览大型差异
 
-### Git 与 SVN
+### Git、SVN 与本地文件
 
-| 来源 | 默认行为 | 历史版本 | 行级归属 |
+| 来源 | 默认比较 | 历史版本 | 行级归属 |
 |---|---|---|---|
-| Git 工作区文件 | 比较仓库版本与当前工作区内容 | 支持按文件切换提交、`HEAD` 和工作区 | Git blame |
-| SVN 工作副本 | 比较仓库修订与工作副本 | 支持修订历史与工作副本切换 | SVN blame |
-| 普通本地文件 | 直接使用当前文件内容 | 不显示版本选择器 | 不显示 |
+| Git 工作区文件 | 仓库版本 ↔ 当前工作区 | 文件提交、`HEAD`、工作区 | Git blame |
+| SVN 工作副本 | 仓库修订 ↔ 工作副本 | 修订历史、工作副本 | SVN blame |
+| 普通本地文件 | 直接使用所选本地内容 | 不提供 | 不显示 |
 
-两份文件对比时，每一侧都会独立检测来源。Git/SVN 一侧可以切换历史版本，普通文件一侧保持为本地内容。
+两份文件对比时，每一侧都会独立检测来源。例如，可以让 Git 历史版本与普通本地文件对比，或让两侧分别切换各自的版本。
 
-所有 Git 操作均为只读。Versora 不会执行 checkout、add、commit、reset，也不会修改仓库状态。
+> **安全边界：** Versora 的 Git 操作均为只读。应用不会执行 `checkout`、`add`、`commit` 或 `reset`，也不会修改仓库状态。
 
 ## 使用说明
 
-### 打开一个工作副本文件
+### 审阅工作副本文件
 
-从首页选择“打开工作副本文件”。Versora 会自动检测来源，并准备默认比较：
+1. 在首页选择 **打开工作副本文件**。
+2. 选择 Git、SVN 或普通本地文件。
+3. 等待 Versora 检测来源并准备默认比较。
+4. 使用顶部版本选择器切换历史版本；普通本地文件不会显示版本选择器。
 
-- Git：仓库版本与工作区文件
-- SVN：仓库修订与工作副本
-- 未纳入版本管理的文件：按本地文件打开，不提供版本切换
+### 比较两份本地文件
 
-进入比较页后，可通过顶部版本选择器切换历史版本；工具栏的首页按钮会清理当前比较并返回起始页。
+1. 在首页选择 **对比两份文件**。
+2. 拖入或选择基准文件与对比文件。
+3. 确保两份文件的扩展名相同，且不是同一个文件。
+4. 选择 **开始对比**。
 
-### 对比两份文件
+如果某一侧属于 Git 或 SVN 工作副本，Versora 会保留该侧的历史版本切换能力。
 
-从首页选择“对比两份文件”，拖入或选择左右文件。两份文件必须具有相同扩展名。点击“开始对比”后，弹窗会关闭并进入统一的“正在准备差异视图”加载页。
+### 接入 TortoiseSVN
 
-### TortoiseSVN 接入
+在 Windows 安装版首页选择 **接入 TortoiseSVN**，再按需要选择全部文件、仅文本或仅工作簿模式。配置完成后，从 TortoiseSVN 发起的对应文件比较会直接在 Versora 中打开。
 
-安装版可从首页打开“接入 TortoiseSVN”，并选择全部文件、仅文本或仅工作簿模式。推荐使用应用内配置；如需手动配置，请将命令指向安装目录内的 SVN 启动组件：
+## 支持范围与项目边界
 
-```text
-"C:\Path\To\Versora\resources\bin\svn_diff_launcher.exe" %base %mine %bname %yname %burl %yurl %brev %yrev %peg %fname
-```
+| 项目 | 当前支持 |
+|---|---|
+| 操作系统 | Windows |
+| 界面语言 | 简体中文、English |
+| 文本 | 本地可读取的文本文件；双文件比较要求扩展名相同 |
+| 工作簿 | OOXML 格式：`.xlsx`、`.xlsm`、`.xltx`、`.xltm` |
+| 版本控制 | Git 工作区、SVN 工作副本与修订历史 |
+| 外部集成 | TortoiseSVN Diff Viewer |
 
-卸载前 Versora 会恢复 TortoiseSVN 默认查看器，避免外部查看规则指向已删除的程序。
+Versora 当前专注于**审阅变化**，暂不包含目录树比较、三方比较、可编辑合并、自动解决冲突或版本库写操作。
 
-## 兼容性与数据迁移
+## 本地开发
 
-- Electron 渲染进程仅通过 `window.versora` 使用桥接能力
-- 设置统一使用 `versora.*` 键
-- Windows 受控缓存目录统一为 `Versora/Cache`
-- Windows `appId` 保持不变，以延续安装升级和自动更新链路
+### 环境要求
 
-## 开发
+- Windows
+- Node.js 24+
+- npm
+- Rust stable（工作簿原生加速、完整验证和 Windows 安装包构建需要）
 
-环境要求：Windows、Node.js 24+、npm。完整工作簿验证还需要 Rust stable。
+没有 Rust 时，`npm run dev:app` 仍可使用 JavaScript 后备路径启动，但大型工作簿的加载速度会较慢。
+
+### 启动开发环境
 
 ```bash
-npm install
+git clone https://github.com/ClearLotus001/Versora.git
+cd Versora
+npm ci
 npm run dev:app
 ```
 
-| 命令 | 说明 |
+`dev:app` 会启动 Vite、Electron 和 Electron 主进程的监听编译；如果本机已安装 Rust 且原生产物缺失，它也会先构建工作簿解析器。
+
+### 常用命令
+
+| 命令 | 用途 |
 |---|---|
-| `npm run dev:app` | 启动 Vite、Electron 和主进程监听编译 |
+| `npm run dev:app` | 启动完整桌面开发环境 |
 | `npm run verify:static` | 运行 ESLint、未使用导出检查和 TypeScript 检查 |
-| `npm run test:workbook:unit` | 运行不依赖 Rust 产物的单元测试 |
-| `npm run test:workbook:rust` | 运行依赖 Rust 解析器的工作簿测试 |
-| `npm run test:e2e` | 运行 Playwright 界面流程测试 |
-| `npm run verify:ci` | 执行完整本地 CI 验证 |
+| `npm run test:workbook:unit` | 运行不依赖 Rust 产物的 Node 测试 |
+| `npm run test:workbook:rust` | 构建原生产物并运行 Rust 集成测试 |
+| `npm run test:e2e` | 运行 Playwright 端到端测试 |
+| `npm run verify:ci` | 复现 CI 的静态检查、Rust 检查、测试与应用构建 |
 | `npm run build:app` | 构建渲染进程和 Electron 主进程 |
-| `npm run build:win` | 构建 Windows 安装包 |
+| `npm run build:win` | 构建 Windows 安装包与更新资产 |
 
 ## 架构
 
+Versora 将“内容来自哪里”与“如何比较和渲染”分离：
+
 ```text
 本地文件 ─┐
-Git 对象 ─┼─> 来源物化 ─> DiffData ─> 文本/工作簿分析 ─> 查看器
-SVN 修订 ─┤
-外部 CLI ─┘
+Git 对象  ─┼─> 来源物化 ─> DiffData ─> 文本/工作簿分析 ─> 查看器
+SVN 修订  ─┤
+外部 CLI  ─┘
 ```
 
-- [比较来源架构](./docs/comparison-sources.md)
-- [工作簿视觉语义](./docs/workbook-visual-semantics.md)
-
-目录说明：
+主要技术栈：Electron、React、TypeScript、Vite、Tailwind CSS、Rust 和 Playwright。
 
 ```text
 Versora/
@@ -128,9 +158,23 @@ Versora/
 └── docs/           # 架构与视觉语义文档
 ```
 
+延伸阅读：
+
+- [比较来源架构](./docs/comparison-sources.md)
+- [工作簿视觉语义](./docs/workbook-visual-semantics.md)
+
+## 参与贡献
+
+Issue 与 Pull Request 均欢迎。提交变更前请：
+
+1. 从 `main` 创建范围明确的分支。
+2. 为行为变化补充或更新测试。
+3. 至少运行 `npm run verify:static` 和与改动相关的测试。
+4. 按 [Pull Request 模板](./.github/pull_request_template.md) 记录影响范围、验证证据和回滚方案。
+
 ## 发布
 
-`package.json` 版本与 Git tag 必须一致。推送 `v*` 标签后，[Release 工作流](./.github/workflows/release.yml) 会执行静态检查、Node 测试、Rust 测试和应用构建，并发布 Windows 安装包与更新资产。
+`package.json` 中的版本必须与 Git tag 一致。推送 `v*` 标签后，[Release 工作流](./.github/workflows/release.yml) 会运行静态检查、Node 测试、Rust 测试和应用构建，然后发布 Windows 安装包及自动更新资产。
 
 ```bash
 npm version patch --no-git-tag-version
@@ -141,10 +185,6 @@ git push origin main
 git push origin vX.Y.Z
 ```
 
-## 项目边界
+## 许可证
 
-当前版本专注于审阅变化，不包含目录树比较、三方合并、可编辑合并、自动解决冲突或版本库写操作。
-
-## License
-
-本项目基于 [MIT License](./LICENSE) 开源。
+Versora 基于 [MIT License](./LICENSE) 开源。

@@ -1,121 +1,151 @@
 # Versora
 
-[中文](./README.md) | [English](./README.en.md) | [Download the latest release](https://github.com/ClearLotus001/Versora/releases/latest)
+[![CI](https://github.com/ClearLotus001/Versora/actions/workflows/ci-review-gates.yml/badge.svg)](https://github.com/ClearLotus001/Versora/actions/workflows/ci-review-gates.yml)
+[![Latest release](https://img.shields.io/github/v/release/ClearLotus001/Versora?display_name=tag)](https://github.com/ClearLotus001/Versora/releases/latest)
+[![Platform](https://img.shields.io/badge/platform-Windows-0078D4)](https://github.com/ClearLotus001/Versora/releases/latest)
+[![License](https://img.shields.io/github/license/ClearLotus001/Versora)](./LICENSE)
 
-> A Windows comparison workspace for reviewing text, Excel, Git versions, and SVN revisions in one interface.
+[中文](./README.md) · [English](./README.en.md)
 
-Versora combines mature text and workbook viewers while treating Git, SVN, and plain local files as comparison sources that can be detected independently.
+**See every change clearly.** Versora is an open-source file comparison tool for Windows. It brings text files, Excel workbooks, Git versions, and SVN revisions into one review workspace.
 
-## Download and run
+Use it to compare two local files directly or let it detect the version-control source on each side. You can inspect history, working-copy changes, and line attribution without switching tools.
 
-- Platform: Windows
-- Installer: [GitHub Releases](https://github.com/ClearLotus001/Versora/releases)
-- The installed app supports in-app updates and optional TortoiseSVN integration
+## Get Versora
 
-The home screen provides three entry points:
+Download the latest Windows installer from [GitHub Releases](https://github.com/ClearLotus001/Versora/releases/latest). The installed app includes:
 
-1. **Open a working-copy file**: detect Git, SVN, or a plain local file automatically.
-2. **Compare two files**: select two text files or Excel workbooks with the same extension.
-3. **Connect to TortoiseSVN**: configure Versora as an external Diff Viewer.
+- English and Simplified Chinese interfaces
+- In-app update checks, downloads, and installation
+- Optional TortoiseSVN external Diff Viewer integration
 
-## Highlights
+## Quick start
+
+After installing and launching Versora, choose a workflow from the home screen:
+
+| Entry point | Use it for | What Versora does |
+|---|---|---|
+| **Open working-copy file** | Review one versioned or local file | Detect its source; compare repository and working-copy content, or open local content directly |
+| **Compare two files** | Compare any two local text files or workbooks | Detect each side independently; both files must have the same extension |
+| **Connect to TortoiseSVN** | Open diffs directly from TortoiseSVN | Configure all-file, text-only, or workbook-only integration |
+
+In the diff view, switch layouts, search content, and navigate change hunks. When a file comes from Git or SVN, the header revision picker also lets you browse its history.
+
+## Features
 
 ### Text comparison
 
 - Unified, side-by-side, and stacked layouts
-- Line and character highlighting, syntax coloring, and whitespace display
-- Unchanged-region folding, full-text search, diff navigation, go-to, and copy
-- Git/SVN source badges with independent detection for each side
-- Line attribution with version, author, and commit time; uncommitted lines use `WC*`
-- Attribution appears only when a Git/SVN working-copy or revision context exists
+- Line-level and character-level diff highlighting
+- Syntax highlighting and visible whitespace
+- Unchanged-region folding, full-text search, go-to-line, and hunk navigation
+- Text selection, copying, and line-range actions
+- Git/SVN source indicators and line attribution
 
-### Excel workbooks
+### Excel workbook comparison
 
-- A dedicated grid for OOXML workbooks such as `.xlsx`, `.xlsm`, `.xltx`, and `.xltm`
+- A purpose-built grid for `.xlsx`, `.xlsm`, `.xltx`, and `.xltm`
 - Sheet, row, column, cell, and formula changes
-- Strict and content comparison modes
-- Formula bar, frozen panes, hidden rows and columns, diff-region navigation, and minimap
+- Strict and content modes to preserve or ignore whitespace-only differences
+- Formula bar, frozen panes, hidden rows and columns, sheet tabs, and diff-region navigation
+- Minimap and multiple workbook layouts
 - Rust-accelerated parsing and diff computation
-- Large comparisons use virtualization, structural-region compression, and compact IPC payloads instead of materializing every cell state in the renderer
+- Virtual scrolling and on-demand rendering for smooth navigation through large comparisons
 
-### Git and SVN
+### Git, SVN, and local files
 
-| Source | Default behavior | History | Line attribution |
+| Source | Default comparison | History | Line attribution |
 |---|---|---|---|
-| Git working-tree file | Compare a repository version with current working-tree content | File-scoped commits, `HEAD`, and working tree | Git blame |
-| SVN working copy | Compare a repository revision with the working copy | Revision history and working-copy switching | SVN blame |
-| Plain local file | Use current file content directly | No version picker | Hidden |
+| Git working-tree file | Repository version ↔ working tree | File commits, `HEAD`, working tree | Git blame |
+| SVN working copy | Repository revision ↔ working copy | Revision history, working copy | SVN blame |
+| Plain local file | Use the selected local content directly | Unavailable | Hidden |
 
-In a two-file comparison, each side is detected independently. A Git/SVN side can switch history while a plain side remains local.
+Each side of a two-file comparison is detected independently. For example, a Git revision can be compared with a plain local file, or both sides can browse their own histories.
 
-All Git operations are read-only. Versora never runs checkout, add, commit, or reset, and it does not mutate repository state.
+> **Safety boundary:** All Git operations are read-only. Versora does not run `checkout`, `add`, `commit`, or `reset`, and it does not mutate repository state.
 
 ## Usage
 
-### Open one working-copy file
+### Review a working-copy file
 
-Choose “Open working-copy file” on the home screen. Versora detects the source and prepares a default comparison:
+1. Select **Open working-copy file** on the home screen.
+2. Choose a Git, SVN, or plain local file.
+3. Wait for Versora to detect the source and prepare the default comparison.
+4. Use the header revision picker to browse history. It remains hidden for plain local files.
 
-- Git: repository version versus working-tree file
-- SVN: repository revision versus working copy
-- Unversioned file: open locally without version switching
+### Compare two local files
 
-Use the header revision pickers to switch history. The toolbar Home button clears the active comparison and returns to the start screen.
+1. Select **Compare two files** on the home screen.
+2. Drop or choose the base and comparison files.
+3. Make sure they have the same extension and are not the same file.
+4. Select **Compare files**.
 
-### Compare two files
+If either side belongs to a Git repository or SVN working copy, Versora keeps history switching available for that side.
 
-Choose “Compare two files,” then drop or select the left and right files. Both files must have the same extension. After “Compare files” is selected, the dialog closes and the shared “Preparing diff view” screen is shown.
+### Connect to TortoiseSVN
 
-### TortoiseSVN integration
+Select **Connect to TortoiseSVN** on the installed Windows app's home screen, then choose all-file, text-only, or workbook-only integration. Matching comparisons launched from TortoiseSVN will then open directly in Versora.
 
-The installed app can configure all-file, text-only, or workbook-only integration from the home screen. In-app setup is recommended. For manual setup, point the command to the bundled SVN launcher:
+## Support and scope
 
-```text
-"C:\Path\To\Versora\resources\bin\svn_diff_launcher.exe" %base %mine %bname %yname %burl %yurl %brev %yrev %peg %fname
-```
+| Area | Current support |
+|---|---|
+| Operating system | Windows |
+| Interface languages | English, Simplified Chinese |
+| Text | Locally readable text files; two-file comparison requires matching extensions |
+| Workbooks | OOXML formats: `.xlsx`, `.xlsm`, `.xltx`, `.xltm` |
+| Version control | Git working trees, SVN working copies, and revision history |
+| External integration | TortoiseSVN Diff Viewer |
 
-Versora restores TortoiseSVN's default viewer before uninstalling so no external-viewer rule points to a removed executable.
+Versora currently focuses on **reviewing changes**. Directory-tree comparison, three-way comparison, editable merging, automatic conflict resolution, and repository write operations are outside the current scope.
 
-## Compatibility and migration
+## Local development
 
-- Exposes a single Electron renderer bridge at `window.versora`
-- Stores settings under `versora.*`
-- Uses `Versora/Cache` for managed Windows cache data
-- Keeps the Windows `appId` stable to preserve installer upgrades and automatic updates
+### Requirements
 
-## Development
+- Windows
+- Node.js 24+
+- npm
+- Rust stable for native workbook acceleration, full verification, and Windows installer builds
 
-Requirements: Windows, Node.js 24+, and npm. Rust stable is required for the complete workbook verification suite.
+Without Rust, `npm run dev:app` can still start with the JavaScript fallback, but large workbooks will load more slowly.
+
+### Start the development app
 
 ```bash
-npm install
+git clone https://github.com/ClearLotus001/Versora.git
+cd Versora
+npm ci
 npm run dev:app
 ```
 
+`dev:app` starts Vite, Electron, and watch compilation for the Electron main process. If Rust is installed and the native artifacts are missing, it also builds the workbook parser first.
+
+### Common commands
+
 | Command | Purpose |
 |---|---|
-| `npm run dev:app` | Start Vite, Electron, and main-process watch compilation |
+| `npm run dev:app` | Start the complete desktop development environment |
 | `npm run verify:static` | Run ESLint, unused-export checks, and TypeScript checks |
-| `npm run test:workbook:unit` | Run unit tests that do not require Rust artifacts |
-| `npm run test:workbook:rust` | Run workbook tests backed by the Rust parser |
-| `npm run test:e2e` | Run Playwright user-flow tests |
-| `npm run verify:ci` | Reproduce the complete CI verification locally |
+| `npm run test:workbook:unit` | Run Node tests that do not require Rust artifacts |
+| `npm run test:workbook:rust` | Build native artifacts and run Rust integration tests |
+| `npm run test:e2e` | Run Playwright end-to-end tests |
+| `npm run verify:ci` | Reproduce CI static checks, Rust checks, tests, and the app build |
 | `npm run build:app` | Build the renderer and Electron main process |
-| `npm run build:win` | Build the Windows installer |
+| `npm run build:win` | Build the Windows installer and update assets |
 
 ## Architecture
 
+Versora separates content sourcing from comparison and rendering:
+
 ```text
-Local files ─┐
-Git objects ─┼─> source materialization ─> DiffData ─> text/workbook analysis ─> viewer
-SVN revisions┤
-External CLI ┘
+Local files  ─┐
+Git objects   ─┼─> source materialization ─> DiffData ─> text/workbook analysis ─> viewer
+SVN revisions ─┤
+External CLI  ─┘
 ```
 
-- [Comparison-source architecture](./docs/comparison-sources.md)
-- [Workbook visual semantics](./docs/workbook-visual-semantics.md)
-
-Repository layout:
+The primary stack is Electron, React, TypeScript, Vite, Tailwind CSS, Rust, and Playwright.
 
 ```text
 Versora/
@@ -128,9 +158,23 @@ Versora/
 └── docs/           # Architecture and visual-semantics documentation
 ```
 
+Further reading:
+
+- [Comparison-source architecture](./docs/comparison-sources.md)
+- [Workbook visual semantics](./docs/workbook-visual-semantics.md)
+
+## Contributing
+
+Issues and pull requests are welcome. Before submitting a change:
+
+1. Create a focused branch from `main`.
+2. Add or update tests for behavior changes.
+3. Run at least `npm run verify:static` and the tests relevant to your change.
+4. Use the [pull request template](./.github/pull_request_template.md) to record scope, verification evidence, and rollback details.
+
 ## Releases
 
-The `package.json` version and Git tag must match. Pushing a `v*` tag starts the [Release workflow](./.github/workflows/release.yml), which runs static checks, Node tests, Rust tests, and app builds before publishing the Windows installer and update assets.
+The version in `package.json` must match the Git tag. Pushing a `v*` tag starts the [Release workflow](./.github/workflows/release.yml), which runs static checks, Node tests, Rust tests, and app builds before publishing the Windows installer and automatic-update assets.
 
 ```bash
 npm version patch --no-git-tag-version
@@ -141,10 +185,6 @@ git push origin main
 git push origin vX.Y.Z
 ```
 
-## Scope
-
-The current release focuses on reviewing changes. Directory comparison, three-way comparison, editable merge, automatic conflict resolution, and repository write operations are not included.
-
 ## License
 
-This project is licensed under the [MIT License](./LICENSE).
+Versora is open source under the [MIT License](./LICENSE).

@@ -97,37 +97,6 @@ const WorkbookSheetTabs = memo(({
     }
   };
 
-  const renderTooltipTag = (
-    label: string,
-    tone: DiffIndicatorTone = 'neutral',
-  ) => {
-    const palette = resolveDiffIndicatorCssPalette(tone);
-    const visual = tone === 'neutral'
-      ? {
-          background: cssVar('bg2'),
-          border: cssVar('border'),
-          color: cssVar('t1'),
-        }
-      : {
-          background: palette.softBackground,
-          border: palette.border,
-          color: palette.text,
-        };
-
-    return (
-      <span
-        className="inline-flex items-center h-5 rounded-[5px] border px-1.5 font-ui text-[10px] font-semibold leading-none whitespace-nowrap"
-        style={{
-          background: visual.background,
-          borderColor: visual.border,
-          color: visual.color,
-          boxShadow: `0 10px 24px -18px ${tone === 'neutral' ? cssVar('border2') : palette.shadow}`,
-        }}>
-        {label}
-      </span>
-    );
-  };
-
   const getSectionTooltipStatus = (
     section: WorkbookSection,
   ): { label: string; tone: DiffIndicatorTone } | null => {
@@ -147,13 +116,33 @@ const WorkbookSheetTabs = memo(({
   };
 
   const renderSectionTooltip = (section: WorkbookSection) => {
-    const status = getSectionTooltipStatus(section);
+    const status = getSectionTooltipStatus(section) ?? {
+      label: t('workbookSheetTabTooltipTagSheet'),
+      tone: 'neutral' as const,
+    };
+    const palette = resolveDiffIndicatorCssPalette(status.tone);
     return (
-      <div className="grid gap-1.5 min-w-0">
-        <div className="font-ui text-[11px] font-bold text-text-title break-words">
-          {getSectionLabel(section)}
-        </div>
-        {status ? renderTooltipTag(status.label, status.tone) : renderTooltipTag(t('workbookSheetTabTooltipTagSheet'))}
+      <div
+        data-testid="workbook-sheet-tab-tooltip-content"
+        className="min-w-[148px] max-w-full text-left">
+        <span className="block min-w-0">
+          <span className="block break-words font-ui text-[12px] font-bold leading-[1.3] text-text-title">
+            {section.displayName}
+          </span>
+          <span
+            className="mt-1 flex items-center gap-1.5 font-ui text-[10.5px] font-semibold leading-none"
+            style={{ color: status.tone === 'neutral' ? cssVar('t1') : palette.text }}>
+            <span
+              aria-hidden="true"
+              className="size-1.5 shrink-0 rounded-full"
+              style={{
+                background: palette.accent,
+                boxShadow: `0 0 0 3px ${palette.softBackground}`,
+              }}
+            />
+            {status.label}
+          </span>
+        </span>
       </div>
     );
   };
@@ -220,9 +209,8 @@ const WorkbookSheetTabs = memo(({
                 <Tooltip
                   key={`menu-${section.name}-${section.startLineIdx}`}
                   content={tooltipContent}
-                  maxWidth={180}
+                  maxWidth={240}
                   disabled={!tooltipContent}
-                  surface="bare"
                   anchorStyle={{ display: 'block', width: '100%', flexShrink: 1 }}>
                   <button
                     type="button"
@@ -337,9 +325,8 @@ const WorkbookSheetTabs = memo(({
               <Tooltip
                 key={`${section.name}-${section.startLineIdx}`}
                 content={tooltipContent}
-                maxWidth={180}
-                disabled={!tooltipContent}
-                surface="bare">
+                maxWidth={240}
+                disabled={!tooltipContent}>
                 <button
                   type="button"
                   data-testid="workbook-sheet-tab"

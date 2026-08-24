@@ -45,8 +45,8 @@ import {
   getWorkbookCanvasTextInsetRect,
   getWorkbookCanvasTextBaselineY,
   layoutWorkbookCanvasTextLines,
-  normalizeWorkbookCanvasText,
 } from '@/utils/workbook/workbookCanvasText';
+import { drawWorkbookCanvasComparedCellText } from '@/utils/workbook/workbookCanvasTextDiff';
 import {
   createWorkbookCanvasBorderRegistry,
   registerWorkbookCanvasCellBorders,
@@ -458,11 +458,17 @@ const WorkbookPaneCanvasStrip = memo(({
               ctx.font = `${isHeaderRow ? '600 ' : ''}${sizes.ui}px ${FONT_UI}`;
               ctx.textAlign = 'left';
               ctx.textBaseline = 'alphabetic';
-              ctx.fillText(
-                normalizeWorkbookCanvasText(cell.value || '\u00A0').replace(/\n/g, ' / '),
-                textRect.left,
-                getWorkbookCanvasTextBaselineY(ctx, y + (ROW_H / 2), sizes.ui),
-              );
+              drawWorkbookCanvasComparedCellText({
+                ctx,
+                value: cell.value,
+                compareCell,
+                side,
+                theme: T,
+                x: textRect.left,
+                baselineY: getWorkbookCanvasTextBaselineY(ctx, y + (ROW_H / 2), sizes.ui),
+                fallbackFontSize: sizes.ui,
+                textColor: cellVisual.textColor,
+              });
               ctx.restore();
             }
             return;
@@ -677,11 +683,17 @@ const WorkbookPaneCanvasStrip = memo(({
               });
             } else {
               ctx.textAlign = 'left';
-              ctx.fillText(
-                normalizeWorkbookCanvasText(cell.value || '\u00A0').replace(/\n/g, ' / '),
-                textX,
-                getWorkbookCanvasTextBaselineY(ctx, textCenterY, sizes.ui),
-              );
+              drawWorkbookCanvasComparedCellText({
+                ctx,
+                value: cell.value,
+                compareCell,
+                side,
+                theme: T,
+                x: textX,
+                baselineY: getWorkbookCanvasTextBaselineY(ctx, textCenterY, sizes.ui),
+                fallbackFontSize: sizes.ui,
+                textColor: cellVisual.textColor,
+              });
             }
             ctx.restore();
           };
