@@ -6,8 +6,8 @@ export function resolveLineNumberColor(
   tone: LineNumberTone,
   active = false,
 ): string {
-  if (tone === 'base') return active ? cssVar('acc2') : cssAlpha('acc2', 'bf');
-  if (tone === 'mine') return active ? cssVar('acc') : cssAlpha('acc', 'bf');
+  if (tone === 'base') return active ? cssVar('versionBase') : cssAlpha('versionBase', 'bf');
+  if (tone === 'mine') return active ? cssVar('versionMine') : cssAlpha('versionMine', 'bf');
   return active ? cssVar('acc2') : cssVar('lnTx');
 }
 

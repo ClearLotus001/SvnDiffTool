@@ -16,22 +16,37 @@ function resolveSetStateAction<T>(prev: T, value: SetStateAction<T>): T {
   return typeof value === 'function' ? (value as (prevState: T) => T)(prev) : value;
 }
 
+export function createClosedDialogState(): DialogState {
+  return {
+    showSearch: false,
+    showGoto: false,
+    showHelp: false,
+    showAbout: false,
+    showSvnConfig: false,
+    showLocalFileCompare: false,
+  };
+}
+
+export function resolveDialogStateUpdate(
+  state: DialogState,
+  key: keyof DialogState,
+  value: SetStateAction<boolean>,
+): DialogState {
+  const nextValue = resolveSetStateAction(state[key], value);
+  if (!nextValue) {
+    return state[key] ? { ...state, [key]: false } : state;
+  }
+  return {
+    ...createClosedDialogState(),
+    [key]: true,
+  };
+}
+
 function dialogReducer(state: DialogState, action: DialogAction): DialogState {
   if (action.type === 'closeAll') {
-    return {
-      showSearch: false,
-      showGoto: false,
-      showHelp: false,
-      showAbout: false,
-      showSvnConfig: false,
-      showLocalFileCompare: false,
-    };
+    return createClosedDialogState();
   }
-
-  return {
-    ...state,
-    [action.key]: resolveSetStateAction(state[action.key], action.value),
-  };
+  return resolveDialogStateUpdate(state, action.key, action.value);
 }
 
 const KEY_BY_DIALOG_ID: Record<DialogId, keyof DialogState> = {
@@ -44,14 +59,7 @@ const KEY_BY_DIALOG_ID: Record<DialogId, keyof DialogState> = {
 };
 
 export default function useDialogState() {
-  const [state, dispatch] = useReducer(dialogReducer, {
-    showSearch: false,
-    showGoto: false,
-    showHelp: false,
-    showAbout: false,
-    showSvnConfig: false,
-    showLocalFileCompare: false,
-  });
+  const [state, dispatch] = useReducer(dialogReducer, undefined, createClosedDialogState);
 
   const set = useCallback((dialog: DialogId, value: SetStateAction<boolean>) => {
     dispatch({ type: 'set', key: KEY_BY_DIALOG_ID[dialog], value });

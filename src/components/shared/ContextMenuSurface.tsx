@@ -54,7 +54,7 @@ const ContextMenuSurface = memo(({
   useEffect(() => {
     if (!anchorPoint) return;
 
-    const handlePointerDown = (event: MouseEvent) => {
+    const handlePointerDown = (event: PointerEvent) => {
       const target = event.target as Node | null;
       if (menuRef.current?.contains(target ?? null)) return;
       onClose();
@@ -101,10 +101,10 @@ const ContextMenuSurface = memo(({
       }
     };
 
-    window.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('pointerdown', handlePointerDown, true);
     window.addEventListener('keydown', handleKeyDown);
     return () => {
-      window.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('pointerdown', handlePointerDown, true);
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [anchorPoint, onClose]);

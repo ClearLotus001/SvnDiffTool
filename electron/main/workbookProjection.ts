@@ -12,6 +12,13 @@ import type {
   WorkbookSection,
   WorkbookSelectedCell,
 } from './types.js';
+import {
+  hasWorkbookCellContent,
+  isWorkbookStrictOnlyDifference,
+  normalizeWorkbookCellValueForMode,
+  resolveWorkbookCellDeltaKind,
+  workbookCellsDiffer,
+} from '../../shared/workbookCellSemantics.js';
 
 const WORKBOOK_SHEET_PREFIX = '@@sheet';
 const WORKBOOK_ROW_PREFIX = '@@row';
@@ -97,50 +104,6 @@ function parseWorkbookDisplayLine(line: string | null | undefined): WorkbookDisp
     };
   }
   return null;
-}
-
-function normalizeWorkbookCellValueForMode(
-  value: string,
-  compareMode: WorkbookCompareMode = 'strict',
-): string {
-  if (compareMode === 'content' && value.trim() === '') {
-    return '';
-  }
-  return value;
-}
-
-function hasWorkbookCellContent(
-  cell: WorkbookCellSnapshot,
-  compareMode: WorkbookCompareMode = 'strict',
-): boolean {
-  return normalizeWorkbookCellValueForMode(cell.value, compareMode) !== '' || cell.formula !== '';
-}
-
-function workbookCellsDiffer(
-  leftCell: WorkbookCellSnapshot,
-  rightCell: WorkbookCellSnapshot,
-  compareMode: WorkbookCompareMode = 'strict',
-): boolean {
-  return (
-    normalizeWorkbookCellValueForMode(leftCell.value, compareMode)
-    !== normalizeWorkbookCellValueForMode(rightCell.value, compareMode)
-  ) || leftCell.formula !== rightCell.formula;
-}
-
-function resolveWorkbookCellDeltaKind(
-  baseCell: WorkbookCellSnapshot,
-  mineCell: WorkbookCellSnapshot,
-  compareMode: WorkbookCompareMode = 'strict',
-): WorkbookCellDeltaPayload['kind'] {
-  if (!workbookCellsDiffer(baseCell, mineCell, compareMode)) return 'equal';
-
-  const hasBaseContent = hasWorkbookCellContent(baseCell, compareMode);
-  const hasMineContent = hasWorkbookCellContent(mineCell, compareMode);
-  if (hasBaseContent !== hasMineContent) {
-    return hasMineContent ? 'add' : 'delete';
-  }
-
-  return 'modify';
 }
 
 function buildWorkbookRowSignature(
@@ -736,7 +699,7 @@ function buildFallbackCellDeltaPayload(
     mineCell,
     changed,
     masked: !changed,
-    strictOnly: workbookCellsDiffer(baseCell, mineCell, 'strict') && !workbookCellsDiffer(baseCell, mineCell, 'content'),
+    strictOnly: isWorkbookStrictOnlyDifference(baseCell, mineCell),
     kind: resolveWorkbookCellDeltaKind(baseCell, mineCell, compareMode),
     hasBaseContent,
     hasMineContent,

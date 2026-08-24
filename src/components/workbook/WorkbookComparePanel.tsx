@@ -35,6 +35,7 @@ import {
 import { useWorkbookFrozenPaneState } from '@/hooks/workbook/useWorkbookFrozenPaneState';
 import { useWorkbookCompareViewportSync } from '@/hooks/workbook/useWorkbookCompareViewportSync';
 import { useWorkbookCompareNavigationEffects } from '@/hooks/workbook/useWorkbookCompareNavigationEffects';
+import { useWorkbookSelectionFocusIntent } from '@/hooks/workbook/useWorkbookSelectionFocusIntent';
 import { useWorkbookCompareBodyLayout } from '@/hooks/workbook/useWorkbookCompareBodyLayout';
 import { useWorkbookCompareOverlayLayout } from '@/hooks/workbook/useWorkbookCompareOverlayLayout';
 import { useWorkbookCompareStickyRenderProps } from '@/hooks/workbook/useWorkbookCompareStickyRenderProps';
@@ -120,6 +121,7 @@ import {
 import { buildWorkbookRenderIdentity } from '@/utils/workbook/workbookRenderIdentity';
 import { scrollElementForNavigation } from '@/utils/navigation/animatedScroll';
 import type { WorkbookCollapsedSheetTabItem } from '@/utils/workbook/workbookAutoCollapse';
+import { buildWorkbookNavigationLayoutKey } from '@/utils/workbook/workbookNavigationLayoutKey';
 
 type CompareMode = 'stacked' | 'columns';
 
@@ -228,6 +230,11 @@ const WorkbookComparePanel = memo(({
   const searchJumpNonce = useAppStore((s) => s.searchJumpNonce);
   const guidedPulseNonce = useAppStore((s) => s.guidedPulseNonce);
   const selectedCell = selection.primary;
+  const {
+    focusIntent: selectionFocusIntent,
+    requestSelection,
+    markFocusIntentHandled: handleSelectionFocusIntentHandled,
+  } = useWorkbookSelectionFocusIntent(onSelectionRequest, activeHunkIdx);
   const resolvedActiveWorkbookSectionIdx = activeWorkbookSheetName
     ? findWorkbookSectionIndexByName(workbookSections, activeWorkbookSheetName)
     : 0;
@@ -335,6 +342,10 @@ const WorkbookComparePanel = memo(({
     revealedColumns: revealedAutoColumns,
     revealColumns: revealAutoColumns,
   } = useWorkbookAutoColumnCollapseState(collapseCtx, activeWorkbookSection?.name ?? null);
+  useEffect(() => {
+    if (!collapseCtx || !selectionFocusIntent) return;
+    revealAutoColumns(selectionFocusIntent.target.sheetName, [selectionFocusIntent.target.colIndex]);
+  }, [collapseCtx, revealAutoColumns, selectionFocusIntent]);
   const protectedAutoCollapseColumns = useMemo(() => {
     const columns = new Set<number>();
     [
@@ -697,6 +708,7 @@ const WorkbookComparePanel = memo(({
     const targetWidth = Math.max(targetColumn.width, targetRight - targetLeft);
     const desiredPadding = 24;
     const desiredScrollLeft = Math.max(0, targetLeft - frozenWidth - desiredPadding);
+    const scrollBehavior = strategy === 'focus' ? 'smooth' : 'smart';
 
     if (span.endCol < freezeColumnCount && virtualColumns.isFrozenOverflowing && frozenColumnsScroller) {
       const frozenLeftBoundary = frozenColumnsScroller.scrollLeft + desiredPadding;
@@ -714,7 +726,7 @@ const WorkbookComparePanel = memo(({
               virtualColumns.fullFrozenWidth - virtualColumns.frozenWidth,
             ),
           ),
-          behavior: 'smooth',
+          behavior: scrollBehavior,
         });
       }
       return true;
@@ -722,7 +734,7 @@ const WorkbookComparePanel = memo(({
 
     if (strategy === 'focus') {
       markProgrammaticScroll(640);
-      scrollElementForNavigation(container, { left: desiredScrollLeft, behavior: 'smooth' });
+      scrollElementForNavigation(container, { left: desiredScrollLeft, behavior: scrollBehavior });
       return true;
     }
 
@@ -731,11 +743,11 @@ const WorkbookComparePanel = memo(({
     if (targetLeft < leftBoundary || targetLeft + targetWidth > rightBoundary) {
       markProgrammaticScroll(640);
       if (targetLeft < leftBoundary) {
-        scrollElementForNavigation(container, { left: desiredScrollLeft, behavior: 'smooth' });
+        scrollElementForNavigation(container, { left: desiredScrollLeft, behavior: scrollBehavior });
       } else {
         scrollElementForNavigation(container, {
           left: Math.max(0, targetLeft + targetWidth - container.clientWidth + desiredPadding),
-          behavior: 'smooth',
+          behavior: scrollBehavior,
         });
       }
     }
@@ -947,6 +959,13 @@ const WorkbookComparePanel = memo(({
   const totalFrozenRowsViewportHeight = stickyHeaderRowsViewportHeight + frozenRowsViewportHeight;
   const stickyHeaderHeight = ROW_H + totalFrozenRowsViewportHeight;
   const contentHeight = totalH + stickyHeaderHeight;
+  const navigationLayoutKey = useMemo(() => buildWorkbookNavigationLayoutKey({
+    layout: mode,
+    expandedBlocks: effectiveExpandedBlocks,
+    itemCount: items.length,
+    stackedItemCount: stackedVirtualItems.length,
+    totalHeight: totalH,
+  }), [effectiveExpandedBlocks, items.length, mode, stackedVirtualItems.length, totalH]);
   useWorkbookCompareNavigationEffects({
     active,
     activeSearchMatch,
@@ -957,7 +976,7 @@ const WorkbookComparePanel = memo(({
     showHiddenColumns,
     itemsCount: items.length,
     searchJumpNonce,
-    onSelectionRequest,
+    onSelectionRequest: requestSelection,
     onRevealHiddenRows,
     onRevealHiddenColumns,
     scrollToSearchTarget,
@@ -965,8 +984,11 @@ const WorkbookComparePanel = memo(({
     activeDiffRegion,
     navigationTargetCell,
     selectedCell,
+    selectionFocusIntent,
+    onSelectionFocusIntentHandled: handleSelectionFocusIntentHandled,
     activeHunkIdx,
     guidedPulseNonce,
+    navigationLayoutKey,
     mode,
     frozenRows: paneFrozenRows,
     rowItemIndexBySide,
@@ -1019,12 +1041,12 @@ const WorkbookComparePanel = memo(({
       mine: sheetPresentation.mineMergeRanges,
     });
     if (nextSelection) {
-      onSelectionRequest({
+      requestSelection({
         target: nextSelection,
         reason: 'keyboard',
       });
     }
-  }, [onSelectionRequest, selectedCell, sheetPresentation.baseMergeRanges, sheetPresentation.mineMergeRanges, workbookNavigationRows]);
+  }, [requestSelection, selectedCell, sheetPresentation.baseMergeRanges, sheetPresentation.mineMergeRanges, workbookNavigationRows]);
 
   useEffect(() => {
     if (!active) return;
@@ -1068,10 +1090,10 @@ const WorkbookComparePanel = memo(({
   const handleNavigateCollapsedSheet = useCallback((group: WorkbookCollapsedSheetTabItem) => {
     const section = workbookSections[group.startIndex];
     if (!section) return;
-    onSelectionRequest({ target: null, reason: 'programmatic' });
+    requestSelection({ target: null, reason: 'programmatic' });
     onActiveWorkbookSheetChange(section.name);
     scrollRef.current?.scrollTo({ top: 0, left: 0 });
-  }, [onActiveWorkbookSheetChange, onSelectionRequest, workbookSections]);
+  }, [onActiveWorkbookSheetChange, requestSelection, workbookSections]);
   const handleNavigateCollapsedColumn = useCallback((segment: WorkbookHiddenColumnSegment) => {
     const container = scrollRef.current;
     if (!container) return;
@@ -1318,13 +1340,13 @@ const WorkbookComparePanel = memo(({
   }, [activeWorkbookSection?.name, diffLines, resetActiveCollapseNavigation]);
 
   const handleSelectSheet = useCallback((index: number) => {
-    onSelectionRequest({
+    requestSelection({
       target: null,
       reason: 'programmatic',
     });
     onActiveWorkbookSheetChange(workbookSections[index]?.name ?? null);
     scrollRef.current?.scrollTo({ top: 0, left: 0 });
-  }, [onActiveWorkbookSheetChange, onSelectionRequest, workbookSections]);
+  }, [onActiveWorkbookSheetChange, requestSelection, workbookSections]);
   const handleSelectColumn = useCallback((column: number, side: 'base' | 'mine', meta?: {
     mode?: WorkbookSelectionMode;
     reason?: WorkbookSelectionRequest['reason'];
@@ -1333,7 +1355,7 @@ const WorkbookComparePanel = memo(({
   }) => {
     if (!activeWorkbookSection) return;
     const label = getWorkbookColumnLabel(column);
-    onSelectionRequest({
+    requestSelection({
       target: {
         kind: 'column',
         sheetName: activeWorkbookSection.name,
@@ -1351,7 +1373,7 @@ const WorkbookComparePanel = memo(({
       clientPoint: meta?.clientPoint,
       preserveExistingIfTargetSelected: meta?.preserveExistingIfTargetSelected,
     });
-  }, [activeWorkbookSection, baseVersion, mineVersion, onSelectionRequest]);
+  }, [activeWorkbookSection, baseVersion, mineVersion, requestSelection]);
 
   const handleResizeColumn = useCallback((column: number, width: number) => {
     if (!activeWorkbookSection) return;
@@ -1416,7 +1438,7 @@ const WorkbookComparePanel = memo(({
     baseVersion,
     mineVersion,
     headerRowNumber,
-    onSelectionRequest,
+    onSelectionRequest: requestSelection,
     onHoverChange: setHoveredCanvasCell,
     visibleColumns: sheetPresentation.visibleColumns,
     baseMergedRanges: sheetPresentation.baseMergeRanges,
@@ -1459,6 +1481,7 @@ const WorkbookComparePanel = memo(({
     freezeColumnCount,
     pulseTriggerKey: activeRegionPulseTriggerKey,
     label: activeRegionOverlayLabel,
+    deemphasizeOutline: selection.primary?.kind === 'cell',
   });
   const bodyRenderProps = useWorkbookCompareBodyRenderProps({
     mode,
@@ -1480,7 +1503,7 @@ const WorkbookComparePanel = memo(({
     mineVersion,
     headerRowNumber,
     selection,
-    onSelectionRequest,
+    onSelectionRequest: requestSelection,
     onHoverChange: setHoveredCanvasCell,
     fontSize,
     visibleColumns: sheetPresentation.visibleColumns,
@@ -1561,7 +1584,11 @@ const WorkbookComparePanel = memo(({
         <div
           ref={scrollRef}
           className="flex-1 overflow-y-auto overflow-x-auto relative min-w-0 min-h-0"
-          style={{ overflowAnchor: 'none' }}>
+          style={{
+            overflowAnchor: 'none',
+            overflowX: 'scroll',
+            scrollbarGutter: 'stable',
+          }}>
           <div key={sheetRenderKey} style={{ position: 'relative', minWidth: minBodyWidth, height: contentHeight }}>
             <WorkbookCompareStickyRegion minBodyWidth={minBodyWidth}>
               <WorkbookCompareStickyCanvas {...stickyCanvasProps} />

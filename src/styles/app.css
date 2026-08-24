@@ -58,6 +58,10 @@
   /* ── 行号 ── */
   --color-ln-bg: var(--ln-bg);
   --color-ln-text: var(--ln-text);
+  --color-workbook-header-bg: var(--workbook-header-bg);
+  --color-workbook-header-border: var(--workbook-header-border);
+  --color-workbook-grid-border: var(--workbook-grid-border);
+  --color-workbook-grid-border-strong: var(--workbook-grid-border-strong);
 
   /* ── 搜索高亮 ── */
   --color-search-hl: var(--search-hl);
@@ -81,6 +85,8 @@
 
   /* ── 辅助强调色 ── */
   --color-acc2: var(--acc2);
+  --color-version-base: var(--version-base);
+  --color-version-mine: var(--version-mine);
 
   /* ── 按钮激活态文字 ── */
   --color-btn-active-text: var(--btn-active-text);
@@ -130,27 +136,27 @@
   --text-secondary: #A1A1AA;
 
   /* 强调色 */
-  --accent: #FAFAFA;
-  --accent-hover: #E4E4E7;
-  --accent-muted: rgba(250, 250, 250, 0.15);
+  --accent: #A6BDC9;
+  --accent-hover: #B9CDD5;
+  --accent-muted: rgba(166, 189, 201, 0.18);
 
   /* Diff 新增 */
-  --diff-add-bg: #052E16;
-  --diff-add-hl: #064E3B;
-  --diff-add-text: #34D399;
-  --diff-add-border: #10B981;
+  --diff-add-bg: #11271A;
+  --diff-add-hl: #193C27;
+  --diff-add-text: #86C995;
+  --diff-add-border: #4E9B62;
 
   /* Diff 删除 */
-  --diff-remove-bg: #3F1018;
-  --diff-remove-hl: #7F1D2D;
-  --diff-remove-text: #FDA4AF;
-  --diff-remove-border: #FB7185;
+  --diff-remove-bg: #301C20;
+  --diff-remove-hl: #48282D;
+  --diff-remove-text: #E3A0A6;
+  --diff-remove-border: #C7646B;
 
   /* Diff 修改 */
-  --diff-modify-bg: #332701;
-  --diff-modify-hl: #5B4700;
-  --diff-modify-text: #FDE047;
-  --diff-modify-border: #FACC15;
+  --diff-modify-bg: #2D2818;
+  --diff-modify-hl: #453A21;
+  --diff-modify-text: #D8C477;
+  --diff-modify-border: #B69A3B;
 
   /* 语法高亮 */
   --syntax-keyword: #E879F9;
@@ -162,6 +168,10 @@
   /* 行号 */
   --ln-bg: #18181B;
   --ln-text: #71717A;
+  --workbook-header-bg: #1D2730;
+  --workbook-header-border: #516474;
+  --workbook-grid-border: #27272A;
+  --workbook-grid-border-strong: #3F3F46;
 
   /* 滚动条 */
   --scroll-thumb: rgba(161, 161, 170, 0.25);
@@ -178,12 +188,14 @@
   --text-selection-color: #F8FBFF;
 
   /* MiniMap */
-  --mini-add: #34D399;
-  --mini-del: #FB7185;
+  --mini-add: #86C995;
+  --mini-del: #E3A0A6;
   --mini-vp: rgba(161, 161, 170, 0.16);
 
   /* 强调辅助色 */
-  --acc2: #60A5FA;
+  --acc2: #D0B49A;
+  --version-base: #9FB8C9;
+  --version-mine: #C7AE97;
 
   /* 按钮激活态 */
   --btn-active-bg: var(--accent);
@@ -216,27 +228,27 @@
   --text-secondary: #71717A;
 
   /* 强调色 */
-  --accent: #09090B;
-  --accent-hover: #27272A;
-  --accent-muted: rgba(9, 9, 11, 0.10);
+  --accent: #496778;
+  --accent-hover: #3B5665;
+  --accent-muted: rgba(73, 103, 120, 0.14);
 
   /* Diff 新增 */
-  --diff-add-bg: #D1FAE5;
-  --diff-add-hl: #A7F3D0;
-  --diff-add-text: #065F46;
-  --diff-add-border: #10B981;
+  --diff-add-bg: #E8F5E9;
+  --diff-add-hl: #CFE8D3;
+  --diff-add-text: #1F6B3A;
+  --diff-add-border: #4E9B62;
 
   /* Diff 删除 */
-  --diff-remove-bg: #FEE2E2;
-  --diff-remove-hl: #FECACA;
-  --diff-remove-text: #991B1B;
-  --diff-remove-border: #EF4444;
+  --diff-remove-bg: #F7E8E7;
+  --diff-remove-hl: #EFD0CE;
+  --diff-remove-text: #8C3F45;
+  --diff-remove-border: #C7646B;
 
   /* Diff 修改 */
-  --diff-modify-bg: #FEF3C7;
-  --diff-modify-hl: #FDE68A;
-  --diff-modify-text: #92400E;
-  --diff-modify-border: #F59E0B;
+  --diff-modify-bg: #F6F0DD;
+  --diff-modify-hl: #EADDB3;
+  --diff-modify-text: #76601C;
+  --diff-modify-border: #B69A3B;
 
   /* 语法高亮 */
   --syntax-keyword: #7C3AED;
@@ -248,6 +260,10 @@
   /* 行号 */
   --ln-bg: #FFFFFF;
   --ln-text: #A1A1AA;
+  --workbook-header-bg: #E9EFF3;
+  --workbook-header-border: #AAB8C3;
+  --workbook-grid-border: #E4E4E7;
+  --workbook-grid-border-strong: #D4D4D8;
 
   /* 滚动条 */
   --scroll-thumb: rgba(161, 161, 170, 0.40);
@@ -264,12 +280,14 @@
   --text-selection-color: #0F172A;
 
   /* MiniMap */
-  --mini-add: #10B981;
-  --mini-del: #EF4444;
+  --mini-add: #4E9B62;
+  --mini-del: #C7646B;
   --mini-vp: rgba(9, 9, 11, 0.08);
 
   /* 强调辅助色 */
-  --acc2: #3B82F6;
+  --acc2: #8A6A52;
+  --version-base: #4B6A80;
+  --version-mine: #746252;
 
   /* 按钮激活态 */
   --btn-active-bg: var(--accent);
@@ -334,6 +352,10 @@
   /* 行号 */
   --ln-bg: #000000;
   --ln-text: #00FFFF;
+  --workbook-header-bg: #1A1A1A;
+  --workbook-header-border: #7A8791;
+  --workbook-grid-border: #3F4952;
+  --workbook-grid-border-strong: #56616B;
 
   /* 滚动条 */
   --scroll-thumb: #FFFFFF;
@@ -356,6 +378,8 @@
 
   /* 强调辅助色 */
   --acc2: #00FFFF;
+  --version-base: #00FFFF;
+  --version-mine: #FFFF00;
 
   /* 按钮激活态 */
   --btn-active-bg: var(--accent);
@@ -2281,9 +2305,9 @@ textarea::-moz-selection,
   display: inline-flex;
   align-items: center;
   min-width: 0;
-  height: 20px;
+  height: 22px;
   gap: 4px;
-  padding: 0 6px;
+  padding: 0 7px;
   overflow: hidden;
   white-space: nowrap;
   line-height: 1;
@@ -2350,24 +2374,24 @@ textarea::-moz-selection,
 
 .app-stats-chip__value {
   color: var(--stats-chip-text);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 850;
 }
 
 .app-stats-chip__label {
   color: var(--stats-chip-text);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 760;
 }
 
 .app-stats-chip__label--strong {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 850;
 }
 
 .app-stats-chip__meta-label {
   color: var(--stats-chip-accent);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 850;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -2375,12 +2399,12 @@ textarea::-moz-selection,
 
 .app-stats-chip__meta-value {
   color: var(--text-title);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 760;
 }
 
 .app-stats-chip__meta-value--code {
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .app-stats-role-badge {

@@ -13,21 +13,36 @@ export interface SearchScanResult {
   truncated: boolean;
 }
 
+export type SearchPatternCompilation =
+  | { status: 'empty'; pattern: null }
+  | { status: 'ready'; pattern: RegExp }
+  | { status: 'invalid'; pattern: null };
+
 const MAX_MATERIALIZED_SEARCH_MATCHES = 100_000;
+
+export function compileSearchPattern(
+  query: string,
+  options: SearchOptions,
+): SearchPatternCompilation {
+  if (!query) return { status: 'empty', pattern: null };
+  const source = options.isRegex
+    ? query
+    : query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  try {
+    return {
+      status: 'ready',
+      pattern: new RegExp(source, options.isCaseSensitive ? 'g' : 'gi'),
+    };
+  } catch {
+    return { status: 'invalid', pattern: null };
+  }
+}
 
 export function buildSearchPattern(
   query: string,
   options: SearchOptions,
 ): RegExp | null {
-  if (!query) return null;
-  const source = options.isRegex
-    ? query
-    : query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  try {
-    return new RegExp(source, options.isCaseSensitive ? 'g' : 'gi');
-  } catch {
-    return null;
-  }
+  return compileSearchPattern(query, options).pattern;
 }
 
 export function getSearchableLineContent(line: DiffLine): string {

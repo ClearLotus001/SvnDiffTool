@@ -138,6 +138,9 @@ const SvnConfigDialog = memo(({
   return (
     <DialogFrame
       animationState={animationState}
+      titleId="svn-config-dialog-title"
+      descriptionId="svn-config-dialog-description"
+      onClose={onClose}
       className="w-[1040px] max-w-[calc(100vw-32px)] max-h-[calc(100vh-72px)] overflow-hidden bg-bg-surface-solid border border-border-strong rounded-[28px] p-[24px_24px_20px] shadow-2xl font-ui box-border">
       <button
         type="button"
@@ -160,11 +163,11 @@ const SvnConfigDialog = memo(({
               }}>
               <Settings size={18} />
             </div>
-            <div className="text-text-title text-[32px] font-[920] leading-none tracking-tight">
+            <h2 id="svn-config-dialog-title" className="m-0 text-text-title text-[32px] font-[920] leading-none tracking-tight">
               {t('svnConfigTitle')}
-            </div>
+            </h2>
           </div>
-          <div className="max-w-[660px] text-text-secondary text-[13px] leading-[1.75]">
+          <div id="svn-config-dialog-description" className="max-w-[660px] text-text-secondary text-[13px] leading-[1.75]">
             {t('svnConfigSubtitle')}
           </div>
         </header>

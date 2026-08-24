@@ -1,7 +1,8 @@
 // src/components/MiniMap.tsx
-import { memo, useEffect, useRef, useState, type MouseEvent, type PointerEvent, type RefObject, type WheelEvent } from 'react';
+import { memo, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type RefObject, type WheelEvent } from 'react';
 import type { DiffLine, RenderItem, SplitRenderItem, SplitRow } from '@/types';
 import { useThemeTokens } from '@/context/theme';
+import { useI18n } from '@/context/i18n';
 import { TEXT_DIFF_MINIMAP_WIDTH } from '@/constants/layout';
 import { ROW_H } from '@/hooks/virtualization/useVirtual';
 import {
@@ -12,6 +13,7 @@ import {
 import { resolveDiffMiniMapPaint } from '@/utils/diff/minimapColors';
 import {
   computeMiniMapDragScrollTop,
+  computeMiniMapKeyboardScrollTop,
   computeMiniMapViewportMetrics,
   computeMiniMapWheelScrollTop,
   resolveMiniMapContentHeight,
@@ -243,6 +245,7 @@ export function buildSplitMiniMapSegments(
 }
 
 const MiniMap = memo(({ segments, scrollRef, contentHeight }: MiniMapProps) => {
+  const { t } = useI18n();
   const T = useThemeTokens();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -420,6 +423,20 @@ const MiniMap = memo(({ segments, scrollRef, contentHeight }: MiniMapProps) => {
     event.stopPropagation();
   };
 
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const nextScrollTop = computeMiniMapKeyboardScrollTop({
+      key: event.key,
+      currentScrollTop: el.scrollTop,
+      maxScrollTop: el.scrollHeight - el.clientHeight,
+      viewportHeight: el.clientHeight,
+    });
+    if (nextScrollTop == null) return;
+    el.scrollTop = nextScrollTop;
+    event.preventDefault();
+  };
+
   const handleViewportPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     const cont = contRef.current;
@@ -486,7 +503,11 @@ const MiniMap = memo(({ segments, scrollRef, contentHeight }: MiniMapProps) => {
       ref={contRef}
       onClick={handleClick}
       onWheel={handleWheel}
-      className="relative overflow-hidden cursor-pointer shrink-0 self-stretch border-l border-border-default"
+      onKeyDown={handleKeyDown}
+      role="navigation"
+      aria-label={t('textMiniMapAriaLabel')}
+      tabIndex={0}
+      className="relative overflow-hidden cursor-pointer shrink-0 self-stretch border-l border-border-default outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--acc2)]"
       style={{ width: WIDTH, background: T.bg1 }}>
       <canvas
         ref={canvasRef}

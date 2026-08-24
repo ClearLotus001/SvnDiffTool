@@ -15,6 +15,23 @@ interface UseAppKeyboardShortcutsArgs {
   collapseNavigationRef: MutableRefObject<((direction: 'prev' | 'next') => void) | null>;
 }
 
+interface AppShortcutKeyLike {
+  key: string;
+  code?: string;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  altKey?: boolean;
+}
+
+export function shouldSuppressAppShortcutForModal(event: AppShortcutKeyLike): boolean {
+  if (event.key === 'F1' || event.key === 'F3' || event.key === 'F7') return true;
+  if ((event.ctrlKey || event.metaKey) && ['f', 'g', '[', ']', '\\'].includes(event.key)) return true;
+  return Boolean(
+    event.altKey
+    && (event.code === 'BracketLeft' || event.code === 'BracketRight'),
+  );
+}
+
 function isEditableTarget(target: EventTarget | null) {
   const el = target instanceof HTMLElement ? target : null;
   if (!el) return false;
@@ -37,7 +54,19 @@ export default function useAppKeyboardShortcuts({
   const setWorkbookContextMenu = useAppStore((s) => s.setWorkbookContextMenu);
 
   const { state: dialogState, actions: dialogActions } = dialogs;
-  const { showSearch, showGoto, showHelp } = dialogState;
+  const {
+    showSearch,
+    showGoto,
+    showHelp,
+    showAbout,
+    showSvnConfig,
+    showLocalFileCompare,
+  } = dialogState;
+  const hasBlockingModal = showGoto
+    || showHelp
+    || showAbout
+    || showSvnConfig
+    || showLocalFileCompare;
   const showSearchRef = useRef(showSearch);
 
   useEffect(() => {
@@ -46,6 +75,15 @@ export default function useAppKeyboardShortcuts({
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        dialogActions.closeAll();
+        setWorkbookContextMenu(null);
+        return;
+      }
+      if (hasBlockingModal) {
+        if (shouldSuppressAppShortcutForModal(e)) e.preventDefault();
+        return;
+      }
       if (
         showSearchRef.current
         && !showGoto
@@ -111,11 +149,6 @@ export default function useAppKeyboardShortcuts({
         dialogActions.toggle('help');
         return;
       }
-      if (e.key === 'Escape') {
-        dialogActions.closeAll();
-        setWorkbookContextMenu(null);
-        return;
-      }
       if (showSearchRef.current && e.key === 'F3') {
         e.preventDefault();
         handleSearchNav(e.shiftKey ? -1 : 1);
@@ -142,6 +175,7 @@ export default function useAppKeyboardShortcuts({
     handleNavigationStep,
     handleSearchPreviewNav,
     handleSearchNav,
+    hasBlockingModal,
     isWorkbookMode,
     selectedCell,
     dialogActions,

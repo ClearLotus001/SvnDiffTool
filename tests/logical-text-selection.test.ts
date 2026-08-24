@@ -8,6 +8,7 @@ import {
   doesLogicalTextSelectionIntersectLineRange,
   expandLogicalTextSelectionToWord,
   getLogicalTextSelectionRangeForLine,
+  getLogicalTextSelectionLineRange,
   moveLogicalTextSelectionPoint,
   resolveLogicalTextLineContentForSide,
   type LogicalTextSelection,
@@ -203,4 +204,17 @@ test('doesLogicalTextSelectionIntersectLineRange detects overlap across visible 
   assert.equal(doesLogicalTextSelectionIntersectLineRange(selection, 1, 2), true);
   assert.equal(doesLogicalTextSelectionIntersectLineRange(selection, 3, 5), true);
   assert.equal(doesLogicalTextSelectionIntersectLineRange(selection, 4, 8), false);
+});
+
+test('getLogicalTextSelectionLineRange normalizes reverse selections and counts covered lines', () => {
+  const selection: LogicalTextSelection = {
+    anchor: { lineIdx: 4, side: 'both', column: 3 },
+    focus: { lineIdx: 1, side: 'both', column: 2 },
+  };
+
+  assert.deepEqual(getLogicalTextSelectionLineRange(selection), {
+    startLineIdx: 1,
+    endLineIdx: 4,
+    count: 4,
+  });
 });

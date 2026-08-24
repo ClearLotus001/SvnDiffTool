@@ -30,6 +30,7 @@ interface UseWorkbookCompareOverlayLayoutParams {
   freezeColumnCount: number;
   pulseTriggerKey: string | null;
   label: string;
+  deemphasizeOutline?: boolean;
 }
 
 export function useWorkbookCompareOverlayLayout({
@@ -51,6 +52,7 @@ export function useWorkbookCompareOverlayLayout({
   freezeColumnCount,
   pulseTriggerKey,
   label,
+  deemphasizeOutline = false,
 }: UseWorkbookCompareOverlayLayoutParams): ComponentProps<typeof WorkbookActiveRegionOverlayLayer> {
   const visibleRowFrames = useMemo(() => {
     return resolveWorkbookVisibleRowFrames(sectionRows, [
@@ -115,6 +117,7 @@ export function useWorkbookCompareOverlayLayout({
     resolveFocusPatchBoundsModes,
     pulseTriggerKey,
     label,
+    deemphasizeOutline,
   }), [
     activeDiffRegion,
     activeSheetName,
@@ -124,6 +127,7 @@ export function useWorkbookCompareOverlayLayout({
     freezeColumnCount,
     frozenWidth,
     label,
+    deemphasizeOutline,
     pulseTriggerKey,
     resolveFocusPatchBoundsModes,
     resolvePatchBoundsModes,

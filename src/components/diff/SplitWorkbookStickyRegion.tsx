@@ -145,15 +145,15 @@ export default function SplitWorkbookStickyRegion({
     }}>
       {vertical ? (
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          {renderWorkbookColumns(cssVar('acc2'), 0)}
+          {renderWorkbookColumns(cssVar('versionBase'), 0)}
           <div style={{ height: 1, background: cssVar('border') }} />
-          {renderWorkbookColumns(cssVar('acc'), 0)}
+          {renderWorkbookColumns(cssVar('versionMine'), 0)}
         </div>
       ) : (
         <div style={{ display: 'flex', minWidth: 'max-content' }}>
-          {renderWorkbookColumns(cssVar('acc2'), 0)}
+          {renderWorkbookColumns(cssVar('versionBase'), 0)}
           <div style={{ width: 1, background: cssVar('border'), flexShrink: 0 }} />
-          {renderWorkbookColumns(cssVar('acc'), singleGridWidth + 1)}
+          {renderWorkbookColumns(cssVar('versionMine'), singleGridWidth + 1)}
         </div>
       )}
       {frozenWorkbookRow}

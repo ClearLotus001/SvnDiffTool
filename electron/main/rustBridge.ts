@@ -6,20 +6,25 @@ import { promisify } from 'node:util';
 import { APP_ROOT, RUST_COMMAND_TIMEOUT_MS, RUST_MAX_BUFFER, RUST_PARSER_NAME, SVN_BINARY_MAX_BUFFER, SVN_TEXT_MAX_BUFFER } from './constants.js';
 import { logDebugTiming, logRustDebugStderr } from './logger.js';
 import { logMainWarn } from '../logging.js';
+import {
+  hasWorkbookCellContent,
+  isWorkbookStrictOnlyDifference,
+  resolveWorkbookCellDeltaKind,
+  resolveWorkbookMiniMapDescriptorFromDeltas,
+  resolveWorkbookRowDeltaTone,
+  workbookCellsDiffer,
+} from '../../shared/workbookCellSemantics.js';
 import type {
   DiffLine,
   RustDiffLinePayload,
   RustWorkbookDiffPayload,
-  WorkbookCellDeltaKind,
   WorkbookCellDeltaPayload,
   WorkbookCellSnapshot,
   WorkbookCompareMode,
   WorkbookMetadataMap,
   WorkbookPrecomputedDeltaPayload,
   WorkbookRowMiniMapPaintTone,
-  WorkbookRowMiniMapTone,
   WorkbookRowDeltaPayload,
-  WorkbookRowDeltaTone,
   WorkbookSheetMetadata,
 } from './types.js';
 
@@ -299,111 +304,6 @@ function normalizeRustDiffLines(input: unknown): DiffLine[] | null {
   return diffLines;
 }
 
-// ---------------------------------------------------------------------------
-// Workbook cell/row/delta normalization
-// ---------------------------------------------------------------------------
-
-function normalizeWorkbookCellValueForMode(
-  value: string,
-  compareMode: WorkbookCompareMode = 'strict',
-): string {
-  if (compareMode === 'content' && value.trim() === '') {
-    return '';
-  }
-  return value;
-}
-
-function hasNormalizedWorkbookCellContent(
-  cell: WorkbookCellSnapshot,
-  compareMode: WorkbookCompareMode = 'strict',
-): boolean {
-  return normalizeWorkbookCellValueForMode(cell.value, compareMode) !== '' || cell.formula !== '';
-}
-
-function workbookCellsDifferForMode(
-  leftCell: WorkbookCellSnapshot,
-  rightCell: WorkbookCellSnapshot,
-  compareMode: WorkbookCompareMode = 'strict',
-): boolean {
-  return (
-    normalizeWorkbookCellValueForMode(leftCell.value, compareMode)
-    !== normalizeWorkbookCellValueForMode(rightCell.value, compareMode)
-  ) || leftCell.formula !== rightCell.formula;
-}
-
-function getWorkbookCellDeltaKind(
-  baseCell: WorkbookCellSnapshot,
-  mineCell: WorkbookCellSnapshot,
-  compareMode: WorkbookCompareMode = 'strict',
-): WorkbookCellDeltaKind {
-  if (!workbookCellsDifferForMode(baseCell, mineCell, compareMode)) return 'equal';
-
-  const baseHasContent = hasNormalizedWorkbookCellContent(baseCell, compareMode);
-  const mineHasContent = hasNormalizedWorkbookCellContent(mineCell, compareMode);
-  if (baseHasContent !== mineHasContent) {
-    return mineHasContent ? 'add' : 'delete';
-  }
-
-  return 'modify';
-}
-
-function resolveWorkbookRowDeltaTone(
-  cellDeltas: Iterable<WorkbookCellDeltaPayload>,
-): WorkbookRowDeltaTone {
-  let sawAdd = false;
-  let sawDelete = false;
-  let sawModify = false;
-
-  for (const delta of cellDeltas) {
-    if (!delta.changed) continue;
-    if (delta.kind === 'modify') sawModify = true;
-    else if (delta.kind === 'add') sawAdd = true;
-    else if (delta.kind === 'delete') sawDelete = true;
-  }
-
-  if (!sawAdd && !sawDelete && !sawModify) return 'equal';
-  if (sawModify || (sawAdd && sawDelete)) return 'mixed';
-  if (sawAdd) return 'add';
-  return 'delete';
-}
-
-function resolveWorkbookMiniMapDescriptorFromDeltas(
-  cellDeltas: Iterable<WorkbookCellDeltaPayload>,
-): {
-  tone: WorkbookRowMiniMapTone;
-  tones: WorkbookRowMiniMapPaintTone[];
-} {
-  let sawAdd = false;
-  let sawDelete = false;
-  let sawModify = false;
-  let sawStrictOnly = false;
-
-  for (const delta of cellDeltas) {
-    if (!delta.changed) continue;
-    if (delta.strictOnly) {
-      sawStrictOnly = true;
-      continue;
-    }
-    if (delta.kind === 'add') sawAdd = true;
-    else if (delta.kind === 'delete') sawDelete = true;
-    else if (delta.kind === 'modify') sawModify = true;
-  }
-
-  const tones: WorkbookRowMiniMapPaintTone[] = [];
-  if (sawDelete) tones.push('delete');
-  if (sawModify) tones.push('modify');
-  if (sawAdd) tones.push('add');
-  if (sawStrictOnly) tones.push('strict-only');
-
-  if (tones.length === 0) {
-    return { tone: 'equal', tones };
-  }
-  if (tones.length === 1) {
-    return { tone: tones[0]!, tones };
-  }
-  return { tone: 'mixed', tones };
-}
-
 function normalizeWorkbookCellSnapshot(input: unknown): WorkbookCellSnapshot | null {
   if (!input || typeof input !== 'object') return null;
   const payload = input as {
@@ -427,20 +327,19 @@ function normalizeWorkbookCellDeltaPayload(input: unknown): WorkbookCellDeltaPay
   const explicitChanged = payload.changed ?? payload.x;
   const kindValue = payload.kind ?? payload.k;
   if (!Number.isFinite(column) || !baseCell || !mineCell) return null;
-  const hasBaseContent = hasNormalizedWorkbookCellContent(baseCell, 'strict');
-  const hasMineContent = hasNormalizedWorkbookCellContent(mineCell, 'strict');
-  const valueChanged = workbookCellsDifferForMode(baseCell, mineCell, 'strict');
+  const hasBaseContent = hasWorkbookCellContent(baseCell, 'strict');
+  const hasMineContent = hasWorkbookCellContent(mineCell, 'strict');
+  const valueChanged = workbookCellsDiffer(baseCell, mineCell, 'strict');
   const changed = explicitChanged == null ? true : Boolean(explicitChanged);
   const kind = kindValue === 'equal' || kindValue === 'add' || kindValue === 'delete' || kindValue === 'modify'
     ? kindValue
     : (
       changed
-        ? (valueChanged ? getWorkbookCellDeltaKind(baseCell, mineCell, 'strict') : 'modify')
+        ? (valueChanged ? resolveWorkbookCellDeltaKind(baseCell, mineCell, 'strict') : 'modify')
         : 'equal'
     );
   if (!Number.isFinite(column) || !baseCell || !mineCell || !kind) return null;
-  const strictOnly = workbookCellsDifferForMode(baseCell, mineCell, 'strict')
-    && !workbookCellsDifferForMode(baseCell, mineCell, 'content');
+  const strictOnly = isWorkbookStrictOnlyDifference(baseCell, mineCell);
 
   return {
     column,

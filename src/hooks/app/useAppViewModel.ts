@@ -1,22 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
+import { useCallback, useMemo, type MutableRefObject } from 'react';
 import type { TranslationFn } from '@/context/i18n';
 
 import type {
-  SearchMatch,
   TextDiffStats,
   WorkbookDiffRegion,
 } from '@/types';
 import { computeHunks } from '@/engine/text/diff';
 import { summarizeDiffChanges } from '@/engine/text/textChangeAlignment';
-import { buildSearchPattern, getSearchableLineContent, navigateSearch } from '@/engine/text/search';
-import { computeSearchMatchesAsync } from '@/utils/diff/computeSearchMatchesAsync';
 import {
   resolveDisplayFileName,
   resolveTwoFileVersionLabels,
   resolveVersionLabel,
 } from '@/utils/diff/diffMeta';
 import { prepareTextDiffAnalysisFromDiffLines } from '@/utils/diff/preparedTextAnalysis';
-import { createSearchResultItemResolver } from '@/utils/diff/searchResultItems';
 import {
   EMPTY_WORKBOOK_SECTION_ROW_INDEX,
   buildWorkbookSectionRowIndex,
@@ -34,9 +30,7 @@ import { getWorkbookSharedExpandedBlocks } from '@/utils/workbook/workbookLayout
 import {
   buildWorkbookLineSheetContexts,
   getWorkbookSections,
-  resolveWorkbookSheetNameForLineContext,
 } from '@/utils/workbook/workbookSections';
-import { resolveWorkbookSearchMatchTarget } from '@/utils/workbook/workbookNavigation';
 import {
   applyWorkbookRegionVersionLabels,
   getCompareContextLabels,
@@ -49,7 +43,7 @@ import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
 import { useAppStore } from '@/store/appStore';
 import { createWorkbookSelectionState } from '@/utils/workbook/workbookSelectionState';
 import { revealWorkbookSelection } from '@/utils/workbook/workbookManualVisibility';
-import { getWorkbookSearchableContentStart } from '@/utils/workbook/workbookDisplay';
+import useAppSearchModel from '@/hooks/app/useAppSearchModel';
 
 interface UseAppViewModelArgs {
   t: TranslationFn;
@@ -59,14 +53,7 @@ interface UseAppViewModelArgs {
 }
 
 const WORKBOOK_FILE_EXTENSION_RE = /\.(xlsx|xlsm|xltx|xltm|xlsb|xls)$/i;
-const EMPTY_SEARCH_MATCHES: SearchMatch[] = [];
-const EMPTY_SEARCHABLE_LINES: string[] = [];
-const EMPTY_SEARCHABLE_LINE_PROJECTION = {
-  lines: EMPTY_SEARCHABLE_LINES,
-  lineStartOffsets: null,
-};
 const EMPTY_MODIFIED_WORKBOOK_SHEET_NAMES = new Set<string>();
-const SEARCH_REQUEST_DEBOUNCE_MS = 90;
 
 function isWorkbookFileCandidate(name: string): boolean {
   return WORKBOOK_FILE_EXTENSION_RE.test(name.trim());
@@ -78,11 +65,6 @@ export default function useAppViewModel({
   scrollToIndexRef,
   currentDiffData,
 }: UseAppViewModelArgs) {
-  const searchSeqRef = useRef(0);
-  const [allSearchMatches, setAllSearchMatches] = useState<SearchMatch[]>(EMPTY_SEARCH_MATCHES);
-  const [allSearchMatchCount, setAllSearchMatchCount] = useState(0);
-  const [searchResultsTruncated, setSearchResultsTruncated] = useState(false);
-  const [isSearching, setIsSearching] = useState(false);
   // ── Read state directly from Zustand store ──────────────────────────
   const compareContext = useAppStore((s) => s.compareContext);
   const launchBaseName = useAppStore((s) => s.launchBaseName);
@@ -100,11 +82,6 @@ export default function useAppViewModel({
   const workbookArtifactDiff = useAppStore((s) => s.workbookArtifactDiff);
   const diffSourceNoticeCode = useAppStore((s) => s.diffSourceNoticeCode);
   const diffLines = useAppStore((s) => s.diffLines);
-  const searchQ = useAppStore((s) => s.searchQ);
-  const searchRx = useAppStore((s) => s.searchRx);
-  const searchCs = useAppStore((s) => s.searchCs);
-  const searchWorkbookScope = useAppStore((s) => s.searchWorkbookScope);
-  const searchJumpNonce = useAppStore((s) => s.searchJumpNonce);
   const isElectron = useAppStore((s) => s.isElectron);
   const isDevMode = useAppStore((s) => s.isDevMode);
   const workbookCompareMode = useAppStore((s) => s.workbookCompareMode);
@@ -141,12 +118,6 @@ export default function useAppViewModel({
     [currentDiffData, workbookCompareMode],
   );
   // ── Read setters directly from store ──────────────────────────────────
-  const setSearchQ = useAppStore((s) => s.setSearchQ);
-  const setSearchRx = useAppStore((s) => s.setSearchRx);
-  const setSearchCs = useAppStore((s) => s.setSearchCs);
-  const setSearchWorkbookScope = useAppStore((s) => s.setSearchWorkbookScope);
-  const setActiveSearchIdx = useAppStore((s) => s.setActiveSearchIdx);
-  const setSearchJumpNonce = useAppStore((s) => s.setSearchJumpNonce);
   const setWorkbookSelection = useAppStore((s) => s.setWorkbookSelection);
   const setWorkbookHiddenStateBySheet = useAppStore((s) => s.setWorkbookHiddenStateBySheet);
   const setWorkbookContextMenu = useAppStore((s) => s.setWorkbookContextMenu);
@@ -255,110 +226,6 @@ export default function useAppViewModel({
   const hunkPositions = useMemo(() => hunks.map((h) => h.startIdx), [hunks]);
   const totalHunks = hunks.length;
 
-  const searchPattern = useMemo(
-    () => buildSearchPattern(searchQ, { isRegex: searchRx, isCaseSensitive: searchCs }),
-    [searchQ, searchRx, searchCs],
-  );
-  const hasSearchQuery = searchQ.trim().length > 0;
-  const shouldBuildWorkbookLineSheetContexts = Boolean(searchPattern) && isWorkbookCandidate;
-  const workbookLineSheetContexts = useMemo(
-    () => (shouldBuildWorkbookLineSheetContexts ? buildWorkbookLineSheetContexts(diffLines) : []),
-    [diffLines, shouldBuildWorkbookLineSheetContexts],
-  );
-  const searchableLineProjection = useMemo(() => {
-    if (!hasSearchQuery) return EMPTY_SEARCHABLE_LINE_PROJECTION;
-    const limitToActiveWorkbookSheet = isWorkbookCandidate
-      && searchWorkbookScope === 'sheet'
-      && Boolean(activeWorkbookSheetName)
-      && workbookLineSheetContexts.length > 0;
-    const lines = diffLines.map((line, lineIdx) => {
-      const isLineInSearchScope = !limitToActiveWorkbookSheet
-        || resolveWorkbookSheetNameForLineContext({
-          line,
-          context: workbookLineSheetContexts[lineIdx],
-          preferredSheetName: activeWorkbookSheetName,
-        }) === activeWorkbookSheetName;
-      return isLineInSearchScope ? getSearchableLineContent(line) : '';
-    });
-    return {
-      lines,
-      lineStartOffsets: isWorkbookCandidate
-        ? lines.map(getWorkbookSearchableContentStart)
-        : null,
-    };
-  }, [
-    activeWorkbookSheetName,
-    diffLines,
-    hasSearchQuery,
-    isWorkbookCandidate,
-    searchWorkbookScope,
-    workbookLineSheetContexts,
-  ]);
-  useEffect(() => {
-    const seq = ++searchSeqRef.current;
-    if (!searchPattern || !hasSearchQuery) {
-      setAllSearchMatches(EMPTY_SEARCH_MATCHES);
-      setAllSearchMatchCount(0);
-      setSearchResultsTruncated(false);
-      setIsSearching(false);
-      return;
-    }
-
-    // Keep the previous result set mounted during the debounce window. This
-    // avoids collapsing and rebuilding the floating panel on every keystroke.
-    setIsSearching(false);
-
-    const timeoutId = window.setTimeout(() => {
-      if (seq !== searchSeqRef.current) return;
-      setIsSearching(true);
-      void computeSearchMatchesAsync(
-        searchableLineProjection.lines,
-        {
-          query: searchQ,
-          isRegex: searchRx,
-          isCaseSensitive: searchCs,
-        },
-        searchableLineProjection.lineStartOffsets,
-      ).then((result) => {
-        if (seq !== searchSeqRef.current) return;
-        const matches = result.matches;
-        setIsSearching(false);
-        setAllSearchMatchCount(result.totalCount);
-        setSearchResultsTruncated(result.truncated);
-        if (!isWorkbookCandidate || workbookLineSheetContexts.length === 0) {
-          setAllSearchMatches(matches);
-          return;
-        }
-        setAllSearchMatches(matches.map((match) => ({
-          ...match,
-          workbookTarget: resolveWorkbookSearchMatchTarget(
-            diffLines[match.lineIdx] ?? null,
-            match,
-            workbookLineSheetContexts[match.lineIdx] ?? null,
-          ),
-        })));
-      }).catch(() => {
-        if (seq !== searchSeqRef.current) return;
-        setIsSearching(false);
-        setAllSearchMatches(EMPTY_SEARCH_MATCHES);
-        setAllSearchMatchCount(0);
-        setSearchResultsTruncated(false);
-      });
-    }, SEARCH_REQUEST_DEBOUNCE_MS);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [
-    diffLines,
-    hasSearchQuery,
-    isWorkbookCandidate,
-    searchCs,
-    searchPattern,
-    searchQ,
-    searchRx,
-    searchableLineProjection,
-    workbookLineSheetContexts,
-  ]);
-
   const workbookSections = useMemo(
     () => {
       if (!isWorkbookCandidate) return [];
@@ -367,6 +234,27 @@ export default function useAppViewModel({
     [diffLines, isWorkbookCandidate, preparedWorkbookSections, workbookCompareMode],
   );
   const isWorkbookMode = workbookSections.length > 0;
+  const {
+    searchJumpNonce,
+    isSearching,
+    isSearchPatternInvalid,
+    searchMatches,
+    searchMatchCount,
+    searchResultsTruncated,
+    searchResultItemResolver,
+    handleSearch,
+    handleSearchPreviewNav,
+    handleSearchNav,
+    handleSearchJump,
+  } = useAppSearchModel({
+    t,
+    diffLines,
+    isWorkbookCandidate,
+    isWorkbookMode,
+    activeWorkbookSheetName,
+    baseRoleTitle,
+    mineRoleTitle,
+  });
   const activeWorkbookSection = useMemo(
     () => (
       activeWorkbookSheetName
@@ -385,13 +273,6 @@ export default function useAppViewModel({
     },
     [currentDiffData, diffLines, isWorkbookMode, workbookCompareMode, workbookSections],
   );
-  const searchMatches = useMemo<SearchMatch[]>(() => {
-    if (!isWorkbookMode || searchWorkbookScope !== 'sheet' || !activeWorkbookSheetName) {
-      return allSearchMatches;
-    }
-    return allSearchMatches.filter((match) => match.workbookTarget?.sheetName === activeWorkbookSheetName);
-  }, [activeWorkbookSheetName, allSearchMatches, isWorkbookMode, searchWorkbookScope]);
-  const searchMatchCount = allSearchMatchCount;
   const workbookDiffRegions = useMemo<WorkbookDiffRegion[]>(
     () => {
       if (!isWorkbookMode) return [];
@@ -485,50 +366,7 @@ export default function useAppViewModel({
     });
     return max;
   }, [activeWorkbookSection, diffLines, isWorkbookMode, workbookSections]);
-  const searchResultItemResolver = useMemo(() => createSearchResultItemResolver({
-    diffLines,
-    searchMatches,
-    baseRoleTitle,
-    mineRoleTitle,
-    noResultsLabel: t('searchNoResults'),
-  }), [baseRoleTitle, diffLines, mineRoleTitle, searchMatches, t]);
-
   const canLaunchUninstaller = isElectron && !isDevMode && typeof window.versora?.launchUninstaller === 'function';
-
-  useEffect(() => {
-    setActiveSearchIdx((prev) => {
-      if (searchMatches.length === 0) return -1;
-      if (prev < 0) return 0;
-      return Math.min(prev, searchMatches.length - 1);
-    });
-  }, [searchMatches.length, setActiveSearchIdx]);
-
-  const handleSearch = useCallback((q: string, rx: boolean, cs: boolean, workbookScope: 'all' | 'sheet') => {
-    setSearchQ(q);
-    setSearchRx(rx);
-    setSearchCs(cs);
-    setSearchWorkbookScope(workbookScope);
-    setActiveSearchIdx(q ? 0 : -1);
-    setSearchJumpNonce((value) => value + 1);
-  }, [setActiveSearchIdx, setSearchCs, setSearchJumpNonce, setSearchQ, setSearchRx, setSearchWorkbookScope]);
-
-  const handleSearchNav = useCallback((dir: 1 | -1) => {
-    setActiveSearchIdx((index) => navigateSearch(index, searchMatches.length, dir));
-    setSearchJumpNonce((value) => value + 1);
-  }, [searchMatches.length, setActiveSearchIdx, setSearchJumpNonce]);
-
-  const handleSearchPreviewNav = useCallback((dir: 1 | -1) => {
-    setActiveSearchIdx((index) => navigateSearch(index, searchMatches.length, dir));
-  }, [searchMatches.length, setActiveSearchIdx]);
-
-  const handleSearchJump = useCallback((index: number) => {
-    setActiveSearchIdx(() => (
-      index >= 0 && index < searchMatches.length
-        ? index
-        : -1
-    ));
-    setSearchJumpNonce((value) => value + 1);
-  }, [searchMatches.length, setActiveSearchIdx, setSearchJumpNonce]);
 
   // Build a line-number → diff-index Map for O(1) goto lookup.
   const lineNoToIdx = useMemo(() => {
@@ -643,6 +481,7 @@ export default function useAppViewModel({
     hunkPositions,
     searchJumpNonce,
     isSearching,
+    isSearchPatternInvalid,
     searchMatches,
     searchMatchCount,
     searchResultsTruncated,

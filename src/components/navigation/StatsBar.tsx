@@ -211,7 +211,7 @@ const StatsBar = memo(({
       className="
         app-stats-bar
         bg-bg-surface-solid border-t border-border-default
-        min-h-[30px] shrink-0 w-full min-w-0
+        min-h-[32px] shrink-0 w-full min-w-0
         text-[11px] text-text-secondary font-ui relative z-[18]
         overflow-hidden
       "
@@ -226,7 +226,6 @@ const StatsBar = memo(({
               {metric(deletedPalette, `-${stats.del + stats.chg}`, t('statsRemoved'))}
               {metric(modifiedPalette, `~${stats.chg}`, t('statsModified'))}
 
-              {fileName && metaPill(fileTypeLabel, fileName, cssVar('acc2'))}
               {isWorkbookMode && (
                 <Tooltip
                   content={workbookCompareMode === 'strict'
@@ -296,8 +295,9 @@ const StatsBar = memo(({
                   </div>
                 </Tooltip>
               )}
-              {metaPill(baseTitle, baseVersionLabel, cssVar('acc2'), baseName, 'base')}
-              {metaPill(mineTitle, mineVersionLabel, cssVar('acc'), mineName, 'mine')}
+              {metaPill(baseTitle, baseVersionLabel, cssVar('versionBase'), baseName, 'base')}
+              {metaPill(mineTitle, mineVersionLabel, cssVar('versionMine'), mineName, 'mine')}
+              {fileName && metaPill(fileTypeLabel, fileName, cssVar('acc2'))}
               {lineSelectionSummary && (
                 <Tooltip
                   content={t('statsLineSelectionHint')}
@@ -344,7 +344,7 @@ const StatsBar = memo(({
           </span>
           <span aria-hidden="true" className="app-stats-divider-dot shrink-0" />
           <Tooltip content={t('statsHints')} maxWidth={420}>
-            <span className="max-w-[42vw] overflow-hidden text-ellipsis whitespace-nowrap font-ui text-[10px] text-text-secondary cursor-default text-right">
+            <span className="max-w-[42vw] overflow-hidden text-ellipsis whitespace-nowrap font-ui text-[11px] text-text-secondary cursor-default text-right">
               {t('statsHints')}
             </span>
           </Tooltip>

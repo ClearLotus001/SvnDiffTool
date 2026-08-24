@@ -51,6 +51,7 @@ export const RENDERER_TRANSLATION_PARAM_KEYS = {
   "workbookParserFailed": ["fileName"],
   "workbookParserNoWorksheets": ["fileName"],
   "workbookParserUnsupportedFormat": ["ext"],
+  "workbookSheetMenuLabel": ["count"],
   "workbookSheetTabAddedLabel": ["name"],
   "workbookSheetTabDeletedLabel": ["name"],
   "workbookSheetTabRenameSourceLabel": ["name"],

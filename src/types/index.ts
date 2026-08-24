@@ -1,4 +1,5 @@
 export * from '@/types/diff';
+export * from '@/types/analysis';
 export * from '@/types/view';
 export * from '@/types/workbook';
 export * from '@/types/theme';

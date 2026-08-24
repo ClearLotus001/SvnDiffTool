@@ -29,6 +29,7 @@ interface WorkbookActiveRegionOverlayLayerProps {
   filterPatch?: ((patch: WorkbookDiffRegion['patches'][number]) => boolean) | undefined;
   pulseTriggerKey?: string | null;
   label?: string;
+  deemphasizeOutline?: boolean;
 }
 
 const MIN_OVERLAY_BOX_SIZE = 4;
@@ -175,6 +176,7 @@ const WorkbookActiveRegionOverlayLayer = memo(({
   filterPatch,
   pulseTriggerKey = null,
   label,
+  deemphasizeOutline = false,
 }: WorkbookActiveRegionOverlayLayerProps) => {
   const [canvasAnchorTop, setCanvasAnchorTop] = useState(0);
   const [canvasHeight, setCanvasHeight] = useState(0);
@@ -334,6 +336,7 @@ const WorkbookActiveRegionOverlayLayer = memo(({
             stickyHeaderHeight={stickyHeaderHeight}
             debugRegionId={activeDiffRegion.id}
             pulseTriggerKey={pulseTriggerKey}
+            deemphasizeOutline={deemphasizeOutline}
             canvasAnchorTop={canvasAnchorTop}
             canvasHeight={canvasHeight}
             onRepositionNeeded={handleRepositionNeeded}

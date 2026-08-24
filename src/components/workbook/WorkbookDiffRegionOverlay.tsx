@@ -1,5 +1,4 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
-import { FONT_SIZE, FONT_UI } from '@/constants/typography';
 import { useThemeTokens } from '@/context/theme';
 import { isWorkbookDebugEnabled, workbookDebugLog } from '@/utils/workbook/workbookDebug';
 import {
@@ -387,6 +386,7 @@ interface WorkbookDiffRegionOverlayProps {
   debugRegionId?: string;
   pulseTriggerKey?: string | null;
   label?: string;
+  deemphasizeOutline?: boolean;
   /**
    * The canvas is positioned in content-space at this Y offset
    * (non-sticky). Boxes are mapped to canvas coordinates by subtracting this
@@ -403,33 +403,6 @@ interface WorkbookDiffRegionOverlayProps {
   onRepositionNeeded: (scrollTop: number) => void;
 }
 
-function ellipsizeCanvasText(
-  ctx: CanvasRenderingContext2D,
-  value: string,
-  maxWidth: number,
-): string {
-  if (maxWidth <= 0) return '';
-  if (ctx.measureText(value).width <= maxWidth) return value;
-
-  const ellipsis = '…';
-  const ellipsisWidth = ctx.measureText(ellipsis).width;
-  if (ellipsisWidth >= maxWidth) return ellipsis;
-
-  let low = 0;
-  let high = value.length;
-  while (low < high) {
-    const mid = Math.ceil((low + high) / 2);
-    const candidate = `${value.slice(0, mid)}${ellipsis}`;
-    if (ctx.measureText(candidate).width <= maxWidth) {
-      low = mid;
-    } else {
-      high = mid - 1;
-    }
-  }
-
-  return `${value.slice(0, low)}${ellipsis}`;
-}
-
 const WorkbookDiffRegionOverlay = memo(({
   scrollRef,
   resolveBoxSet,
@@ -439,6 +412,7 @@ const WorkbookDiffRegionOverlay = memo(({
   debugRegionId,
   pulseTriggerKey = null,
   label,
+  deemphasizeOutline = false,
   canvasAnchorTop,
   canvasHeight,
   onRepositionNeeded,
@@ -652,75 +626,27 @@ const WorkbookDiffRegionOverlay = memo(({
         ? focusOutlineSegments
         : outlineSegments;
 
-      activeOutlineSegments.forEach((segment) => {
-        const palette = resolveWorkbookOverlayPalette(T, segment.tone ?? 'mixed');
-        ctx.save();
-        if (pulseStrength > 0) {
-          ctx.shadowColor = applyOverlayAlpha(
-            palette.shine,
-            FOCUS_OUTLINE_PULSE_SHADOW_ALPHA + (pulseStrength * 0.24),
-          );
-          ctx.shadowBlur = FOCUS_OUTLINE_PULSE_SHADOW_BLUR + (pulseStrength * 8);
-        }
-        ctx.fillStyle = applyOverlayAlpha(palette.mid, FOCUS_OUTLINE_ALPHA);
-        ctx.fillRect(segment.left, segment.top, segment.width, segment.height);
-        ctx.restore();
-      });
-
-      if (label) {
-        const labelBoxes = focusOutlineBoxes.length > 0
-          ? focusOutlineBoxes
-          : outlineBoxes.length > 0
-            ? outlineBoxes
-            : fillBoxes;
-        const labelAnchor = labelBoxes.reduce<WorkbookDiffRegionOverlayBox | null>((best, box) => {
-          if (!best) return box;
-          if (box.top < best.top) return box;
-          if (box.top === best.top && box.left < best.left) return box;
-          return best;
-        }, null);
-        if (labelAnchor) {
-          const palette = resolveWorkbookOverlayPalette(T, labelAnchor.tone ?? 'mixed');
-          const labelPaddingX = 8;
-          const labelHeight = 20;
-          const labelTop = Math.max(
-            2,
-            Math.min(
-              effectiveCanvasHeight - labelHeight - 2,
-              labelAnchor.top >= 26 ? labelAnchor.top - 22 : labelAnchor.top + 4,
-            ),
-          );
-          const labelLeft = Math.max(2, labelAnchor.left + 6);
-          const labelMaxWidth = Math.max(140, Math.min(360, labelAnchor.width - 12 || 240));
-          const labelWidth = Math.max(0, Math.min(labelMaxWidth, viewportWidth - labelLeft - 2));
-
-          if (labelWidth > 0) {
-            ctx.save();
-            ctx.font = `700 ${FONT_SIZE.xs}px ${FONT_UI}`;
-            const text = ellipsizeCanvasText(ctx, label, Math.max(0, labelWidth - (labelPaddingX * 2)));
-            ctx.shadowColor = `${T.t0}14`;
-            ctx.shadowBlur = 8 + (pulseStrength * 3);
-            ctx.fillStyle = applyOverlayAlpha(T.bg1, 0.95);
-            ctx.strokeStyle = applyOverlayAlpha(palette.mid, 0.53);
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.rect(labelLeft, labelTop, labelWidth, labelHeight);
-            ctx.fill();
-            ctx.stroke();
-            ctx.shadowBlur = 0;
-            ctx.fillStyle = palette.mid;
-            ctx.textBaseline = 'middle';
-            ctx.textAlign = 'left';
-            ctx.fillText(text, labelLeft + labelPaddingX, labelTop + (labelHeight / 2));
-            ctx.restore();
+      if (!deemphasizeOutline) {
+        activeOutlineSegments.forEach((segment) => {
+          const palette = resolveWorkbookOverlayPalette(T, segment.tone ?? 'mixed');
+          ctx.save();
+          if (pulseStrength > 0) {
+            ctx.shadowColor = applyOverlayAlpha(
+              palette.shine,
+              FOCUS_OUTLINE_PULSE_SHADOW_ALPHA + (pulseStrength * 0.24),
+            );
+            ctx.shadowBlur = FOCUS_OUTLINE_PULSE_SHADOW_BLUR + (pulseStrength * 8);
           }
-        }
+          ctx.fillStyle = applyOverlayAlpha(palette.mid, FOCUS_OUTLINE_ALPHA);
+          ctx.fillRect(segment.left, segment.top, segment.width, segment.height);
+          ctx.restore();
+        });
       }
 
       ctx.restore();
     };
     drawRef.current('layout');
-  }, [T, canvasAnchorTop, debugRegionId, effectiveCanvasHeight, label, pulseNonce, pulseProgress, resolveBoxSet, scrollRef, stickyHeaderHeight, viewportHeight, viewportWidth]);
+  }, [T, canvasAnchorTop, deemphasizeOutline, debugRegionId, effectiveCanvasHeight, label, pulseNonce, pulseProgress, resolveBoxSet, scrollRef, stickyHeaderHeight, viewportHeight, viewportWidth]);
 
   useEffect(() => {
     const scroller = scrollRef.current;

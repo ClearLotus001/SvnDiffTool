@@ -16,6 +16,8 @@ test('goto action keeps the correct inverse contrast in every theme', async ({ p
       mineContent: 'one\nchanged\nthree',
     });
   });
+  await expect(page.locator('.app-toolbar')).not.toContainText('goto-theme.txt');
+  await expect(page.locator('.app-stats-bar')).toContainText('goto-theme.txt');
 
   await page.keyboard.press('Control+g');
   const dialog = page.getByRole('dialog');
@@ -26,8 +28,8 @@ test('goto action keeps the correct inverse contrast in every theme', async ({ p
   await expect(submit).toBeEnabled();
 
   const expected = {
-    light: { color: 'rgb(250, 250, 250)', activeBackground: '#09090B' },
-    dark: { color: 'rgb(9, 9, 11)', activeBackground: '#FAFAFA' },
+    light: { color: 'rgb(250, 250, 250)', activeBackground: '#496778' },
+    dark: { color: 'rgb(9, 9, 11)', activeBackground: '#A6BDC9' },
     hc: { color: 'rgb(0, 0, 0)', activeBackground: '#FFFF00' },
   } as const;
 

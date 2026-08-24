@@ -69,9 +69,16 @@ import { useCollapseNavigationState, type CollapseNavigationHandler } from '@/ho
 import { useLogicalTextSelectionState } from '@/hooks/diff/useLogicalTextSelectionState';
 import { useResolvedTextLineNavigation } from '@/hooks/diff/useResolvedTextLineNavigation';
 import { useTextSearchDecorations } from '@/hooks/diff/useTextSearchDecorations';
-import { useTextSelectionContextMenu } from '@/hooks/diff/useTextSelectionContextMenu';
+import {
+  useTextSelectionContextMenu,
+  type TextSelectionContextMenuSideMode,
+} from '@/hooks/diff/useTextSelectionContextMenu';
 import { useTextLineRangeSelectionState } from '@/hooks/diff/useTextLineRangeSelectionState';
-import { doesLogicalTextSelectionIntersectLineRange } from '@/utils/diff/logicalTextSelection';
+import {
+  doesLogicalTextSelectionIntersectLineRange,
+  getLogicalTextSelectionLineRange,
+  type LogicalTextSelection,
+} from '@/utils/diff/logicalTextSelection';
 import { useSplitPanelLayoutSnapshotEffects } from '@/hooks/diff/useSplitPanelLayoutSnapshotEffects';
 import { useSplitPanelWorkbookNavigationRows } from '@/hooks/diff/useSplitPanelWorkbookNavigationRows';
 import { materializeSplitRowsFromDescriptors, prepareTextDiffAnalysisFromDiffLines } from '@/utils/diff/preparedTextAnalysis';
@@ -96,6 +103,19 @@ const DEFAULT_SPLIT_RATIO = 0.5;
 const MIN_SPLIT_RATIO = 0.2;
 const MAX_SPLIT_RATIO = 0.8;
 const SPLIT_DIVIDER_WIDTH = 12;
+
+function resolveTextSelectionSideMode(
+  selection: LogicalTextSelection | null,
+): TextSelectionContextMenuSideMode {
+  if (
+    selection
+    && selection.anchor.side === selection.focus.side
+    && (selection.anchor.side === 'base' || selection.anchor.side === 'mine')
+  ) {
+    return selection.anchor.side;
+  }
+  return 'both';
+}
 
 // Fully typed — no `as any` casts
 type SplitItem =
@@ -303,6 +323,13 @@ const SplitPanel = memo(({
     ? { width: 'max-content' as const, minWidth: '100%' as const }
     : { width: 'max-content' as const, minWidth: '100%' as const };
 
+  const collapseLineRange = useCallback((startLineIdx: number, endLineIdx: number) => {
+    setExpandedBlocks((prev) => addManualCollapsedRange(
+      prev,
+      startLineIdx,
+      endLineIdx,
+    ));
+  }, []);
   const {
     lineRangeSelection,
     setLineRangeSelection,
@@ -589,18 +616,58 @@ const SplitPanel = memo(({
   }, [onSelectCell, selectedCell, workbookNavigationRows]);
 
   const handlePaneContextMenu = useCallback((side: 'left' | 'right', event: ReactMouseEvent<HTMLElement>) => {
-    const textSelection = side === 'left' ? leftTextSelectionCopyText : rightTextSelectionCopyText;
+    const selection = side === 'left' ? leftTextSelection : rightTextSelection;
+    const copyText = side === 'left' ? leftTextSelectionCopyText : rightTextSelectionCopyText;
+    const clearSelection = side === 'left' ? clearLeftTextSelection : clearRightTextSelection;
+    const selectionLineRange = getLogicalTextSelectionLineRange(selection);
 
-    if (openTextSelectionContextMenu(event, textSelection)) return;
+    if (selectionLineRange && openTextSelectionContextMenu(event, {
+      copyText,
+      ...selectionLineRange,
+      sideMode: side === 'left' ? 'base' : 'mine',
+      onFoldSelectedRange: () => {
+        collapseLineRange(selectionLineRange.startLineIdx, selectionLineRange.endLineIdx);
+        clearSelection();
+      },
+      onClearSelectedRange: clearSelection,
+    })) return;
 
     void openLineSelectionContextMenu(event, side === 'left' ? 'base' : 'mine');
-  }, [leftTextSelectionCopyText, openLineSelectionContextMenu, openTextSelectionContextMenu, rightTextSelectionCopyText]);
+  }, [
+    clearLeftTextSelection,
+    clearRightTextSelection,
+    collapseLineRange,
+    leftTextSelection,
+    leftTextSelectionCopyText,
+    openLineSelectionContextMenu,
+    openTextSelectionContextMenu,
+    rightTextSelection,
+    rightTextSelectionCopyText,
+  ]);
 
   const handleContextMenu = useCallback((event: ReactMouseEvent<HTMLElement>) => {
     if (isWorkbookMode) return;
-    if (openTextSelectionContextMenu(event, combinedTextSelectionCopyText)) return;
+    const selectionLineRange = getLogicalTextSelectionLineRange(combinedTextSelection);
+    if (selectionLineRange && openTextSelectionContextMenu(event, {
+      copyText: combinedTextSelectionCopyText,
+      ...selectionLineRange,
+      sideMode: resolveTextSelectionSideMode(combinedTextSelection),
+      onFoldSelectedRange: () => {
+        collapseLineRange(selectionLineRange.startLineIdx, selectionLineRange.endLineIdx);
+        clearCombinedTextSelection();
+      },
+      onClearSelectedRange: clearCombinedTextSelection,
+    })) return;
     void openLineSelectionContextMenu(event, 'both');
-  }, [combinedTextSelectionCopyText, isWorkbookMode, openLineSelectionContextMenu, openTextSelectionContextMenu]);
+  }, [
+    clearCombinedTextSelection,
+    collapseLineRange,
+    combinedTextSelection,
+    combinedTextSelectionCopyText,
+    isWorkbookMode,
+    openLineSelectionContextMenu,
+    openTextSelectionContextMenu,
+  ]);
 
   const lastHoveredPaneSideRef = useRef<'left' | 'right' | null>(null);
   useEffect(() => {

@@ -39,10 +39,10 @@ const Ln = memo(({
   const interactive = Boolean(onClick);
   const emphasize = selected || (interactive && (hovered || focused));
   const accentColor = tone === 'mine'
-    ? cssVar('acc')
+    ? cssVar('versionMine')
     : tone === 'base'
-      ? cssVar('acc2')
-      : `color-mix(in srgb, ${cssVar('acc2')} 68%, ${cssVar('acc')} 32%)`;
+      ? cssVar('versionBase')
+      : `color-mix(in srgb, ${cssVar('versionBase')} 58%, ${cssVar('versionMine')} 42%)`;
   const effectiveSelectedColor = selectedColor ?? accentColor;
   const compactBlameLabel = formatCompactLineBlameVersion(blame);
   const blameAccentColor = blame?.uncommitted ? 'var(--diff-modify-border)' : accentColor;

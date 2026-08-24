@@ -20,6 +20,7 @@ interface TokenTextProps {
   selectionRanges?: TokenSearchRange[] | undefined;
   selectionHlBg?: string | undefined;
   selectionTextColor?: string | undefined;
+  showWhitespace?: boolean | undefined;
 }
 
 interface AnnotatedSegment {
@@ -81,11 +82,17 @@ const TokenText = memo(({
   selectionRanges = [],
   selectionHlBg,
   selectionTextColor,
+  showWhitespace = false,
 }: TokenTextProps) => {
   const themeKey = useTheme();
   const colors = useMemo(() => makeTokenColors(themeKey), [themeKey]);
   const annotatedSegments = useMemo<AnnotatedSegment[] | null>(() => {
-    if (searchRanges.length === 0 && selectionRanges.length === 0 && (!charSpans || charSpans.length === 0)) return null;
+    if (
+      searchRanges.length === 0
+      && selectionRanges.length === 0
+      && (!charSpans || charSpans.length === 0)
+      && !showWhitespace
+    ) return null;
 
     const content = (charSpans?.map((span) => span.text).join('') ?? tokens.map((token) => token.text).join(''));
     if (!content) return null;
@@ -174,7 +181,7 @@ const TokenText = memo(({
     }
 
     return segments;
-  }, [charSpans, colors, searchRanges, selectionRanges, tokens]);
+  }, [charSpans, colors, searchRanges, selectionRanges, showWhitespace, tokens]);
 
   if (annotatedSegments) {
     return (
@@ -205,15 +212,27 @@ const TokenText = memo(({
             padding: background && !isSelectionOnly ? '0 1px' : undefined,
             ...resolveFontStyle(segment.fontStyle),
           };
+          const revealWhitespace = showWhitespace || segment.selectionHighlighted;
+          const renderedText = revealWhitespace
+            ? segment.text.replace(/ /g, '·')
+            : segment.text;
+          const containsVisibleWhitespace = revealWhitespace && segment.text.includes(' ');
           return background ? (
             <mark
               key={index}
               data-diff-char-highlight={segment.diffHighlighted ? 'true' : undefined}
+              data-selection-whitespace={segment.selectionHighlighted && containsVisibleWhitespace ? 'true' : undefined}
+              data-visible-whitespace={containsVisibleWhitespace ? 'true' : undefined}
               style={style}>
-              {segment.text}
+              {renderedText}
             </mark>
           ) : (
-            <span key={index} style={{ color: segment.color, ...resolveFontStyle(segment.fontStyle) }}>{segment.text}</span>
+            <span
+              key={index}
+              data-visible-whitespace={containsVisibleWhitespace ? 'true' : undefined}
+              style={{ color: segment.color, ...resolveFontStyle(segment.fontStyle) }}>
+              {renderedText}
+            </span>
           );
         })}
       </>

@@ -23,6 +23,12 @@ export interface LogicalTextSelectionRange {
   end: number;
 }
 
+export interface LogicalTextSelectionLineRange {
+  startLineIdx: number;
+  endLineIdx: number;
+  count: number;
+}
+
 export type LogicalTextSelectionDirection = 'left' | 'right' | 'up' | 'down';
 
 function isWordCharacter(char: string) {
@@ -92,6 +98,19 @@ function normalizeLogicalTextSelection(selection: LogicalTextSelection) {
 export function isLogicalTextSelectionCollapsed(selection: LogicalTextSelection | null | undefined) {
   if (!selection) return true;
   return compareLogicalTextSelectionPoints(selection.anchor, selection.focus) === 0;
+}
+
+export function getLogicalTextSelectionLineRange(
+  selection: LogicalTextSelection | null | undefined,
+): LogicalTextSelectionLineRange | null {
+  if (!selection || isLogicalTextSelectionCollapsed(selection)) return null;
+  const startLineIdx = Math.min(selection.anchor.lineIdx, selection.focus.lineIdx);
+  const endLineIdx = Math.max(selection.anchor.lineIdx, selection.focus.lineIdx);
+  return {
+    startLineIdx,
+    endLineIdx,
+    count: endLineIdx - startLineIdx + 1,
+  };
 }
 
 export function isLogicalTextPointWithinSelection(

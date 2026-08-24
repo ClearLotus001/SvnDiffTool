@@ -4,12 +4,14 @@ import {
   useRef,
   useState,
   type MouseEvent,
+  type KeyboardEvent,
   type MutableRefObject,
   type PointerEvent,
   type RefObject,
   type WheelEvent,
 } from 'react';
 import { useThemeTokens } from '@/context/theme';
+import { useI18n } from '@/context/i18n';
 import {
   buildMiniMapOverlayMarkers,
   DEFAULT_MINIMAP_OVERLAY_MARKER_HEIGHT,
@@ -18,6 +20,7 @@ import {
 import { resolveDiffMiniMapPaint } from '@/utils/diff/minimapColors';
 import {
   computeMiniMapDragScrollTop,
+  computeMiniMapKeyboardScrollTop,
   computeMiniMapViewportMetrics,
   computeMiniMapWheelScrollTop,
   resolveMiniMapContentHeight,
@@ -120,7 +123,7 @@ function applyWorkbookMiniMapPaint(
       }
       if (resolvedTones.includes('strict-only')) {
         const strictStripeLeft = left + Math.floor((width - accentStripeWidth) / 2);
-        ctx.fillStyle = theme.acc2;
+        ctx.fillStyle = theme.searchHl;
         ctx.fillRect(strictStripeLeft, top, accentStripeWidth, height);
       }
       return ctx.fillStyle;
@@ -212,6 +215,7 @@ const WorkbookMiniMap = memo(({
   debugRef,
 }: WorkbookMiniMapProps) => {
   const T = useThemeTokens();
+  const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const contRef = useRef<HTMLDivElement>(null);
@@ -408,6 +412,20 @@ const WorkbookMiniMap = memo(({
     event.stopPropagation();
   };
 
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const nextScrollTop = computeMiniMapKeyboardScrollTop({
+      key: event.key,
+      currentScrollTop: el.scrollTop,
+      maxScrollTop: el.scrollHeight - el.clientHeight,
+      viewportHeight: el.clientHeight,
+    });
+    if (nextScrollTop == null) return;
+    el.scrollTop = nextScrollTop;
+    event.preventDefault();
+  };
+
   const handleViewportPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     const cont = contRef.current;
@@ -474,7 +492,11 @@ const WorkbookMiniMap = memo(({
       ref={contRef}
       onClick={handleClick}
       onWheel={handleWheel}
-      className="relative overflow-hidden cursor-pointer shrink-0"
+      onKeyDown={handleKeyDown}
+      role="navigation"
+      aria-label={t('workbookMiniMapAriaLabel')}
+      tabIndex={0}
+      className="group relative overflow-hidden cursor-pointer shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--acc2)]"
       style={{
         width: WIDTH,
         minWidth: WIDTH,
@@ -483,7 +505,7 @@ const WorkbookMiniMap = memo(({
       }}>
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 w-full h-full"
+        className="absolute inset-0 w-full h-full opacity-60 group-hover:opacity-90 group-focus-visible:opacity-90 transition-opacity duration-150"
         style={{ imageRendering: 'pixelated', zIndex: 0 }}
       />
       <div
@@ -507,7 +529,7 @@ const WorkbookMiniMap = memo(({
       />
       <canvas
         ref={overlayCanvasRef}
-        className="absolute inset-0 w-full h-full pointer-events-none"
+        className="absolute inset-0 w-full h-full pointer-events-none opacity-75 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-150"
         style={{ imageRendering: 'pixelated', zIndex: 1 }}
       />
     </div>

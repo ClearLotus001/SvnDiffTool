@@ -156,6 +156,7 @@ export function useWorkbookCompareStickyRenderProps({
   const headerRowsPaneProps = useMemo<ComponentProps<typeof WorkbookCompareStickyCanvas>['headerRowsPaneProps']>(() => (
     stickyHeaderRowsHeight > 0
       ? {
+        appearance: 'header',
         frozenRowsScrollRef: stickyHeaderRowsScrollRef,
         isHovered: false,
         onHoverEnter: () => {},

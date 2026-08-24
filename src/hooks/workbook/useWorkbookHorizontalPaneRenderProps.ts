@@ -136,6 +136,7 @@ export function useWorkbookHorizontalPaneRenderProps({
           resolveFocusPatchBoundsModes: () => [...boundsModes],
           filterPatch,
           pulseTriggerKey: activeRegionPulseTriggerKey,
+          deemphasizeOutline: selection.primary?.kind === 'cell',
           ...(overlayLabels[side] ? { label: overlayLabels[side] } : {}),
         },
       };

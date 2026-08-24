@@ -114,7 +114,7 @@ export function useWorkbookHorizontalViewportSync({
     if (!active || !onLayoutSnapshotChange) return;
     const scrollState = readSnapshotScrollState();
     lastSnapshotScrollRef.current = scrollState;
-    onLayoutSnapshotChange(buildWorkbookHorizontalLayoutSnapshot(
+    const snapshot = buildWorkbookHorizontalLayoutSnapshot(
       activeSheetName,
       activeRegionId,
       scrollState.leftScrollTop,
@@ -123,7 +123,18 @@ export function useWorkbookHorizontalViewportSync({
       scrollState.rightScrollLeft,
       splitRatio,
       expandedBlocks,
-    ));
+    );
+    lastRestoredSnapshotKeyRef.current = [
+      snapshot.layout,
+      snapshot.activeRegionId,
+      snapshot.sheetName,
+      snapshot.leftScrollTop,
+      snapshot.leftScrollLeft,
+      snapshot.rightScrollTop,
+      snapshot.rightScrollLeft,
+      snapshot.splitRatio ?? '',
+    ].join(':');
+    onLayoutSnapshotChange(snapshot);
   }, [
     active,
     activeRegionId,
@@ -139,7 +150,10 @@ export function useWorkbookHorizontalViewportSync({
 
   const scheduleLayoutSnapshot = useCallback((priority: 'frame' | 'deferred' = 'frame') => {
     if (priority === 'deferred') {
-      if (snapshotEmitRafRef.current || snapshotEmitTimeoutRef.current != null) return;
+      if (snapshotEmitRafRef.current) return;
+      if (snapshotEmitTimeoutRef.current != null) {
+        window.clearTimeout(snapshotEmitTimeoutRef.current);
+      }
       snapshotEmitTimeoutRef.current = window.setTimeout(() => {
         snapshotEmitTimeoutRef.current = null;
         emitLayoutSnapshotRef.current();

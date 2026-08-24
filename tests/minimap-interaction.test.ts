@@ -3,11 +3,28 @@ import assert from 'node:assert/strict';
 
 import {
   computeMiniMapDragScrollTop,
+  computeMiniMapKeyboardScrollTop,
   computeMiniMapViewportMetrics,
   computeMiniMapWheelScrollTop,
   resolveMiniMapContentHeight,
   resolveMiniMapTrackHeight,
 } from '../src/utils/diff/minimapInteraction';
+
+test('minimap keyboard scrolling handles row, page, and edge navigation', () => {
+  const params = {
+    currentScrollTop: 400,
+    maxScrollTop: 1200,
+    viewportHeight: 500,
+  };
+
+  assert.equal(computeMiniMapKeyboardScrollTop({ ...params, key: 'ArrowUp' }), 328);
+  assert.equal(computeMiniMapKeyboardScrollTop({ ...params, key: 'ArrowDown' }), 472);
+  assert.equal(computeMiniMapKeyboardScrollTop({ ...params, key: 'PageUp' }), 0);
+  assert.equal(computeMiniMapKeyboardScrollTop({ ...params, key: 'PageDown' }), 810);
+  assert.equal(computeMiniMapKeyboardScrollTop({ ...params, key: 'Home' }), 0);
+  assert.equal(computeMiniMapKeyboardScrollTop({ ...params, key: 'End' }), 1200);
+  assert.equal(computeMiniMapKeyboardScrollTop({ ...params, key: 'Enter' }), null);
+});
 
 test('minimap content height falls back to the actual scroller extent during interaction', () => {
   assert.equal(resolveMiniMapContentHeight(900, 1200, 200), 1200);

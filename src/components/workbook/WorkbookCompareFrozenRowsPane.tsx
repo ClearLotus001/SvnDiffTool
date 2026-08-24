@@ -23,6 +23,7 @@ import WorkbookColumnsCanvasStrip from '@/components/workbook/WorkbookColumnsCan
 import WorkbookStackedCanvasStrip from '@/components/workbook/WorkbookStackedCanvasStrip';
 
 interface WorkbookCompareFrozenRowsPaneProps {
+  appearance?: 'header' | 'frozen';
   frozenRowsScrollRef: RefObject<HTMLDivElement | null>;
   isHovered: boolean;
   onHoverEnter: () => void;
@@ -61,6 +62,7 @@ interface WorkbookCompareFrozenRowsPaneProps {
 }
 
 export default function WorkbookCompareFrozenRowsPane({
+  appearance = 'frozen',
   frozenRowsScrollRef,
   isHovered,
   onHoverEnter,
@@ -100,9 +102,11 @@ export default function WorkbookCompareFrozenRowsPane({
   const { t } = useI18n();
   if (frozenRowsViewportHeight <= 0) return null;
   const showStatusBadge = frozenRowsViewportIsOverflowing;
+  const isHeaderSurface = appearance === 'header';
 
   return (
     <div
+      data-workbook-frozen-rows-pane={appearance}
       ref={frozenRowsScrollRef}
       onMouseEnter={onHoverEnter}
       onMouseLeave={onHoverLeave}
@@ -113,10 +117,12 @@ export default function WorkbookCompareFrozenRowsPane({
         overflowX: 'hidden',
         overflowAnchor: 'none',
         background: cssVar('bg1'),
-        borderRadius: 12,
-        boxShadow: isHovered
-          ? `inset 0 0 0 1px ${cssVar('acc')}, 0 0 0 1px color-mix(in srgb, ${cssVar('acc')} 13%, transparent)`
-          : `inset 0 0 0 1px ${cssVar('border')}`,
+        borderRadius: isHeaderSurface ? 0 : 12,
+        boxShadow: isHeaderSurface
+          ? `inset 0 -1px 0 ${cssVar('border2')}`
+          : isHovered
+            ? `inset 0 0 0 1px ${cssVar('acc')}, 0 0 0 1px color-mix(in srgb, ${cssVar('acc')} 13%, transparent)`
+            : `inset 0 0 0 1px ${cssVar('border')}`,
       }}>
       {showStatusBadge && (
         <div

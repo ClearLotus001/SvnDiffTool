@@ -14,6 +14,8 @@ interface AxisAnimation {
   to: number;
   startedAt: number;
   duration: number;
+  easing: (progress: number) => number;
+  behavior: 'smart' | 'smooth';
   linkedElements: readonly HTMLElement[];
 }
 
@@ -26,9 +28,13 @@ interface ElementScrollAnimation {
 }
 
 const activeAnimations = new WeakMap<HTMLElement, ElementScrollAnimation>();
-const MIN_SCROLL_DURATION_MS = 240;
-const MAX_SCROLL_DURATION_MS = 520;
-const SCROLL_DURATION_STEP_MS = 68;
+const SCROLL_AXES = ['top', 'left'] as const;
+const MIN_SCROLL_DURATION_MS = 180;
+const MAX_SCROLL_DURATION_MS = 420;
+const SCROLL_DURATION_STEP_MS = 56;
+const MIN_FOCUS_SCROLL_DURATION_MS = 150;
+const MAX_FOCUS_SCROLL_DURATION_MS = 300;
+const FOCUS_SCROLL_DURATION_STEP_MS = 42;
 
 function getNow() {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -52,6 +58,13 @@ export function easeNavigationScroll(progress: number): number {
   return t * t * t * (t * ((t * 6) - 15) + 10);
 }
 
+export function easeResponsiveFocusScroll(progress: number): number {
+  const t = clamp(progress, 0, 1);
+  // Smoothstep keeps the same soft spatial continuity as hunk navigation,
+  // while leaving less time in the near-zero-velocity phase for rapid cells.
+  return t * t * (3 - (2 * t));
+}
+
 export function getNavigationScrollDuration(distance: number, viewportSize: number): number {
   const safeViewportSize = Math.max(1, viewportSize);
   const viewportCount = Math.max(0, distance) / safeViewportSize;
@@ -59,6 +72,16 @@ export function getNavigationScrollDuration(distance: number, viewportSize: numb
     MIN_SCROLL_DURATION_MS + (Math.log2(viewportCount + 1) * SCROLL_DURATION_STEP_MS),
     MIN_SCROLL_DURATION_MS,
     MAX_SCROLL_DURATION_MS,
+  );
+}
+
+export function getResponsiveFocusScrollDuration(distance: number, viewportSize: number): number {
+  const safeViewportSize = Math.max(1, viewportSize);
+  const viewportCount = Math.max(0, distance) / safeViewportSize;
+  return clamp(
+    MIN_FOCUS_SCROLL_DURATION_MS + (Math.log2(viewportCount + 1) * FOCUS_SCROLL_DURATION_STEP_MS),
+    MIN_FOCUS_SCROLL_DURATION_MS,
+    MAX_FOCUS_SCROLL_DURATION_MS,
   );
 }
 
@@ -151,12 +174,12 @@ function ensureInterruptListeners(element: HTMLElement, animation: ElementScroll
 function runAnimationFrame(element: HTMLElement, animation: ElementScrollAnimation, timestamp: number) {
   animation.frameId = 0;
 
-  (['top', 'left'] as const).forEach((axis) => {
+  SCROLL_AXES.forEach((axis) => {
     const axisAnimation = animation[axis];
     if (!axisAnimation) return;
 
     const progress = Math.min(1, (timestamp - axisAnimation.startedAt) / axisAnimation.duration);
-    const easedProgress = easeNavigationScroll(progress);
+    const easedProgress = axisAnimation.easing(progress);
     setAxisPosition(
       element,
       axis,
@@ -205,7 +228,7 @@ export function scrollElementForNavigation(
   element: HTMLElement,
   options: NavigationScrollOptions,
 ): void {
-  const requestedAxes = (['top', 'left'] as const).filter((axis) => options[axis] != null);
+  const requestedAxes = SCROLL_AXES.filter((axis) => options[axis] != null);
   if (requestedAxes.length === 0) return;
 
   const behavior = options.behavior ?? 'smart';
@@ -250,12 +273,36 @@ export function scrollElementForNavigation(
       to,
       startedAt,
       linkedElements,
-      duration: getNavigationScrollDuration(
-        Math.abs(to - from),
-        getAxisViewportSize(element, axis),
-      ),
+      duration: behavior === 'smart'
+        ? getResponsiveFocusScrollDuration(
+          Math.abs(to - from),
+          getAxisViewportSize(element, axis),
+        )
+        : getNavigationScrollDuration(
+          Math.abs(to - from),
+          getAxisViewportSize(element, axis),
+        ),
+      easing: behavior === 'smart'
+        ? easeResponsiveFocusScroll
+        : easeNavigationScroll,
+      behavior: behavior === 'smart' ? 'smart' : 'smooth',
     };
   });
+
+  const topAnimation = animation.top;
+  const leftAnimation = animation.left;
+  if (
+    topAnimation?.behavior === 'smart'
+    && leftAnimation?.behavior === 'smart'
+    && Math.abs(topAnimation.startedAt - leftAnimation.startedAt) <= 8
+  ) {
+    const synchronizedStart = Math.max(topAnimation.startedAt, leftAnimation.startedAt);
+    const synchronizedDuration = Math.max(topAnimation.duration, leftAnimation.duration);
+    topAnimation.startedAt = synchronizedStart;
+    leftAnimation.startedAt = synchronizedStart;
+    topAnimation.duration = synchronizedDuration;
+    leftAnimation.duration = synchronizedDuration;
+  }
 
   if (!animation.top && !animation.left) {
     clearAnimationIfIdle(element, animation);

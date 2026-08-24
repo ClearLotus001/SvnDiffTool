@@ -74,16 +74,16 @@ const PerfBar = memo(({ metrics }: PerfBarProps) => {
     <div className={`flex-1 min-w-0 ${SCROLL_RAIL_CLASS}`}>
       <div className="inline-flex items-center gap-2 min-w-max pr-1">
         {chip(t('perfMainLoad'), formatMs(metrics.mainLoadMs), cssVar('acc'))}
-        {chip(t('perfBaseRead'), formatMs(metrics.baseReadMs), cssVar('acc2'))}
-        {chip(t('perfMineRead'), formatMs(metrics.mineReadMs), cssVar('acc'))}
-        {chip(t('perfBaseParse'), formatMs(metrics.baseParserMs), cssVar('acc2'))}
-        {chip(t('perfMineParse'), formatMs(metrics.mineParserMs), cssVar('acc'))}
+        {chip(t('perfBaseRead'), formatMs(metrics.baseReadMs), cssVar('versionBase'))}
+        {chip(t('perfMineRead'), formatMs(metrics.mineReadMs), cssVar('versionMine'))}
+        {chip(t('perfBaseParse'), formatMs(metrics.baseParserMs), cssVar('versionBase'))}
+        {chip(t('perfMineParse'), formatMs(metrics.mineParserMs), cssVar('versionMine'))}
         {chip(t('perfTextResolve'), formatMs(metrics.textResolveMs), cssVar('acc2'))}
         {chip(t('perfMetadata'), formatMs(metrics.metadataMs), cssVar('acc'))}
         {chip(t('perfDiff'), formatMs(metrics.diffMs), cssVar('acc2'))}
         {chip(t('perfTotal'), formatMs(metrics.totalAppMs), cssVar('acc'))}
-        {chip(t('perfBaseBytes'), formatBytes(metrics.baseBytes), cssVar('acc2'))}
-        {chip(t('perfMineBytes'), formatBytes(metrics.mineBytes), cssVar('acc'))}
+        {chip(t('perfBaseBytes'), formatBytes(metrics.baseBytes), cssVar('versionBase'))}
+        {chip(t('perfMineBytes'), formatBytes(metrics.mineBytes), cssVar('versionMine'))}
         {chip(t('perfDiffLines'), typeof metrics.diffLineCount === 'number' ? String(metrics.diffLineCount) : '—', cssVar('acc2'))}
         {!pinActionsRight && actionButtons}
       </div>

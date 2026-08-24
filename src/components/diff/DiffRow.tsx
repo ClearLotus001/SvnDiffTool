@@ -15,6 +15,7 @@ import {
   resolveTextDiffVisualTone,
 } from '@/utils/diff/textDiffVisuals';
 import Ln from '@/components/diff/Ln';
+import LogicalTextSelectionDecorations from '@/components/shared/LogicalTextSelectionDecorations';
 import TokenText from '@/components/shared/TokenText';
 import type { TokenSearchRange } from '@/components/shared/TokenText';
 
@@ -43,19 +44,6 @@ interface DiffRowProps {
   lineNumberTitle?: string | undefined;
   onBaseLineNumberClick?: MouseEventHandler<HTMLButtonElement> | undefined;
   onMineLineNumberClick?: MouseEventHandler<HTMLButtonElement> | undefined;
-}
-
-function renderWithWhitespaceMark(text: string) {
-  const trailingMatch = text.match(/(\s+)$/);
-  if (!trailingMatch) return text;
-  const body = text.slice(0, text.length - trailingMatch[1]!.length);
-  const trailing = trailingMatch[1]!.replace(/ /g, '·').replace(/\t/g, '→');
-  return (
-    <>
-      {body}
-      <span className="text-text-secondary/50">{trailing}</span>
-    </>
-  );
 }
 
 const DiffRow = memo(({
@@ -218,21 +206,22 @@ const DiffRow = memo(({
               padding: inlineBg ? '0 2px' : 0,
               borderRadius: inlineBg ? 2 : 0,
             }}>
-            {showWhitespace && !charSpans && searchRanges.length === 0
-              && !hasTextSelection
-              ? renderWithWhitespaceMark(content)
-              : (
-                <TokenText
-                  tokens={tokens}
-                  charSpans={charSpans}
-                  hlBg={effectiveHighlightBackground}
-                  searchRanges={searchRanges}
-                  selectionRanges={textSelectionRange ? [textSelectionRange] : []}
-                  selectionHlBg="color-mix(in srgb, var(--text-selection-bg) 58%, transparent)"
-                  searchHlBg={cssAlpha('searchHl', '32')}
-                  activeSearchHlBg={cssAlpha('searchHl', '92')}
-                />
-              )}
+            <LogicalTextSelectionDecorations
+              selectionRange={textSelectionRange}
+            />
+            <span className="relative z-[2]">
+              <TokenText
+                tokens={tokens}
+                charSpans={charSpans}
+                hlBg={effectiveHighlightBackground}
+                searchRanges={searchRanges}
+                selectionRanges={textSelectionRange ? [textSelectionRange] : []}
+                selectionHlBg="color-mix(in srgb, var(--text-selection-bg) 0%, transparent)"
+                searchHlBg={cssAlpha('searchHl', '32')}
+                activeSearchHlBg={cssAlpha('searchHl', '92')}
+                showWhitespace={showWhitespace}
+              />
+            </span>
           </span>
         </span>
       </div>

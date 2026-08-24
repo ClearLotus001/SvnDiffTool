@@ -105,11 +105,14 @@ const AboutDialog = memo(({
   return (
     <DialogFrame
       animationState={animationState}
+      titleId="about-dialog-title"
+      descriptionId="about-dialog-description"
+      onClose={onClose}
       className="w-[500px] max-w-[calc(100vw-32px)] bg-bg-surface-solid border border-border-strong rounded-[18px] p-[20px_22px] shadow-2xl font-ui">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-[15px] font-bold text-text-title">{t('aboutTitle')}</div>
-          <div className="mt-1.5 text-text-secondary text-[13px] leading-normal">{t('aboutSubtitle')}</div>
+          <h2 id="about-dialog-title" className="m-0 text-[15px] font-bold text-text-title">{t('aboutTitle')}</h2>
+          <div id="about-dialog-description" className="mt-1.5 text-text-secondary text-[13px] leading-normal">{t('aboutSubtitle')}</div>
         </div>
         <button
           type="button"

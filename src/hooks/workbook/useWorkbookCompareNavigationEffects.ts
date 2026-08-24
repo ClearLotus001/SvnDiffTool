@@ -1,8 +1,9 @@
-import { useEffect, useRef, type MutableRefObject } from 'react';
+import { useCallback, useEffect, useRef, type MutableRefObject } from 'react';
 
 import type {
   SearchMatch,
   WorkbookDiffRegion,
+  WorkbookSelectionFocusIntent,
   WorkbookSelectedCell,
 } from '@/types';
 import type { CompareMode, WorkbookStackedScrollTarget } from '@/hooks/workbook/useWorkbookCompareDerivedState';
@@ -11,6 +12,7 @@ import type { SplitRow } from '@/types/view';
 import { workbookDiffRegionContainsSelection } from '@/utils/workbook/workbookDiffRegion';
 import { buildSelectionAutoScrollKey } from '@/utils/workbook/workbookPanelHelpers';
 import { getWorkbookSideRowNumber } from '@/utils/workbook/workbookNavigation';
+import { useWorkbookFocusTransaction } from '@/hooks/workbook/useWorkbookFocusTransaction';
 
 function getNow() {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -39,8 +41,11 @@ interface UseWorkbookCompareNavigationEffectsParams {
   activeDiffRegion: WorkbookDiffRegion | null;
   navigationTargetCell: WorkbookSelectedCell | null;
   selectedCell: WorkbookSelectedCell | null;
+  selectionFocusIntent: WorkbookSelectionFocusIntent | null;
+  onSelectionFocusIntentHandled: (intentId: number) => void;
   activeHunkIdx: number;
   guidedPulseNonce: number;
+  navigationLayoutKey: string;
   mode: CompareMode;
   frozenRows: SplitRow[];
   rowItemIndexBySide: {
@@ -92,8 +97,11 @@ export function useWorkbookCompareNavigationEffects({
   activeDiffRegion,
   navigationTargetCell,
   selectedCell,
+  selectionFocusIntent,
+  onSelectionFocusIntentHandled,
   activeHunkIdx,
   guidedPulseNonce,
+  navigationLayoutKey,
   mode,
   frozenRows,
   rowItemIndexBySide,
@@ -204,10 +212,9 @@ export function useWorkbookCompareNavigationEffects({
     if (!activeDiffRegion || !activeWorkbookSection) return;
     if (activeDiffRegion.sheetName !== activeWorkbookSection.name) return;
     if (getNow() < suppressGuidedNavigationUntilRef.current) return;
-    const navigationKey = `${guidedPulseNonce}:${activeHunkIdx}:${activeDiffRegion.id}`;
+    const navigationKey = `${guidedPulseNonce}:${activeHunkIdx}:${activeDiffRegion.id}:${navigationLayoutKey}`;
     if (lastGuidedNavigationKeyRef.current === navigationKey) return;
 
-    lastGuidedNavigationKeyRef.current = navigationKey;
     lastForcedRevealHunkIdxRef.current = activeHunkIdx;
     const preferredNavigationTarget = (
       navigationTargetCell
@@ -228,27 +235,31 @@ export function useWorkbookCompareNavigationEffects({
     const targetRowIndex = anchorRowNumber != null
       ? (rowItemIndexBySide[anchorSide].get(anchorRowNumber) ?? -1)
       : -1;
-    if (stackedTarget) {
-      scrollToStackedTarget(stackedTarget, 'start', 'smooth');
-    } else if (targetRowIndex >= 0) {
-      markProgrammaticScroll(640);
-      scrollToIndex(targetRowIndex, 'start', 'smooth');
-    } else {
-      scrollToResolvedLine(activeDiffRegion.lineStartIdx, 'start', 'smooth');
-    }
-
-    focusWorkbookDiffRegion(activeDiffRegion);
     let followUpRafId = 0;
+    let settleRafId = 0;
     const rafId = requestAnimationFrame(() => {
+      if (stackedTarget) {
+        scrollToStackedTarget(stackedTarget, 'start', 'smooth');
+      } else if (targetRowIndex >= 0) {
+        markProgrammaticScroll(640);
+        scrollToIndex(targetRowIndex, 'start', 'smooth');
+      } else {
+        scrollToResolvedLine(activeDiffRegion.lineStartIdx, 'start', 'smooth');
+      }
       focusWorkbookDiffRegion(activeDiffRegion);
       followUpRafId = requestAnimationFrame(() => {
         focusWorkbookDiffRegion(activeDiffRegion);
+        settleRafId = requestAnimationFrame(() => {
+          focusWorkbookDiffRegion(activeDiffRegion);
+          lastGuidedNavigationKeyRef.current = navigationKey;
+        });
       });
     });
 
     return () => {
       cancelAnimationFrame(rafId);
       if (followUpRafId) cancelAnimationFrame(followUpRafId);
+      if (settleRafId) cancelAnimationFrame(settleRafId);
     };
   }, [
     active,
@@ -260,6 +271,7 @@ export function useWorkbookCompareNavigationEffects({
     lastForcedRevealHunkIdxRef,
     markProgrammaticScroll,
     mode,
+    navigationLayoutKey,
     navigationTargetCell,
     rowItemIndexBySide,
     scrollToIndex,
@@ -273,6 +285,7 @@ export function useWorkbookCompareNavigationEffects({
     if (!active) return;
     if (!selectedCell || !activeWorkbookSection || selectedCell.sheetName !== activeWorkbookSection.name) return;
     if (selectedCell.kind === 'column') return;
+    if (selectionFocusIntent) return;
     if (navigationTargetCell && activeDiffRegion && !workbookDiffRegionContainsSelection(activeDiffRegion, selectedCell)) return;
     if (isAutoScrollSuppressed()) return;
     const shouldForceReveal = activeHunkIdx !== lastForcedRevealHunkIdxRef.current;
@@ -322,17 +335,72 @@ export function useWorkbookCompareNavigationEffects({
     scrollToIndex,
     scrollToStackedTarget,
     selectedCell,
+    selectionFocusIntent,
     stackedRowScrollTargetsBySide,
   ]);
+
+  const focusExplicitSelection = useCallback((target: WorkbookSelectedCell) => {
+    lastAutoCellKeyRef.current = buildSelectionAutoScrollKey(activeWorkbookSection?.name ?? '', target);
+    const didFocusColumn = focusWorkbookCell(target, 'ensure-visible');
+    if (target.kind === 'column') return didFocusColumn;
+
+    lastAutoRowKeyRef.current = buildSelectionAutoScrollKey(activeWorkbookSection?.name ?? '', target);
+    const frozenRowIndex = mode === 'columns'
+      ? frozenRows.findIndex((row) => getWorkbookSideRowNumber(row, target.side) === target.rowNumber)
+      : -1;
+    const stackedTarget = mode === 'stacked'
+      ? (stackedRowScrollTargetsBySide[target.side].get(target.rowNumber) ?? null)
+      : null;
+    const rowIndex = rowItemIndexBySide[target.side].get(target.rowNumber) ?? -1;
+
+    if (frozenRowIndex >= 0) {
+      scrollToFrozenRowIndex(frozenRowIndex, 'center', 'smart');
+      return didFocusColumn;
+    }
+    if (stackedTarget) {
+      return scrollToStackedTarget(stackedTarget, 'center', 'smart') && didFocusColumn;
+    }
+    if (rowIndex < 0) return false;
+
+    markProgrammaticScroll(640);
+    scrollToIndex(rowIndex, 'center', 'smart');
+    return didFocusColumn;
+  }, [
+    activeWorkbookSection?.name,
+    focusWorkbookCell,
+    frozenRows,
+    lastAutoCellKeyRef,
+    lastAutoRowKeyRef,
+    markProgrammaticScroll,
+    mode,
+    rowItemIndexBySide,
+    scrollToFrozenRowIndex,
+    scrollToIndex,
+    scrollToStackedTarget,
+    stackedRowScrollTargetsBySide,
+  ]);
+  useWorkbookFocusTransaction({
+    active,
+    activeSheetName: activeWorkbookSection?.name ?? null,
+    navigationContext: activeHunkIdx,
+    intent: selectionFocusIntent,
+    executeFocus: focusExplicitSelection,
+    onIntentHandled: onSelectionFocusIntentHandled,
+  });
 
   useEffect(() => {
     if (!active) return;
     if (!selectedCell || !activeWorkbookSection || selectedCell.sheetName !== activeWorkbookSection.name) return;
     if (selectedCell.kind === 'row') return;
-    if (navigationTargetCell && activeDiffRegion && !workbookDiffRegionContainsSelection(activeDiffRegion, selectedCell)) return;
-    if (isAutoScrollSuppressed()) return;
+    if (selectionFocusIntent) return;
     const shouldForceReveal = activeHunkIdx !== lastForcedRevealHunkIdxRef.current;
-    if (!shouldForceReveal && isUserScrollPaused()) return;
+    if (
+      shouldForceReveal
+      && navigationTargetCell
+      && activeDiffRegion
+      && !workbookDiffRegionContainsSelection(activeDiffRegion, selectedCell)
+    ) return;
+    if (isAutoScrollSuppressed()) return;
     const selectionKey = buildSelectionAutoScrollKey(activeWorkbookSection.name, selectedCell);
     if (!shouldForceReveal && isSelectionAutoScrollLocked(selectionKey, 'cell')) return;
     if (!shouldForceReveal && lastAutoCellKeyRef.current === selectionKey) return;
@@ -351,11 +419,11 @@ export function useWorkbookCompareNavigationEffects({
     activeWorkbookSection,
     focusWorkbookCell,
     isAutoScrollSuppressed,
-    isUserScrollPaused,
     isSelectionAutoScrollLocked,
     lastAutoCellKeyRef,
     lastForcedRevealHunkIdxRef,
     navigationTargetCell,
     selectedCell,
+    selectionFocusIntent,
   ]);
 }

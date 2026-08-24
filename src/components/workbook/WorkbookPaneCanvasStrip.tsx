@@ -25,14 +25,18 @@ import {
 } from '@/utils/workbook/workbookMergeLayout';
 import { resolveWorkbookCanvasCompareCell } from '@/utils/workbook/workbookCanvasCompareCells';
 import {
+  formatWorkbookVisibleRowNumber,
+  resolveWorkbookHeaderRowDividerColor,
   resolveWorkbookRowGutterBackground,
   resolveWorkbookRowSelectionAccent,
   resolveWorkbookRowBorderColor,
   resolveWorkbookRowLineNumberColor,
   resolveWorkbookRowSurfaceBackground,
+  resolveWorkbookVersionIdentityVisual,
 } from '@/utils/workbook/workbookRowVisuals';
 import {
   drawWorkbookCanvasSelectionFrame,
+  getWorkbookSelectionBorderVisual,
   getWorkbookSelectionOverlay,
   getWorkbookSelectionVisualState,
 } from '@/utils/workbook/workbookSelectionVisual';
@@ -45,6 +49,7 @@ import {
 } from '@/utils/workbook/workbookCanvasText';
 import {
   createWorkbookCanvasBorderRegistry,
+  registerWorkbookCanvasCellBorders,
   resolveWorkbookCanvasCellBorderPriority,
 } from '@/utils/workbook/workbookCanvasBorders';
 import {
@@ -280,6 +285,7 @@ const WorkbookPaneCanvasStrip = memo(({
         isGuided: renderRow.isGuided,
         isActiveSearch: renderRow.isActiveSearch,
         isSearchMatch: renderRow.isSearchMatch,
+        isHeaderRow: headerRowNumber > 0 && renderRow.rowNumber === headerRowNumber,
       });
       const drawRowChrome = (renderRow: typeof renderRows[number], rowIndex: number) => {
         const y = rowIndex * ROW_H;
@@ -287,6 +293,12 @@ const WorkbookPaneCanvasStrip = memo(({
         const border = resolveWorkbookRowBorderColor(T, renderRow.rowTone);
         const entry = renderRow.entry;
         const rowNumber = renderRow.rowNumber;
+        const previousVisibleRowNumber = rowIndex > 0
+          ? (renderRows[rowIndex - 1]?.rowNumber ?? null)
+          : headerRowNumber > 0 && rowNumber > headerRowNumber
+            ? headerRowNumber
+            : null;
+        const isHeaderRow = headerRowNumber > 0 && rowNumber === headerRowNumber;
         const selectionAccent = resolveWorkbookRowSelectionAccent(T, side);
         const isSelectedRow = Boolean(
           selectionLookup.rowKeys.has(`${sheetName}:${rowNumber}`),
@@ -304,6 +316,8 @@ const WorkbookPaneCanvasStrip = memo(({
           theme: T,
           selectionAccent,
           isSelected: isSelectedRow,
+          isHeaderRow,
+          versionSide: side,
         });
         ctx.fillRect(3, y, LN_W, ROW_H);
         ctx.fillStyle = border;
@@ -325,10 +339,14 @@ const WorkbookPaneCanvasStrip = memo(({
         ctx.fillStyle = isSelectedRow
           ? selectionAccent
           : lineNumberColor;
-        ctx.font = `${sizes.line}px ${FONT_CODE}`;
+        ctx.font = `${isHeaderRow ? '600 ' : ''}${sizes.line}px ${FONT_CODE}`;
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
-        ctx.fillText(entry ? String(entry.rowNumber) : '', LN_W - 8, y + (ROW_H / 2));
+        ctx.fillText(
+          entry ? formatWorkbookVisibleRowNumber(entry.rowNumber, previousVisibleRowNumber) : '',
+          LN_W - 8,
+          y + (ROW_H / 2),
+        );
       };
       const drawCellsForLayer = (
         renderRow: typeof renderRows[number],
@@ -356,30 +374,78 @@ const WorkbookPaneCanvasStrip = memo(({
               : compareCell?.mineCell;
             const cell = placeholderCell ?? { value: '', formula: '' };
             const hasContent = hasWorkbookCellContent(cell, compareMode);
+            const isHeaderRow = headerRowNumber > 0 && rowNumber === headerRowNumber;
             const cellVisual = resolveWorkbookCompareCellVisual({
               theme: T,
               compareCell,
               side,
+              isHeaderRow,
               hasEntry: false,
               hasContent,
               hasBaseRow: renderRow.hasBaseRow,
               hasMineRow: renderRow.hasMineRow,
               defaultTextColor: side === 'mine' ? T.t0 : T.t1,
             });
+            const versionIdentity = resolveWorkbookVersionIdentityVisual(
+              T,
+              side,
+              Boolean(compareCell?.changed),
+              isHeaderRow ? 'header' : 'body',
+            );
+            const selectionVisual = getWorkbookSelectionVisualState(
+              T,
+              selectionLookup,
+              sheetName,
+              side,
+              rowNumber,
+              entryMeta.column,
+              renderRow.isActiveSearch,
+              dragPreviewActive,
+              {
+                startRow: rowNumber,
+                endRow: rowNumber,
+                startColumn: entryMeta.column,
+                endColumn: entryMeta.column,
+              },
+            );
+            const selectionBorder = getWorkbookSelectionBorderVisual(selectionVisual);
 
             ctx.fillStyle = cellVisual.background;
             ctx.fillRect(drawX, y, entryMeta.width, ROW_H);
+            if (versionIdentity.overlay) {
+              ctx.fillStyle = versionIdentity.overlay;
+              ctx.fillRect(drawX, y, entryMeta.width, ROW_H);
+            }
+            if (versionIdentity.rail && !selectionVisual.hasSelectionHighlight) {
+              ctx.fillStyle = versionIdentity.rail;
+              ctx.fillRect(drawX, y, versionIdentity.railWidth, ROW_H);
+            }
             if (cellVisual.maskOverlay) {
               ctx.fillStyle = cellVisual.maskOverlay;
               ctx.fillRect(drawX, y, entryMeta.width, ROW_H);
             }
-            borderRegistry.addRect({
+            registerWorkbookCanvasCellBorders({
+              registry: borderRegistry,
               x: drawX,
               y,
               width: entryMeta.width,
               height: ROW_H,
-              color: cellVisual.border,
-              priority: resolveWorkbookCanvasCellBorderPriority(compareCell, false),
+              semantic: {
+                color: cellVisual.border,
+                thickness: 1,
+                priority: resolveWorkbookCanvasCellBorderPriority(compareCell, false),
+              },
+              selection: selectionBorder,
+            });
+            deferredSelectionDrawBucket.push(() => {
+              drawWorkbookCanvasSelectionFrame(
+                ctx,
+                drawX,
+                y,
+                entryMeta.width,
+                ROW_H,
+                selectionVisual,
+              );
             });
 
             if (hasContent) {
@@ -389,7 +455,7 @@ const WorkbookPaneCanvasStrip = memo(({
               ctx.rect(textRect.left, textRect.top, textRect.width, textRect.height);
               ctx.clip();
               ctx.fillStyle = cellVisual.textColor;
-              ctx.font = `${sizes.ui}px ${FONT_UI}`;
+              ctx.font = `${isHeaderRow ? '600 ' : ''}${sizes.ui}px ${FONT_UI}`;
               ctx.textAlign = 'left';
               ctx.textBaseline = 'alphabetic';
               ctx.fillText(
@@ -425,6 +491,7 @@ const WorkbookPaneCanvasStrip = memo(({
 
           const anchorRowNumber = mergeInfo.region?.range.startRow ?? cellRowNumber;
           const anchorColumn = mergeInfo.region?.range.startCol ?? column;
+          const isHeaderRow = headerRowNumber > 0 && anchorRowNumber === headerRowNumber;
           const anchorEntry = rowEntryByRowNumber.get(anchorRowNumber) ?? entry;
           const cell = anchorEntry?.cells[anchorColumn] ?? { value: '', formula: '' };
           const compareCell = resolveWorkbookCanvasCompareCell({
@@ -453,16 +520,24 @@ const WorkbookPaneCanvasStrip = memo(({
               endColumn: mergeInfo.region?.range.endCol ?? selectionColumn,
             },
           );
+          const selectionBorder = getWorkbookSelectionBorderVisual(selectionVisual);
           const cellVisual = resolveWorkbookCompareCellVisual({
             theme: T,
             compareCell,
             side,
+            isHeaderRow,
             hasEntry: Boolean(entry),
             hasContent,
             hasBaseRow: renderRow.hasBaseRow,
             hasMineRow: renderRow.hasMineRow,
             defaultTextColor: side === 'mine' ? T.t0 : T.t1,
           });
+          const versionIdentity = resolveWorkbookVersionIdentityVisual(
+            T,
+            side,
+            Boolean(compareCell?.changed),
+            isHeaderRow ? 'header' : 'body',
+          );
           const regionLeft = mergeInfo.region?.left ?? drawX;
           const regionTop = mergeInfo.region?.top ?? y;
           const regionWidth = mergeInfo.region?.width ?? entryMeta.width;
@@ -496,7 +571,25 @@ const WorkbookPaneCanvasStrip = memo(({
                 ctx.fillRect(segment.left, regionTop, segment.width, regionHeight);
               });
             });
-            if (cellVisual.maskOverlay && !selectionVisual.hasSelectionHighlight) {
+            if (versionIdentity.overlay) {
+              ctx.fillStyle = versionIdentity.overlay;
+              withRowSegmentClip(() => {
+                regionSegments.forEach((segment) => {
+                  ctx.fillRect(segment.left, regionTop, segment.width, regionHeight);
+                });
+              });
+            }
+            if (versionIdentity.rail && !selectionVisual.hasSelectionHighlight) {
+              ctx.fillStyle = versionIdentity.rail;
+              withRowSegmentClip(() => {
+                rowSegments.forEach((rowSegment) => {
+                  regionSegments.forEach((segment) => {
+                    ctx.fillRect(segment.left, rowSegment.top, versionIdentity.railWidth, rowSegment.height);
+                  });
+                });
+              });
+            }
+            if (cellVisual.maskOverlay) {
               ctx.fillStyle = cellVisual.maskOverlay;
               withRowSegmentClip(() => {
                 regionSegments.forEach((segment) => {
@@ -515,20 +608,32 @@ const WorkbookPaneCanvasStrip = memo(({
             }
             withRowSegmentClip(() => {
               regionSegments.forEach((segment) => {
-                borderRegistry.addRect({
+                registerWorkbookCanvasCellBorders({
+                  registry: borderRegistry,
                   x: segment.left,
                   y: regionTop,
                   width: segment.width,
                   height: regionHeight,
-                  color: cellVisual.border,
-                  priority: resolveWorkbookCanvasCellBorderPriority(compareCell, Boolean(entry)),
+                  semantic: {
+                    color: cellVisual.border,
+                    thickness: 1,
+                    priority: resolveWorkbookCanvasCellBorderPriority(compareCell, Boolean(entry)),
+                  },
+                  selection: selectionBorder,
                 });
               });
             });
             deferredSelectionDrawBucket.push(() => {
               withRowSegmentClip(() => {
                 selectionSegments.forEach((segment) => {
-                  drawWorkbookCanvasSelectionFrame(ctx, segment.left, selectionTop, segment.width, selectionHeight, selectionVisual);
+                  drawWorkbookCanvasSelectionFrame(
+                    ctx,
+                    segment.left,
+                    selectionTop,
+                    segment.width,
+                    selectionHeight,
+                    selectionVisual,
+                  );
                 });
               });
             });
@@ -548,7 +653,7 @@ const WorkbookPaneCanvasStrip = memo(({
             });
             ctx.clip();
             ctx.fillStyle = cellVisual.textColor;
-            ctx.font = `${sizes.ui}px ${FONT_UI}`;
+            ctx.font = `${isHeaderRow ? '600 ' : ''}${sizes.ui}px ${FONT_UI}`;
             ctx.textBaseline = 'alphabetic';
             if (centerMergedText) {
               const lineHeight = Math.max(sizes.ui + 4, 16);
@@ -630,6 +735,8 @@ const WorkbookPaneCanvasStrip = memo(({
 
       if (scrollViewport.width > 0) {
         ctx.clearRect(scrollViewport.left, 0, scrollViewport.width, canvasHeight);
+        ctx.fillStyle = T.bg0;
+        ctx.fillRect(scrollViewport.left, 0, scrollViewport.width, canvasHeight);
         drawScrollBackdrops();
         renderRows.forEach((renderRow, rowIndex) => {
           clipWorkbookCanvasToViewport(ctx, scrollViewport, rowIndex * ROW_H, ROW_H, () => {
@@ -664,6 +771,18 @@ const WorkbookPaneCanvasStrip = memo(({
         });
       }
 
+      renderRows.forEach((renderRow, rowIndex) => {
+        if (headerRowNumber <= 0 || renderRow.rowNumber !== headerRowNumber) return;
+        ctx.fillStyle = resolveWorkbookHeaderRowDividerColor(T);
+        ctx.fillRect(0, ((rowIndex + 1) * ROW_H) - 2, contentRight, 2);
+      });
+      if (renderRows.length > 0) {
+        const terminalBoundaryRight = frozenViewport
+          ? frozenViewport.left + frozenViewport.width
+          : contentLeft;
+        ctx.fillStyle = T.workbookGridBorderStrong;
+        ctx.fillRect(0, canvasHeight - 1, terminalBoundaryRight, 1);
+      }
       if (scrollViewport.width > 0) {
         clipWorkbookCanvasToViewport(ctx, scrollViewport, 0, canvasHeight, () => {
           scrollBorderRegistry.flush(ctx);
@@ -686,7 +805,7 @@ const WorkbookPaneCanvasStrip = memo(({
       }
 
       if (fullDraw && frozenViewport) {
-        ctx.fillStyle = `${T.border2}55`;
+        ctx.fillStyle = `${T.workbookGridBorderStrong}b8`;
         ctx.fillRect(frozenViewport.left + frozenViewport.width - 1, 0, 1, canvasHeight);
       }
 
@@ -704,7 +823,7 @@ const WorkbookPaneCanvasStrip = memo(({
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = 0;
     };
-  }, [columnLayoutByColumn, columnPartition, compareCellsByRowNumber, compareMode, contentWidth, dragPreviewActive, freezeColumnCount, height, mergedRanges, renderedColumnNumbers, renderColumns, renderRows, renderedRowNumbers, rowEntryByRowNumber, rowLayoutByRowNumber, scrollRef, selectionLookup, sheetName, side, sizes.line, sizes.ui, T, viewportWidth]);
+  }, [columnLayoutByColumn, columnPartition, compareCellsByRowNumber, compareMode, contentWidth, dragPreviewActive, freezeColumnCount, headerRowNumber, height, mergedRanges, renderedColumnNumbers, renderColumns, renderRows, renderedRowNumbers, rowEntryByRowNumber, rowLayoutByRowNumber, scrollRef, selectionLookup, sheetName, side, sizes.line, sizes.ui, T, viewportWidth]);
 
   useEffect(() => {
     const scroller = scrollRef.current;
@@ -939,6 +1058,9 @@ const WorkbookPaneCanvasStrip = memo(({
       ref={canvasRef}
       data-testid={`workbook-pane-canvas-${side}`}
       data-workbook-cell-canvas="true"
+      data-workbook-header-row-canvas={renderRows.some((row) => (
+        headerRowNumber > 0 && row.rowNumber === headerRowNumber
+      )) ? 'true' : undefined}
       onPointerDown={selectionInteractions.handlePointerDown}
       onPointerMove={selectionInteractions.handlePointerMove}
       onPointerUp={selectionInteractions.handlePointerUp}

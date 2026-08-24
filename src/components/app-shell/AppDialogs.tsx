@@ -11,29 +11,23 @@ import AboutDialog from '@/components/app/AboutDialog';
 import ShortcutsPanel from '@/components/app/ShortcutsPanel';
 import SvnConfigDialog from '@/components/app/SvnConfigDialog';
 import LocalFileCompareDialog from '@/components/app/LocalFileCompareDialog';
+import type { DialogController } from '@/hooks/app';
 
-interface AppDialogsProps {
-  showGoto: boolean;
-  showHelp: boolean;
-  showAbout: boolean;
-  showSvnConfig: boolean;
-  showLocalFileCompare: boolean;
-  localFileCompareBasePath: string;
-  localFileCompareMinePath: string;
+interface AppDialogsNavigation {
   totalLines: number;
   onGoto: (lineNo: number) => void;
-  onCloseGoto: () => void;
-  onCloseHelp: () => void;
-  onCloseAbout: () => void;
-  onCloseSvnConfig: () => void;
-  onCloseLocalFileCompare: () => void;
-  onCloseAll: () => void;
+}
+
+interface AppDialogsUpdate {
   appUpdateState: AppUpdateState | null;
   canLaunchUninstaller: boolean;
   onCheckForUpdates: () => void;
   onDownloadUpdate: () => void;
   onInstallUpdate: () => void;
   onLaunchUninstaller: () => void;
+}
+
+interface AppDialogsSvnConfig {
   svnDiffViewerStatus: SvnDiffViewerStatus | null;
   isLoadingSvnDiffViewerStatus: boolean;
   applyingSvnDiffViewerScope: SvnDiffViewerScope | null;
@@ -42,6 +36,11 @@ interface AppDialogsProps {
   onApplySvnDiffViewerScope: (scope: SvnDiffViewerScope) => void;
   onRestoreSvnDiffViewerDefault: () => void;
   onRefreshSvnDiffViewerStatus: () => void;
+}
+
+interface AppDialogsLocalCompare {
+  basePath: string;
+  minePath: string;
   onPickComparableFile: (
     side: LocalFilePickSide,
     requiredExtension?: string,
@@ -49,39 +48,46 @@ interface AppDialogsProps {
   onCompareLocalFiles: (basePath: string, minePath: string) => Promise<boolean>;
 }
 
+interface AppDialogsProps {
+  dialogs: DialogController;
+  navigation: AppDialogsNavigation;
+  update: AppDialogsUpdate;
+  svnConfig: AppDialogsSvnConfig;
+  localCompare: AppDialogsLocalCompare;
+}
+
 export default function AppDialogs({
-  showGoto,
-  showHelp,
-  showAbout,
-  showSvnConfig,
-  showLocalFileCompare,
-  localFileCompareBasePath,
-  localFileCompareMinePath,
-  totalLines,
-  onGoto,
-  onCloseGoto,
-  onCloseHelp,
-  onCloseAbout,
-  onCloseSvnConfig,
-  onCloseLocalFileCompare,
-  onCloseAll,
-  appUpdateState,
-  canLaunchUninstaller,
-  onCheckForUpdates,
-  onDownloadUpdate,
-  onInstallUpdate,
-  onLaunchUninstaller,
-  svnDiffViewerStatus,
-  isLoadingSvnDiffViewerStatus,
-  applyingSvnDiffViewerScope,
-  isRestoringSvnDiffViewerDefault,
-  svnDiffViewerError,
-  onApplySvnDiffViewerScope,
-  onRestoreSvnDiffViewerDefault,
-  onRefreshSvnDiffViewerStatus,
-  onPickComparableFile,
-  onCompareLocalFiles,
+  dialogs,
+  navigation,
+  update,
+  svnConfig,
+  localCompare,
 }: AppDialogsProps) {
+  const {
+    showGoto, showHelp, showAbout, showSvnConfig, showLocalFileCompare,
+  } = dialogs.state;
+  const { totalLines, onGoto } = navigation;
+  const {
+    appUpdateState, canLaunchUninstaller,
+    onCheckForUpdates, onDownloadUpdate, onInstallUpdate, onLaunchUninstaller,
+  } = update;
+  const {
+    svnDiffViewerStatus, isLoadingSvnDiffViewerStatus,
+    applyingSvnDiffViewerScope, isRestoringSvnDiffViewerDefault, svnDiffViewerError,
+    onApplySvnDiffViewerScope, onRestoreSvnDiffViewerDefault, onRefreshSvnDiffViewerStatus,
+  } = svnConfig;
+  const {
+    basePath: localFileCompareBasePath,
+    minePath: localFileCompareMinePath,
+    onPickComparableFile,
+    onCompareLocalFiles,
+  } = localCompare;
+  const onCloseGoto = () => dialogs.actions.close('goto');
+  const onCloseHelp = () => dialogs.actions.close('help');
+  const onCloseAbout = () => dialogs.actions.close('about');
+  const onCloseSvnConfig = () => dialogs.actions.close('svnConfig');
+  const onCloseLocalFileCompare = () => dialogs.actions.close('localFileCompare');
+  const onCloseAll = dialogs.actions.closeAll;
   const anyDialogOpen = showGoto || showHelp || showAbout || showSvnConfig || showLocalFileCompare;
   const overlayMotion = useAnimatedVisibility(anyDialogOpen, { exitDurationMs: 150 });
   const gotoMotion = useAnimatedVisibility(showGoto);

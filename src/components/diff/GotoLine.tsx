@@ -57,11 +57,15 @@ const GotoLine = memo(({
   return (
     <DialogFrame
       animationState={animationState}
+      titleId="goto-line-dialog-title"
+      descriptionId="goto-line-dialog-description"
+      onClose={onClose}
       className="goto-line-dialog w-[340px] max-w-[calc(100vw-32px)] rounded-[14px] p-[18px] bg-bg-surface-solid border border-border-strong shadow-2xl font-ui">
-      <div className="text-[15px] text-text-title mb-1.5 font-bold">
+      <div id="goto-line-dialog-title" className="text-[15px] text-text-title mb-1.5 font-bold">
         {t('gotoTitle')}
       </div>
       <div
+        id="goto-line-dialog-description"
         className={`
           text-[13px] mb-3 min-h-4
           ${helperIsError ? 'text-diff-remove-text' : helperIsSuccess ? 'text-[var(--acc2)]' : 'text-text-secondary'}
@@ -70,6 +74,7 @@ const GotoLine = memo(({
       </div>
       <input
         ref={inputRef}
+        data-dialog-initial-focus
         value={val}
         onChange={e => {
           setVal(e.target.value.replace(/[^\d]/g, ''));
@@ -77,7 +82,6 @@ const GotoLine = memo(({
         }}
         onKeyDown={e => {
           if (e.key === 'Enter') go();
-          if (e.key === 'Escape') onClose();
         }}
         type="text"
         inputMode="numeric"

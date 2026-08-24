@@ -42,3 +42,20 @@ test('split view line selection context menu folds the selected range', async ({
   await foldAction.click();
   await expect.poll(async () => page.locator('[data-collapse-range="true"]').count()).toBeGreaterThan(0);
 });
+
+test('clicking blank diff space dismisses the line selection context menu', async ({ page }) => {
+  await loadSplitDiff(page);
+
+  const selectedRow = page.locator('[data-line-idx="2"]').first();
+  await selectedRow.locator('button').first().click();
+  await selectedRow.click({ button: 'right' });
+
+  const contextMenu = page.getByRole('menu');
+  await expect(contextMenu).toBeVisible();
+
+  const rowBox = await selectedRow.boundingBox();
+  expect(rowBox).not.toBeNull();
+  await page.mouse.click(rowBox!.x + rowBox!.width - 12, rowBox!.y + (rowBox!.height / 2));
+
+  await expect(contextMenu).toBeHidden();
+});

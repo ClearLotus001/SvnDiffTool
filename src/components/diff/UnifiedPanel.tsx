@@ -50,7 +50,10 @@ import { useLogicalTextSelectionState } from '@/hooks/diff/useLogicalTextSelecti
 import { useTextSearchDecorations } from '@/hooks/diff/useTextSearchDecorations';
 import { useTextSelectionContextMenu } from '@/hooks/diff/useTextSelectionContextMenu';
 import { useTextLineRangeSelectionState } from '@/hooks/diff/useTextLineRangeSelectionState';
-import { doesLogicalTextSelectionIntersectLineRange } from '@/utils/diff/logicalTextSelection';
+import {
+  doesLogicalTextSelectionIntersectLineRange,
+  getLogicalTextSelectionLineRange,
+} from '@/utils/diff/logicalTextSelection';
 import { getUnifiedLineSyntaxTokens } from '@/utils/diff/syntaxHighlighting';
 import {
   buildTextRenderItemIndexes,
@@ -180,6 +183,13 @@ const UnifiedPanel = memo(({
     { overscanMin: 40, overscanFactor: 2 },
   );
 
+  const collapseLineRange = useCallback((startLineIdx: number, endLineIdx: number) => {
+    setExpandedBlocks((prev) => addManualCollapsedRange(
+      prev,
+      startLineIdx,
+      endLineIdx,
+    ));
+  }, []);
   const {
     lineRangeSelection,
     setLineRangeSelection,
@@ -190,15 +200,7 @@ const UnifiedPanel = memo(({
     handleFoldSelectedRange,
     handleClearSelectedRange,
     handleBlankAreaPointerDown,
-  } = useTextLineRangeSelectionState({
-    onFoldRange: (startLineIdx, endLineIdx) => {
-      setExpandedBlocks((prev) => addManualCollapsedRange(
-        prev,
-        startLineIdx,
-        endLineIdx,
-      ));
-    },
-  });
+  } = useTextLineRangeSelectionState({ onFoldRange: collapseLineRange });
   const {
     contextMenuPoint,
     contextMenuSections,
@@ -229,6 +231,10 @@ const UnifiedPanel = memo(({
       closeContextMenu();
     },
   });
+  const textSelectionLineRange = useMemo(
+    () => getLogicalTextSelectionLineRange(textSelection),
+    [textSelection],
+  );
   const handleManagedLineNumberSelection = useCallback((lineIdx: number, extend: boolean) => {
     clearTextSelection();
     closeContextMenu();
@@ -289,13 +295,25 @@ const UnifiedPanel = memo(({
 
   const handleContextMenu = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
     if (isWorkbookMode) return;
-    if (openTextSelectionContextMenu(event, textSelectionCopyText)) return;
+    if (textSelectionLineRange && openTextSelectionContextMenu(event, {
+      copyText: textSelectionCopyText,
+      ...textSelectionLineRange,
+      sideMode: 'both',
+      onFoldSelectedRange: () => {
+        collapseLineRange(textSelectionLineRange.startLineIdx, textSelectionLineRange.endLineIdx);
+        clearTextSelection();
+      },
+      onClearSelectedRange: clearTextSelection,
+    })) return;
     void openLineSelectionContextMenu(event, 'both');
   }, [
+    clearTextSelection,
+    collapseLineRange,
     isWorkbookMode,
     openLineSelectionContextMenu,
     openTextSelectionContextMenu,
     textSelectionCopyText,
+    textSelectionLineRange,
   ]);
   useEffect(() => {
     const hasTextSelectionMenu = contextMenuSections.some((section) => (

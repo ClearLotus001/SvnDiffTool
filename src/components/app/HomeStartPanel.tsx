@@ -578,18 +578,18 @@ function HomeAmbientCanvas() {
 }
 
 function getPixelCardColors(host: HTMLElement, accent: string) {
-  const accentColor = readThemeColor(host, accent, '#60A5FA');
-  const blue = readThemeColor(host, '--acc2', '#60A5FA');
-  const add = readThemeColor(host, '--diff-add-border', '#10B981');
-  const modify = readThemeColor(host, '--diff-modify-border', '#FACC15');
+  const accentColor = readThemeColor(host, accent, '#A6BDC9');
+  const secondaryAccent = readThemeColor(host, '--acc2', '#D0B49A');
+  const add = readThemeColor(host, '--diff-add-border', '#4E9B62');
+  const modify = readThemeColor(host, '--diff-modify-border', '#B69A3B');
   const secondary = readThemeColor(host, '--text-secondary', '#A1A1AA');
   const border = readThemeColor(host, '--border-strong', '#3F3F46');
 
   if (accent === '--accent') {
-    return [accentColor, blue, secondary, border];
+    return [accentColor, secondaryAccent, secondary, border];
   }
 
-  return [accentColor, blue, add, modify];
+  return [accentColor, secondaryAccent, add, modify];
 }
 
 function PixelCardField({ accent, disabled = false }: { accent: string; disabled?: boolean }) {
@@ -640,7 +640,7 @@ function PixelCardField({ accent, disabled = false }: { accent: string; disabled
       for (let x = 0; x < width; x += gap) {
         for (let y = 0; y < height; y += gap) {
           const seed = hashPoint(x + gap * 0.37, y + gap * 0.61);
-          const color = colors[Math.floor(seed * colors.length)] ?? colors[0] ?? '#60A5FA';
+          const color = colors[Math.floor(seed * colors.length)] ?? colors[0] ?? '#D0B49A';
           const dx = x - width / 2;
           const dy = y - height / 2;
           const distance = Math.hypot(dx, dy);

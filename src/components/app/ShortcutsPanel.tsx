@@ -16,9 +16,11 @@ const ShortcutsPanel = memo(({
   return (
     <DialogFrame
       animationState={animationState}
+      titleId="shortcuts-dialog-title"
+      onClose={onClose}
       className="w-[380px] max-w-[calc(100vw-32px)] rounded-[10px] p-[18px_24px] bg-bg-surface-solid border border-border-strong shadow-2xl font-ui">
       <div className="flex items-center justify-between mb-3.5">
-        <span className="text-[15px] font-semibold text-text-title">{t('shortcutsTitle')}</span>
+        <h2 id="shortcuts-dialog-title" className="m-0 text-[15px] font-semibold text-text-title">{t('shortcutsTitle')}</h2>
         <button
           onClick={onClose}
           aria-label={t('commonClose')}

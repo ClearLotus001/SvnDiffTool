@@ -49,14 +49,14 @@ const WorkbookFrozenPaneOverflowBar = memo(({
           <span
             className="size-2 rounded-full shrink-0"
             aria-hidden="true"
-            style={{ background: hovered ? T.acc2 : T.acc }}
+            style={{ background: hovered ? T.versionBase : T.versionMine }}
           />
           <span className="font-ui text-[11px] font-bold text-text-title truncate">{label}</span>
           <span className="font-code text-[11px] text-text-secondary shrink-0">{itemCount} {resolvedItemLabel}</span>
           {rangeLabel && (
             <span
               className="font-code text-[11px] font-bold shrink-0"
-              style={{ color: hovered ? T.acc2 : T.acc }}>
+              style={{ color: hovered ? T.versionBase : T.versionMine }}>
               {rangeLabel}
             </span>
           )}
@@ -72,7 +72,7 @@ const WorkbookFrozenPaneOverflowBar = memo(({
           borderColor: hovered ? T.acc : T.border,
           background: hovered ? T.bg1 : T.bg2,
           overflowAnchor: 'none',
-          scrollbarColor: `${hovered ? T.acc2 : T.acc} ${T.bg0}`,
+          scrollbarColor: `${hovered ? T.versionBase : T.versionMine} ${T.bg0}`,
           boxShadow: hovered ? `0 0 0 1px ${T.acc}22` : undefined,
         }}>
         <div
@@ -82,8 +82,8 @@ const WorkbookFrozenPaneOverflowBar = memo(({
             height: hovered ? 12 : 10,
             borderRadius: 999,
             background: hovered
-              ? `linear-gradient(90deg, ${T.acc} 0%, ${T.acc2} 100%)`
-              : `linear-gradient(90deg, ${T.acc2} 0%, ${T.acc} 100%)`,
+              ? `linear-gradient(90deg, ${T.versionMine} 0%, ${T.versionBase} 100%)`
+              : `linear-gradient(90deg, ${T.versionBase} 0%, ${T.versionMine} 100%)`,
             boxShadow: `inset 0 0 0 1px ${T.border}`,
             transition: 'height 150ms ease, background 150ms ease',
           }}
@@ -92,7 +92,7 @@ const WorkbookFrozenPaneOverflowBar = memo(({
       {resolvedHint && (
         <div
           className="px-2 pt-1 font-ui text-[10px] transition-colors duration-150"
-          style={{ color: hovered ? T.acc2 : T.t2 }}>
+          style={{ color: hovered ? T.versionBase : T.t2 }}>
           {resolvedHint}
         </div>
       )}

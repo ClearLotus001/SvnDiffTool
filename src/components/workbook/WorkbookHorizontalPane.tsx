@@ -29,7 +29,11 @@ export default function WorkbookHorizontalPane({
         ref={paneRef}
         onScroll={onScroll}
         className="flex-1 overflow-auto relative min-w-0 min-h-0"
-        style={{ overflowAnchor: 'none' }}>
+        style={{
+          overflowAnchor: 'none',
+          overflowX: 'scroll',
+          scrollbarGutter: 'stable',
+        }}>
         <div key={sheetRenderKey} style={{ position: 'relative', minWidth: contentWidth, height: contentHeight }}>
           <div
             style={{

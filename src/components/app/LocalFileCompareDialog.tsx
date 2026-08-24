@@ -178,6 +178,7 @@ const FileSlot = memo(({
 
       <button
         type="button"
+        data-dialog-initial-focus={side === 'base' ? true : undefined}
         disabled={busy}
         onClick={() => onPick(side)}
         className="local-file-compare-dialog__pick-action">
@@ -326,6 +327,9 @@ const LocalFileCompareDialog = memo(({
   return (
     <DialogFrame
       animationState={animationState}
+      titleId="local-file-compare-dialog-title"
+      descriptionId="local-file-compare-dialog-description"
+      onClose={onClose}
       className="local-file-compare-dialog w-[980px] max-w-[calc(100vw-32px)] max-h-[calc(100vh-48px)] overflow-y-auto bg-bg-surface-solid border border-border-strong rounded-[24px] p-[24px] shadow-2xl font-ui box-border">
       <button
         type="button"
@@ -349,12 +353,12 @@ const LocalFileCompareDialog = memo(({
             <Files size={20} />
           </div>
           <div>
-            <h2 className="m-0 text-text-title text-[24px] font-[900] leading-tight tracking-tight">
+            <h2 id="local-file-compare-dialog-title" className="m-0 text-text-title text-[24px] font-[900] leading-tight tracking-tight">
               {t('localFileCompareTitle')}
             </h2>
           </div>
         </div>
-        <p className="m-0 max-w-[690px] text-text-secondary text-[13px] leading-[1.75]">
+        <p id="local-file-compare-dialog-description" className="m-0 max-w-[690px] text-text-secondary text-[13px] leading-[1.75]">
           {t('localFileCompareSubtitle')}
         </p>
       </header>

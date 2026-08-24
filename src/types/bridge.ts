@@ -16,9 +16,11 @@ import type {
 import type { LineBlamePayload } from '@/types/diff';
 import type {
   WorkbookCompareMode,
+} from '@/types/workbook';
+import type {
   WorkbookCompareModePayload,
   WorkbookMetadataPayload,
-} from '@/types/workbook';
+} from '@/types/analysis';
 import type { AppUpdateState } from '@/types/update';
 import type { ThemeKey } from '@/types/theme';
 

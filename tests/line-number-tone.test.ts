@@ -71,9 +71,9 @@ test('base and mine attribution badges share one shape and only vary their color
     assert.match(html, /border-radius:4px/);
     assert.match(html, /padding:0 3px/);
   }
-  assert.match(baseHtml, /var\(--acc2\)/);
-  assert.match(mineHtml, /var\(--accent\)/);
-  assert.doesNotMatch(mineHtml, /var\(--acc\)/);
+  assert.match(baseHtml, /var\(--version-base\)/);
+  assert.match(mineHtml, /var\(--version-mine\)/);
+  assert.doesNotMatch(mineHtml, /var\(--accent\)/);
 });
 
 test('shared workbook line number tone only uses side accents for single-sided rows', () => {

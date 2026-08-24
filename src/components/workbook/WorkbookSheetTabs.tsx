@@ -77,6 +77,7 @@ const WorkbookSheetTabs = memo(({
   );
 
   const getSectionBadge = (section: WorkbookSection) => {
+    if (isModifiedSection(section)) return '~';
     switch (section.changeType) {
       case 'add': return '+';
       case 'delete': return '−';
@@ -147,7 +148,14 @@ const WorkbookSheetTabs = memo(({
 
   const renderSectionTooltip = (section: WorkbookSection) => {
     const status = getSectionTooltipStatus(section);
-    return status ? renderTooltipTag(status.label, status.tone) : null;
+    return (
+      <div className="grid gap-1.5 min-w-0">
+        <div className="font-ui text-[11px] font-bold text-text-title break-words">
+          {getSectionLabel(section)}
+        </div>
+        {status ? renderTooltipTag(status.label, status.tone) : renderTooltipTag(t('workbookSheetTabTooltipTagSheet'))}
+      </div>
+    );
   };
 
   useEffect(() => {
@@ -178,7 +186,7 @@ const WorkbookSheetTabs = memo(({
   return (
     <div
       data-testid="workbook-sheet-tabs"
-      className="flex flex-nowrap items-end gap-1.5 py-0.5 px-2 shrink-0 relative z-[40] isolate border-t border-border-default overflow-visible"
+      className="flex flex-nowrap items-end gap-1.5 py-1 px-2 shrink-0 relative z-[40] isolate border-t border-border-default overflow-visible"
       style={{
         background: `linear-gradient(180deg, ${cssVar('bg1')} 0%, ${cssVar('bg0')} 100%)`,
         boxShadow: `0 -1px 0 ${cssVar('border')}, 0 -10px 22px -24px ${cssVar('border2')}`,
@@ -188,10 +196,12 @@ const WorkbookSheetTabs = memo(({
           type="button"
           data-testid="workbook-sheet-menu-trigger"
           aria-expanded={menuOpen}
+          aria-label={t('workbookSheetMenuLabel', { count: sections.length })}
           onClick={() => setMenuOpen((open) => !open)}
-          className="size-7 rounded-[6px] border border-border-default bg-bg-surface-hover text-text-primary cursor-pointer inline-flex items-center justify-center hover:text-accent hover:border-accent active:scale-95 transition-all duration-150"
+          className="h-8 min-w-8 px-2 rounded-[7px] border border-border-default bg-bg-surface-hover text-text-primary cursor-pointer inline-flex items-center justify-center gap-1.5 hover:text-accent hover:border-accent active:scale-95 transition-all duration-150"
           style={{ boxShadow: `0 10px 18px -18px ${cssVar('border2')}` }}>
           <Menu size={13} />
+          <span className="font-code text-[10px] font-bold tabular-nums">{sections.length}</span>
         </button>
         {menuOpen && (
           <div
@@ -216,13 +226,14 @@ const WorkbookSheetTabs = memo(({
                   anchorStyle={{ display: 'block', width: '100%', flexShrink: 1 }}>
                   <button
                     type="button"
+                    aria-current={active ? 'page' : undefined}
                     onClick={() => {
                       onSelect(index);
                       setMenuOpen(false);
                     }}
                     className="w-full h-[30px] px-2.5 rounded-[6px] cursor-pointer font-ui text-left whitespace-nowrap overflow-hidden text-ellipsis flex items-center gap-1.5 transition-all duration-150 hover:brightness-110"
                     style={{
-                      fontSize: sizes.ui,
+                      fontSize: Math.max(12, sizes.ui),
                       border: `1px solid ${active ? palette.border : modified ? palette.softBackground : 'transparent'}`,
                       background: active
                         ? palette.background
@@ -252,6 +263,7 @@ const WorkbookSheetTabs = memo(({
                       />
                     )}
                     <span className="overflow-hidden text-ellipsis">{label}</span>
+                    {tooltipContent && <span className="sr-only">{getSectionTooltipStatus(section)?.label ?? ''}</span>}
                   </button>
                 </Tooltip>
               );
@@ -281,7 +293,7 @@ const WorkbookSheetTabs = memo(({
                       next.add(item.key);
                       return next;
                     })}
-                    className="group h-[22px] mb-[3px] px-1 rounded-full border border-dashed cursor-pointer font-ui whitespace-nowrap shrink-0 inline-flex items-center gap-0.5 transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:translate-y-0 active:scale-[0.97]"
+                    className="group h-6 mb-[3px] min-w-8 px-1.5 rounded-full border border-dashed cursor-pointer font-ui whitespace-nowrap shrink-0 inline-flex items-center justify-center gap-0.5 transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:translate-y-0 active:scale-[0.97]"
                     style={{
                       borderColor: cssVar('border2'),
                       background: `linear-gradient(180deg, color-mix(in srgb, ${cssVar('border2')} 9%, ${cssVar('bg1')}) 0%, color-mix(in srgb, ${cssVar('border2')} 16%, ${cssVar('bg2')}) 100%)`,
@@ -331,19 +343,20 @@ const WorkbookSheetTabs = memo(({
                 <button
                   type="button"
                   data-testid="workbook-sheet-tab"
+                  aria-current={active ? 'page' : undefined}
                   onClick={() => onSelect(index)}
-                  className="h-7 px-3 rounded-t-[7px] border-b-0 cursor-pointer font-ui whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 max-w-[220px] transition-all duration-150"
+                  className="h-[30px] px-2.5 rounded-t-[7px] border-b-0 cursor-pointer font-ui whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 max-w-[220px] transition-all duration-150"
                   style={{
                     borderLeft: `1px solid ${active || modified ? palette.border : cssVar('border')}`,
                     borderRight: `1px solid ${active || modified ? palette.border : cssVar('border')}`,
-                    borderTop: `1px solid ${active ? palette.accent : modified ? palette.border : 'transparent'}`,
+                    borderTop: `${active ? 2 : 1}px solid ${active ? palette.accent : modified ? palette.border : 'transparent'}`,
                     background: active
                       ? `linear-gradient(180deg, ${palette.softBackground} 0%, ${cssVar('bg1')} 65%)`
                       : modified
                         ? `linear-gradient(180deg, ${palette.softBackground} 0%, ${cssVar('bg2')} 82%)`
                         : cssVar('bg2'),
                     color: active ? activeTextColor : modified ? cssVar('t0') : cssVar('t1'),
-                    fontSize: sizes.ui,
+                    fontSize: Math.max(12, sizes.ui),
                     fontWeight: active ? 700 : 600,
                     boxShadow: active
                       ? `0 -6px 14px -10px ${palette.shadow}`
@@ -371,6 +384,7 @@ const WorkbookSheetTabs = memo(({
                     />
                   )}
                   <span className="overflow-hidden text-ellipsis">{label}</span>
+                  <span className="sr-only">{getSectionTooltipStatus(section)?.label ?? t('workbookSheetTabTooltipTagSheet')}</span>
                 </button>
               </Tooltip>
             );

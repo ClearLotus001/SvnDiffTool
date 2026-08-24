@@ -19,8 +19,35 @@ function normalizeWorkbookRowTone(tone: WorkbookRowSemanticTone): WorkbookRowDel
   return tone === 'neutral' ? 'equal' : tone;
 }
 
+export function resolveWorkbookVersionAccent(
+  theme: ThemeTokens,
+  side: 'base' | 'mine',
+): string {
+  return side === 'base' ? theme.versionBase : theme.versionMine;
+}
+
+export interface WorkbookVersionIdentityVisual {
+  overlay: string | null;
+  rail: string | null;
+  railWidth: number;
+}
+
+export function resolveWorkbookVersionIdentityVisual(
+  theme: ThemeTokens,
+  side: 'base' | 'mine',
+  hasSemanticDiff: boolean,
+  surface: 'body' | 'header' = 'body',
+): WorkbookVersionIdentityVisual {
+  const accent = resolveWorkbookVersionAccent(theme, side);
+  return {
+    overlay: hasSemanticDiff || surface === 'header' ? null : `${accent}28`,
+    rail: null,
+    railWidth: 0,
+  };
+}
+
 function getWorkbookSideAccent(theme: ThemeTokens, sideAccent: Exclude<WorkbookRowSideAccent, null>): string {
-  return sideAccent === 'base' ? theme.acc2 : theme.acc;
+  return resolveWorkbookVersionAccent(theme, sideAccent);
 }
 
 function withHexAlpha(color: string, hexAlpha: string): string {
@@ -56,25 +83,47 @@ export function resolveWorkbookRowSurfaceBackground(params: {
   isGuided: boolean;
   isActiveSearch: boolean;
   isSearchMatch: boolean;
+  isHeaderRow?: boolean;
 }): string {
   const {
     theme,
     isGuided,
     isActiveSearch,
     isSearchMatch,
+    isHeaderRow = false,
   } = params;
 
   if (isGuided) return `${theme.acc2}08`;
   if (isActiveSearch) return theme.searchActiveBg;
   if (isSearchMatch) return `${theme.searchHl}24`;
+  if (isHeaderRow) return theme.workbookHeaderBg;
   return theme.bg0;
+}
+
+export function resolveWorkbookHeaderRowDividerColor(theme: ThemeTokens): string {
+  return theme.workbookHeaderBorder;
+}
+
+export function formatWorkbookVisibleRowNumber(
+  rowNumber: number,
+  previousVisibleRowNumber: number | null,
+): string {
+  if (rowNumber <= 0) return '';
+  if (
+    previousVisibleRowNumber != null
+    && previousVisibleRowNumber > 0
+    && rowNumber > previousVisibleRowNumber + 1
+  ) {
+    return `⋯ ${rowNumber}`;
+  }
+  return String(rowNumber);
 }
 
 export function resolveWorkbookRowSelectionAccent(
   theme: ThemeTokens,
   side: 'base' | 'mine',
 ): string {
-  return side === 'base' ? theme.acc2 : theme.acc;
+  return resolveWorkbookVersionAccent(theme, side);
 }
 
 export interface WorkbookAccentSurfaceVisual {
@@ -163,13 +212,20 @@ export function resolveWorkbookRowGutterBackground(params: {
   theme: ThemeTokens;
   selectionAccent: string;
   isSelected: boolean;
+  isHeaderRow?: boolean;
+  versionSide?: 'base' | 'mine' | null;
 }): string {
   const {
     theme,
     selectionAccent,
     isSelected,
+    isHeaderRow = false,
+    versionSide = null,
   } = params;
-  return isSelected ? `${selectionAccent}26` : theme.lnBg;
+  if (isSelected) return `${selectionAccent}26`;
+  if (isHeaderRow) return theme.workbookHeaderBg;
+  if (versionSide) return `${resolveWorkbookVersionAccent(theme, versionSide)}20`;
+  return theme.lnBg;
 }
 
 export function resolveWorkbookRowBorderColor(
@@ -182,7 +238,7 @@ export function resolveWorkbookRowBorderColor(
   if (semanticTone === 'add') return theme.addBrd;
   if (semanticTone === 'delete') return theme.delBrd;
   if (semanticTone === 'mixed') return theme.chgTx;
-  return theme.border2;
+  return theme.workbookGridBorderStrong;
 }
 
 export function resolveWorkbookRowRuleColor(
@@ -211,8 +267,8 @@ export function resolveWorkbookRowLineNumberColor(params: {
   if (semanticTone === 'add') return theme.addTx;
   if (semanticTone === 'delete') return theme.delTx;
   if (semanticTone === 'mixed') return theme.chgTx;
-  if (fallbackTone === 'base') return active ? theme.acc2 : withHexAlpha(theme.acc2, 'bf');
-  if (fallbackTone === 'mine') return active ? theme.acc : withHexAlpha(theme.acc, 'bf');
+  if (fallbackTone === 'base') return active ? theme.versionBase : withHexAlpha(theme.versionBase, 'bf');
+  if (fallbackTone === 'mine') return active ? theme.versionMine : withHexAlpha(theme.versionMine, 'bf');
   return active ? theme.acc2 : theme.lnTx;
 }
 
@@ -223,7 +279,7 @@ export function resolveWorkbookMiniMapPaint(
   if (tone === 'strict-only') {
     return {
       kind: 'solid',
-      color: theme.acc2,
+      color: theme.searchHl,
     };
   }
 
@@ -286,18 +342,18 @@ export function resolveWorkbookOverlayPalette(
   }
   if (semanticTone === 'mixed') {
     return {
-      left: theme.acc2,
-      right: theme.acc,
+      left: theme.versionBase,
+      right: theme.versionMine,
       mid: theme.chgTx,
       continuation: `${theme.chgTx}38`,
       shine: `${theme.chgTx}44`,
     };
   }
   return {
-    left: theme.border2,
-    right: theme.border2,
+    left: theme.workbookGridBorderStrong,
+    right: theme.workbookGridBorderStrong,
     mid: theme.t1,
-    continuation: `${theme.border2}28`,
+    continuation: `${theme.workbookGridBorderStrong}28`,
     shine: `${theme.t1}2e`,
   };
 }

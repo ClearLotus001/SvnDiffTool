@@ -157,14 +157,14 @@ const installerTheme = {
   panelAlt: '#E7EDF6',
   text: '#09090B',
   muted: '#71717A',
-  accent: '#3B82F6',
-  accentStrong: '#2563EB',
-  accentSoft: '#DBEAFE',
+  accent: '#496778',
+  accentStrong: '#3B5665',
+  accentSoft: '#E5EDF1',
   brandBackground: '#0B0D12',
   brandSurface: '#171A27',
   brandText: '#FAFAFA',
   brandMuted: '#A1A1AA',
-  success: '#10B981',
+  success: '#4E9B62',
 } as const;
 
 const installerBackground = hex(installerTheme.background);

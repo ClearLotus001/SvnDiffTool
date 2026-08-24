@@ -131,14 +131,15 @@ const SplitHeader = memo(({
   };
 
   const renderRoleBadge = (side: 'base' | 'mine') => {
-    const accentVar = side === 'base' ? '--acc2' : '--accent';
+    const accentVar = side === 'base' ? '--version-base' : '--version-mine';
+    const accentKey = side === 'base' ? 'versionBase' : 'versionMine';
     const glyphCls = side === 'base' ? 'size-1 rounded-[2px] rotate-45' : 'size-[5px] rounded-full';
     return (
       <span
         aria-hidden="true"
         className="inline-flex items-center justify-center size-2 min-w-2 rounded-full shrink-0 box-border"
-        style={{ background: cssAlpha(side === 'base' ? 'acc2' : 'acc', '14'), border: `1px solid ${cssAlpha(side === 'base' ? 'acc2' : 'acc', '38')}` }}>
-        <span className={`block ${glyphCls}`} style={{ background: `var(${accentVar})`, boxShadow: `0 0 0 1px ${cssAlpha(side === 'base' ? 'acc2' : 'acc', '22')}` }} />
+        style={{ background: cssAlpha(accentKey, '14'), border: `1px solid ${cssAlpha(accentKey, '38')}` }}>
+        <span className={`block ${glyphCls}`} style={{ background: `var(${accentVar})`, boxShadow: `0 0 0 1px ${cssAlpha(accentKey, '22')}` }} />
       </span>
     );
   };
@@ -241,7 +242,7 @@ const SplitHeader = memo(({
     return (
       <RevisionPicker
         align={side === 'base' ? 'left' : 'right'}
-        accent={side === 'base' ? '--acc2' : '--accent'}
+        accent={side === 'base' ? '--version-base' : '--version-mine'}
         title={side === 'base' ? baseTitle : mineTitle}
         value={info}
         options={options}
@@ -289,8 +290,8 @@ const SplitHeader = memo(({
   const renderCopyButton = (side: 'base' | 'mine', version: string) => {
     const onCopy = side === 'base' ? onBaseCopy : onMineCopy;
     if (!onCopy) return null;
-    const accent = side === 'base' ? '--acc2' : '--accent';
-    const accentKey = side === 'base' ? 'acc2' : 'acc';
+    const accent = side === 'base' ? '--version-base' : '--version-mine';
+    const accentKey = side === 'base' ? 'versionBase' : 'versionMine';
     const copied = copiedSide === side;
     const tooltip = side === 'base'
       ? `${t('copyFullBaseTitle')} · ${version}`
@@ -332,7 +333,7 @@ const SplitHeader = memo(({
     version: string, info: SvnRevisionInfo | null, sourceKind: ComparisonSourceKind | null,
     divider = false,
   ) => {
-    const accent = side === 'base' ? '--acc2' : '--accent';
+    const accent = side === 'base' ? '--version-base' : '--version-mine';
     const sideCanSwitch = side === 'base' ? canSwitchBaseRevision : canSwitchMineRevision;
     const hasRevisionSwitch = canSwitchRevisions && sideCanSwitch && Boolean(onRevisionChange);
     const normalizedVersion = version.trim();

@@ -62,6 +62,8 @@ test('SplitHeader keeps revision picker compact and shows the revision log as a 
   assert.doesNotMatch(html, /提交日志/);
   assert.doesNotMatch(html, /winxzhang · 2026-03-24 23:33/);
   assert.doesNotMatch(html, /\stitle="/);
+  assert.match(html, /var\(--version-base\)/);
+  assert.match(html, /var\(--version-mine\)/);
 });
 
 test('SplitHeader shows distinct labels and full paths for a two-file comparison', () => {

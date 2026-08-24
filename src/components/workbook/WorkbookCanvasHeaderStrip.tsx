@@ -24,10 +24,16 @@ import {
   getWorkbookCanvasLayerViewports,
 } from '@/utils/workbook/workbookMergeLayout';
 import { createWorkbookCanvasBorderRegistry } from '@/utils/workbook/workbookCanvasBorders';
+import {
+  resolveWorkbookRowSelectionAccent,
+  resolveWorkbookVersionAccent,
+} from '@/utils/workbook/workbookRowVisuals';
 import WorkbookAnchorTooltip, { type WorkbookAnchorTooltipState } from '@/components/workbook/WorkbookAnchorTooltip';
 import {
   formatWorkbookHiddenColumnMarkerCount,
   getWorkbookHiddenColumnMarkerWidth,
+  resolveWorkbookHiddenColumnMarkerLeft,
+  type WorkbookHiddenColumnMarkerLayer,
 } from '@/utils/workbook/workbookHiddenColumnVisuals';
 
 type WorkbookCanvasHeaderMode = 'single' | 'paired-wide' | 'paired-compact';
@@ -147,6 +153,7 @@ const WorkbookCanvasHeaderStrip = memo(({
   const resolveHiddenIndicatorLayouts = useCallback((currentScrollLeft: number) => {
     const contentLeft = LN_W + 3;
     const contentRight = Math.min(viewportWidth, contentWidth);
+    const frozenBoundaryX = contentLeft + headerColumnPartition.frozenWidth;
 
     return hiddenColumnSegments.flatMap((segment) => {
       const afterEntry = segment.afterColumn != null
@@ -172,11 +179,18 @@ const WorkbookCanvasHeaderStrip = memo(({
 
       const width = getWorkbookHiddenColumnMarkerWidth(segment.count);
       if (boundaryX < contentLeft - width || boundaryX > contentRight + width) return [];
-
-      const left = Math.max(
+      const layer: WorkbookHiddenColumnMarkerLayer = afterEntry?.position != null
+        && afterEntry.position < freezeColumnCount
+        ? 'frozen'
+        : 'scroll';
+      const left = resolveWorkbookHiddenColumnMarkerLeft({
+        boundaryX,
+        width,
         contentLeft,
-        Math.min(boundaryX - (width / 2), contentRight - width),
-      );
+        contentRight,
+        frozenBoundaryX,
+        layer,
+      });
 
       return [{
         segment,
@@ -184,9 +198,10 @@ const WorkbookCanvasHeaderStrip = memo(({
         top: Math.floor((ROW_H - HIDDEN_MARKER_HEIGHT) / 2),
         width,
         height: HIDDEN_MARKER_HEIGHT,
+        layer,
       }];
     });
-  }, [columnLayoutByColumn, contentWidth, freezeColumnCount, hiddenColumnSegments, viewportWidth]);
+  }, [columnLayoutByColumn, contentWidth, freezeColumnCount, headerColumnPartition.frozenWidth, hiddenColumnSegments, viewportWidth]);
 
   const resolveHit = (x: number, canvasRect?: DOMRect): HeaderHitTarget | null => {
     const contentHitRight = Math.min(viewportWidth, contentWidth);
@@ -292,7 +307,7 @@ const WorkbookCanvasHeaderStrip = memo(({
 
       ctx.fillStyle = T.bg2;
       ctx.fillRect(0, 0, LN_W + 3, height);
-      ctx.strokeStyle = T.border;
+      ctx.strokeStyle = T.workbookGridBorder;
       ctx.beginPath();
       ctx.moveTo(0, height - 0.5);
       ctx.lineTo(contentRight, height - 0.5);
@@ -340,11 +355,12 @@ const WorkbookCanvasHeaderStrip = memo(({
         const shadowBoundary = entry.position === freezeColumnCount - 1;
 
         if (mode === 'single') {
-          const accent = fixedSide === 'base' ? T.acc2 : T.acc;
+          const accent = resolveWorkbookVersionAccent(T, fixedSide);
+          const selectionAccent = resolveWorkbookRowSelectionAccent(T, fixedSide);
           ctx.fillStyle = isBaseFocused || isMineFocused
-            ? `${accent}28`
+            ? `${selectionAccent}28`
             : isSelectedColumn
-            ? `${accent}16`
+            ? `${selectionAccent}16`
             : T.bg1;
           ctx.fillRect(drawX, 0, entry.width, height);
           if (showFixedSideAccent) {
@@ -356,7 +372,7 @@ const WorkbookCanvasHeaderStrip = memo(({
             y: 0,
             width: entry.width,
             height,
-            color: isSelectedColumn ? `${accent}88` : T.border,
+            color: isSelectedColumn ? `${selectionAccent}88` : T.workbookGridBorder,
             priority: isSelectedColumn ? 1 : 0,
           });
           ctx.fillStyle = isBaseFocused || isMineFocused ? T.t0 : T.t1;
@@ -372,33 +388,28 @@ const WorkbookCanvasHeaderStrip = memo(({
           const mineX = drawX + split.baseWidth;
 
           ctx.fillStyle = isBaseFocused
-            ? `${T.acc2}32`
+            ? `${T.versionBase}52`
             : isSelectedColumn
-            ? `${T.acc2}12`
-            : `${T.acc2}0e`;
+            ? `${T.versionBase}36`
+            : `${T.versionBase}24`;
           ctx.fillRect(baseX, 0, split.baseWidth, height);
 
           ctx.fillStyle = isMineFocused
-            ? `${T.acc}32`
+            ? `${T.versionMine}52`
             : isSelectedColumn
-            ? `${T.acc}12`
-            : `${T.acc}0e`;
+            ? `${T.versionMine}36`
+            : `${T.versionMine}24`;
           ctx.fillRect(mineX, 0, split.mineWidth, height);
-
-          ctx.fillStyle = T.acc2;
-          ctx.fillRect(baseX, 0, 3, height);
-          ctx.fillStyle = T.acc;
-          ctx.fillRect(mineX, 0, 3, height);
 
           borderRegistry.addRect({
             x: drawX,
             y: 0,
             width: pairWidth,
             height,
-            color: T.border,
+            color: T.workbookGridBorder,
           });
           if (isSelectedColumn) {
-            const focusAccent = primarySelection?.side === 'base' ? T.acc2 : T.acc;
+            const focusAccent = resolveWorkbookRowSelectionAccent(T, primarySelection?.side === 'mine' ? 'mine' : 'base');
             deferredFocusDrawBucket.push(() => {
               ctx.strokeStyle = `${focusAccent}96`;
               ctx.lineWidth = 2;
@@ -417,12 +428,14 @@ const WorkbookCanvasHeaderStrip = memo(({
         }
 
         if (shadowBoundary) {
-          ctx.fillStyle = `${T.border2}66`;
+          ctx.fillStyle = `${T.workbookGridBorderStrong}c0`;
           ctx.fillRect(drawX + pairWidth - 1, 0, 1, height);
         }
 
         if (onColumnWidthChange && onAutoFitColumn) {
-          ctx.fillStyle = cursor === 'col-resize' ? `${T.acc2}b0` : `${T.border2}aa`;
+          ctx.fillStyle = cursor === 'col-resize'
+            ? `${T.acc2}b0`
+            : `${T.workbookGridBorderStrong}b8`;
           ctx.fillRect(drawX + pairWidth - 2, 8, 2, height - 16);
         }
       };
@@ -476,6 +489,15 @@ const WorkbookCanvasHeaderStrip = memo(({
         fillGradient.addColorStop(1, T.bg2);
 
         ctx.save();
+        const markerClipLeft = indicator.layer === 'scroll'
+          ? layerViewports.scroll?.left ?? contentLeft
+          : layerViewports.frozen?.left ?? contentLeft;
+        const markerClipWidth = indicator.layer === 'scroll'
+          ? layerViewports.scroll?.width ?? Math.max(0, contentRight - markerClipLeft)
+          : layerViewports.frozen?.width ?? Math.max(0, contentRight - markerClipLeft);
+        ctx.beginPath();
+        ctx.rect(markerClipLeft, 0, markerClipWidth, height);
+        ctx.clip();
         ctx.fillStyle = fillGradient;
         ctx.strokeStyle = markerColor;
         ctx.lineWidth = 1;

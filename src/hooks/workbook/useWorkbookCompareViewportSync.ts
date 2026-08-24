@@ -73,6 +73,7 @@ export function useWorkbookCompareViewportSync({
 }: UseWorkbookCompareViewportSyncParams): UseWorkbookCompareViewportSyncResult {
   const selectionAutoScrollLockRef = useRef<SelectionAutoScrollLock | null>(null);
   const snapshotEmitRafRef = useRef(0);
+  const snapshotEmitTimeoutRef = useRef<number | null>(null);
   const restoreRafRef = useRef(0);
   const lastRestoredSnapshotKeyRef = useRef('');
   const lastViewportSheetNameRef = useRef<string | null>(activeSheetName);
@@ -100,20 +101,44 @@ export function useWorkbookCompareViewportSync({
   const emitLayoutSnapshot = useCallback(() => {
     if (!active || !onLayoutSnapshotChange) return;
     const container = scrollRef.current;
-    onLayoutSnapshotChange(buildWorkbookCompareLayoutSnapshot(
+    const snapshot = buildWorkbookCompareLayoutSnapshot(
       mode === 'stacked' ? 'unified' : 'split-v',
       activeSheetName,
       activeRegionId,
       container?.scrollTop ?? 0,
       container?.scrollLeft ?? 0,
       expandedBlocks,
-    ));
+    );
+    lastRestoredSnapshotKeyRef.current = [
+      snapshot.layout,
+      snapshot.activeRegionId,
+      snapshot.sheetName,
+      snapshot.scrollTop,
+      snapshot.scrollLeft,
+    ].join(':');
+    onLayoutSnapshotChange(snapshot);
   }, [active, activeRegionId, activeSheetName, expandedBlocks, mode, onLayoutSnapshotChange, scrollRef]);
 
   const emitLayoutSnapshotRef = useRef(emitLayoutSnapshot);
   emitLayoutSnapshotRef.current = emitLayoutSnapshot;
 
-  const scheduleLayoutSnapshot = useCallback(() => {
+  const scheduleLayoutSnapshot = useCallback((priority: 'frame' | 'deferred' = 'frame') => {
+    if (priority === 'deferred') {
+      if (snapshotEmitRafRef.current) return;
+      if (snapshotEmitTimeoutRef.current != null) {
+        window.clearTimeout(snapshotEmitTimeoutRef.current);
+      }
+      snapshotEmitTimeoutRef.current = window.setTimeout(() => {
+        snapshotEmitTimeoutRef.current = null;
+        emitLayoutSnapshotRef.current();
+      }, 120);
+      return;
+    }
+
+    if (snapshotEmitTimeoutRef.current != null) {
+      window.clearTimeout(snapshotEmitTimeoutRef.current);
+      snapshotEmitTimeoutRef.current = null;
+    }
     if (snapshotEmitRafRef.current) return;
     snapshotEmitRafRef.current = requestAnimationFrame(() => {
       snapshotEmitRafRef.current = 0;
@@ -125,7 +150,7 @@ export function useWorkbookCompareViewportSync({
     const el = scrollRef.current;
     if (!el) return;
     const onScroll = () => {
-      scheduleLayoutSnapshot();
+      scheduleLayoutSnapshot('deferred');
       const now = getNow();
       if (now < programmaticScrollUntilRef.current) return;
       userScrollPauseUntilRef.current = now + 260;
@@ -134,6 +159,7 @@ export function useWorkbookCompareViewportSync({
     return () => {
       el.removeEventListener('scroll', onScroll);
       if (snapshotEmitRafRef.current) cancelAnimationFrame(snapshotEmitRafRef.current);
+      if (snapshotEmitTimeoutRef.current != null) window.clearTimeout(snapshotEmitTimeoutRef.current);
       if (restoreRafRef.current) cancelAnimationFrame(restoreRafRef.current);
     };
   }, [scheduleLayoutSnapshot, scrollRef]);
@@ -150,6 +176,10 @@ export function useWorkbookCompareViewportSync({
     if (snapshotEmitRafRef.current) {
       cancelAnimationFrame(snapshotEmitRafRef.current);
       snapshotEmitRafRef.current = 0;
+    }
+    if (snapshotEmitTimeoutRef.current != null) {
+      window.clearTimeout(snapshotEmitTimeoutRef.current);
+      snapshotEmitTimeoutRef.current = null;
     }
 
     lastRestoredSnapshotKeyRef.current = '';
@@ -201,6 +231,10 @@ export function useWorkbookCompareViewportSync({
     ].join(':');
     if (lastRestoredSnapshotKeyRef.current === restoreKey) return;
     lastRestoredSnapshotKeyRef.current = restoreKey;
+    if (snapshotEmitTimeoutRef.current != null) {
+      window.clearTimeout(snapshotEmitTimeoutRef.current);
+      snapshotEmitTimeoutRef.current = null;
+    }
     suppressAutoScrollUntilRef.current = getNow() + 520;
     lastForcedRevealHunkIdxRef.current = activeHunkIdx;
     if (selectedCell && selectedCell.sheetName === activeSheetName && activeSheetName) {

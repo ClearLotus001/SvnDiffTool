@@ -231,7 +231,7 @@ test('installer consumes generated app-aligned theme and branded panel assets', 
   assert.match(script, /File \/oname=\$PLUGINSDIR\\installerPanel\.bmp/);
   assert.match(theme, /!define COLOR_BG "F5F7FB"/);
   assert.match(theme, /!define COLOR_TEXT "09090B"/);
-  assert.match(theme, /!define COLOR_ACCENT "3B82F6"/);
+  assert.match(theme, /!define COLOR_ACCENT "496778"/);
   assert.equal(fs.statSync(panelPath).size > 100_000, true);
 });
 

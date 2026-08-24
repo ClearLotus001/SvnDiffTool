@@ -38,9 +38,12 @@ test('workbook sheet menu escapes the tab rail and bottom tags use the compact s
       return [style.height, style.borderTopWidth, style.borderTopLeftRadius];
     })),
   })).toEqual({
-    barHeight: 33,
+    barHeight: 41,
     overflow: 'visible',
-    tabStyles: Array.from({ length: 14 }, () => ['28px', '1px', '7px']),
+    tabStyles: [
+      ['30px', '2px', '7px'],
+      ...Array.from({ length: 13 }, () => ['30px', '1px', '7px']),
+    ],
   });
 
   const menuTrigger = page.getByTestId('workbook-sheet-menu-trigger');
@@ -63,5 +66,5 @@ test('workbook sheet menu escapes the tab rail and bottom tags use the compact s
   await expect.poll(async () => statsChips.evaluateAll((elements) => elements.map((element) => {
     const style = getComputedStyle(element);
     return [style.height, style.borderRadius, style.paddingLeft, style.paddingRight];
-  }))).toEqual(Array.from({ length: await statsChips.count() }, () => ['20px', '5px', '6px', '6px']));
+  }))).toEqual(Array.from({ length: await statsChips.count() }, () => ['22px', '5px', '7px', '7px']));
 });

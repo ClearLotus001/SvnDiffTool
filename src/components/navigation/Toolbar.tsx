@@ -201,8 +201,6 @@ const Toolbar = memo((props: ToolbarProps) => {
   }, [toolbarWidth]);
   const showLayoutText = responsiveMode === 'regular';
   const showActionText = responsiveMode === 'regular';
-  const showFileMeta = responsiveMode === 'regular';
-  const showFileChip = responsiveMode !== 'tight';
   const showFileActionText = responsiveMode !== 'tight';
   const showHunkTarget = (responsiveMode === 'regular' || responsiveMode === 'condensed') && !isWorkbookMode;
   const showThemeLabel = responsiveMode === 'regular' || responsiveMode === 'condensed';
@@ -231,9 +229,9 @@ const Toolbar = memo((props: ToolbarProps) => {
   }, [isElectron, onCheckForUpdates, onDownloadUpdate, onInstallUpdate, t, updateState]);
 
   const Btn = ({
-    active = false, onClick, children, tooltip = '', compact = false, disabled = false, testId,
+    active = false, pressed, onClick, children, tooltip = '', compact = false, disabled = false, testId,
   }: {
-    active?: boolean; onClick: () => void; children: React.ReactNode;
+    active?: boolean; pressed?: boolean; onClick: () => void; children: React.ReactNode;
     tooltip?: string; compact?: boolean; disabled?: boolean;
     testId?: string;
   }) => {
@@ -242,12 +240,13 @@ const Toolbar = memo((props: ToolbarProps) => {
         type="button"
         onClick={onClick}
         disabled={disabled}
+        aria-pressed={pressed}
         data-testid={testId}
         aria-label={tooltip || undefined}
         className={`
           app-toolbar__button
           inline-flex items-center justify-center gap-1.5
-          h-7 rounded-lg text-[13px] font-ui font-semibold
+          h-8 rounded-lg text-[13px] font-ui font-semibold
           whitespace-nowrap leading-none
           transition-all duration-150
           ${compact
@@ -260,18 +259,23 @@ const Toolbar = memo((props: ToolbarProps) => {
           }
           ${disabled
             ? 'opacity-45 cursor-not-allowed'
-            : 'cursor-pointer hover:-translate-y-px hover:bg-bg-elevated hover:border-border-strong hover:shadow-sm'
+            : 'cursor-pointer hover:bg-bg-elevated hover:border-border-strong hover:shadow-sm'
           }
         `}
-        style={noDragStyle}>
+        style={{
+          ...(active ? { boxShadow: 'inset 0 -2px 0 var(--acc2)' } : {}),
+          ...noDragStyle,
+        }}>
         {children}
       </button>
     );
     return tooltip ? <Tooltip content={tooltip} anchorStyle={noDragAnchorStyle}>{button}</Tooltip> : button;
   };
 
-  const Group = ({ children }: { children: React.ReactNode }) => (
+  const Group = ({ children, ariaLabel }: { children: React.ReactNode; ariaLabel?: string }) => (
     <div
+      role="group"
+      aria-label={ariaLabel}
       className={`
         app-toolbar__group
         flex items-center rounded-xl shrink-0
@@ -375,7 +379,7 @@ const Toolbar = memo((props: ToolbarProps) => {
         )}
 
         {showDiffControls && (
-          <Group>
+          <Group ariaLabel={t('toolbarHomeTitle')}>
             <Btn onClick={onHome} tooltip={t('toolbarHomeTitle')} testId="toolbar-home">
               <Icon name="home" />
               {showFileActionText && <span>{t('toolbarHomeLabel')}</span>}
@@ -383,37 +387,8 @@ const Toolbar = memo((props: ToolbarProps) => {
           </Group>
         )}
 
-        {/* File chip */}
-        {showDiffControls && showFileChip && fileName && (
-          <Tooltip content={fileName} maxWidth={320} anchorStyle={noDragAnchorStyle}>
-            <div
-              className="
-                inline-flex items-center gap-2 min-w-0 px-2 h-7
-                rounded-full bg-bg-surface-hover border border-border-default
-                text-text-title shrink
-              "
-              style={{
-                maxWidth: responsiveMode === 'compact' ? 148 : responsiveMode === 'condensed' ? 180 : 220,
-                flexBasis: 220,
-                ...noDragStyle,
-              }}>
-              <span className="text-[var(--acc2)] inline-flex items-center">
-                <Icon name="file" size={12} />
-              </span>
-              {showFileMeta && (
-                <span className="text-[11px] text-text-secondary whitespace-nowrap font-ui">
-                  {t('toolbarFileLabel')}
-                </span>
-              )}
-              <span className="text-[13px] font-semibold overflow-hidden text-ellipsis whitespace-nowrap font-ui">
-                {fileName}
-              </span>
-            </div>
-          </Tooltip>
-        )}
-
         {showDiffControls && isElectron && Boolean(fileName) && (
-          <Group>
+          <Group ariaLabel={fileActionTooltip}>
             <Btn onClick={onPickFile} tooltip={fileActionTooltip} testId="toolbar-pick-file">
               <Icon name="file" />
               {showFileActionText && <span>{fileActionLabel}</span>}
@@ -423,7 +398,7 @@ const Toolbar = memo((props: ToolbarProps) => {
 
         {/* Layout group */}
         {showDiffControls && (
-          <Group>
+          <Group ariaLabel={t(getLayoutLabelKey(layout, isWorkbookMode))}>
             {LAYOUT_OPTIONS.map((option) => {
               const labelKey = getLayoutLabelKey(option.id, isWorkbookMode);
               const iconName = getLayoutIconName(option.id, isWorkbookMode);
@@ -431,6 +406,7 @@ const Toolbar = memo((props: ToolbarProps) => {
                 <Btn
                   key={option.id}
                   active={layout === option.id}
+                  pressed={layout === option.id}
                   onClick={() => setLayout(option.id)}
                   tooltip={t(labelKey)}
                   testId={`toolbar-layout-${option.id}`}>
@@ -444,7 +420,7 @@ const Toolbar = memo((props: ToolbarProps) => {
 
         {/* Hunk navigation */}
         {showDiffControls && (
-          <Group>
+          <Group ariaLabel={t('toolbarNextHunkTitle')}>
           <Btn onClick={onPrev} tooltip={t('toolbarPrevHunkTitle')} compact>
             <Icon name="prev" />
           </Btn>
@@ -479,8 +455,8 @@ const Toolbar = memo((props: ToolbarProps) => {
 
         {/* Search & Goto */}
         {showDiffControls && (
-          <Group>
-          <Btn active={showSearch} onClick={() => setShowSearch(v => !v)} tooltip={t('toolbarSearchTitle')}>
+          <Group ariaLabel={t('toolbarSearchTitle')}>
+          <Btn active={showSearch} pressed={showSearch} onClick={() => setShowSearch(v => !v)} tooltip={t('toolbarSearchTitle')}>
             <Icon name="search" />
             {showActionText && <span>{t('toolbarSearchLabel')}</span>}
           </Btn>
@@ -522,7 +498,7 @@ const Toolbar = memo((props: ToolbarProps) => {
           </Group>
         )}
 
-        <Group>
+        <Group ariaLabel={t('toolbarLanguageTitle')}>
           <Btn onClick={() => setLocale(nextLocale)} tooltip={t('toolbarLanguageTitle')}>
             <Icon name="language" />
             {showLanguageText && (

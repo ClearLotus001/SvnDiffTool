@@ -3,6 +3,7 @@ import type { WorkbookCompareMode } from '@/types';
 import { resolveDiffIndicatorThemeVisual } from '@/utils/diff/diffIndicatorVisuals';
 import type { WorkbookCompareCellState } from '@/utils/workbook/workbookCompare';
 import { getWorkbookCellChangeKind } from '@/utils/workbook/workbookCellContract';
+import { resolveWorkbookVersionAccent } from '@/utils/workbook/workbookRowVisuals';
 
 export interface WorkbookCompareCellVisual {
   background: string;
@@ -39,6 +40,7 @@ interface ResolveWorkbookCompareCellVisualOptions {
   compareMode?: WorkbookCompareMode;
   side: 'base' | 'mine';
   modifyColorMode?: 'semantic' | 'side-accent';
+  isHeaderRow?: boolean;
   hasEntry: boolean;
   hasContent: boolean;
   hasBaseRow: boolean;
@@ -47,7 +49,7 @@ interface ResolveWorkbookCompareCellVisualOptions {
 }
 
 function getWorkbookSideAccentVisual(theme: ThemeTokens, side: 'base' | 'mine'): WorkbookCompareCellVisual {
-  const accent = side === 'base' ? theme.acc2 : theme.acc;
+  const accent = resolveWorkbookVersionAccent(theme, side);
   return {
     background: `${accent}12`,
     border: `${accent}66`,
@@ -115,6 +117,7 @@ export function resolveWorkbookCompareCellVisual({
   compareMode = 'strict',
   side,
   modifyColorMode = 'semantic',
+  isHeaderRow = false,
   hasEntry,
   hasContent,
   hasBaseRow,
@@ -123,9 +126,11 @@ export function resolveWorkbookCompareCellVisual({
 }: ResolveWorkbookCompareCellVisualOptions): WorkbookCompareCellVisual {
   if (!compareCell?.changed) {
     return {
-      background: hasEntry ? (hasContent ? T.bg1 : T.bg0) : T.bg2,
-      border: hasEntry ? T.border2 : T.border,
-      textColor: defaultTextColor,
+      background: isHeaderRow
+        ? T.workbookHeaderBg
+        : hasEntry ? (hasContent ? T.bg1 : T.bg0) : T.bg2,
+      border: hasEntry ? T.workbookGridBorderStrong : T.workbookGridBorder,
+      textColor: isHeaderRow ? T.t0 : defaultTextColor,
       maskOverlay: compareCell?.masked && hasContent ? `${T.bg1}22` : null,
     };
   }

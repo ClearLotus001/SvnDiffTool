@@ -36,6 +36,7 @@ function renderCompareStickyCanvas(): string {
             onSelectColumn: () => {},
           },
           frozenRowsPaneProps: {
+            appearance: 'header',
             frozenRowsScrollRef: { current: null },
             isHovered: false,
             onHoverEnter: () => {},
@@ -93,4 +94,6 @@ test('WorkbookCompareStickyCanvas pins frozen rows pane to the left viewport lik
   const matches = html.match(/position:sticky;left:0;width:480px;overflow:hidden/g) ?? [];
 
   assert.equal(matches.length, 2);
+  assert.match(html, /border-radius:0/);
+  assert.doesNotMatch(html, /border-radius:12px/);
 });

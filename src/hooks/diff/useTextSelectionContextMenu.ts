@@ -30,13 +30,22 @@ interface UseTextSelectionContextMenuParams {
   onClearSelectedRange: () => void;
 }
 
+interface TextSelectionContextMenuRequest {
+  copyText: string | null | undefined;
+  startLineIdx: number;
+  endLineIdx: number;
+  sideMode: TextSelectionContextMenuSideMode;
+  onFoldSelectedRange: () => void;
+  onClearSelectedRange: () => void;
+}
+
 interface UseTextSelectionContextMenuResult {
   contextMenuPoint: DiffContextMenuPoint | null;
   contextMenuSections: DiffContextMenuSection[];
   closeContextMenu: () => void;
   openTextSelectionContextMenu: (
     event: ReactMouseEvent<HTMLElement>,
-    textSelectionCopyText: string | null | undefined,
+    request: TextSelectionContextMenuRequest,
   ) => boolean;
   openLineSelectionContextMenu: (
     event: ReactMouseEvent<HTMLElement>,
@@ -63,31 +72,11 @@ export function useTextSelectionContextMenu({
     setContextMenuSections([]);
   }, []);
 
-  const openTextSelectionContextMenu = useCallback((
-    event: ReactMouseEvent<HTMLElement>,
-    textSelectionCopyText: string | null | undefined,
-  ) => {
-    if (!textSelectionCopyText) return false;
-    event.preventDefault();
-    setContextMenuPoint({ x: event.clientX, y: event.clientY });
-    setContextMenuSections([{
-      items: [{
-        id: 'copy-selected-text',
-        label: t('diffContextCopySelectedText'),
-        shortcut: copyShortcutLabel,
-        onSelect: () => { void copyText(textSelectionCopyText); },
-      }],
-    }]);
-    return true;
-  }, [copyShortcutLabel, t]);
-
-  const openLineSelectionContextMenu = useCallback((
-    event: ReactMouseEvent<HTMLElement>,
+  const buildVersionLineCopyItems = useCallback((
     sideMode: TextSelectionContextMenuSideMode,
+    startLineIdx: number,
+    endLineIdx: number,
   ) => {
-    if (!normalizedLineRangeSelection) return false;
-
-    const { startLineIdx, endLineIdx } = normalizedLineRangeSelection;
     const items: DiffContextMenuSection['items'] = [];
     const canCopyBase = hasVersionContentInRange(diffLines, 'base', startLineIdx, endLineIdx);
     const canCopyMine = hasVersionContentInRange(diffLines, 'mine', startLineIdx, endLineIdx);
@@ -108,6 +97,55 @@ export function useTextSelectionContextMenu({
         onSelect: () => { void copyText(buildVersionRangeCopyText(diffLines, 'mine', startLineIdx, endLineIdx)); },
       });
     }
+
+    return items;
+  }, [baseVersionLabel, diffLines, mineVersionLabel, t]);
+
+  const openTextSelectionContextMenu = useCallback((
+    event: ReactMouseEvent<HTMLElement>,
+    request: TextSelectionContextMenuRequest,
+  ) => {
+    const selectedText = request.copyText;
+    if (!selectedText) return false;
+    const items: DiffContextMenuSection['items'] = [{
+      id: 'copy-selected-text',
+      label: t('diffContextCopySelectedText'),
+      shortcut: copyShortcutLabel,
+      onSelect: () => { void copyText(selectedText); },
+    }];
+    items.push(
+      ...buildVersionLineCopyItems(request.sideMode, request.startLineIdx, request.endLineIdx),
+      {
+        id: 'fold-selected-lines',
+        label: t('diffContextFoldSelectedLines'),
+        onSelect: request.onFoldSelectedRange,
+      },
+      {
+        id: 'clear-selected-text',
+        label: t('diffContextClearTextSelection'),
+        onSelect: request.onClearSelectedRange,
+      },
+    );
+
+    event.preventDefault();
+    setContextMenuPoint({ x: event.clientX, y: event.clientY });
+    setContextMenuSections([{
+      title: t('manualSelectionBarLines', {
+        count: request.endLineIdx - request.startLineIdx + 1,
+      }),
+      items,
+    }]);
+    return true;
+  }, [buildVersionLineCopyItems, copyShortcutLabel, t]);
+
+  const openLineSelectionContextMenu = useCallback((
+    event: ReactMouseEvent<HTMLElement>,
+    sideMode: TextSelectionContextMenuSideMode,
+  ) => {
+    if (!normalizedLineRangeSelection) return false;
+
+    const { startLineIdx, endLineIdx } = normalizedLineRangeSelection;
+    const items = buildVersionLineCopyItems(sideMode, startLineIdx, endLineIdx);
 
     items.push(
       {
@@ -130,9 +168,7 @@ export function useTextSelectionContextMenu({
     }]);
     return true;
   }, [
-    baseVersionLabel,
-    diffLines,
-    mineVersionLabel,
+    buildVersionLineCopyItems,
     normalizedLineRangeSelection,
     onClearSelectedRange,
     onFoldSelectedRange,

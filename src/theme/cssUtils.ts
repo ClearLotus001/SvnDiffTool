@@ -41,6 +41,8 @@ const TOKEN_CSS_MAP = {
     chgBrd: '--diff-modify-border',
     acc: '--accent',
     acc2: '--acc2',
+    versionBase: '--version-base',
+    versionMine: '--version-mine',
     kw: '--syntax-keyword',
     str: '--syntax-string',
     num: '--syntax-number',

@@ -4,7 +4,6 @@
 
 import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
 import type { DiffLine, DiffPerformanceMetrics } from '@/types/diff';
-import type { DiffAnalysisSnapshot } from '@/types/svn';
 
 export type WorkbookMoveDirection = 'up' | 'down' | 'left' | 'right';
 export type WorkbookSelectionKind = 'cell' | 'row' | 'column';
@@ -59,6 +58,13 @@ export interface WorkbookSelectionRequest {
   reason?: WorkbookSelectionRequestReason | undefined;
   clientPoint?: WorkbookContextMenuPoint | undefined;
   preserveExistingIfTargetSelected?: boolean | undefined;
+}
+
+export interface WorkbookSelectionFocusIntent {
+  id: number;
+  target: WorkbookSelectedCell;
+  reason: 'click' | 'contextmenu' | 'keyboard';
+  navigationContext: string | number | null;
 }
 
 export interface WorkbookHiddenColumnSegment {
@@ -253,19 +259,6 @@ export interface WorkbookArtifactDiff {
   kind: 'binary-only';
   baseBytes: number;
   mineBytes: number;
-}
-
-export interface WorkbookCompareModePayload {
-  compareMode: WorkbookCompareMode;
-  analysisSnapshot?: DiffAnalysisSnapshot | null;
-  perf?: Pick<DiffPerformanceMetrics, 'rustDiffMs'> | null;
-}
-
-export interface WorkbookMetadataPayload {
-  base: WorkbookMetadataMap | null;
-  mine: WorkbookMetadataMap | null;
-  analysisSnapshot?: DiffAnalysisSnapshot | null;
-  perf?: Pick<DiffPerformanceMetrics, 'metadataMs'> | null;
 }
 
 export interface WorkbookMetadataSource {

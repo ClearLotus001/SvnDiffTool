@@ -144,3 +144,16 @@ test('StatsBar uses generic file label for text diffs', () => {
   assert.doesNotMatch(html, /表格文件/);
   assert.match(html, /openai_register3\.py/);
 });
+
+test('StatsBar places the file name after both comparison versions', () => {
+  const html = renderStatsBar(false, [], [], {
+    fileName: 'ordered-workbook.xlsx',
+  });
+
+  const baseVersionIndex = html.indexOf('r1825384');
+  const mineVersionIndex = html.indexOf('r1825385');
+  const fileNameIndex = html.indexOf('ordered-workbook.xlsx');
+  assert.ok(baseVersionIndex >= 0);
+  assert.ok(mineVersionIndex > baseVersionIndex);
+  assert.ok(fileNameIndex > mineVersionIndex);
+});

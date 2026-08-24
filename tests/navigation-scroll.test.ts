@@ -3,7 +3,9 @@ import test from 'node:test';
 
 import {
   easeNavigationScroll,
+  easeResponsiveFocusScroll,
   getNavigationScrollDuration,
+  getResponsiveFocusScrollDuration,
   scrollElementForNavigation,
 } from '../src/utils/navigation/animatedScroll';
 
@@ -17,14 +19,30 @@ test('navigation scroll easing has a gentle, exact start and finish', () => {
   assert.ok(easeNavigationScroll(0.9) > 0.9);
 });
 
+test('responsive focus easing starts immediately and stays shorter than hunk navigation', () => {
+  assert.equal(easeResponsiveFocusScroll(0), 0);
+  assert.equal(easeResponsiveFocusScroll(1), 1);
+  assert.ok(easeResponsiveFocusScroll(0.1) > easeNavigationScroll(0.1));
+  assert.ok(easeResponsiveFocusScroll(0.1) < 0.1);
+  assert.ok(easeResponsiveFocusScroll(0.9) > 0.9);
+  assert.ok(easeResponsiveFocusScroll(0.9) < easeNavigationScroll(0.9));
+
+  const focusDuration = getResponsiveFocusScrollDuration(200, 800);
+  const hunkDuration = getNavigationScrollDuration(200, 800);
+  assert.ok(focusDuration >= 150);
+  assert.ok(focusDuration < hunkDuration);
+  assert.equal(getResponsiveFocusScrollDuration(1_000_000, 800), 300);
+});
+
 test('navigation scroll duration grows with distance and stays bounded', () => {
   const nearby = getNavigationScrollDuration(200, 800);
   const severalScreens = getNavigationScrollDuration(4_000, 800);
   const veryFar = getNavigationScrollDuration(1_000_000, 800);
 
-  assert.ok(nearby >= 240);
+  assert.ok(nearby >= 180);
+  assert.ok(nearby < 240);
   assert.ok(severalScreens > nearby);
-  assert.equal(veryFar, 520);
+  assert.equal(veryFar, 420);
 });
 
 test('navigation scroll composes horizontal and vertical movement and replaces rapid jumps', () => {
@@ -111,6 +129,32 @@ test('navigation scroll composes horizontal and vertical movement and replaces r
     }
     assert.equal(frames.size, 0);
     assert.equal(element.scrollTop, 1_200);
+
+    scrollElementForNavigation(element, { top: 3_000, behavior: 'smart' });
+    scrollElementForNavigation(element, { left: 3_000, behavior: 'smart' });
+    const firstSmartFrame = [...frames.values()][0];
+    assert.ok(firstSmartFrame);
+    frames.clear();
+    firstSmartFrame(performance.now() + 16);
+    const firstSmartPosition = element.scrollTop;
+    assert.ok(firstSmartPosition > 1_200);
+    const verticalProgress = (element.scrollTop - 1_200) / (3_000 - 1_200);
+    const horizontalProgress = (element.scrollLeft - 2_000) / (3_000 - 2_000);
+    assert.ok(Math.abs(verticalProgress - horizontalProgress) < 0.001);
+
+    scrollElementForNavigation(element, { top: 3_500, behavior: 'smart' });
+    const retargetedSmartFrame = [...frames.values()][0];
+    assert.ok(retargetedSmartFrame);
+    frames.clear();
+    retargetedSmartFrame(performance.now() + 16);
+    assert.ok(element.scrollTop > firstSmartPosition);
+    const smartCompletionFrame = [...frames.values()][0];
+    assert.ok(smartCompletionFrame);
+    frames.clear();
+    smartCompletionFrame(performance.now() + 1_000);
+    assert.equal(element.scrollTop, 3_500);
+    assert.equal(element.scrollLeft, 3_000);
+    assert.equal(frames.size, 0);
   } finally {
     if (originalRequestAnimationFrame) {
       globalThis.requestAnimationFrame = originalRequestAnimationFrame;

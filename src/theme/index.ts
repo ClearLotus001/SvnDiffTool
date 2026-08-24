@@ -30,30 +30,32 @@ export const THEME_CLASS_MAP: Record<ThemeKey, string> = {
  */
 const STATIC_THEME_TOKENS: Record<ThemeKey, ThemeTokens> = {
   dark: {
-    bg0: '#09090b',
-    bg1: '#18181b',
-    bg2: '#27272a',
-    bg3: '#27272a',
-    bg4: '#3f3f46',
-    border: '#27272a',
-    border2: '#3f3f46',
+    bg0: '#08090d',
+    bg1: '#13141a',
+    bg2: '#1b1b1f',
+    bg3: '#242529',
+    bg4: '#222326',
+    border: '#222326',
+    border2: '#343539',
     t0: '#fafafa',
     t1: '#f4f4f5',
     t2: '#a1a1aa',
-    addBg: '#052e16',
-    addHl: '#064e3b',
-    addTx: '#34d399',
-    addBrd: '#10b981',
-    delBg: '#3f1018',
-    delHl: '#7f1d2d',
-    delTx: '#fda4af',
-    delBrd: '#fb7185',
-    chgBg: '#332701',
-    chgHl: '#5b4700',
-    chgTx: '#fde047',
-    chgBrd: '#facc15',
-    acc: '#fafafa',
-    acc2: '#60a5fa',
+    addBg: '#11271a',
+    addHl: '#193c27',
+    addTx: '#86c995',
+    addBrd: '#4e9b62',
+    delBg: '#301c20',
+    delHl: '#48282d',
+    delTx: '#e3a0a6',
+    delBrd: '#c7646b',
+    chgBg: '#2d2818',
+    chgHl: '#453a21',
+    chgTx: '#d8c477',
+    chgBrd: '#b69a3b',
+    acc: '#a6bdc9',
+    acc2: '#d0b49a',
+    versionBase: '#9fb8c9',
+    versionMine: '#c7ae97',
     kw: '#e879f9',
     str: '#93c5fd',
     num: '#6ee7b7',
@@ -61,41 +63,47 @@ const STATIC_THEME_TOKENS: Record<ThemeKey, ThemeTokens> = {
     punc: '#d4d4d8',
     lnBg: '#18181b',
     lnTx: '#71717a',
-    scrollThumb: '#a1a1aa',
-    scrollThumbHover: '#d4d4d8',
+    workbookHeaderBg: '#1d2730',
+    workbookHeaderBorder: '#516474',
+    workbookGridBorder: '#27272a',
+    workbookGridBorderStrong: '#3f3f46',
+    scrollThumb: '#2e2f34',
+    scrollThumbHover: '#45464c',
     scrollTrack: 'transparent',
-    miniAdd: '#34d399',
-    miniDel: '#fb7185',
-    miniVp: '#27272a',
+    miniAdd: '#86c995',
+    miniDel: '#e3a0a6',
+    miniVp: '#202126',
     searchHl: '#38bdf8',
     searchActiveBg: 'rgba(56, 189, 248, 0.30)',
-    glassBlur: 'blur(12px)',
+    glassBlur: 'blur(24px) saturate(1.42)',
   },
   light: {
-    bg0: '#f4f4f5',
-    bg1: '#ffffff',
-    bg2: '#f4f4f5',
-    bg3: '#ffffff',
-    bg4: '#e4e4e7',
-    border: '#e4e4e7',
-    border2: '#d4d4d8',
+    bg0: '#f5f7fb',
+    bg1: '#fdfefe',
+    bg2: '#fcfcfe',
+    bg3: '#fcfdfe',
+    bg4: '#dddfe4',
+    border: '#dddfe4',
+    border2: '#cdcfd3',
     t0: '#09090b',
     t1: '#09090b',
     t2: '#71717a',
-    addBg: '#d1fae5',
-    addHl: '#a7f3d0',
-    addTx: '#065f46',
-    addBrd: '#10b981',
-    delBg: '#fee2e2',
-    delHl: '#fecaca',
-    delTx: '#991b1b',
-    delBrd: '#ef4444',
-    chgBg: '#fef3c7',
-    chgHl: '#fde68a',
-    chgTx: '#92400e',
-    chgBrd: '#f59e0b',
-    acc: '#09090b',
-    acc2: '#3b82f6',
+    addBg: '#e8f5e9',
+    addHl: '#cfe8d3',
+    addTx: '#1f6b3a',
+    addBrd: '#4e9b62',
+    delBg: '#f7e8e7',
+    delHl: '#efd0ce',
+    delTx: '#8c3f45',
+    delBrd: '#c7646b',
+    chgBg: '#f6f0dd',
+    chgHl: '#eaddb3',
+    chgTx: '#76601c',
+    chgBrd: '#b69a3b',
+    acc: '#496778',
+    acc2: '#8a6a52',
+    versionBase: '#4b6a80',
+    versionMine: '#746252',
     kw: '#7c3aed',
     str: '#2563eb',
     num: '#059669',
@@ -103,15 +111,19 @@ const STATIC_THEME_TOKENS: Record<ThemeKey, ThemeTokens> = {
     punc: '#52525b',
     lnBg: '#ffffff',
     lnTx: '#a1a1aa',
-    scrollThumb: '#a1a1aa',
-    scrollThumbHover: '#71717a',
+    workbookHeaderBg: '#e9eff3',
+    workbookHeaderBorder: '#aab8c3',
+    workbookGridBorder: '#e4e4e7',
+    workbookGridBorderStrong: '#d4d4d8',
+    scrollThumb: '#d3d5db',
+    scrollThumbHover: '#c7c8ce',
     scrollTrack: 'transparent',
-    miniAdd: '#10b981',
-    miniDel: '#ef4444',
-    miniVp: '#e4e4e7',
+    miniAdd: '#4e9b62',
+    miniDel: '#c7646b',
+    miniVp: '#e2e4e8',
     searchHl: '#2563eb',
     searchActiveBg: 'rgba(37, 99, 235, 0.24)',
-    glassBlur: 'blur(16px)',
+    glassBlur: 'blur(28px) saturate(1.55)',
   },
   hc: {
     bg0: '#000000',
@@ -138,6 +150,8 @@ const STATIC_THEME_TOKENS: Record<ThemeKey, ThemeTokens> = {
     chgBrd: '#ffff00',
     acc: '#ffff00',
     acc2: '#00ffff',
+    versionBase: '#00ffff',
+    versionMine: '#ffff00',
     kw: '#ffffff',
     str: '#ffffff',
     num: '#ffffff',
@@ -145,12 +159,16 @@ const STATIC_THEME_TOKENS: Record<ThemeKey, ThemeTokens> = {
     punc: '#ffffff',
     lnBg: '#000000',
     lnTx: '#00ffff',
+    workbookHeaderBg: '#1a1a1a',
+    workbookHeaderBorder: '#7a8791',
+    workbookGridBorder: '#3f4952',
+    workbookGridBorderStrong: '#56616b',
     scrollThumb: '#ffffff',
     scrollThumbHover: '#ffffff',
     scrollTrack: 'transparent',
     miniAdd: '#00ff00',
     miniDel: '#ff00ff',
-    miniVp: '#333333',
+    miniVp: '#404040',
     searchHl: '#00ffff',
     searchActiveBg: 'rgba(0, 255, 255, 0.38)',
     glassBlur: 'blur(0px)',
@@ -222,7 +240,7 @@ function normalizeColorToHex(value: string, bgRGB: [number, number, number]): st
     }
     if (raw.length === 3) {
       const expanded = raw.split('').map((ch) => `${ch}${ch}`).join('');
-      return `#${expanded}`;
+      return `#${expanded.toLowerCase()}`;
     }
     if (raw.length === 8) {
       const r = parseInt(raw.slice(0, 2), 16);
@@ -231,7 +249,7 @@ function normalizeColorToHex(value: string, bgRGB: [number, number, number]): st
       const a = parseInt(raw.slice(6, 8), 16) / 255;
       if (a < 1) return blendOnBackground(r, g, b, a, bgRGB);
     }
-    if (raw.length >= 6) return `#${raw.slice(0, 6)}`;
+    if (raw.length >= 6) return `#${raw.slice(0, 6).toLowerCase()}`;
     return v;
   }
 
@@ -249,6 +267,31 @@ function normalizeColorToHex(value: string, bgRGB: [number, number, number]): st
   }
 
   return v;
+}
+
+export function resolveThemeTokensFromCssVariables(
+  themeKey: ThemeKey,
+  readVariable: (variableName: string) => string,
+): ThemeTokens {
+  const fallback = getThemeTokensSnapshot(themeKey);
+  const bgBaseRaw = readVariable('--bg-base').trim() || fallback.bg0;
+  const bgRGB: [number, number, number] = parseHexRGB(bgBaseRaw)
+    ?? parseHexRGB(fallback.bg0)
+    ?? [0, 0, 0];
+  const tokens = {} as ThemeTokens;
+
+  for (const [field, varName] of Object.entries(THEME_VAR_MAP) as [keyof ThemeTokens, string][]) {
+    const rawValue = readVariable(varName).trim();
+    if (!rawValue) {
+      tokens[field] = fallback[field];
+      continue;
+    }
+    tokens[field] = field === 'searchActiveBg'
+      ? rawValue
+      : normalizeColorToHex(rawValue, bgRGB);
+  }
+
+  return tokens;
 }
 
 /**
@@ -278,13 +321,10 @@ export function getComputedThemeTokens(themeKey: ThemeKey): ThemeTokens {
   }
 
   const style = getComputedStyle(root);
-  const bgBaseRaw = style.getPropertyValue('--bg-base').trim();
-  const bgRGB: [number, number, number] = parseHexRGB(bgBaseRaw) ?? [0, 0, 0];
-  const tokens = {} as ThemeTokens;
-
-  for (const [field, varName] of Object.entries(THEME_VAR_MAP) as [keyof ThemeTokens, string][]) {
-    tokens[field] = normalizeColorToHex(style.getPropertyValue(varName), bgRGB);
-  }
+  const tokens = resolveThemeTokensFromCssVariables(
+    themeKey,
+    (variableName) => style.getPropertyValue(variableName),
+  );
 
   cachedKey = themeKey;
   cachedTokens = tokens;

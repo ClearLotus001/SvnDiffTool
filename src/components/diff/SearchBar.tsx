@@ -12,6 +12,7 @@ interface SearchBarProps {
   query: string;
   isRegex: boolean;
   isCaseSensitive: boolean;
+  isPatternInvalid: boolean;
   isWorkbookMode: boolean;
   workbookSearchScope: 'all' | 'sheet';
   activeSheetName: string | null;
@@ -32,6 +33,7 @@ const SearchBar = memo(({
   query,
   isRegex,
   isCaseSensitive,
+  isPatternInvalid,
   isWorkbookMode,
   workbookSearchScope,
   activeSheetName,
@@ -74,12 +76,12 @@ const SearchBar = memo(({
     });
   }, []);
   const jumpRelative = useCallback((dir: 1 | -1) => {
-    if (!hasQuery) return;
+    if (!hasQuery || isPatternInvalid) return;
     collapsedResultsKeyRef.current = null;
     manuallyOpenedResultsKeyRef.current = resultsVisibilityKey;
     setShowResults(true);
     onPreviewNav(dir);
-  }, [hasQuery, onPreviewNav, resultsVisibilityKey]);
+  }, [hasQuery, isPatternInvalid, onPreviewNav, resultsVisibilityKey]);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
   useEffect(() => {
@@ -105,7 +107,7 @@ const SearchBar = memo(({
     });
   }, [popoverPosition, showResults]);
   useEffect(() => {
-    if (!hasQuery) {
+    if (!hasQuery || isPatternInvalid) {
       collapsedResultsKeyRef.current = null;
       manuallyOpenedResultsKeyRef.current = null;
       setShowResults(false);
@@ -120,7 +122,7 @@ const SearchBar = memo(({
       return;
     }
     setShowResults(true);
-  }, [hasQuery, resultsVisibilityKey]);
+  }, [hasQuery, isPatternInvalid, resultsVisibilityKey]);
   useEffect(() => {
     if (!showResults) return;
     const handlePointerDown = (event: MouseEvent) => {
@@ -135,7 +137,9 @@ const SearchBar = memo(({
 
   const searchSummary = hasQuery
     ? (
-      showSearchLoadingIndicator
+      isPatternInvalid
+        ? t('searchInvalidRegex')
+        : showSearchLoadingIndicator
         ? t('searchLoading')
         : (!isSearching
             ? (matchCount > 0
@@ -144,7 +148,8 @@ const SearchBar = memo(({
             : '')
     )
     : '';
-  const shouldRenderSearchSummary = hasQuery && (showSearchLoadingIndicator || !isSearching);
+  const shouldRenderSearchSummary = hasQuery
+    && (isPatternInvalid || showSearchLoadingIndicator || !isSearching);
 
   const compactPill = (active: boolean, label: string, tooltip: string, onClick: () => void) => (
     <Tooltip content={tooltip}>
@@ -222,7 +227,7 @@ const SearchBar = memo(({
   const controlGroupClassName = 'inline-flex items-center rounded-xl border border-border-default bg-bg-surface-hover p-0.5 shrink-0 overflow-hidden';
 
   const toggleResults = useCallback(() => {
-    if (!hasQuery) return;
+    if (!hasQuery || isPatternInvalid) return;
     setShowResults((value) => {
       const nextValue = !value;
       if (nextValue) {
@@ -234,7 +239,7 @@ const SearchBar = memo(({
       }
       return nextValue;
     });
-  }, [hasQuery, resultsVisibilityKey]);
+  }, [hasQuery, isPatternInvalid, resultsVisibilityKey]);
 
   return (
     <div
@@ -272,6 +277,8 @@ const SearchBar = memo(({
           <input
             ref={inputRef}
             value={query}
+            aria-invalid={isPatternInvalid}
+            aria-describedby={isPatternInvalid ? 'search-pattern-status' : undefined}
             onChange={e => onSearch(e.target.value, isRegex, isCaseSensitive, resolvedScope)}
             onKeyDown={e => {
               if (e.key === 'ArrowDown') {
@@ -299,7 +306,9 @@ const SearchBar = memo(({
               outline-none ring-0 shadow-none placeholder:text-text-secondary
               focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0
               focus:border-accent/40 focus:bg-bg-surface-solid focus:shadow-none transition-all duration-150
-              ${shouldRenderSearchSummary ? (showSearchLoadingIndicator ? 'pr-[132px]' : 'pr-[96px]') : 'pr-3'}
+              ${shouldRenderSearchSummary
+                ? (isPatternInvalid ? 'pr-[184px]' : showSearchLoadingIndicator ? 'pr-[132px]' : 'pr-[96px]')
+                : 'pr-3'}
             `}
             style={{ boxShadow: 'none' }}
           />
@@ -307,11 +316,14 @@ const SearchBar = memo(({
             <div className="pointer-events-none absolute right-2 top-1/2 flex -translate-y-1/2 items-center">
               <span className="mr-2 h-4 w-px bg-border-default/80" />
               <span
+                id="search-pattern-status"
                 className={`
                   inline-flex items-center justify-center gap-1.5 rounded-full border px-2 py-1 text-[11px] font-code shrink-0
                   backdrop-blur-[6px]
                   transition-all duration-150
-                  ${showSearchLoadingIndicator
+                  ${isPatternInvalid
+                    ? 'min-w-[148px] border-diff-remove-text/25 bg-diff-remove-text/8 text-diff-remove-text'
+                    : showSearchLoadingIndicator
                     ? 'min-w-[102px] border-[var(--accent)]/22 bg-[var(--accent)]/[0.08] text-accent'
                     : matchCount === 0
                       ? 'min-w-[68px] border-diff-remove-text/25 bg-diff-remove-text/8 text-diff-remove-text'

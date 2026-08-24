@@ -66,6 +66,7 @@ test('useWorkbookCompareOverlayLayout keeps column fills side-specific while exp
       freezeColumnCount: 0,
       pulseTriggerKey: 'Thing:0',
       label: 'B2:B3 · 2×1',
+      deemphasizeOutline: true,
     });
 
     return null;
@@ -76,6 +77,7 @@ test('useWorkbookCompareOverlayLayout keeps column fills side-specific while exp
   if (!captured.current) throw new Error('expected captured overlay props');
 
   assert.equal(captured.current.viewportHeight, 360);
+  assert.equal(captured.current.deemphasizeOutline, true);
   assert.deepEqual(captured.current.resolvePatchBoundsModes(patch), ['paired-base']);
   assert.deepEqual(captured.current.fallbackBoundsModes, ['paired-base']);
   assert.deepEqual(captured.current.resolveFocusPatchBoundsModes?.(patch), ['paired-shared']);

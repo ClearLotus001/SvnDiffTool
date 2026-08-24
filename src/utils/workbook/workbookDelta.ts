@@ -1,7 +1,6 @@
 import type {
   DiffLine,
   WorkbookCellDelta,
-  WorkbookCellDeltaKind,
   WorkbookCompareMode,
   WorkbookRowDelta,
   WorkbookRowMiniMapPaintTone,
@@ -15,6 +14,11 @@ import {
   isWorkbookStrictOnlyDifference,
   workbookCellsDiffer,
 } from '@/utils/workbook/workbookCellContract';
+import {
+  resolveWorkbookCellDeltaKind,
+  resolveWorkbookMiniMapDescriptorFromDeltas,
+  resolveWorkbookRowDeltaTone,
+} from '../../../shared/workbookCellSemantics';
 import { parseWorkbookDisplayLine } from '@/utils/workbook/workbookDisplay';
 
 const EMPTY_CELL: WorkbookCellDisplay = { value: '', formula: '' };
@@ -37,79 +41,6 @@ export function parseWorkbookRowLine(line: DiffLine | null): WorkbookRowDisplayL
   if (!line) return null;
   const parsed = parseWorkbookDisplayLine(line.base ?? line.mine ?? '');
   return parsed?.kind === 'row' ? parsed : null;
-}
-
-function resolveWorkbookCellDeltaKind(
-  leftCell: WorkbookCellDisplay,
-  rightCell: WorkbookCellDisplay,
-  compareMode: WorkbookCompareMode,
-): WorkbookCellDeltaKind {
-  if (!workbookCellsDiffer(leftCell, rightCell, compareMode)) return 'equal';
-
-  const hasBaseContent = hasWorkbookCellContent(leftCell, compareMode);
-  const hasMineContent = hasWorkbookCellContent(rightCell, compareMode);
-  if (hasBaseContent !== hasMineContent) {
-    return hasMineContent ? 'add' : 'delete';
-  }
-
-  return 'modify';
-}
-
-function resolveWorkbookRowDeltaTone(
-  cellDeltas: Iterable<WorkbookCellDelta>,
-): WorkbookRowDeltaTone {
-  let sawAdd = false;
-  let sawDelete = false;
-  let sawModify = false;
-
-  for (const delta of cellDeltas) {
-    if (!delta.changed) continue;
-    if (delta.kind === 'modify') sawModify = true;
-    else if (delta.kind === 'add') sawAdd = true;
-    else if (delta.kind === 'delete') sawDelete = true;
-  }
-
-  if (!sawAdd && !sawDelete && !sawModify) return 'equal';
-  if (sawModify || (sawAdd && sawDelete)) return 'mixed';
-  if (sawAdd) return 'add';
-  return 'delete';
-}
-
-function resolveWorkbookMiniMapDescriptorFromDeltas(
-  cellDeltas: Iterable<WorkbookCellDelta>,
-): {
-  tone: WorkbookRowMiniMapTone;
-  tones: WorkbookRowMiniMapPaintTone[];
-} {
-  let sawAdd = false;
-  let sawDelete = false;
-  let sawModify = false;
-  let sawStrictOnly = false;
-
-  for (const delta of cellDeltas) {
-    if (!delta.changed) continue;
-    if (delta.strictOnly) {
-      sawStrictOnly = true;
-      continue;
-    }
-    if (delta.kind === 'add') sawAdd = true;
-    else if (delta.kind === 'delete') sawDelete = true;
-    else if (delta.kind === 'modify') sawModify = true;
-  }
-
-  const tones: WorkbookRowMiniMapPaintTone[] = [];
-  if (sawDelete) tones.push('delete');
-  if (sawModify) tones.push('modify');
-  if (sawAdd) tones.push('add');
-  if (sawStrictOnly) tones.push('strict-only');
-
-  if (tones.length === 0) {
-    return { tone: 'equal', tones };
-  }
-  if (tones.length === 1) {
-    return { tone: tones[0]!, tones };
-  }
-  return { tone: 'mixed', tones };
 }
 
 function summarizeWorkbookCellDeltas(

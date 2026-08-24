@@ -119,3 +119,41 @@ export function computeMiniMapWheelScrollTop({
 
   return clamp(currentScrollTop + (deltaY * multiplier), 0, maxScrollTop);
 }
+
+export type MiniMapKeyboardKey =
+  | 'ArrowUp'
+  | 'ArrowDown'
+  | 'PageUp'
+  | 'PageDown'
+  | 'Home'
+  | 'End';
+
+export function computeMiniMapKeyboardScrollTop({
+  key,
+  currentScrollTop,
+  maxScrollTop,
+  viewportHeight,
+  rowStep = 72,
+}: {
+  key: string;
+  currentScrollTop: number;
+  maxScrollTop: number;
+  viewportHeight: number;
+  rowStep?: number;
+}): number | null {
+  const safeMaxScrollTop = Math.max(0, maxScrollTop);
+  const viewportStep = Math.max(rowStep, viewportHeight * 0.82);
+  let nextScrollTop: number;
+
+  switch (key as MiniMapKeyboardKey) {
+    case 'ArrowUp': nextScrollTop = currentScrollTop - rowStep; break;
+    case 'ArrowDown': nextScrollTop = currentScrollTop + rowStep; break;
+    case 'PageUp': nextScrollTop = currentScrollTop - viewportStep; break;
+    case 'PageDown': nextScrollTop = currentScrollTop + viewportStep; break;
+    case 'Home': nextScrollTop = 0; break;
+    case 'End': nextScrollTop = safeMaxScrollTop; break;
+    default: return null;
+  }
+
+  return Math.max(0, Math.min(safeMaxScrollTop, nextScrollTop));
+}

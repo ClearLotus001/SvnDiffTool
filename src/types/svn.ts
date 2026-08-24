@@ -6,14 +6,13 @@ import type {
   DiffMeta,
   DiffPerformanceMetrics,
   DiffSourceNoticeCode,
-  PreparedTextAnalysis,
 } from '@/types/diff';
 import type {
-  PreparedWorkbookAnalysis,
   WorkbookArtifactDiff,
   WorkbookCompareMode,
   WorkbookMetadataMap,
 } from '@/types/workbook';
+import type { DiffAnalysisSnapshot } from '@/types/analysis';
 import type { ComparisonSourceDescriptor } from '../../shared/comparison';
 
 export type SvnRevisionSourceKind = 'revision' | 'working-copy' | 'input-file';
@@ -53,12 +52,6 @@ export type CompareContext =
 export interface RevisionSelectionPair {
   baseRevisionId: string | null;
   mineRevisionId: string | null;
-}
-
-export interface DiffAnalysisSnapshot {
-  compareMode: WorkbookCompareMode;
-  textAnalysis: PreparedTextAnalysis | null;
-  workbookAnalysis: PreparedWorkbookAnalysis | null;
 }
 
 export interface DiffData extends DiffMeta {

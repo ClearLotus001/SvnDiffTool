@@ -9,6 +9,7 @@ import { buildWorkbookSectionRowIndex } from '../src/utils/workbook/workbookShee
 import {
   formatWorkbookHiddenColumnMarkerCount,
   getWorkbookHiddenColumnMarkerWidth,
+  resolveWorkbookHiddenColumnMarkerLeft,
 } from '../src/utils/workbook/workbookHiddenColumnVisuals';
 
 test('hidden column marker uses a neutral count label and scales for large groups', () => {
@@ -16,6 +17,21 @@ test('hidden column marker uses a neutral count label and scales for large group
   assert.equal(formatWorkbookHiddenColumnMarkerCount(-2), '0');
   assert.equal(getWorkbookHiddenColumnMarkerWidth(5), 36);
   assert.ok(getWorkbookHiddenColumnMarkerWidth(10_000) > getWorkbookHiddenColumnMarkerWidth(5));
+});
+
+test('hidden column marker stays on its own side of the frozen boundary', () => {
+  const common = {
+    boundaryX: 220,
+    width: 50,
+    contentLeft: 68,
+    contentRight: 900,
+    frozenBoundaryX: 220,
+  };
+  const scrollLeft = resolveWorkbookHiddenColumnMarkerLeft({ ...common, layer: 'scroll' });
+  const frozenLeft = resolveWorkbookHiddenColumnMarkerLeft({ ...common, layer: 'frozen' });
+
+  assert.equal(scrollLeft, 224);
+  assert.equal(frozenLeft + common.width, 216);
 });
 
 test('buildWorkbookSheetPresentation can include hidden columns when requested', () => {

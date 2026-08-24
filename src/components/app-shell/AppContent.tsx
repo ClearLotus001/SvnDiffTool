@@ -1,11 +1,4 @@
-import {
-  Suspense,
-  useEffect,
-  lazy,
-  type Dispatch,
-  type ReactNode,
-  type SetStateAction,
-} from 'react';
+import { Suspense, useEffect, lazy, type ReactNode } from 'react';
 
 import type {
   LayoutMode,
@@ -13,19 +6,16 @@ import type {
   WorkbookCompareLayoutSnapshot,
   WorkbookCompareMode,
   WorkbookDiffRegion,
-  WorkbookFreezeState,
   WorkbookHorizontalLayoutSnapshot,
-  WorkbookHiddenStateBySheet,
   WorkbookMetadataMap,
   WorkbookMoveDirection,
   WorkbookSelectionRequest,
   WorkbookSelectionState,
 } from '@/types';
-import type { LoadPhase, WorkbookContextMenuState } from '@/hooks/app';
+import type { LoadPhase, WorkbookUiController } from '@/hooks/app';
 import { cssAlpha, cssVar } from '@/theme/cssUtils';
 import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
 import type { TextLayoutSnapshotsByMode } from '@/utils/diff/textLayoutState';
-import type { WorkbookColumnWidthBySheet } from '@/utils/workbook/workbookColumnWidths';
 import type { WorkbookLayoutSnapshotsByMode } from '@/utils/workbook/workbookLayoutState';
 import type { WorkbookSectionRowIndex } from '@/utils/workbook/workbookSheetIndex';
 import type { WorkbookSection } from '@/utils/workbook/workbookSections';
@@ -46,7 +36,7 @@ const WorkbookHorizontalPanel = lazy(() => import('@/components/workbook/Workboo
 
 type AppPanelProps = UnifiedPanelProps;
 
-interface AppContentProps {
+interface AppContentLifecycle {
   loadingLabel: string;
   loadPhase: LoadPhase;
   hasLoadedDiff: boolean;
@@ -54,33 +44,43 @@ interface AppContentProps {
   isElectron: boolean;
   isLoadingDiff: boolean;
   suppressWorkbookTooltips: boolean;
+}
+
+interface AppContentHome {
+  onPickWorkingCopyFile: () => void;
+  onOpenLocalFileCompare: () => void;
+  onOpenSvnConfig: () => void;
+}
+
+interface AppContentSurface {
   isWorkbookMode: boolean;
   layout: LayoutMode;
   panelProps: AppPanelProps;
-  textLayoutSnapshots: TextLayoutSnapshotsByMode;
-  onTextLayoutSnapshotChange: (snapshot: TextLayoutSnapshot) => void;
-  textSharedExpandedBlocks: CollapseExpansionState;
-  onTextExpandedBlocksChange: (expandedBlocks: CollapseExpansionState) => void;
   baseRoleTitle: string;
   mineRoleTitle: string;
   baseVersionLabel: string;
   mineVersionLabel: string;
+}
+
+interface AppContentTextSurface {
+  textLayoutSnapshots: TextLayoutSnapshotsByMode;
+  onTextLayoutSnapshotChange: (snapshot: TextLayoutSnapshot) => void;
+  textSharedExpandedBlocks: CollapseExpansionState;
+  onTextExpandedBlocksChange: (expandedBlocks: CollapseExpansionState) => void;
+}
+
+interface AppContentWorkbookSurface {
+  ui: WorkbookUiController;
   activeWorkbookDiffRegion: WorkbookDiffRegion | null;
   activeWorkbookTargetCell: WorkbookSelectionState['primary'];
-  workbookSelection: WorkbookSelectionState;
   onWorkbookSelectionRequest: (request: WorkbookSelectionRequest) => void;
   onWorkbookNavigationReady: (fn: ((direction: WorkbookMoveDirection) => void) | null) => void;
   baseWorkbookMetadata: WorkbookMetadataMap | null;
   mineWorkbookMetadata: WorkbookMetadataMap | null;
-  workbookHiddenStateBySheet: WorkbookHiddenStateBySheet;
-  workbookFreezeBySheet: Record<string, WorkbookFreezeState>;
-  workbookColumnWidthBySheet: WorkbookColumnWidthBySheet;
   onWorkbookColumnWidthChange: (sheetName: string, column: number, nextWidth: number) => void;
   workbookSections: WorkbookSection[];
   workbookSectionRowIndex: WorkbookSectionRowIndex;
   modifiedWorkbookSheetNames: ReadonlySet<string>;
-  activeWorkbookSheetName: string | null;
-  onActiveWorkbookSheetChange: (sheetName: string | null) => void;
   workbookCompareMode: WorkbookCompareMode;
   activeWorkbookSharedExpandedBlocks: CollapseExpansionState | null;
   onWorkbookExpandedBlocksChange: (
@@ -89,18 +89,19 @@ interface AppContentProps {
     expandedBlocks: CollapseExpansionState,
   ) => void;
   isDevMode: boolean;
-  showHiddenColumns: boolean;
   workbookLayoutSnapshots: WorkbookLayoutSnapshotsByMode;
   onWorkbookLayoutSnapshotChange: (
     snapshot: WorkbookCompareLayoutSnapshot | WorkbookHorizontalLayoutSnapshot,
   ) => void;
-  workbookContextMenu: WorkbookContextMenuState | null;
   workbookContextMenuSections: WorkbookContextMenuSection[];
-  onCloseWorkbookContextMenu: () => void;
-  onPickWorkingCopyFile: () => void;
-  onOpenLocalFileCompare: () => void;
-  onOpenSvnConfig: () => void;
-  setWorkbookHiddenStateBySheet: Dispatch<SetStateAction<WorkbookHiddenStateBySheet>>;
+}
+
+interface AppContentProps {
+  lifecycle: AppContentLifecycle;
+  home: AppContentHome;
+  surface: AppContentSurface;
+  textSurface: AppContentTextSurface;
+  workbookSurface: AppContentWorkbookSurface;
   onInitialVisualReady?: () => void;
 }
 
@@ -168,26 +169,50 @@ function renderLazyPanel(content: ReactNode, loadingLabel: string, onReady?: () 
 }
 
 export default function AppContent({
-  loadingLabel, loadPhase, hasLoadedDiff, loadError,
-  isElectron, isLoadingDiff, suppressWorkbookTooltips, isWorkbookMode, layout, panelProps,
-  textLayoutSnapshots, onTextLayoutSnapshotChange,
-  textSharedExpandedBlocks, onTextExpandedBlocksChange,
-  baseRoleTitle, mineRoleTitle, baseVersionLabel, mineVersionLabel,
-  activeWorkbookDiffRegion, activeWorkbookTargetCell,
-  workbookSelection, onWorkbookSelectionRequest, onWorkbookNavigationReady,
-  baseWorkbookMetadata, mineWorkbookMetadata,
-  workbookHiddenStateBySheet, workbookFreezeBySheet,
-  workbookColumnWidthBySheet, onWorkbookColumnWidthChange,
-  workbookSections, workbookSectionRowIndex, modifiedWorkbookSheetNames,
-  activeWorkbookSheetName, onActiveWorkbookSheetChange,
-  workbookCompareMode,
-  activeWorkbookSharedExpandedBlocks, onWorkbookExpandedBlocksChange,
-  isDevMode, showHiddenColumns,
-  workbookLayoutSnapshots, onWorkbookLayoutSnapshotChange,
-  workbookContextMenu, workbookContextMenuSections, onCloseWorkbookContextMenu,
-  onPickWorkingCopyFile, onOpenLocalFileCompare, onOpenSvnConfig, setWorkbookHiddenStateBySheet,
+  lifecycle,
+  home,
+  surface,
+  textSurface,
+  workbookSurface,
   onInitialVisualReady,
 }: AppContentProps) {
+  const {
+    loadingLabel, loadPhase, hasLoadedDiff, loadError,
+    isElectron, isLoadingDiff, suppressWorkbookTooltips,
+  } = lifecycle;
+  const { onPickWorkingCopyFile, onOpenLocalFileCompare, onOpenSvnConfig } = home;
+  const {
+    isWorkbookMode, layout, panelProps,
+    baseRoleTitle, mineRoleTitle, baseVersionLabel, mineVersionLabel,
+  } = surface;
+  const {
+    textLayoutSnapshots, onTextLayoutSnapshotChange,
+    textSharedExpandedBlocks, onTextExpandedBlocksChange,
+  } = textSurface;
+  const {
+    ui: workbookUi,
+    activeWorkbookDiffRegion, activeWorkbookTargetCell,
+    onWorkbookSelectionRequest, onWorkbookNavigationReady,
+    baseWorkbookMetadata, mineWorkbookMetadata,
+    onWorkbookColumnWidthChange,
+    workbookSections, workbookSectionRowIndex, modifiedWorkbookSheetNames,
+    workbookCompareMode,
+    activeWorkbookSharedExpandedBlocks, onWorkbookExpandedBlocksChange,
+    isDevMode, workbookLayoutSnapshots, onWorkbookLayoutSnapshotChange,
+    workbookContextMenuSections,
+  } = workbookSurface;
+  const {
+    selection: workbookSelection,
+    hiddenStateBySheet: workbookHiddenStateBySheet,
+    contextMenu: workbookContextMenu,
+    freezeBySheet: workbookFreezeBySheet,
+    columnWidthBySheet: workbookColumnWidthBySheet,
+    activeSheetName: activeWorkbookSheetName,
+    showHiddenColumns,
+  } = workbookUi.state;
+  const setWorkbookHiddenStateBySheet = workbookUi.actions.setHiddenStateBySheet;
+  const onActiveWorkbookSheetChange = workbookUi.actions.setActiveSheetName;
+  const onCloseWorkbookContextMenu = () => workbookUi.actions.setContextMenu(null);
   const handleRevealHiddenRows = (sheetName: string, rowNumbers: number[]) => {
     setWorkbookHiddenStateBySheet((prev) => revealWorkbookRows(prev, sheetName, rowNumbers));
     onCloseWorkbookContextMenu();

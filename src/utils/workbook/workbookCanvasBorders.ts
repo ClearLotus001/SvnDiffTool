@@ -5,6 +5,8 @@ interface WorkbookCanvasBorderCandidate {
   end: number;
   drawCoord: number;
   color: string;
+  thickness: number;
+  placement: 'leading' | 'trailing';
   priority: number;
   order: number;
 }
@@ -19,6 +21,7 @@ interface WorkbookCanvasBorderSegment {
   end: number;
   drawCoord: number;
   color: string;
+  thickness: number;
 }
 
 export interface WorkbookCanvasBorderRect {
@@ -27,8 +30,46 @@ export interface WorkbookCanvasBorderRect {
   width: number;
   height: number;
   color: string;
+  thickness?: number;
   priority?: number;
+  edges?: WorkbookCanvasBorderEdges;
 }
+
+export interface WorkbookCanvasBorderLayer {
+  color: string;
+  thickness: number;
+  priority: number;
+  edges?: WorkbookCanvasBorderEdges;
+}
+
+export interface WorkbookCanvasBorderRegistry {
+  addRect: (rect: WorkbookCanvasBorderRect) => void;
+  flush: (ctx: CanvasRenderingContext2D) => void;
+}
+
+export interface WorkbookCanvasBorderEdges {
+  top: boolean;
+  right: boolean;
+  bottom: boolean;
+  left: boolean;
+}
+
+export const WORKBOOK_CANVAS_BORDER_PRIORITY = {
+  grid: 0,
+  placeholder: 1,
+  diff: 2,
+  axisSelection: 3,
+  mirroredSelection: 4,
+  rangeSelection: 5,
+  primarySelection: 6,
+} as const;
+
+const ALL_BORDER_EDGES: WorkbookCanvasBorderEdges = {
+  top: true,
+  right: true,
+  bottom: true,
+  left: true,
+};
 
 type WorkbookCanvasBorderAxis = 'horizontal' | 'vertical';
 
@@ -75,10 +116,10 @@ function resolveWorkbookCanvasBorderDrawCoord(
   overlappingCandidates: WorkbookCanvasBorderCandidate[],
   winner: WorkbookCanvasBorderCandidate,
 ): number {
-  const hasLeadingCandidate = overlappingCandidates.some(candidate => candidate.drawCoord === group.seam);
-  const hasTrailingCandidate = overlappingCandidates.some(candidate => candidate.drawCoord === group.seam - 1);
+  const hasLeadingCandidate = overlappingCandidates.some(candidate => candidate.placement === 'leading');
+  const hasTrailingCandidate = overlappingCandidates.some(candidate => candidate.placement === 'trailing');
 
-  if (hasLeadingCandidate && hasTrailingCandidate) {
+  if (winner.thickness === 1 && hasLeadingCandidate && hasTrailingCandidate) {
     return group.seam;
   }
 
@@ -102,9 +143,9 @@ function flushWorkbookCanvasBorderGroups(
       if (pending == null) return;
       ctx.fillStyle = pending.color;
       if (axis === 'horizontal') {
-        ctx.fillRect(pending.start, pending.drawCoord, pending.end - pending.start, 1);
+        ctx.fillRect(pending.start, pending.drawCoord, pending.end - pending.start, pending.thickness);
       } else {
-        ctx.fillRect(pending.drawCoord, pending.start, 1, pending.end - pending.start);
+        ctx.fillRect(pending.drawCoord, pending.start, pending.thickness, pending.end - pending.start);
       }
       pending = null;
     };
@@ -126,6 +167,7 @@ function flushWorkbookCanvasBorderGroups(
       if (
         pending
         && pending.color === winner.color
+        && pending.thickness === winner.thickness
         && pending.drawCoord === drawCoord
         && pending.end === start
       ) {
@@ -139,6 +181,7 @@ function flushWorkbookCanvasBorderGroups(
         end,
         drawCoord,
         color: winner.color,
+        thickness: winner.thickness,
       };
     }
 
@@ -150,11 +193,13 @@ export function resolveWorkbookCanvasCellBorderPriority(
   compareCell: WorkbookCompareCellState | undefined,
   hasEntry: boolean,
 ): number {
-  if (compareCell?.changed) return 2;
-  return hasEntry ? 0 : 1;
+  if (compareCell?.changed) return WORKBOOK_CANVAS_BORDER_PRIORITY.diff;
+  return hasEntry
+    ? WORKBOOK_CANVAS_BORDER_PRIORITY.grid
+    : WORKBOOK_CANVAS_BORDER_PRIORITY.placeholder;
 }
 
-export function createWorkbookCanvasBorderRegistry() {
+export function createWorkbookCanvasBorderRegistry(): WorkbookCanvasBorderRegistry {
   let order = 0;
   const horizontalGroups = new Map<string, WorkbookCanvasBorderGroup>();
   const verticalGroups = new Map<string, WorkbookCanvasBorderGroup>();
@@ -166,6 +211,8 @@ export function createWorkbookCanvasBorderRegistry() {
     end: number,
     drawCoord: number,
     color: string,
+    thickness: number,
+    placement: 'leading' | 'trailing',
     priority: number,
   ) => {
     if (end <= start || !isVisibleBorderColor(color)) return;
@@ -177,6 +224,8 @@ export function createWorkbookCanvasBorderRegistry() {
       end,
       drawCoord,
       color,
+      thickness,
+      placement,
       priority,
       order,
     });
@@ -191,18 +240,57 @@ export function createWorkbookCanvasBorderRegistry() {
       width,
       height,
       color,
+      thickness = 1,
       priority = 0,
+      edges = ALL_BORDER_EDGES,
     }: WorkbookCanvasBorderRect) {
       if (width <= 0 || height <= 0 || !isVisibleBorderColor(color)) return;
+      const resolvedThickness = Math.max(1, Math.min(
+        Math.round(thickness),
+        Math.ceil(width / 2),
+        Math.ceil(height / 2),
+      ));
 
-      registerCandidate(horizontalGroups, y, x, x + width, y, color, priority);
-      registerCandidate(horizontalGroups, y + height, x, x + width, y + height - 1, color, priority);
-      registerCandidate(verticalGroups, x, y, y + height, x, color, priority);
-      registerCandidate(verticalGroups, x + width, y, y + height, x + width - 1, color, priority);
+      if (edges.top) {
+        registerCandidate(horizontalGroups, y, x, x + width, y, color, resolvedThickness, 'leading', priority);
+      }
+      if (edges.bottom) {
+        registerCandidate(horizontalGroups, y + height, x, x + width, y + height - resolvedThickness, color, resolvedThickness, 'trailing', priority);
+      }
+      if (edges.left) {
+        registerCandidate(verticalGroups, x, y, y + height, x, color, resolvedThickness, 'leading', priority);
+      }
+      if (edges.right) {
+        registerCandidate(verticalGroups, x + width, y, y + height, x + width - resolvedThickness, color, resolvedThickness, 'trailing', priority);
+      }
     },
     flush(ctx: CanvasRenderingContext2D) {
       flushWorkbookCanvasBorderGroups(ctx, 'horizontal', horizontalGroups);
       flushWorkbookCanvasBorderGroups(ctx, 'vertical', verticalGroups);
     },
   };
+}
+
+export function registerWorkbookCanvasCellBorders(params: {
+  registry: WorkbookCanvasBorderRegistry;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  semantic: WorkbookCanvasBorderLayer;
+  selection?: WorkbookCanvasBorderLayer | null;
+}): void {
+  const {
+    registry,
+    x,
+    y,
+    width,
+    height,
+    semantic,
+    selection = null,
+  } = params;
+  registry.addRect({ x, y, width, height, ...semantic });
+  if (selection) {
+    registry.addRect({ x, y, width, height, ...selection });
+  }
 }

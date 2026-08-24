@@ -1,8 +1,9 @@
-import { useEffect, useRef, type MutableRefObject } from 'react';
+import { useCallback, useEffect, useRef, type MutableRefObject } from 'react';
 
 import type {
   SearchMatch,
   WorkbookDiffRegion,
+  WorkbookSelectionFocusIntent,
   WorkbookSelectedCell,
 } from '@/types';
 import type { WorkbookSection } from '@/utils/workbook/workbookSections';
@@ -10,6 +11,7 @@ import type { SplitRow } from '@/types/view';
 import { workbookDiffRegionContainsSelection } from '@/utils/workbook/workbookDiffRegion';
 import { buildSelectionAutoScrollKey } from '@/utils/workbook/workbookPanelHelpers';
 import { getWorkbookSideRowNumber } from '@/utils/workbook/workbookNavigation';
+import { useWorkbookFocusTransaction } from '@/hooks/workbook/useWorkbookFocusTransaction';
 
 function getNow() {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -22,6 +24,7 @@ interface SearchScrollResult {
 
 interface UseWorkbookHorizontalNavigationEffectsParams {
   active: boolean;
+  activeHunkIdx: number;
   activeSearchMatch: SearchMatch | null;
   activeSearchTargetCell: WorkbookSelectedCell | null;
   activeWorkbookSection: WorkbookSection | undefined;
@@ -37,7 +40,10 @@ interface UseWorkbookHorizontalNavigationEffectsParams {
   activeDiffRegion: WorkbookDiffRegion | null;
   navigationTargetCell: WorkbookSelectedCell | null;
   selectedCell: WorkbookSelectedCell | null;
+  selectionFocusIntent: WorkbookSelectionFocusIntent | null;
+  onSelectionFocusIntentHandled: (intentId: number) => void;
   guidedPulseNonce: number;
+  navigationLayoutKey: string;
   frozenRows: SplitRow[];
   rowItemIndexBySide: {
     base: Map<number, number>;
@@ -63,6 +69,7 @@ interface UseWorkbookHorizontalNavigationEffectsParams {
 
 export function useWorkbookHorizontalNavigationEffects({
   active,
+  activeHunkIdx,
   activeSearchMatch,
   activeSearchTargetCell,
   activeWorkbookSection,
@@ -78,7 +85,10 @@ export function useWorkbookHorizontalNavigationEffects({
   activeDiffRegion,
   navigationTargetCell,
   selectedCell,
+  selectionFocusIntent,
+  onSelectionFocusIntentHandled,
   guidedPulseNonce,
+  navigationLayoutKey,
   frozenRows,
   rowItemIndexBySide,
   scrollFrozenRowsToIndex,
@@ -189,10 +199,9 @@ export function useWorkbookHorizontalNavigationEffects({
     if (!activeDiffRegion || !activeWorkbookSection) return;
     if (activeDiffRegion.sheetName !== activeWorkbookSection.name) return;
     if (getNow() < suppressGuidedNavigationUntilRef.current) return;
-    const navigationKey = `${guidedPulseNonce}:${activeDiffRegion.id}`;
+    const navigationKey = `${guidedPulseNonce}:${activeDiffRegion.id}:${navigationLayoutKey}`;
     if (lastGuidedNavigationKeyRef.current === navigationKey) return;
 
-    lastGuidedNavigationKeyRef.current = navigationKey;
     const anchorPatch = activeDiffRegion.patches[0] ?? null;
     const anchorSide: 'base' | 'mine' = anchorPatch?.hasBaseSide ? 'base' : 'mine';
     const anchorRowNumber = anchorSide === 'base'
@@ -201,27 +210,31 @@ export function useWorkbookHorizontalNavigationEffects({
     const targetRowIndex = anchorRowNumber != null
       ? (rowItemIndexBySide[anchorSide].get(anchorRowNumber) ?? -1)
       : -1;
-    if (targetRowIndex >= 0) {
-      markProgrammaticScroll('left', 640);
-      markProgrammaticScroll('right', 640);
-      scrollToIndex(targetRowIndex, 'start', 'smooth');
-      requestAnimationFrame(() => syncScrollPosition('left'));
-    } else {
-      scrollToResolvedLine(activeDiffRegion.lineStartIdx, 'start', 'smooth');
-    }
-
-    focusWorkbookDiffRegion(activeDiffRegion);
     let followUpRafId = 0;
+    let settleRafId = 0;
     const rafId = requestAnimationFrame(() => {
+      if (targetRowIndex >= 0) {
+        markProgrammaticScroll('left', 640);
+        markProgrammaticScroll('right', 640);
+        scrollToIndex(targetRowIndex, 'start', 'smooth');
+        requestAnimationFrame(() => syncScrollPosition('left'));
+      } else {
+        scrollToResolvedLine(activeDiffRegion.lineStartIdx, 'start', 'smooth');
+      }
       focusWorkbookDiffRegion(activeDiffRegion);
       followUpRafId = requestAnimationFrame(() => {
         focusWorkbookDiffRegion(activeDiffRegion);
+        settleRafId = requestAnimationFrame(() => {
+          focusWorkbookDiffRegion(activeDiffRegion);
+          lastGuidedNavigationKeyRef.current = navigationKey;
+        });
       });
     });
 
     return () => {
       cancelAnimationFrame(rafId);
       if (followUpRafId) cancelAnimationFrame(followUpRafId);
+      if (settleRafId) cancelAnimationFrame(settleRafId);
     };
   }, [
     active,
@@ -230,6 +243,7 @@ export function useWorkbookHorizontalNavigationEffects({
     focusWorkbookDiffRegion,
     guidedPulseNonce,
     markProgrammaticScroll,
+    navigationLayoutKey,
     rowItemIndexBySide,
     scrollToIndex,
     scrollToResolvedLine,
@@ -241,6 +255,7 @@ export function useWorkbookHorizontalNavigationEffects({
     if (!active) return;
     if (!selectedCell || !activeWorkbookSection || selectedCell.sheetName !== activeWorkbookSection.name) return;
     if (selectedCell.kind === 'column') return;
+    if (selectionFocusIntent) return;
     if (navigationTargetCell && activeDiffRegion && !workbookDiffRegionContainsSelection(activeDiffRegion, selectedCell)) return;
     if (isAutoScrollSuppressed()) return;
     if (isUserScrollPaused()) return;
@@ -275,17 +290,65 @@ export function useWorkbookHorizontalNavigationEffects({
     scrollFrozenRowsToIndex,
     scrollToIndex,
     selectedCell,
+    selectionFocusIntent,
     syncFrozenRowsPaneScrollPosition,
     syncScrollPosition,
   ]);
+
+  const focusExplicitSelection = useCallback((target: WorkbookSelectedCell) => {
+    lastAutoCellKeyRef.current = buildSelectionAutoScrollKey(activeWorkbookSection?.name ?? '', target);
+    const didFocusColumn = focusWorkbookCell(target, 'ensure-visible');
+    if (target.kind === 'column') return didFocusColumn;
+
+    const selectionKey = buildSelectionAutoScrollKey(activeWorkbookSection?.name ?? '', target);
+    lastAutoRowKeyRef.current = selectionKey;
+    const sourceSide = target.side === 'base' ? 'left' : 'right';
+    const frozenRowIndex = frozenRows.findIndex((row) => (
+      getWorkbookSideRowNumber(row, target.side) === target.rowNumber
+    ));
+    const rowIndex = rowItemIndexBySide[target.side].get(target.rowNumber) ?? -1;
+
+    if (frozenRowIndex >= 0) {
+      scrollFrozenRowsToIndex(frozenRowIndex, 'center', 'smart');
+      requestAnimationFrame(() => syncFrozenRowsPaneScrollPosition(sourceSide));
+      return didFocusColumn;
+    }
+    if (rowIndex < 0) return false;
+
+    markProgrammaticScroll('left', 640);
+    markProgrammaticScroll('right', 640);
+    scrollToIndex(rowIndex, 'center', 'smart');
+    requestAnimationFrame(() => syncScrollPosition('left'));
+    return didFocusColumn;
+  }, [
+    activeWorkbookSection?.name,
+    focusWorkbookCell,
+    frozenRows,
+    lastAutoCellKeyRef,
+    lastAutoRowKeyRef,
+    markProgrammaticScroll,
+    rowItemIndexBySide,
+    scrollFrozenRowsToIndex,
+    scrollToIndex,
+    syncFrozenRowsPaneScrollPosition,
+    syncScrollPosition,
+  ]);
+  useWorkbookFocusTransaction({
+    active,
+    activeSheetName: activeWorkbookSection?.name ?? null,
+    navigationContext: activeHunkIdx,
+    intent: selectionFocusIntent,
+    executeFocus: focusExplicitSelection,
+    onIntentHandled: onSelectionFocusIntentHandled,
+  });
 
   useEffect(() => {
     if (!active) return;
     if (!selectedCell || !activeWorkbookSection || selectedCell.sheetName !== activeWorkbookSection.name) return;
     if (selectedCell.kind === 'row') return;
+    if (selectionFocusIntent) return;
     if (navigationTargetCell && activeDiffRegion && !workbookDiffRegionContainsSelection(activeDiffRegion, selectedCell)) return;
     if (isAutoScrollSuppressed()) return;
-    if (isUserScrollPaused()) return;
     const selectionKey = buildSelectionAutoScrollKey(activeWorkbookSection.name, selectedCell);
     if (lastAutoCellKeyRef.current === selectionKey) return;
 
@@ -301,9 +364,9 @@ export function useWorkbookHorizontalNavigationEffects({
     activeWorkbookSection,
     focusWorkbookCell,
     isAutoScrollSuppressed,
-    isUserScrollPaused,
     lastAutoCellKeyRef,
     navigationTargetCell,
     selectedCell,
+    selectionFocusIntent,
   ]);
 }

@@ -40,6 +40,9 @@ export interface ThemeTokens {
   /* 强调色 */
   acc: string;
   acc2: string;
+  /* 对比版本 */
+  versionBase: string;
+  versionMine: string;
   /* 语法高亮 */
   kw: string;
   str: string;
@@ -49,6 +52,12 @@ export interface ThemeTokens {
   /* 行号 */
   lnBg: string;
   lnTx: string;
+  /* 工作表字段标题 */
+  workbookHeaderBg: string;
+  workbookHeaderBorder: string;
+  /* 工作表网格层级 */
+  workbookGridBorder: string;
+  workbookGridBorderStrong: string;
   /* 滚动条 */
   scrollThumb: string;
   scrollThumbHover: string;
@@ -94,6 +103,8 @@ export const THEME_VAR_MAP: Record<keyof ThemeTokens, string> = {
   chgBrd: '--diff-modify-border',
   acc: '--accent',
   acc2: '--acc2',
+  versionBase: '--version-base',
+  versionMine: '--version-mine',
   kw: '--syntax-keyword',
   str: '--syntax-string',
   num: '--syntax-number',
@@ -101,6 +112,10 @@ export const THEME_VAR_MAP: Record<keyof ThemeTokens, string> = {
   punc: '--syntax-punctuation',
   lnBg: '--ln-bg',
   lnTx: '--ln-text',
+  workbookHeaderBg: '--workbook-header-bg',
+  workbookHeaderBorder: '--workbook-header-border',
+  workbookGridBorder: '--workbook-grid-border',
+  workbookGridBorderStrong: '--workbook-grid-border-strong',
   scrollThumb: '--scroll-thumb',
   scrollThumbHover: '--scroll-thumb-hover',
   scrollTrack: '--scroll-track',

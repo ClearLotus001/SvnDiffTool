@@ -63,6 +63,7 @@ import { useAppStore } from '@/store/appStore';
 import PerfBar from '@/components/app/PerfBar';
 import AppUpdateInstalledNoticeBar from '@/components/app/AppUpdateInstalledNoticeBar';
 import DiffSourceNoticeBar from '@/components/diff/DiffSourceNoticeBar';
+import DiffLoadErrorNoticeBar from '@/components/diff/DiffLoadErrorNoticeBar';
 import SearchBar from '@/components/diff/SearchBar';
 import WorkbookFormulaBar from '@/components/workbook/WorkbookFormulaBar';
 import WorkbookArtifactNoticeBar from '@/components/workbook/WorkbookArtifactNoticeBar';
@@ -208,9 +209,6 @@ export default function App() {
   const setShowAbout = useCallback((value: SetStateAction<boolean>) => {
     dialogActions.set('about', value);
   }, [dialogActions]);
-  const setShowSvnConfig = useCallback((value: SetStateAction<boolean>) => {
-    dialogActions.set('svnConfig', value);
-  }, [dialogActions]);
   const setShowLocalFileCompare = useCallback((value: SetStateAction<boolean>) => {
     dialogActions.set('localFileCompare', value);
   }, [dialogActions]);
@@ -307,6 +305,7 @@ export default function App() {
     hunkPositions,
     searchJumpNonce,
     isSearching,
+    isSearchPatternInvalid,
     searchMatches,
     searchMatchCount,
     searchResultsTruncated,
@@ -788,6 +787,7 @@ export default function App() {
               resultsTruncated={searchResultsTruncated}
               activeIdx={activeSearchIdx}
               isSearching={isSearching}
+              isPatternInvalid={isSearchPatternInvalid}
               resolveResult={searchResultItemResolver}
               onSearch={handleSearch}
               onPreviewNav={handleSearchPreviewNav}
@@ -866,58 +866,53 @@ export default function App() {
               onClose={() => setDiffSourceNoticeDismissed(true)}
             />
           )}
+          {hasLoadedDiff && !isLoadingDiff && loadError && (
+            <DiffLoadErrorNoticeBar
+              message={loadError}
+              onClose={() => diffLoad.actions.setError('')}
+            />
+          )}
 
           <AppContent
-            loadingLabel={t('appLoadingDiff')}
-            loadPhase={loadPhase}
-            hasLoadedDiff={hasLoadedDiff}
-            loadError={loadError}
-            isElectron={isElectron}
-            isLoadingDiff={isLoadingDiff}
-            suppressWorkbookTooltips={suppressTransientTooltips}
-            isWorkbookMode={isWorkbookMode}
-            layout={layout}
-            panelProps={panelProps}
-            textLayoutSnapshots={textLayoutSnapshotsRef.current}
-            onTextLayoutSnapshotChange={handleTextLayoutSnapshotChange}
-            textSharedExpandedBlocks={textSharedExpandedBlocksRef.current}
-            onTextExpandedBlocksChange={handleTextExpandedBlocksChange}
-            baseRoleTitle={baseRoleTitle}
-            mineRoleTitle={mineRoleTitle}
-            baseVersionLabel={baseVersionLabel}
-            mineVersionLabel={mineVersionLabel}
-            activeWorkbookDiffRegion={activeWorkbookDiffRegion}
-            activeWorkbookTargetCell={activeWorkbookTargetCell}
-            workbookSelection={workbookSelection}
-            onWorkbookSelectionRequest={handleWorkbookSelectionRequest}
-            onWorkbookNavigationReady={handleWorkbookNavigationReady}
-            baseWorkbookMetadata={baseWorkbookMetadata}
-            mineWorkbookMetadata={mineWorkbookMetadata}
-            workbookHiddenStateBySheet={workbookHiddenStateBySheet}
-            workbookFreezeBySheet={workbookFreezeBySheet}
-            workbookColumnWidthBySheet={workbookColumnWidthBySheet}
-            onWorkbookColumnWidthChange={handleWorkbookColumnWidthChange}
-            workbookSections={workbookSections}
-            workbookSectionRowIndex={workbookSectionRowIndex}
-            modifiedWorkbookSheetNames={modifiedWorkbookSheetNames}
-            activeWorkbookSheetName={activeWorkbookSheetName}
-            onActiveWorkbookSheetChange={setActiveWorkbookSheetName}
-            workbookCompareMode={workbookCompareMode}
-            activeWorkbookSharedExpandedBlocks={activeWorkbookSharedExpandedBlocks}
-            onWorkbookExpandedBlocksChange={handleWorkbookExpandedBlocksChange}
-            isDevMode={isDevMode}
-            showHiddenColumns={showHiddenColumns}
-            workbookLayoutSnapshots={workbookLayoutSnapshotsRef.current}
-            onWorkbookLayoutSnapshotChange={handleWorkbookLayoutSnapshotChange}
-            workbookContextMenu={workbookContextMenu}
-            workbookContextMenuSections={workbookContextMenuSections}
-            onCloseWorkbookContextMenu={() => setWorkbookContextMenu(null)}
-            onPickWorkingCopyFile={() => {
-              void handlePickWorkingCopyFile();
+            lifecycle={{
+              loadingLabel: t('appLoadingDiff'), loadPhase, hasLoadedDiff, loadError,
+              isElectron, isLoadingDiff, suppressWorkbookTooltips: suppressTransientTooltips,
             }}
-            onOpenLocalFileCompare={handleOpenLocalFileCompare}
-            onOpenSvnConfig={handleOpenSvnConfig}
-            setWorkbookHiddenStateBySheet={setWorkbookHiddenStateBySheet}
+            home={{
+              onPickWorkingCopyFile: () => { void handlePickWorkingCopyFile(); },
+              onOpenLocalFileCompare: handleOpenLocalFileCompare,
+              onOpenSvnConfig: handleOpenSvnConfig,
+            }}
+            surface={{
+              isWorkbookMode, layout, panelProps,
+              baseRoleTitle, mineRoleTitle, baseVersionLabel, mineVersionLabel,
+            }}
+            textSurface={{
+              textLayoutSnapshots: textLayoutSnapshotsRef.current,
+              onTextLayoutSnapshotChange: handleTextLayoutSnapshotChange,
+              textSharedExpandedBlocks: textSharedExpandedBlocksRef.current,
+              onTextExpandedBlocksChange: handleTextExpandedBlocksChange,
+            }}
+            workbookSurface={{
+              ui: workbookUi,
+              activeWorkbookDiffRegion,
+              activeWorkbookTargetCell,
+              onWorkbookSelectionRequest: handleWorkbookSelectionRequest,
+              onWorkbookNavigationReady: handleWorkbookNavigationReady,
+              baseWorkbookMetadata,
+              mineWorkbookMetadata,
+              onWorkbookColumnWidthChange: handleWorkbookColumnWidthChange,
+              workbookSections,
+              workbookSectionRowIndex,
+              modifiedWorkbookSheetNames,
+              workbookCompareMode,
+              activeWorkbookSharedExpandedBlocks,
+              onWorkbookExpandedBlocksChange: handleWorkbookExpandedBlocksChange,
+              isDevMode,
+              workbookLayoutSnapshots: workbookLayoutSnapshotsRef.current,
+              onWorkbookLayoutSnapshotChange: handleWorkbookLayoutSnapshotChange,
+              workbookContextMenuSections,
+            }}
             onInitialVisualReady={handleInitialVisualReady}
           />
 
@@ -941,45 +936,28 @@ export default function App() {
           )}
 
           <AppDialogs
-            showGoto={showGoto}
-            showHelp={showHelp}
-            showAbout={showAbout}
-            showSvnConfig={showSvnConfig}
-            showLocalFileCompare={showLocalFileCompare}
-            localFileCompareBasePath={twoFileBasePath}
-            localFileCompareMinePath={twoFileMinePath}
-            totalLines={totalLines}
-            onGoto={handleGoto}
-            onCloseGoto={() => setShowGoto(false)}
-            onCloseHelp={() => setShowHelp(false)}
-            onCloseAbout={() => setShowAbout(false)}
-            onCloseSvnConfig={() => setShowSvnConfig(false)}
-            onCloseLocalFileCompare={() => setShowLocalFileCompare(false)}
-            onCloseAll={closeAllDialogs}
-            appUpdateState={appUpdateState}
-            canLaunchUninstaller={canLaunchUninstaller}
-            onCheckForUpdates={handleCheckForAppUpdate}
-            onDownloadUpdate={handleDownloadAppUpdate}
-            onInstallUpdate={handleInstallDownloadedUpdate}
-            onLaunchUninstaller={() => {
-              void handleLaunchUninstaller();
+            dialogs={dialogs}
+            navigation={{ totalLines, onGoto: handleGoto }}
+            update={{
+              appUpdateState, canLaunchUninstaller,
+              onCheckForUpdates: handleCheckForAppUpdate,
+              onDownloadUpdate: handleDownloadAppUpdate,
+              onInstallUpdate: handleInstallDownloadedUpdate,
+              onLaunchUninstaller: () => { void handleLaunchUninstaller(); },
             }}
-            svnDiffViewerStatus={svnDiffViewerStatus}
-            isLoadingSvnDiffViewerStatus={isLoadingSvnDiffViewerStatus}
-            applyingSvnDiffViewerScope={applyingSvnDiffViewerScope}
-            isRestoringSvnDiffViewerDefault={isRestoringSvnDiffViewerDefault}
-            svnDiffViewerError={svnDiffViewerError}
-            onApplySvnDiffViewerScope={(scope) => {
-              void handleApplySvnDiffViewerScope(scope);
+            svnConfig={{
+              svnDiffViewerStatus, isLoadingSvnDiffViewerStatus,
+              applyingSvnDiffViewerScope, isRestoringSvnDiffViewerDefault, svnDiffViewerError,
+              onApplySvnDiffViewerScope: (scope) => { void handleApplySvnDiffViewerScope(scope); },
+              onRestoreSvnDiffViewerDefault: () => { void handleRestoreSvnDiffViewerDefault(); },
+              onRefreshSvnDiffViewerStatus: () => { void loadSvnDiffViewerStatus(); },
             }}
-            onRestoreSvnDiffViewerDefault={() => {
-              void handleRestoreSvnDiffViewerDefault();
+            localCompare={{
+              basePath: twoFileBasePath,
+              minePath: twoFileMinePath,
+              onPickComparableFile: pickComparableFile,
+              onCompareLocalFiles: handleCompareLocalFiles,
             }}
-            onRefreshSvnDiffViewerStatus={() => {
-              void loadSvnDiffViewerStatus();
-            }}
-            onPickComparableFile={pickComparableFile}
-            onCompareLocalFiles={handleCompareLocalFiles}
           />
         </div>
       </div>
