@@ -74,7 +74,7 @@ export function getWorkbookCanvasCellTextDiff(
   return diff;
 }
 
-export function getWorkbookCanvasCellTextDiffSpans(
+function getWorkbookCanvasCellTextDiffSpans(
   compareCell: WorkbookCellDelta | undefined,
   side: 'base' | 'mine',
 ): SharedCharSpan[] | null {
@@ -117,7 +117,7 @@ export function layoutWorkbookCanvasTextDrawSegments(params: {
   });
 }
 
-export function drawWorkbookCanvasCellText(params: {
+function drawWorkbookCanvasCellText(params: {
   ctx: CanvasRenderingContext2D;
   text: string;
   x: number;
