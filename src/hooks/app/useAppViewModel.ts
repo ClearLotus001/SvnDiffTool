@@ -19,8 +19,10 @@ import {
   buildWorkbookSectionRowIndexFromPrecomputedDelta,
 } from '@/utils/workbook/workbookSheetIndex';
 import {
+  getWorkbookSheetMaxRowNumber,
   resolveWorkbookGotoTarget,
 } from '@/utils/workbook/workbookGoto';
+import { buildWorkbookVisibilityModel } from '@/utils/workbook/workbookVisibilityModel';
 import {
   buildWorkbookDiffRegions,
   buildWorkbookNavigationRegions,
@@ -85,6 +87,7 @@ export default function useAppViewModel({
   const isElectron = useAppStore((s) => s.isElectron);
   const isDevMode = useAppStore((s) => s.isDevMode);
   const workbookCompareMode = useAppStore((s) => s.workbookCompareMode);
+  const showOnlyDifferences = useAppStore((s) => s.showOnlyDifferences);
   const hunkIdx = useAppStore((s) => s.hunkIdx);
   const activeWorkbookSheetName = useAppStore((s) => s.activeWorkbookSheetName);
   const isWorkbookCandidate = useMemo(
@@ -234,27 +237,6 @@ export default function useAppViewModel({
     [diffLines, isWorkbookCandidate, preparedWorkbookSections, workbookCompareMode],
   );
   const isWorkbookMode = workbookSections.length > 0;
-  const {
-    searchJumpNonce,
-    isSearching,
-    isSearchPatternInvalid,
-    searchMatches,
-    searchMatchCount,
-    searchResultsTruncated,
-    searchResultItemResolver,
-    handleSearch,
-    handleSearchPreviewNav,
-    handleSearchNav,
-    handleSearchJump,
-  } = useAppSearchModel({
-    t,
-    diffLines,
-    isWorkbookCandidate,
-    isWorkbookMode,
-    activeWorkbookSheetName,
-    baseRoleTitle,
-    mineRoleTitle,
-  });
   const activeWorkbookSection = useMemo(
     () => (
       activeWorkbookSheetName
@@ -322,6 +304,42 @@ export default function useAppViewModel({
     preparedWorkbookNavigationRegions,
     workbookDiffRegions,
   ]);
+  const workbookVisibilityModel = useMemo(() => buildWorkbookVisibilityModel({
+    showOnlyDifferences: showOnlyDifferences && isWorkbookMode,
+    sections: workbookSections,
+    sectionRowIndex: workbookSectionRowIndex,
+    modifiedSheetNames: modifiedWorkbookSheetNames,
+    compareMode: workbookCompareMode,
+  }), [
+    isWorkbookMode,
+    modifiedWorkbookSheetNames,
+    showOnlyDifferences,
+    workbookCompareMode,
+    workbookSectionRowIndex,
+    workbookSections,
+  ]);
+  const {
+    searchJumpNonce,
+    isSearching,
+    isSearchPatternInvalid,
+    searchMatches,
+    searchMatchCount,
+    searchResultsTruncated,
+    searchResultItemResolver,
+    handleSearch,
+    handleSearchPreviewNav,
+    handleSearchNav,
+    handleSearchJump,
+  } = useAppSearchModel({
+    t,
+    diffLines,
+    isWorkbookCandidate,
+    isWorkbookMode,
+    activeWorkbookSheetName,
+    baseRoleTitle,
+    mineRoleTitle,
+    workbookVisibilityModel,
+  });
   const activeWorkbookDiffRegion = isWorkbookMode
     ? (workbookDiffRegions[hunkIdx] ?? null)
     : null;
@@ -349,6 +367,14 @@ export default function useAppViewModel({
 
   const totalLines = useMemo(() => {
     if (isWorkbookMode) {
+      if (workbookVisibilityModel.policy.mode === 'differences-only' && activeWorkbookSheetName) {
+        return getWorkbookSheetMaxRowNumber(
+          diffLines,
+          buildWorkbookLineSheetContexts(diffLines),
+          activeWorkbookSheetName,
+          workbookVisibilityModel.visibleLineIndexesBySheet.get(activeWorkbookSheetName),
+        );
+      }
       const activeSheetMaxRow = activeWorkbookSection?.rowCount ?? 0;
       if (activeSheetMaxRow > 0) return activeSheetMaxRow;
 
@@ -365,7 +391,7 @@ export default function useAppViewModel({
       if (lineMax > max) max = lineMax;
     });
     return max;
-  }, [activeWorkbookSection, diffLines, isWorkbookMode, workbookSections]);
+  }, [activeWorkbookSection, activeWorkbookSheetName, diffLines, isWorkbookMode, workbookSections, workbookVisibilityModel]);
   const canLaunchUninstaller = isElectron && !isDevMode && typeof window.versora?.launchUninstaller === 'function';
 
   // Build a line-number → diff-index Map for O(1) goto lookup.
@@ -402,6 +428,9 @@ export default function useAppViewModel({
         preferredColumnLabel: selectedCell?.colLabel,
         baseVersionLabel,
         mineVersionLabel,
+        allowedLineIndexes: workbookVisibilityModel.policy.mode === 'differences-only'
+          ? workbookVisibilityModel.visibleLineIndexesBySheet.get(activeWorkbookSheetName)
+          : undefined,
       });
 
       if (resolvedGotoTarget) {
@@ -453,6 +482,7 @@ export default function useAppViewModel({
     mineVersionLabel,
     scrollToIndexRef,
     selectedCell,
+    workbookVisibilityModel,
     setWorkbookContextMenu,
     setWorkbookHiddenStateBySheet,
     setWorkbookSelection,
@@ -488,7 +518,7 @@ export default function useAppViewModel({
     searchResultItemResolver,
     workbookSections,
     workbookSectionRowIndex,
-    modifiedWorkbookSheetNames,
+    workbookVisibilityModel,
     isWorkbookMode,
     workbookDiffRegions,
     activeWorkbookDiffRegion,

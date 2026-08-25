@@ -21,15 +21,15 @@ function resolveMiniMapSemanticColor(
   tone: Exclude<DiffMiniMapHighlightTone, 'mixed'>,
 ): string {
   if (tone === 'add') {
-    return !isTransparentColor(theme.miniAdd)
-      ? theme.miniAdd
-      : (isTransparentColor(theme.addBg) ? theme.addBrd : theme.addBg);
+    return !isTransparentColor(theme.addBrd)
+      ? theme.addBrd
+      : (isTransparentColor(theme.miniAdd) ? theme.addTx : theme.miniAdd);
   }
 
   if (tone === 'delete') {
-    return !isTransparentColor(theme.miniDel)
-      ? theme.miniDel
-      : (isTransparentColor(theme.delBg) ? theme.delBrd : theme.delBg);
+    return !isTransparentColor(theme.delBrd)
+      ? theme.delBrd
+      : (isTransparentColor(theme.miniDel) ? theme.delTx : theme.miniDel);
   }
 
   return !isTransparentColor(theme.chgBrd)

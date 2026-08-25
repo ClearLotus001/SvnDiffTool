@@ -234,6 +234,7 @@ const WorkbookFormulaBar = memo(({
             maxWidth: isRegularLayout ? 560 : undefined,
           }}>
           <div
+            data-testid="formula-address-field"
             className="inline-flex items-center justify-center min-w-[96px] h-[30px] px-3 rounded-[10px] font-bold whitespace-nowrap shrink-0"
             style={{
               border: `1px solid ${cssVar('border')}`,

@@ -19,6 +19,7 @@ import type { TextLayoutSnapshotsByMode } from '@/utils/diff/textLayoutState';
 import type { WorkbookLayoutSnapshotsByMode } from '@/utils/workbook/workbookLayoutState';
 import type { WorkbookSectionRowIndex } from '@/utils/workbook/workbookSheetIndex';
 import type { WorkbookSection } from '@/utils/workbook/workbookSections';
+import type { WorkbookVisibilityModel } from '@/utils/workbook/workbookVisibilityModel';
 import type { WorkbookContextMenuSection } from '@/components/workbook/WorkbookContextMenu';
 import type { UnifiedPanelProps } from '@/components/diff/UnifiedPanel';
 import { waitForNextPaint } from '@/hooks/app/helpers';
@@ -80,7 +81,7 @@ interface AppContentWorkbookSurface {
   onWorkbookColumnWidthChange: (sheetName: string, column: number, nextWidth: number) => void;
   workbookSections: WorkbookSection[];
   workbookSectionRowIndex: WorkbookSectionRowIndex;
-  modifiedWorkbookSheetNames: ReadonlySet<string>;
+  workbookVisibilityModel: WorkbookVisibilityModel;
   workbookCompareMode: WorkbookCompareMode;
   activeWorkbookSharedExpandedBlocks: CollapseExpansionState | null;
   onWorkbookExpandedBlocksChange: (
@@ -195,7 +196,7 @@ export default function AppContent({
     onWorkbookSelectionRequest, onWorkbookNavigationReady,
     baseWorkbookMetadata, mineWorkbookMetadata,
     onWorkbookColumnWidthChange,
-    workbookSections, workbookSectionRowIndex, modifiedWorkbookSheetNames,
+    workbookSections, workbookSectionRowIndex, workbookVisibilityModel,
     workbookCompareMode,
     activeWorkbookSharedExpandedBlocks, onWorkbookExpandedBlocksChange,
     isDevMode, workbookLayoutSnapshots, onWorkbookLayoutSnapshotChange,
@@ -325,7 +326,7 @@ export default function AppContent({
                   onRevealHiddenColumns={handleRevealHiddenColumns}
                   workbookSections={workbookSections}
                   workbookSectionRowIndex={workbookSectionRowIndex}
-                  modifiedSheetNames={modifiedWorkbookSheetNames}
+                  visibilityModel={workbookVisibilityModel}
                   activeWorkbookSheetName={activeWorkbookSheetName}
                   onActiveWorkbookSheetChange={onActiveWorkbookSheetChange}
                   compareMode={workbookCompareMode}
@@ -367,7 +368,7 @@ export default function AppContent({
                   onRevealHiddenColumns={handleRevealHiddenColumns}
                   workbookSections={workbookSections}
                   workbookSectionRowIndex={workbookSectionRowIndex}
-                  modifiedSheetNames={modifiedWorkbookSheetNames}
+                  visibilityModel={workbookVisibilityModel}
                   activeWorkbookSheetName={activeWorkbookSheetName}
                   onActiveWorkbookSheetChange={onActiveWorkbookSheetChange}
                   compareMode={workbookCompareMode}

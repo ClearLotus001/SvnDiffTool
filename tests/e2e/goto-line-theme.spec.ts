@@ -28,8 +28,8 @@ test('goto action keeps the correct inverse contrast in every theme', async ({ p
   await expect(submit).toBeEnabled();
 
   const expected = {
-    light: { color: 'rgb(250, 250, 250)', activeBackground: '#496778' },
-    dark: { color: 'rgb(9, 9, 11)', activeBackground: '#A6BDC9' },
+    light: { color: 'rgb(250, 250, 250)', activeBackground: '#246FAE' },
+    dark: { color: 'rgb(9, 9, 11)', activeBackground: '#8AB8E3' },
     hc: { color: 'rgb(0, 0, 0)', activeBackground: '#FFFF00' },
   } as const;
 

@@ -14,11 +14,17 @@ import {
   buildWorkbookRenderItemIndexes,
   type WorkbookRenderItemIndexes,
 } from '@/utils/workbook/workbookRenderItemIndexes';
+import {
+  buildWorkbookMaskedRegionModel,
+  type WorkbookMaskedRegionModel,
+} from '@/utils/workbook/workbookMaskedRegionModel';
+import type { WorkbookRenderPolicy } from '@/utils/workbook/workbookVisibilityModel';
 
 export interface WorkbookRenderModel {
   rowEntryByRowNumber: WorkbookRowEntryMaps;
   compareStateByRow: WorkbookCompareStateByRow;
   compareCellsByRowNumber: WorkbookCompareCellsMaps;
+  maskedRegions: WorkbookMaskedRegionModel;
   renderItemIndexes: WorkbookRenderItemIndexes;
 }
 
@@ -29,6 +35,8 @@ export interface BuildWorkbookRenderModelParams<TItem> {
   mineVersion: string;
   visibleColumns: number[];
   compareMode: WorkbookCompareMode;
+  renderPolicy: WorkbookRenderPolicy;
+  headerRowNumber: number;
   items: readonly TItem[];
   renderItemIndexesCacheKey: string;
   getRow: (item: TItem) => SplitRow | null;
@@ -43,6 +51,8 @@ export function buildWorkbookRenderModel<TItem>({
   mineVersion,
   visibleColumns,
   compareMode,
+  renderPolicy,
+  headerRowNumber,
   items,
   renderItemIndexesCacheKey,
   getRow,
@@ -69,6 +79,14 @@ export function buildWorkbookRenderModel<TItem>({
       visibleColumns,
       compareMode,
     ),
+    maskedRegions: buildWorkbookMaskedRegionModel({
+      rows: sectionRows,
+      visibleColumns,
+      compareMode,
+      renderPolicy,
+      sheetName,
+      headerRowNumber,
+    }),
     renderItemIndexes: buildWorkbookRenderItemIndexes(items, {
       cacheKey: renderItemIndexesCacheKey,
       getRow,

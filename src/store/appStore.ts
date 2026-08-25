@@ -63,15 +63,19 @@ interface UiSettingsSlice {
   themeKey: ThemeKey;
   layout: LayoutMode;
   collapseCtx: boolean;
+  showOnlyDifferences: boolean;
   showWhitespace: boolean;
   showHiddenColumns: boolean;
+  botEnabled: boolean;
   fontSize: number;
   workbookCompareMode: WorkbookCompareMode;
   setThemeKey: (v: SetStateAction<ThemeKey>) => void;
   setLayout: (v: SetStateAction<LayoutMode>) => void;
   setCollapseCtx: (v: SetStateAction<boolean>) => void;
+  setShowOnlyDifferences: (v: SetStateAction<boolean>) => void;
   setShowWhitespace: (v: SetStateAction<boolean>) => void;
   setShowHiddenColumns: (v: SetStateAction<boolean>) => void;
+  setBotEnabled: (v: SetStateAction<boolean>) => void;
   setFontSize: (v: SetStateAction<number>) => void;
   setWorkbookCompareMode: (v: SetStateAction<WorkbookCompareMode>) => void;
 }
@@ -269,15 +273,29 @@ export const useAppStore = create<AppState>()((set) => ({
   themeKey: initialSettings.themeKey,
   layout: initialSettings.layout,
   collapseCtx: initialSettings.collapseCtx,
+  showOnlyDifferences: initialSettings.showOnlyDifferences,
   showWhitespace: initialSettings.showWhitespace,
   showHiddenColumns: initialSettings.showHiddenColumns,
+  botEnabled: initialSettings.botEnabled,
   fontSize: initialSettings.fontSize,
   workbookCompareMode: initialSettings.workbookCompareMode,
   setThemeKey: setter(set, 'themeKey'),
   setLayout: setter(set, 'layout'),
   setCollapseCtx: setter(set, 'collapseCtx'),
+  setShowOnlyDifferences: (value) => set((state) => {
+    const nextValue = resolve(state.showOnlyDifferences, value);
+    if (Object.is(nextValue, state.showOnlyDifferences)) return state;
+    return {
+      showOnlyDifferences: nextValue,
+      ...(nextValue ? {
+        workbookSelection: createWorkbookSelectionState(null),
+        workbookContextMenu: null,
+      } : {}),
+    };
+  }),
   setShowWhitespace: setter(set, 'showWhitespace'),
   setShowHiddenColumns: setter(set, 'showHiddenColumns'),
+  setBotEnabled: setter(set, 'botEnabled'),
   setFontSize: setter(set, 'fontSize'),
   setWorkbookCompareMode: setter(set, 'workbookCompareMode'),
   textSplitHeaderRatio: 0.5,

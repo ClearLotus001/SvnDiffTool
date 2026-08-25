@@ -1,0 +1,489 @@
+/**
+ * AI 助手样式
+ *
+ * 只使用站点已有的设计变量，不写死任何颜色，所以明暗主题都直接成立。
+ *
+ * 全篇没有一条 border。层次全部来自三样东西：填充色的深浅、留白，
+ * 以及消息区上下两端的渐隐遮罩——那是用来替代标题栏/输入区分隔线的。
+ * 助手气泡依然不给底色：它的层级来自排版，与 About 页确立的 editorial
+ * 克制风格一致。
+ */
+
+@property --cl-ai-glow-a {
+    syntax: '<color>';
+    inherits: true;
+    initial-value: #002FA7;
+}
+
+@property --cl-ai-glow-b {
+    syntax: '<color>';
+    inherits: true;
+    initial-value: #009B77;
+}
+
+@property --cl-ai-glow-c {
+    syntax: '<color>';
+    inherits: true;
+    initial-value: #E34234;
+}
+
+@property --cl-ai-glow-d {
+    syntax: '<color>';
+    inherits: true;
+    initial-value: #FDEE00;
+}
+
+.cl-ai-root {
+    --cl-font-body: "Manrope Variable", "Noto Sans SC Variable", "Segoe UI Variable", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --cl-paper: #f3f1eb;
+    --cl-surface: #fffefa;
+    --cl-ink: #111111;
+    --cl-muted: rgba(17, 17, 17, .64);
+    --cl-line: rgba(17, 17, 17, .14);
+    --cl-accent: #187d68;
+    --cl-pink: #d94f82;
+    --cl-acid: #6d8500;
+    --cl-violet: #536bc6;
+    --cl-ai-tag-positive: #187d68;
+    --cl-ai-tag-negative: #a43f36;
+    --cl-ai-tag-warning: #8b6500;
+    --cl-ai-tag-info: #536bc6;
+    position: fixed;
+    inset: 0;
+    --cl-ai-aurora-a: var(--cl-accent);
+    --cl-ai-aurora-b: var(--cl-pink);
+    --cl-ai-aurora-c: var(--cl-violet);
+    --cl-ai-aurora-d: var(--cl-acid);
+    /* AiAssistantRoot resolves this against every external positioned layer
+       when the portal mounts and whenever route/body overlays change. */
+    z-index: var(--cl-ai-dynamic-z, 100000);
+    pointer-events: none;
+}
+
+.cl-ai-root > * {
+    pointer-events: auto;
+}
+
+.cl-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* ===== 悬浮球 ===== */
+
+.cl-ai-orb-anchor {
+    position: fixed;
+    right: 24px;
+    bottom: 56px;
+    z-index: 2;
+    -webkit-app-region: no-drag;
+}
+
+.cl-ai-orb-anchor[data-positioned="true"] {
+    top: 0;
+    right: auto;
+    bottom: auto;
+    left: 0;
+    transform: translate3d(var(--cl-ai-orb-x), var(--cl-ai-orb-y), 0);
+}
+
+.cl-ai-orb-anchor[data-dragging="true"] {
+    will-change: transform;
+}
+
+.cl-ai-orb-anchor[data-panel-open='true'] {
+    pointer-events: none;
+}
+
+.cl-ai-orb {
+    position: relative;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: grab;
+    border-radius: 50%;
+    touch-action: none;
+    user-select: none;
+    isolation: isolate;
+    -webkit-app-region: no-drag;
+    transition: transform .24s cubic-bezier(.2, .8, .2, 1), opacity .2s ease;
+}
+
+.cl-ai-orb[data-open='true'] {
+    pointer-events: none;
+}
+
+.cl-ai-orb:hover {
+    transform: translateY(-3px);
+}
+
+.cl-ai-orb-anchor[data-dragging="true"] .cl-ai-orb {
+    cursor: grabbing;
+    transform: scale(.96);
+}
+
+.cl-ai-orb:focus-visible {
+    outline: none;
+}
+
+/* The orb's occasional line is a quiet lotus whisper slip, not an interactive
+   tooltip. Its lotus-glass palette follows the active site theme without joining
+   the button's accessible name or pointer hit area. */
+.cl-ai-orb-chatter {
+    --cl-ai-chatter-fill: color-mix(in srgb, var(--cl-surface) 88%, transparent);
+    position: absolute;
+    z-index: 3;
+    width: max-content;
+    max-width: min(250px, calc(100vw - 24px));
+    padding: 10px 14px 11px;
+    border: 0;
+    border-radius: 18px 18px 18px 7px;
+    background:
+        radial-gradient(circle at 12% 8%,
+            color-mix(in srgb, var(--cl-accent) 9%, transparent),
+            transparent 46%),
+        var(--cl-ai-chatter-fill);
+    box-shadow:
+        0 18px 38px -26px color-mix(in srgb, var(--cl-ink) 56%, transparent),
+        0 8px 20px -17px color-mix(in srgb, var(--cl-accent) 48%, transparent);
+    backdrop-filter: blur(18px) saturate(125%);
+    -webkit-backdrop-filter: blur(18px) saturate(125%);
+    color: color-mix(in srgb, var(--cl-ink) 88%, var(--cl-accent));
+    font-family: var(--cl-font-body);
+    font-size: 13px;
+    font-weight: 520;
+    line-height: 1.55;
+    letter-spacing: .012em;
+    text-align: left;
+    text-wrap: pretty;
+    overflow-wrap: anywhere;
+    pointer-events: none;
+    user-select: none;
+    -webkit-app-region: no-drag;
+}
+
+/* Update and future agent messages keep the original whisper slip, but may
+   opt into a focused action without turning the orb itself into that action. */
+.cl-ai-orb-chatter[data-interactive='true'] {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: min(460px, calc(100vw - 32px));
+    pointer-events: auto;
+    user-select: text;
+}
+
+.cl-ai-orb-chatter[data-wide='true'] {
+    max-width: min(460px, calc(100vw - 32px));
+}
+
+.cl-ai-orb-chatter[data-structured='true'] {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 9px;
+}
+
+.cl-ai-orb-chatter[data-structured='true'] .cl-ai-orb-chatter__text {
+    flex: none;
+    white-space: nowrap;
+}
+
+.cl-ai-orb-chatter__tags {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.cl-ai-orb-chatter__tag {
+    --cl-ai-tag-tone: var(--cl-ai-tag-info);
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    min-height: 25px;
+    padding: 5px 8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--cl-ai-tag-tone) 13%, var(--cl-surface));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cl-ai-tag-tone) 18%, transparent);
+    color: var(--cl-ai-tag-tone);
+    font-family: var(--cl-font-body);
+    font-size: 11px;
+    font-weight: 590;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.cl-ai-orb-chatter__tag strong {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+.cl-ai-orb-chatter__tag[data-tone='positive'] {
+    --cl-ai-tag-tone: var(--cl-ai-tag-positive);
+}
+
+.cl-ai-orb-chatter__tag[data-tone='negative'] {
+    --cl-ai-tag-tone: var(--cl-ai-tag-negative);
+}
+
+.cl-ai-orb-chatter__tag[data-tone='warning'] {
+    --cl-ai-tag-tone: var(--cl-ai-tag-warning);
+}
+
+.cl-ai-orb-chatter__text {
+    min-width: 0;
+    text-wrap: pretty;
+}
+
+.cl-ai-orb-chatter__action {
+    flex: none;
+    min-height: 30px;
+    padding: 6px 10px;
+    border: 0;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--cl-accent) 14%, var(--cl-surface));
+    box-shadow: 0 10px 22px -18px color-mix(in srgb, var(--cl-accent) 72%, var(--cl-ink));
+    color: color-mix(in srgb, var(--cl-ink) 82%, var(--cl-accent));
+    font-family: var(--cl-font-body);
+    font-size: 12px;
+    font-weight: 680;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background .16s ease, color .16s ease, transform .16s ease;
+}
+
+.cl-ai-orb-chatter__action:hover {
+    background: color-mix(in srgb, var(--cl-accent) 22%, var(--cl-surface));
+    color: var(--cl-ink);
+    transform: translateY(-1px);
+}
+
+.cl-ai-orb-chatter__action:focus-visible {
+    outline: 2px solid var(--cl-accent);
+    outline-offset: 2px;
+}
+
+.cl-ai-orb-chatter::after {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    width: 13px;
+    height: 9px;
+    background: var(--cl-ai-chatter-fill);
+    border-radius: 2px 3px 10px 3px;
+    backdrop-filter: blur(18px) saturate(125%);
+    -webkit-backdrop-filter: blur(18px) saturate(125%);
+}
+
+/* The bubble creates its own stacking context, so z-index alone cannot hide
+   the translucent overlap. Clip only the covered root and keep the rounded tip. */
+.cl-ai-orb-anchor[data-chatter-horizontal='left'] .cl-ai-orb-chatter::after {
+    clip-path: polygon(76% 0, 100% 0, 100% 100%, 0 100%, 0 85%);
+}
+
+.cl-ai-orb-anchor[data-chatter-horizontal='right'] .cl-ai-orb-chatter::after,
+.cl-ai-orb-anchor:not([data-chatter-horizontal]) .cl-ai-orb-chatter::after {
+    clip-path: polygon(62% 0, 100% 0, 100% 100%, 8% 100%);
+}
+
+.cl-ai-orb-anchor[data-chatter-horizontal='left'] .cl-ai-orb-chatter {
+    right: 0;
+    transform-origin: calc(100% - 24px) 100%;
+}
+
+.cl-ai-orb-anchor[data-chatter-horizontal='right'] .cl-ai-orb-chatter,
+.cl-ai-orb-anchor:not([data-chatter-horizontal]) .cl-ai-orb-chatter {
+    left: 0;
+    transform-origin: 24px 100%;
+}
+
+.cl-ai-orb-anchor[data-chatter-vertical='above'] .cl-ai-orb-chatter,
+.cl-ai-orb-anchor:not([data-chatter-vertical]) .cl-ai-orb-chatter {
+    bottom: calc(100% + 10px);
+}
+
+.cl-ai-orb-anchor[data-chatter-vertical='above'][data-chatter-horizontal='left'] .cl-ai-orb-chatter::after {
+    right: 18px;
+    bottom: -4px;
+    transform: rotate(38deg);
+}
+
+.cl-ai-orb-anchor[data-chatter-vertical='above'][data-chatter-horizontal='right'] .cl-ai-orb-chatter::after,
+.cl-ai-orb-anchor:not([data-chatter-vertical]) .cl-ai-orb-chatter::after {
+    bottom: -4px;
+    left: 18px;
+    transform: rotate(52deg);
+}
+
+.cl-ai-orb-anchor[data-chatter-vertical='below'] .cl-ai-orb-chatter {
+    top: calc(100% + 10px);
+}
+
+.cl-ai-orb-anchor[data-chatter-vertical='below'][data-chatter-horizontal='left'] .cl-ai-orb-chatter {
+    transform-origin: calc(100% - 24px) 0;
+}
+
+.cl-ai-orb-anchor[data-chatter-vertical='below'][data-chatter-horizontal='right'] .cl-ai-orb-chatter {
+    transform-origin: 24px 0;
+}
+
+.cl-ai-orb-anchor[data-chatter-vertical='below'][data-chatter-horizontal='left'] .cl-ai-orb-chatter::after {
+    top: -4px;
+    right: 18px;
+    transform: rotate(218deg);
+}
+
+.cl-ai-orb-anchor[data-chatter-vertical='below'][data-chatter-horizontal='right'] .cl-ai-orb-chatter::after {
+    top: -4px;
+    left: 18px;
+    transform: rotate(232deg);
+}
+
+.cl-ai-orb-anchor[data-dragging='true'] .cl-ai-orb-chatter {
+    visibility: hidden;
+    opacity: 0 !important;
+}
+
+/* Four theme colors breathe on different axes, giving the small character a
+   living aura without tinting or obscuring its face. */
+.cl-ai-orb__glow {
+    position: absolute;
+    z-index: -1;
+    inset: -20%;
+    border-radius: 50%;
+    background:
+        radial-gradient(circle at 34% 32%, color-mix(in srgb, var(--cl-ai-glow-a) 70%, transparent) 0 12%, transparent 45%),
+        radial-gradient(circle at 70% 34%, color-mix(in srgb, var(--cl-ai-glow-b) 58%, transparent) 0 10%, transparent 43%),
+        radial-gradient(circle at 68% 72%, color-mix(in srgb, var(--cl-ai-glow-c) 58%, transparent) 0 11%, transparent 45%),
+        radial-gradient(circle at 32% 70%, color-mix(in srgb, var(--cl-ai-glow-d) 48%, transparent) 0 9%, transparent 41%);
+    filter: blur(7px) saturate(126%);
+    pointer-events: none;
+    opacity: .64;
+    transition:
+        --cl-ai-glow-a 1.8s ease,
+        --cl-ai-glow-b 1.8s ease,
+        --cl-ai-glow-c 1.8s ease,
+        --cl-ai-glow-d 1.8s ease;
+    animation: cl-ai-orb-aura 4.8s cubic-bezier(.45, 0, .25, 1) infinite;
+}
+
+.cl-ai-orb__glow::before {
+    content: '';
+    position: absolute;
+    inset: 22%;
+    border-radius: inherit;
+    background: conic-gradient(from 30deg,
+        color-mix(in srgb, var(--cl-ai-glow-a) 52%, transparent),
+        color-mix(in srgb, var(--cl-ai-glow-b) 43%, transparent),
+        color-mix(in srgb, var(--cl-ai-glow-c) 46%, transparent),
+        color-mix(in srgb, var(--cl-ai-glow-d) 40%, transparent),
+        color-mix(in srgb, var(--cl-ai-glow-a) 52%, transparent));
+    filter: blur(6px);
+    animation: cl-ai-orb-spectrum 8s linear infinite;
+}
+
+.cl-ai-orb__bot {
+    position: relative;
+    z-index: 2;
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.cl-ai-orb__shared-bot,
+.cl-ai-panel__bot {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.cl-ai-emotion-ball {
+    position: relative;
+    display: block;
+    width: 100%;
+    height: 100%;
+    filter: drop-shadow(0 3px 5px color-mix(in srgb, var(--cl-ink) 42%, transparent));
+    pointer-events: none;
+}
+
+.cl-ai-emotion-ball > svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+.cl-ai-emotion-ball__fallback {
+    position: absolute;
+    inset: 14%;
+    border-radius: 50%;
+    background: var(--cl-ink);
+    box-shadow: inset 0 0 0 3px var(--cl-paper);
+}
+
+@keyframes cl-ai-orb-aura {
+    0%, 100% { opacity: .5; transform: scale(.95); }
+    45% { opacity: .84; transform: scale(1.025); }
+    72% { opacity: .66; transform: scale(.985); }
+}
+
+@keyframes cl-ai-orb-spectrum {
+    to { transform: rotate(1turn); }
+}
+
+
+.theme-dark .cl-ai-root,
+.theme-hc .cl-ai-root {
+    --cl-paper: #090909;
+    --cl-surface: #101010;
+    --cl-ink: #ffffff;
+    --cl-muted: rgba(255, 255, 255, .68);
+    --cl-line: rgba(255, 255, 255, .13);
+    --cl-accent: #83f2ce;
+    --cl-pink: #ff7fac;
+    --cl-acid: #c8ff5a;
+    --cl-violet: #7f9cff;
+    --cl-ai-tag-positive: #83f2ce;
+    --cl-ai-tag-negative: #ff9d94;
+    --cl-ai-tag-warning: #f0cf68;
+    --cl-ai-tag-info: #9aafff;
+}
+
+@media (max-width: 767px) {
+    .cl-ai-orb-anchor {
+        right: 16px;
+        bottom: 56px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cl-ai-orb,
+    .cl-ai-orb-chatter,
+    .cl-ai-orb__glow,
+    .cl-ai-orb__glow::before,
+    .cl-ai-emotion-ball {
+        transition: none !important;
+        animation: none !important;
+    }
+
+    .cl-ai-orb:hover {
+        transform: none;
+    }
+
+    .cl-ai-orb-chatter__action:hover {
+        transform: none;
+    }
+}

@@ -65,6 +65,14 @@ import {
   resolveWorkbookVersionIdentityVisual,
 } from '@/utils/workbook/workbookRowVisuals';
 import { useThemeTokens } from '@/context/theme';
+import {
+  drawWorkbookMaskedCellSegments,
+  resolveWorkbookMaskedCellOpacity,
+} from '@/utils/workbook/workbookMaskedCellVisual';
+import {
+  getWorkbookMaskedRegionId,
+  type WorkbookMaskedRegionModel,
+} from '@/utils/workbook/workbookMaskedRegionModel';
 import type {
   SplitRow,
   WorkbookCompareMode,
@@ -78,6 +86,7 @@ import type { WorkbookMergeRange } from '@/utils/workbook/workbookMeta';
 import type { WorkbookCanvasHoverCell } from '@/components/workbook/WorkbookCanvasHoverTooltip';
 import useWorkbookCanvasHoverController, { resolveWorkbookCanvasHoverForCanvas } from '@/components/workbook/useWorkbookCanvasHoverController';
 import useWorkbookCanvasSelectionInteractions from '@/components/workbook/useWorkbookCanvasSelectionInteractions';
+import { useWorkbookMaskedRegionReveal } from '@/components/workbook/WorkbookMaskedRegionRevealContext';
 import {
   getWorkbookStackedBandDisplayRowNumber,
   getWorkbookStackedVisibleBands,
@@ -138,6 +147,7 @@ interface WorkbookStackedCanvasStripProps {
   baseCompareCellsByRowNumber: Map<number, ReturnType<typeof buildWorkbookSplitRowCompareState>['cellDeltas']>;
   mineCompareCellsByRowNumber: Map<number, ReturnType<typeof buildWorkbookSplitRowCompareState>['cellDeltas']>;
   compareMode: WorkbookCompareMode;
+  maskedRegions: WorkbookMaskedRegionModel;
 }
 
 interface CanvasBand {
@@ -154,6 +164,7 @@ interface CanvasBand {
   y: number;
   height: number;
   isGuided: boolean;
+  isSearchMatch: boolean;
   isActiveSearch: boolean;
   rowHighlightBg?: string | undefined;
 }
@@ -243,13 +254,21 @@ const WorkbookStackedCanvasStrip = memo(({
   baseCompareCellsByRowNumber,
   mineCompareCellsByRowNumber,
   compareMode,
+  maskedRegions,
 }: WorkbookStackedCanvasStripProps) => {
   const T = useThemeTokens();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef(0);
   const clearHoverRef = useRef<() => void>(() => {});
+  const clearMaskedRegionRef = useRef<() => void>(() => {});
   const hasActiveHoverRef = useRef<() => boolean>(() => false);
   const [dragPreviewActive, setDragPreviewActive] = useState(false);
+  const {
+    motionByRegion,
+    revealRegion,
+    clearRegion,
+  } = useWorkbookMaskedRegionReveal();
+  clearMaskedRegionRef.current = clearRegion;
   const sizes = useMemo(() => getWorkbookFontScale(fontSize), [fontSize]);
   const renderedColumnNumbers = useMemo(() => renderColumns.map(entry => entry.column), [renderColumns]);
   const groupFrames = useMemo<CanvasGroupFrame[]>(
@@ -483,6 +502,7 @@ const WorkbookStackedCanvasStrip = memo(({
             y: visibleBands.base.top,
             height: ROW_H,
             isGuided: rowFrame.renderRow.isGuided,
+            isSearchMatch: rowFrame.renderRow.isSearchMatch,
             isActiveSearch: rowFrame.renderRow.isActiveSearch,
             rowHighlightBg: rowFrame.rowHighlightBg,
           });
@@ -513,6 +533,7 @@ const WorkbookStackedCanvasStrip = memo(({
             y: visibleBands.mine.top,
             height: ROW_H,
             isGuided: rowFrame.renderRow.isGuided,
+            isSearchMatch: rowFrame.renderRow.isSearchMatch,
             isActiveSearch: rowFrame.renderRow.isActiveSearch,
             rowHighlightBg: rowFrame.rowHighlightBg,
           });
@@ -754,6 +775,15 @@ const WorkbookStackedCanvasStrip = memo(({
               },
             );
             const selectionBorder = getWorkbookSelectionBorderVisual(selectionVisual);
+            const maskedRegionId = getWorkbookMaskedRegionId(maskedRegions, band.side, displayRowNumber, entryMeta.column);
+            const maskOpacity = resolveWorkbookMaskedCellOpacity({
+              maskedRegionId,
+              motion: maskedRegionId ? motionByRegion[maskedRegionId] : undefined,
+              rowNumber: displayRowNumber,
+              column: entryMeta.column,
+              isHeaderRow,
+              isSearchMatch: band.isSearchMatch || band.isActiveSearch,
+            });
 
             ctx.fillStyle = cellVisual.background;
             ctx.fillRect(drawX, y, entryMeta.width, h);
@@ -815,6 +845,15 @@ const WorkbookStackedCanvasStrip = memo(({
                 textColor: cellVisual.textColor,
               });
               ctx.restore();
+            }
+            if (maskOpacity > 0.001) {
+              drawWorkbookMaskedCellSegments(
+                ctx,
+                [{ left: drawX, width: entryMeta.width }],
+                [{ top: y, height: h }],
+                T,
+                maskOpacity,
+              );
             }
             return;
           }
@@ -894,6 +933,15 @@ const WorkbookStackedCanvasStrip = memo(({
             Boolean(compareCell?.changed),
             isHeaderRow ? 'header' : 'body',
           );
+          const maskedRegionId = getWorkbookMaskedRegionId(maskedRegions, band.side, anchorRowNumber, anchorColumn);
+          const maskOpacity = resolveWorkbookMaskedCellOpacity({
+            maskedRegionId,
+            motion: maskedRegionId ? motionByRegion[maskedRegionId] : undefined,
+            rowNumber: anchorRowNumber,
+            column: anchorColumn,
+            isHeaderRow,
+            isSearchMatch: band.isSearchMatch || band.isActiveSearch,
+          });
           const mergedRegion = mergeInfo.region;
           const rowSegments = mergedRegion?.rowSegments ?? [{ top: y, height: h }];
           const regionLeft = mergeInfo.region?.left ?? drawX;
@@ -1105,6 +1153,9 @@ const WorkbookStackedCanvasStrip = memo(({
               });
             }
             ctx.restore();
+            if (maskOpacity > 0.001) {
+              drawWorkbookMaskedCellSegments(ctx, regionSegments, rowSegments, T, maskOpacity);
+            }
           };
 
           if (mergeInfo.region) {
@@ -1253,7 +1304,7 @@ const WorkbookStackedCanvasStrip = memo(({
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = 0;
     };
-  }, [baseMergedRanges, columnLayoutByColumn, columnPartition, compareMode, contentWidth, dragPreviewActive, freezeColumnCount, groupRuntimeByKey, headerRowNumber, mineMergedRanges, renderBands, renderedColumnNumbers, renderColumns, scrollRef, selectionLookup, sheetName, sizes.line, sizes.ui, T, totalHeight, viewportWidth]);
+  }, [baseMergedRanges, columnLayoutByColumn, columnPartition, compareMode, contentWidth, dragPreviewActive, freezeColumnCount, groupRuntimeByKey, headerRowNumber, maskedRegions, mineMergedRanges, motionByRegion, renderBands, renderedColumnNumbers, renderColumns, scrollRef, selectionLookup, sheetName, sizes.line, sizes.ui, T, totalHeight, viewportWidth]);
 
   useEffect(() => {
     const scroller = scrollRef.current;
@@ -1265,6 +1316,7 @@ const WorkbookStackedCanvasStrip = memo(({
       if (nextScrollLeft === lastScrollLeft) return;
       lastScrollLeft = nextScrollLeft;
       if (hasActiveHoverRef.current()) clearHoverRef.current();
+      clearMaskedRegionRef.current();
       if (rafRef.current) return;
       rafRef.current = requestAnimationFrame(() => {
         rafRef.current = 0;
@@ -1367,6 +1419,7 @@ const WorkbookStackedCanvasStrip = memo(({
       column,
       mergeRange,
     });
+    const maskedRegionId = getWorkbookMaskedRegionId(maskedRegions, side, anchorRowNumber, anchorColumn);
     const columnX = spanRect?.left ?? hitColumnFrame.left;
     const bandY = visibleBands[side]?.top ?? rowTop;
     const renderedRowNumbers = groupRuntime.renderedRowNumbers[side] ?? [];
@@ -1428,6 +1481,11 @@ const WorkbookStackedCanvasStrip = memo(({
           displayValue: selected.value,
           wrapText: Boolean(mergeDrawInfo.region),
           compareCell,
+          ...(maskedRegionId ? {
+            maskedRegionId,
+            maskedRegionRowNumber: anchorRowNumber,
+            maskedRegionColumn: anchorColumn,
+          } : {}),
         },
       };
     }
@@ -1448,6 +1506,11 @@ const WorkbookStackedCanvasStrip = memo(({
         displayValue: selected.value,
         wrapText: Boolean(mergeDrawInfo.region),
         compareCell,
+        ...(maskedRegionId ? {
+          maskedRegionId,
+          maskedRegionRowNumber: anchorRowNumber,
+          maskedRegionColumn: anchorColumn,
+        } : {}),
       },
     };
   };
@@ -1478,15 +1541,26 @@ const WorkbookStackedCanvasStrip = memo(({
     onDragSelectingChange: setDragPreviewActive,
   });
 
-  const handleCanvasMouseMove = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleCanvasMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
     if (selectionInteractions.isPointerSelectingRef.current) return;
+    const hover = resolveHoverAtPointer(event.currentTarget, event.clientX, event.clientY);
+    const maskedRegionId = hover?.maskedRegionId ?? null;
+    const origin = hover?.maskedRegionRowNumber != null && hover.maskedRegionColumn != null
+      ? { rowNumber: hover.maskedRegionRowNumber, column: hover.maskedRegionColumn }
+      : undefined;
+    revealRegion(maskedRegionId, origin);
+    if (maskedRegionId) {
+      clearHover();
+      return;
+    }
     handleMouseMove(event);
-  }, [handleMouseMove, selectionInteractions]);
+  };
 
   const handleCanvasMouseLeave = useCallback(() => {
     if (selectionInteractions.isPointerSelectingRef.current) return;
+    clearRegion();
     clearHover();
-  }, [clearHover, selectionInteractions]);
+  }, [clearHover, clearRegion, selectionInteractions]);
 
   const handleContextMenu = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const canvasRect = event.currentTarget.getBoundingClientRect();

@@ -61,6 +61,10 @@ import {
 import { getPreparedWorkbookDeltaForMode } from '@/hooks/app/helpers';
 import { useAppStore } from '@/store/appStore';
 import PerfBar from '@/components/app/PerfBar';
+import GlobalBot from '@/components/app/global-bot/GlobalBot';
+import { resolveAppUpdateNotice } from '@/components/app/global-bot/sources/appUpdateNotice';
+import { resolveDiffSummaryMessages } from '@/components/app/global-bot/sources/diffSummaryMessages';
+import useDevPreviewNotice from '@/components/app/global-bot/sources/useDevPreviewNotice';
 import AppUpdateInstalledNoticeBar from '@/components/app/AppUpdateInstalledNoticeBar';
 import DiffSourceNoticeBar from '@/components/diff/DiffSourceNoticeBar';
 import DiffLoadErrorNoticeBar from '@/components/diff/DiffLoadErrorNoticeBar';
@@ -89,15 +93,19 @@ export default function App() {
   const themeKey = useAppStore((s) => s.themeKey);
   const layout = useAppStore((s) => s.layout);
   const collapseCtx = useAppStore((s) => s.collapseCtx);
+  const showOnlyDifferences = useAppStore((s) => s.showOnlyDifferences);
   const showWhitespace = useAppStore((s) => s.showWhitespace);
   const showHiddenColumns = useAppStore((s) => s.showHiddenColumns);
+  const botEnabled = useAppStore((s) => s.botEnabled);
   const fontSize = useAppStore((s) => s.fontSize);
   const workbookCompareMode = useAppStore((s) => s.workbookCompareMode);
   const setThemeKey = useAppStore((s) => s.setThemeKey);
   const setLayout = useAppStore((s) => s.setLayout);
   const setCollapseCtx = useAppStore((s) => s.setCollapseCtx);
+  const setShowOnlyDifferences = useAppStore((s) => s.setShowOnlyDifferences);
   const setShowWhitespace = useAppStore((s) => s.setShowWhitespace);
   const setShowHiddenColumns = useAppStore((s) => s.setShowHiddenColumns);
+  const setBotEnabled = useAppStore((s) => s.setBotEnabled);
   const setFontSize = useAppStore((s) => s.setFontSize);
   const setTextSplitHeaderRatio = useAppStore((s) => s.setTextSplitHeaderRatio);
   const resetDiffSessionToHome = useAppStore((s) => s.resetDiffSessionToHome);
@@ -254,6 +262,7 @@ export default function App() {
       columnWidthBySheet: workbookColumnWidthBySheet,
       activeSheetName: activeWorkbookSheetName,
       showHiddenColumns,
+      showOnlyDifferences,
     },
     actions: {
       setSelection: setWorkbookSelection,
@@ -263,9 +272,11 @@ export default function App() {
       setColumnWidthBySheet: setWorkbookColumnWidthBySheet,
       setActiveSheetName: setActiveWorkbookSheetName,
       setShowHiddenColumns,
+      setShowOnlyDifferences,
     },
   }), [
     activeWorkbookSheetName,
+    showOnlyDifferences,
     showHiddenColumns,
     workbookColumnWidthBySheet,
     workbookContextMenu,
@@ -279,6 +290,7 @@ export default function App() {
     setWorkbookColumnWidthBySheet,
     setActiveWorkbookSheetName,
     setShowHiddenColumns,
+    setShowOnlyDifferences,
   ]);
 
   // ── useAppViewModel ───────────────────────────────────────────────────
@@ -312,7 +324,7 @@ export default function App() {
     searchResultItemResolver,
     workbookSections,
     workbookSectionRowIndex,
-    modifiedWorkbookSheetNames,
+    workbookVisibilityModel,
     isWorkbookMode,
     workbookDiffRegions,
     activeWorkbookDiffRegion,
@@ -434,6 +446,36 @@ export default function App() {
     handleInstallDownloadedUpdate,
     handleLaunchUninstaller,
   } = useAppUpdateActions(t);
+
+  const appUpdateBotNotice = useMemo(() => resolveAppUpdateNotice({
+    state: appUpdateState,
+    t,
+    onDownload: handleDownloadAppUpdate,
+    onInstall: handleInstallDownloadedUpdate,
+  }), [appUpdateState, handleDownloadAppUpdate, handleInstallDownloadedUpdate, t]);
+  const devGlobalBotNotice = useDevPreviewNotice({
+    enabled: import.meta.env.DEV && isDevMode && botEnabled,
+    t,
+  });
+  const globalBotNotice = appUpdateBotNotice ?? devGlobalBotNotice;
+  const globalBotAmbientMessages = useMemo(() => resolveDiffSummaryMessages({
+    enabled: hasLoadedDiff && !isLoadingDiff,
+    isWorkbookMode,
+    stats: textDiffPresentation.stats,
+    workbookSections,
+    modifiedWorkbookSheetNames: workbookVisibilityModel.modifiedSheetNames,
+    workbookArtifactDiff,
+    t,
+  }), [
+    hasLoadedDiff,
+    isLoadingDiff,
+    isWorkbookMode,
+    t,
+    textDiffPresentation.stats,
+    workbookArtifactDiff,
+    workbookSections,
+    workbookVisibilityModel.modifiedSheetNames,
+  ]);
 
   // ── Event Handlers ────────────────────────────────────────────────────
   const handleScrollerReady = useCallback(
@@ -710,6 +752,7 @@ export default function App() {
     loadPhase,
     loadPerfMetrics,
     setCollapseCtx,
+    setShowOnlyDifferences,
     setLayout,
     activeSearchIdx,
     searchJumpNonce,
@@ -752,8 +795,10 @@ export default function App() {
             onNext={handleHunkNext}
             showSearch={showSearch}     setShowSearch={setShowSearch}
             collapseCtx={collapseCtx}   setCollapseCtx={setCollapseCtx}
+            showOnlyDifferences={showOnlyDifferences} setShowOnlyDifferences={setShowOnlyDifferences}
             showWhitespace={showWhitespace} setShowWhitespace={setShowWhitespace}
             showHiddenColumns={showHiddenColumns} setShowHiddenColumns={setShowHiddenColumns}
+            botEnabled={botEnabled} setBotEnabled={setBotEnabled}
             workbookCompareMode={workbookCompareMode}
             setWorkbookCompareMode={handleWorkbookCompareModeChange}
             fontSize={fontSize}         setFontSize={setFontSize}
@@ -771,6 +816,13 @@ export default function App() {
             onDownloadUpdate={handleDownloadAppUpdate}
             onInstallUpdate={handleInstallDownloadedUpdate}
           />
+
+          {botEnabled && (
+            <GlobalBot
+              notice={globalBotNotice}
+              ambientMessages={globalBotAmbientMessages}
+            />
+          )}
 
           {isDevMode && <PerfBar metrics={loadPerfMetrics} />}
 
@@ -904,7 +956,7 @@ export default function App() {
               onWorkbookColumnWidthChange: handleWorkbookColumnWidthChange,
               workbookSections,
               workbookSectionRowIndex,
-              modifiedWorkbookSheetNames,
+              workbookVisibilityModel,
               workbookCompareMode,
               activeWorkbookSharedExpandedBlocks,
               onWorkbookExpandedBlocksChange: handleWorkbookExpandedBlocksChange,
@@ -932,6 +984,7 @@ export default function App() {
               workbookArtifactDiff={workbookArtifactDiff}
               workbookSections={workbookSections}
               lineSelectionSummary={!isWorkbookMode ? textLineSelectionSummary : null}
+              showGotoShortcut={!(isWorkbookMode && showOnlyDifferences)}
             />
           )}
 

@@ -21,6 +21,7 @@ export interface ResolveWorkbookGotoTargetParams {
   preferredColumnLabel?: string | undefined;
   baseVersionLabel: string;
   mineVersionLabel: string;
+  allowedLineIndexes?: ReadonlySet<number> | undefined;
 }
 
 export interface ResolvedWorkbookGotoTarget {
@@ -81,11 +82,13 @@ export function collectWorkbookGotoRowCandidates(
   diffLines: readonly DiffLine[],
   lineSheetContexts: readonly WorkbookLineSheetContext[],
   sheetName: string | null,
+  allowedLineIndexes?: ReadonlySet<number>,
 ): WorkbookGotoRowCandidate[] {
   if (!sheetName) return [];
 
   const candidates: WorkbookGotoRowCandidate[] = [];
   diffLines.forEach((line, lineIdx) => {
+    if (allowedLineIndexes && !allowedLineIndexes.has(lineIdx)) return;
     const context = lineSheetContexts[lineIdx] ?? null;
     if (!context) return;
 
@@ -136,8 +139,9 @@ export function getWorkbookSheetMaxRowNumber(
   diffLines: readonly DiffLine[],
   lineSheetContexts: readonly WorkbookLineSheetContext[],
   sheetName: string | null,
+  allowedLineIndexes?: ReadonlySet<number>,
 ): number {
-  const candidates = collectWorkbookGotoRowCandidates(diffLines, lineSheetContexts, sheetName);
+  const candidates = collectWorkbookGotoRowCandidates(diffLines, lineSheetContexts, sheetName, allowedLineIndexes);
   return candidates.reduce((max, candidate) => Math.max(max, candidate.rowNumber), 0);
 }
 
@@ -151,8 +155,9 @@ export function resolveWorkbookGotoTarget({
   preferredColumnLabel,
   baseVersionLabel,
   mineVersionLabel,
+  allowedLineIndexes,
 }: ResolveWorkbookGotoTargetParams): ResolvedWorkbookGotoTarget | null {
-  const candidates = collectWorkbookGotoRowCandidates(diffLines, lineSheetContexts, sheetName);
+  const candidates = collectWorkbookGotoRowCandidates(diffLines, lineSheetContexts, sheetName, allowedLineIndexes);
   const candidate = resolveWorkbookGotoCandidate(candidates, lineNo, preferredSide);
   if (!candidate) return null;
 

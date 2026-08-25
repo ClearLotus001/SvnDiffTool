@@ -1,4 +1,7 @@
 import '@/styles/app.css';
+import '@fontsource-variable/manrope/wght.css';
+import '@fontsource-variable/noto-sans-sc/wght.css';
+import '@/components/app/global-bot/global-bot.css';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from '@/App';

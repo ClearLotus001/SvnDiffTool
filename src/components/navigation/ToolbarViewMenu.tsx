@@ -8,8 +8,10 @@ import Tooltip from '@/components/shared/Tooltip';
 
 const DEFAULT_VIEW_STATE = {
   collapseCtx: true,
+  showOnlyDifferences: true,
   showWhitespace: false,
   showHiddenColumns: false,
+  botEnabled: true,
   workbookCompareMode: 'strict' as WorkbookCompareMode,
   fontSize: 12,
 };
@@ -54,10 +56,14 @@ const createSwitchKnobStyle = (checked: boolean): CSSProperties => ({
 interface ToolbarViewMenuProps {
   collapseCtx: boolean;
   setCollapseCtx: React.Dispatch<React.SetStateAction<boolean>>;
+  showOnlyDifferences: boolean;
+  setShowOnlyDifferences: React.Dispatch<React.SetStateAction<boolean>>;
   showWhitespace: boolean;
   setShowWhitespace: React.Dispatch<React.SetStateAction<boolean>>;
   showHiddenColumns: boolean;
   setShowHiddenColumns: React.Dispatch<React.SetStateAction<boolean>>;
+  botEnabled: boolean;
+  setBotEnabled: React.Dispatch<React.SetStateAction<boolean>>;
   workbookCompareMode: WorkbookCompareMode;
   setWorkbookCompareMode: (mode: WorkbookCompareMode) => void;
   fontSize: number;
@@ -70,8 +76,10 @@ interface ToolbarViewMenuProps {
 
 const ToolbarViewMenu = memo(({
   collapseCtx, setCollapseCtx,
+  showOnlyDifferences, setShowOnlyDifferences,
   showWhitespace, setShowWhitespace,
   showHiddenColumns, setShowHiddenColumns,
+  botEnabled, setBotEnabled,
   workbookCompareMode, setWorkbookCompareMode,
   fontSize, setFontSize,
   isWorkbookMode, showLabel,
@@ -119,33 +127,36 @@ const ToolbarViewMenu = memo(({
   const viewStateCount = useMemo(() => {
     let count = 0;
     if (collapseCtx !== DEFAULT_VIEW_STATE.collapseCtx) count += 1;
+    if (isWorkbookMode && showOnlyDifferences !== DEFAULT_VIEW_STATE.showOnlyDifferences) count += 1;
     if (showWhitespace !== DEFAULT_VIEW_STATE.showWhitespace) count += 1;
     if (isWorkbookMode && showHiddenColumns !== DEFAULT_VIEW_STATE.showHiddenColumns) count += 1;
+    if (botEnabled !== DEFAULT_VIEW_STATE.botEnabled) count += 1;
     if (isWorkbookMode && workbookCompareMode !== DEFAULT_VIEW_STATE.workbookCompareMode) count += 1;
     if (fontSize !== DEFAULT_VIEW_STATE.fontSize) count += 1;
     return count;
-  }, [collapseCtx, fontSize, isWorkbookMode, showHiddenColumns, showWhitespace, workbookCompareMode]);
+  }, [botEnabled, collapseCtx, fontSize, isWorkbookMode, showHiddenColumns, showOnlyDifferences, showWhitespace, workbookCompareMode]);
 
   const ToggleRow = ({
-    checked, label, onClick, tooltip,
+    checked, label, onClick, tooltip, testId,
   }: {
-    checked: boolean; label: string; onClick: () => void; tooltip: string;
+    checked: boolean; label: string; onClick: () => void; tooltip: string; testId?: string;
   }) => (
     <Tooltip content={tooltip} placement="left" anchorStyle={menuTooltipAnchorStyle} sideBoundaryRef={menuRef}>
       <button
         type="button"
         role="menuitemcheckbox"
         aria-checked={checked}
+        data-testid={testId}
         onClick={onClick}
         className={`
           toolbar-view-menu__item
-          w-full h-9 px-3 border font-ui text-[13px] font-semibold
+          w-full h-10 px-3 border font-ui text-[13px] font-semibold leading-[1.4]
           grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2.5 cursor-pointer text-left
           transition-all duration-150 hover:-translate-y-px active:translate-y-0
           ${checked ? 'text-accent' : 'text-text-title'}
         `}
         style={createMenuButtonStyle(checked, interactiveStyle)}>
-        <span className="min-w-0 truncate leading-none">{label}</span>
+        <span className="min-w-0 whitespace-nowrap leading-[1.4] overflow-visible">{label}</span>
         <span
           aria-hidden="true"
           className="toolbar-view-menu__switch relative w-[34px] h-[18px] shrink-0 transition-all duration-150"
@@ -214,7 +225,16 @@ const ToolbarViewMenu = memo(({
         <div className="grid gap-1.5">
           <div className={SECTION_TITLE_CLASS}>{t('toolbarSectionDisplay')}</div>
           <ToggleRow checked={collapseCtx} onClick={() => setCollapseCtx((v) => !v)} label={collapseCtx ? t('toolbarExpandAllLabel') : t('toolbarCollapseLabel')} tooltip={t('toolbarCollapseTitle')} />
+          {isWorkbookMode && (
+            <ToggleRow
+              checked={showOnlyDifferences}
+              onClick={() => setShowOnlyDifferences((value) => !value)}
+              label={t('toolbarDiffOnlyLabel')}
+              tooltip={t('toolbarDiffOnlyTitle')}
+            />
+          )}
           <ToggleRow checked={showWhitespace} onClick={() => setShowWhitespace((v) => !v)} label={t('toolbarWhitespaceLabel')} tooltip={t('toolbarWhitespaceTitle')} />
+          <ToggleRow checked={botEnabled} onClick={() => setBotEnabled((value) => !value)} label={t('toolbarBotLabel')} tooltip={t('toolbarBotTitle')} testId="toolbar-bot-toggle" />
           {isWorkbookMode && (
             <ToggleRow checked={showHiddenColumns} onClick={() => setShowHiddenColumns((v) => !v)} label={t('toolbarHiddenColumnsLabel')} tooltip={t('toolbarHiddenColumnsTitle')} />
           )}

@@ -580,16 +580,19 @@ function HomeAmbientCanvas() {
 function getPixelCardColors(host: HTMLElement, accent: string) {
   const accentColor = readThemeColor(host, accent, '#A6BDC9');
   const secondaryAccent = readThemeColor(host, '--acc2', '#D0B49A');
-  const add = readThemeColor(host, '--diff-add-border', '#4E9B62');
-  const modify = readThemeColor(host, '--diff-modify-border', '#B69A3B');
+  const baseVersion = readThemeColor(host, '--version-base', '#8AB8E3');
+  const mineVersion = readThemeColor(host, '--version-mine', '#E6C95A');
   const secondary = readThemeColor(host, '--text-secondary', '#A1A1AA');
-  const border = readThemeColor(host, '--border-strong', '#3F3F46');
 
   if (accent === '--accent') {
-    return [accentColor, secondaryAccent, secondary, border];
+    return [accentColor, secondaryAccent, mineVersion, secondary];
   }
 
-  return [accentColor, secondaryAccent, add, modify];
+  if (accent === '--acc2') {
+    return [accentColor, baseVersion, mineVersion, secondary];
+  }
+
+  return [accentColor, baseVersion, secondaryAccent, secondary];
 }
 
 function PixelCardField({ accent, disabled = false }: { accent: string; disabled?: boolean }) {
@@ -844,7 +847,7 @@ const HomeStartPanel = memo(({
 
         <div className="home-action-grid grid gap-5 sm:grid-cols-2 items-stretch">
           <ActionCard
-            accent="--acc2"
+            accent="--accent"
             icon="compare"
             title={t('homeStartLocalFileCompareTitle')}
             body={t('homeStartLocalFileCompareBody')}
@@ -854,7 +857,7 @@ const HomeStartPanel = memo(({
             disabled={!isElectron}
           />
           <ActionCard
-            accent="--accent-hover"
+            accent="--acc2"
             icon="file"
             title={t('homeStartPickTitle')}
             body={t('homeStartPickBody')}
@@ -864,7 +867,7 @@ const HomeStartPanel = memo(({
             disabled={!isElectron}
           />
           <ActionCard
-            accent="--text-secondary"
+            accent="--version-mine"
             icon="gear"
             title={t('homeStartConfigTitle')}
             body={t('homeStartConfigBody')}

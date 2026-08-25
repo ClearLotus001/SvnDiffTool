@@ -136,27 +136,27 @@
   --text-secondary: #A1A1AA;
 
   /* 强调色 */
-  --accent: #A6BDC9;
-  --accent-hover: #B9CDD5;
-  --accent-muted: rgba(166, 189, 201, 0.18);
+  --accent: #8AB8E3;
+  --accent-hover: #A8CBEF;
+  --accent-muted: rgba(138, 184, 227, 0.18);
 
   /* Diff 新增 */
-  --diff-add-bg: #11271A;
-  --diff-add-hl: #193C27;
-  --diff-add-text: #86C995;
-  --diff-add-border: #4E9B62;
+  --diff-add-bg: #132B1F;
+  --diff-add-hl: #1D402C;
+  --diff-add-text: #83D39B;
+  --diff-add-border: #45B36B;
 
   /* Diff 删除 */
-  --diff-remove-bg: #301C20;
-  --diff-remove-hl: #48282D;
-  --diff-remove-text: #E3A0A6;
-  --diff-remove-border: #C7646B;
+  --diff-remove-bg: #351C1B;
+  --diff-remove-hl: #512826;
+  --diff-remove-text: #F0AAA4;
+  --diff-remove-border: #E06A61;
 
   /* Diff 修改 */
-  --diff-modify-bg: #2D2818;
-  --diff-modify-hl: #453A21;
-  --diff-modify-text: #D8C477;
-  --diff-modify-border: #B69A3B;
+  --diff-modify-bg: #312817;
+  --diff-modify-hl: #4B3C1D;
+  --diff-modify-text: #E9C96A;
+  --diff-modify-border: #D09A29;
 
   /* 语法高亮 */
   --syntax-keyword: #E879F9;
@@ -168,10 +168,10 @@
   /* 行号 */
   --ln-bg: #18181B;
   --ln-text: #71717A;
-  --workbook-header-bg: #1D2730;
-  --workbook-header-border: #516474;
-  --workbook-grid-border: #27272A;
-  --workbook-grid-border-strong: #3F3F46;
+  --workbook-header-bg: #1B2B38;
+  --workbook-header-border: #557085;
+  --workbook-grid-border: #26313D;
+  --workbook-grid-border-strong: #3A4856;
 
   /* 滚动条 */
   --scroll-thumb: rgba(161, 161, 170, 0.25);
@@ -188,14 +188,14 @@
   --text-selection-color: #F8FBFF;
 
   /* MiniMap */
-  --mini-add: #86C995;
-  --mini-del: #E3A0A6;
+  --mini-add: #45B36B;
+  --mini-del: #E06A61;
   --mini-vp: rgba(161, 161, 170, 0.16);
 
   /* 强调辅助色 */
-  --acc2: #D0B49A;
-  --version-base: #9FB8C9;
-  --version-mine: #C7AE97;
+  --acc2: #76C7D2;
+  --version-base: #8AB8E3;
+  --version-mine: #E6C95A;
 
   /* 按钮激活态 */
   --btn-active-bg: var(--accent);
@@ -228,27 +228,27 @@
   --text-secondary: #71717A;
 
   /* 强调色 */
-  --accent: #496778;
-  --accent-hover: #3B5665;
-  --accent-muted: rgba(73, 103, 120, 0.14);
+  --accent: #246FAE;
+  --accent-hover: #195F98;
+  --accent-muted: rgba(36, 111, 174, 0.15);
 
   /* Diff 新增 */
-  --diff-add-bg: #E8F5E9;
-  --diff-add-hl: #CFE8D3;
-  --diff-add-text: #1F6B3A;
-  --diff-add-border: #4E9B62;
+  --diff-add-bg: #DFF6E7;
+  --diff-add-hl: #BFEACB;
+  --diff-add-text: #126B35;
+  --diff-add-border: #238F4B;
 
   /* Diff 删除 */
-  --diff-remove-bg: #F7E8E7;
-  --diff-remove-hl: #EFD0CE;
-  --diff-remove-text: #8C3F45;
-  --diff-remove-border: #C7646B;
+  --diff-remove-bg: #FDE7E4;
+  --diff-remove-hl: #F7C9C3;
+  --diff-remove-text: #A1322C;
+  --diff-remove-border: #D94B43;
 
   /* Diff 修改 */
-  --diff-modify-bg: #F6F0DD;
-  --diff-modify-hl: #EADDB3;
-  --diff-modify-text: #76601C;
-  --diff-modify-border: #B69A3B;
+  --diff-modify-bg: #FFF0C8;
+  --diff-modify-hl: #F3D482;
+  --diff-modify-text: #765300;
+  --diff-modify-border: #B47700;
 
   /* 语法高亮 */
   --syntax-keyword: #7C3AED;
@@ -260,10 +260,10 @@
   /* 行号 */
   --ln-bg: #FFFFFF;
   --ln-text: #A1A1AA;
-  --workbook-header-bg: #E9EFF3;
-  --workbook-header-border: #AAB8C3;
-  --workbook-grid-border: #E4E4E7;
-  --workbook-grid-border-strong: #D4D4D8;
+  --workbook-header-bg: #EDF4FA;
+  --workbook-header-border: #9FB3C4;
+  --workbook-grid-border: #E2E8F0;
+  --workbook-grid-border-strong: #CBD5E1;
 
   /* 滚动条 */
   --scroll-thumb: rgba(161, 161, 170, 0.40);
@@ -280,14 +280,14 @@
   --text-selection-color: #0F172A;
 
   /* MiniMap */
-  --mini-add: #4E9B62;
-  --mini-del: #C7646B;
+  --mini-add: #238F4B;
+  --mini-del: #D94B43;
   --mini-vp: rgba(9, 9, 11, 0.08);
 
   /* 强调辅助色 */
-  --acc2: #8A6A52;
-  --version-base: #4B6A80;
-  --version-mine: #746252;
+  --acc2: #007A86;
+  --version-base: #246FAE;
+  --version-mine: #8D6200;
 
   /* 按钮激活态 */
   --btn-active-bg: var(--accent);
@@ -1343,7 +1343,7 @@ textarea::-moz-selection,
   --home-card-accent-soft: color-mix(in srgb, var(--acc2) 12%, transparent);
   --home-card-border-boost: color-mix(in srgb, var(--home-card-accent) 18%, var(--border-color));
   --home-card-shadow-color: var(--home-card-accent);
-  --home-card-button-to: color-mix(in srgb, var(--home-card-accent) 78%, var(--accent) 22%);
+  --home-card-button-to: color-mix(in srgb, var(--home-card-accent) 86%, black 14%);
   --home-card-pixel-opacity: 0.86;
   position: relative;
   display: flex;
@@ -1385,20 +1385,19 @@ textarea::-moz-selection,
 
 .home-action-card--primary {
   --home-card-border-boost: color-mix(in srgb, var(--home-card-accent) 34%, var(--border-color));
-  --home-card-shadow-color: var(--acc2);
+  --home-card-shadow-color: var(--home-card-accent);
   --home-card-pixel-opacity: 0.9;
 }
 
 .home-action-card--svn {
-  --home-card-border-boost: color-mix(in srgb, var(--border-strong) 78%, var(--home-card-accent) 22%);
-  --home-card-shadow-color: color-mix(in srgb, var(--text-title) 78%, var(--border-strong));
-  --home-card-pixel-opacity: 0.78;
+  --home-card-border-boost: color-mix(in srgb, var(--home-card-accent) 32%, var(--border-color));
+  --home-card-shadow-color: var(--home-card-accent);
+  --home-card-pixel-opacity: 0.88;
 }
 
 .home-action-card--compare {
-  --home-card-border-boost: color-mix(in srgb, var(--diff-add-border) 38%, var(--border-color));
-  --home-card-shadow-color: var(--diff-add-border);
-  --home-card-button-to: color-mix(in srgb, var(--home-card-accent) 72%, var(--diff-add-border) 28%);
+  --home-card-border-boost: color-mix(in srgb, var(--home-card-accent) 36%, var(--border-color));
+  --home-card-shadow-color: var(--home-card-accent);
   --home-card-pixel-opacity: 0.94;
 }
 
@@ -2320,7 +2319,7 @@ textarea::-moz-selection,
       color-mix(in srgb, var(--liquid-glass-highlight) 34%, transparent) 0%,
       transparent 66%
     ),
-    color-mix(in srgb, var(--stats-chip-accent) 9%, var(--bg-surface-solid) 91%);
+    var(--stats-chip-tint);
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--liquid-glass-rim) 58%, transparent),
     inset 0 -1px 0 color-mix(in srgb, var(--stats-chip-accent) 18%, var(--liquid-glass-outline)),

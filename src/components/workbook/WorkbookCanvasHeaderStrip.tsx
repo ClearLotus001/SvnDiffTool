@@ -3,7 +3,7 @@ import type { HorizontalVirtualColumnEntry } from '@/hooks/virtualization/useHor
 import { LN_W } from '@/constants/layout';
 import { FONT_CODE, getWorkbookFontScale } from '@/constants/typography';
 import { useI18n } from '@/context/i18n';
-import { useThemeTokens } from '@/context/theme';
+import { useTheme, useThemeTokens } from '@/context/theme';
 import type {
   WorkbookContextMenuPoint,
   WorkbookHiddenColumnSegment,
@@ -123,6 +123,7 @@ const WorkbookCanvasHeaderStrip = memo(({
   onAutoFitColumn,
 }: WorkbookCanvasHeaderStripProps) => {
   const T = useThemeTokens();
+  const themeKey = useTheme();
   const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef(0);
@@ -386,19 +387,23 @@ const WorkbookCanvasHeaderStrip = memo(({
             : getCompactSplit(entry.width);
           const baseX = drawX;
           const mineX = drawX + split.baseWidth;
+          const isLightTheme = themeKey === 'light';
+          const focusedTintAlpha = isLightTheme ? '70' : '52';
+          const selectedTintAlpha = isLightTheme ? '50' : '36';
+          const restingTintAlpha = isLightTheme ? '34' : '24';
 
           ctx.fillStyle = isBaseFocused
-            ? `${T.versionBase}52`
+            ? `${T.versionBase}${focusedTintAlpha}`
             : isSelectedColumn
-            ? `${T.versionBase}36`
-            : `${T.versionBase}24`;
+            ? `${T.versionBase}${selectedTintAlpha}`
+            : `${T.versionBase}${restingTintAlpha}`;
           ctx.fillRect(baseX, 0, split.baseWidth, height);
 
           ctx.fillStyle = isMineFocused
-            ? `${T.versionMine}52`
+            ? `${T.versionMine}${focusedTintAlpha}`
             : isSelectedColumn
-            ? `${T.versionMine}36`
-            : `${T.versionMine}24`;
+            ? `${T.versionMine}${selectedTintAlpha}`
+            : `${T.versionMine}${restingTintAlpha}`;
           ctx.fillRect(mineX, 0, split.mineWidth, height);
 
           borderRegistry.addRect({
@@ -562,6 +567,7 @@ const WorkbookCanvasHeaderStrip = memo(({
     showFixedSideAccent,
     sizes.header,
     T,
+    themeKey,
     viewportWidth,
   ]);
 

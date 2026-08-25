@@ -39,6 +39,8 @@ function buildModel(sectionRows: SplitRow[], items: RenderModelProbeItem[]) {
     mineVersion: 'MINE',
     visibleColumns: [0],
     compareMode: 'strict',
+    renderPolicy: { mode: 'full', maskIrrelevantCells: false },
+    headerRowNumber: 1,
     items,
     renderItemIndexesCacheKey: 'probe:model:v1',
     getRow: (item) => (item.kind === 'row' ? item.row : null),

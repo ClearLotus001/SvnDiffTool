@@ -9,6 +9,10 @@ import { createSearchResultItemResolver } from '@/utils/diff/searchResultItems';
 import { getWorkbookSearchableContentStart } from '@/utils/workbook/workbookDisplay';
 import { resolveWorkbookSearchMatchTarget } from '@/utils/workbook/workbookNavigation';
 import {
+  isWorkbookSearchTargetVisible,
+  type WorkbookVisibilityModel,
+} from '@/utils/workbook/workbookVisibilityModel';
+import {
   buildWorkbookLineSheetContexts,
   resolveWorkbookSheetNameForLineContext,
 } from '@/utils/workbook/workbookSections';
@@ -25,6 +29,7 @@ export default function useAppSearchModel({
   activeWorkbookSheetName,
   baseRoleTitle,
   mineRoleTitle,
+  workbookVisibilityModel,
 }: {
   t: TranslationFn;
   diffLines: DiffLine[];
@@ -33,6 +38,7 @@ export default function useAppSearchModel({
   activeWorkbookSheetName: string | null;
   baseRoleTitle: string;
   mineRoleTitle: string;
+  workbookVisibilityModel: WorkbookVisibilityModel;
 }) {
   const searchQ = useAppStore((state) => state.searchQ);
   const searchRx = useAppStore((state) => state.searchRx);
@@ -72,13 +78,23 @@ export default function useAppSearchModel({
         context: lineSheetContexts[lineIndex],
         preferredSheetName: activeWorkbookSheetName,
       }) === activeWorkbookSheetName;
-      return inScope ? getSearchableLineContent(line) : '';
+      const sheetName = resolveWorkbookSheetNameForLineContext({
+        line,
+        context: lineSheetContexts[lineIndex],
+        preferredSheetName: activeWorkbookSheetName,
+      });
+      const inVisibilityScope = workbookVisibilityModel.policy.mode === 'full'
+        || Boolean(
+          sheetName
+          && workbookVisibilityModel.visibleLineIndexesBySheet.get(sheetName)?.has(lineIndex),
+        );
+      return inScope && inVisibilityScope ? getSearchableLineContent(line) : '';
     });
     return {
       lines,
       lineStartOffsets: isWorkbookCandidate ? lines.map(getWorkbookSearchableContentStart) : null,
     };
-  }, [activeWorkbookSheetName, diffLines, hasQuery, isWorkbookCandidate, lineSheetContexts, searchWorkbookScope]);
+  }, [activeWorkbookSheetName, diffLines, hasQuery, isWorkbookCandidate, lineSheetContexts, searchWorkbookScope, workbookVisibilityModel]);
 
   useEffect(() => {
     const sequence = ++sequenceRef.current;
@@ -100,18 +116,21 @@ export default function useAppSearchModel({
       }, projection.lineStartOffsets).then((result) => {
         if (sequence !== sequenceRef.current) return;
         setIsSearching(false);
-        setMatchCount(result.totalCount);
-        setResultsTruncated(result.truncated);
-        setAllMatches(!isWorkbookCandidate || lineSheetContexts.length === 0
+        const matches = !isWorkbookCandidate || lineSheetContexts.length === 0
           ? result.matches
           : result.matches.map((match) => ({
-            ...match,
-            workbookTarget: resolveWorkbookSearchMatchTarget(
-              diffLines[match.lineIdx] ?? null,
-              match,
-              lineSheetContexts[match.lineIdx] ?? null,
-            ),
-          })));
+              ...match,
+              workbookTarget: resolveWorkbookSearchMatchTarget(
+                diffLines[match.lineIdx] ?? null,
+                match,
+                lineSheetContexts[match.lineIdx] ?? null,
+              ),
+            })).filter((match) => (
+              isWorkbookSearchTargetVisible(workbookVisibilityModel, match.workbookTarget)
+            ));
+        setMatchCount(matches.length);
+        setResultsTruncated(result.truncated);
+        setAllMatches(matches);
       }).catch(() => {
         if (sequence !== sequenceRef.current) return;
         setIsSearching(false);
@@ -121,7 +140,7 @@ export default function useAppSearchModel({
       });
     }, SEARCH_REQUEST_DEBOUNCE_MS);
     return () => window.clearTimeout(timeoutId);
-  }, [compilation.pattern, diffLines, hasQuery, isWorkbookCandidate, lineSheetContexts, projection, searchCs, searchQ, searchRx]);
+  }, [compilation.pattern, diffLines, hasQuery, isWorkbookCandidate, lineSheetContexts, projection, searchCs, searchQ, searchRx, workbookVisibilityModel]);
 
   const searchMatches = useMemo(() => (
     !isWorkbookMode || searchWorkbookScope !== 'sheet' || !activeWorkbookSheetName

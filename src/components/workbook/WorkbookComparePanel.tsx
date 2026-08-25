@@ -108,6 +108,7 @@ import WorkbookCompareBody from '@/components/workbook/WorkbookCompareBody';
 import WorkbookCompareShell from '@/components/workbook/WorkbookCompareShell';
 import WorkbookCompareStickyCanvas from '@/components/workbook/WorkbookCompareStickyCanvas';
 import WorkbookCompareStickyRegion from '@/components/workbook/WorkbookCompareStickyRegion';
+import { WorkbookMaskedRegionRevealProvider } from '@/components/workbook/WorkbookMaskedRegionRevealContext';
 import { useAppStore } from '@/store/appStore';
 import {
   WORKBOOK_CONTEXT_LINES as CONTEXT_LINES,
@@ -120,13 +121,18 @@ import {
 } from '@/utils/workbook/workbookRenderItemIndexes';
 import { buildWorkbookRenderIdentity } from '@/utils/workbook/workbookRenderIdentity';
 import { scrollElementForNavigation } from '@/utils/navigation/animatedScroll';
-import type { WorkbookCollapsedSheetTabItem } from '@/utils/workbook/workbookAutoCollapse';
+import {
+  type WorkbookCollapsedSheetTabItem,
+} from '@/utils/workbook/workbookAutoCollapse';
 import { buildWorkbookNavigationLayoutKey } from '@/utils/workbook/workbookNavigationLayoutKey';
+import {
+  filterWorkbookSectionsByVisibility,
+  type WorkbookVisibilityModel,
+} from '@/utils/workbook/workbookVisibilityModel';
 
 type CompareMode = 'stacked' | 'columns';
 
 const EMPTY_HEIGHTS: number[] = [];
-const EMPTY_MODIFIED_SHEET_NAMES = new Set<string>();
 const WORKBOOK_STABLE_COLUMN_WINDOW_LIMIT = 96;
 
 export interface WorkbookComparePanelProps {
@@ -161,7 +167,7 @@ export interface WorkbookComparePanelProps {
   onRevealHiddenColumns: (sheetName: string, columns: number[]) => void;
   workbookSections: WorkbookSection[];
   workbookSectionRowIndex: WorkbookSectionRowIndex;
-  modifiedSheetNames?: ReadonlySet<string>;
+  visibilityModel: WorkbookVisibilityModel;
   activeWorkbookSheetName: string | null;
   onActiveWorkbookSheetChange: (sheetName: string | null) => void;
   compareMode: WorkbookCompareMode;
@@ -210,7 +216,7 @@ const WorkbookComparePanel = memo(({
   onRevealHiddenColumns,
   workbookSections,
   workbookSectionRowIndex,
-  modifiedSheetNames = EMPTY_MODIFIED_SHEET_NAMES,
+  visibilityModel,
   activeWorkbookSheetName,
   onActiveWorkbookSheetChange,
   compareMode,
@@ -224,6 +230,7 @@ const WorkbookComparePanel = memo(({
   onLayoutSnapshotChange,
 }: WorkbookComparePanelProps) => {
   const { t } = useI18n();
+  const showOnlyDifferences = visibilityModel.policy.mode === 'differences-only';
   const themeKey = useTheme();
   const T = useThemeTokens();
   const modifyIndicatorPalette = resolveDiffIndicatorCssPalette('modify');
@@ -235,10 +242,23 @@ const WorkbookComparePanel = memo(({
     requestSelection,
     markFocusIntentHandled: handleSelectionFocusIntentHandled,
   } = useWorkbookSelectionFocusIntent(onSelectionRequest, activeHunkIdx);
+  const displayedWorkbookSections = useMemo(
+    () => filterWorkbookSectionsByVisibility(visibilityModel, workbookSections),
+    [visibilityModel, workbookSections],
+  );
   const resolvedActiveWorkbookSectionIdx = activeWorkbookSheetName
-    ? findWorkbookSectionIndexByName(workbookSections, activeWorkbookSheetName)
+    ? findWorkbookSectionIndexByName(displayedWorkbookSections, activeWorkbookSheetName)
     : 0;
-  const activeWorkbookSection = workbookSections[resolvedActiveWorkbookSectionIdx] ?? workbookSections[0];
+  const activeWorkbookSection = displayedWorkbookSections[resolvedActiveWorkbookSectionIdx]
+    ?? displayedWorkbookSections[0];
+  useEffect(() => {
+    if (!showOnlyDifferences) return;
+    const activeStillVisible = activeWorkbookSheetName
+      ? displayedWorkbookSections.some((section) => section.name === activeWorkbookSheetName)
+      : false;
+    if (activeStillVisible) return;
+    onActiveWorkbookSheetChange(displayedWorkbookSections[0]?.name ?? null);
+  }, [activeWorkbookSheetName, displayedWorkbookSections, onActiveWorkbookSheetChange, showOnlyDifferences]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickyHeaderRowsScrollRef = useRef<HTMLDivElement>(null);
   const frozenRowsScrollRef = useRef<HTMLDivElement>(null);
@@ -246,6 +266,7 @@ const WorkbookComparePanel = memo(({
   const miniMapDebugRef = useRef<WorkbookMiniMapDebugStats | null>({ clickCount: 0, lastClickMs: 0 });
   const pendingScrollAdjustRef = useRef(0);
   const [hoveredCanvasCell, setHoveredCanvasCell] = useState<WorkbookCanvasHoverCell | null>(null);
+  const handleMaskedRegionEnter = useCallback(() => setHoveredCanvasCell(null), []);
   const [pendingScrollTarget, setPendingScrollTarget] = useState<{ lineIdx: number; align: 'start' | 'center' } | null>(null);
   const [isFrozenRowsPaneHovered, setIsFrozenRowsPaneHovered] = useState(false);
   const [collapsedSheetGroups, setCollapsedSheetGroups] = useState<WorkbookCollapsedSheetTabItem[]>([]);
@@ -286,8 +307,9 @@ const WorkbookComparePanel = memo(({
     const next = new Set<number>();
     if (!activeWorkbookSection) return next;
     if (activeWorkbookSection.firstDataLineIdx != null) next.add(activeWorkbookSection.firstDataLineIdx);
+    if (activeSearchLineIdx >= 0) next.add(activeSearchLineIdx);
     return next;
-  }, [activeWorkbookSection]);
+  }, [activeSearchLineIdx, activeWorkbookSection]);
 
   const activeFreezeState = useMemo(() => {
     if (!activeWorkbookSection) return null;
@@ -389,6 +411,7 @@ const WorkbookComparePanel = memo(({
     freezeRowNumber,
     expandedBlocks,
     collapseCtx,
+    renderPolicy: visibilityModel.policy,
     mode,
     compareMode,
     baseVersion,
@@ -1088,12 +1111,12 @@ const WorkbookComparePanel = memo(({
     scrollToIndex(idx, align, 'smooth');
   }, [markProgrammaticScroll, scrollToIndex]);
   const handleNavigateCollapsedSheet = useCallback((group: WorkbookCollapsedSheetTabItem) => {
-    const section = workbookSections[group.startIndex];
+    const section = displayedWorkbookSections[group.startIndex];
     if (!section) return;
     requestSelection({ target: null, reason: 'programmatic' });
     onActiveWorkbookSheetChange(section.name);
     scrollRef.current?.scrollTo({ top: 0, left: 0 });
-  }, [onActiveWorkbookSheetChange, requestSelection, workbookSections]);
+  }, [displayedWorkbookSections, onActiveWorkbookSheetChange, requestSelection]);
   const handleNavigateCollapsedColumn = useCallback((segment: WorkbookHiddenColumnSegment) => {
     const container = scrollRef.current;
     if (!container) return;
@@ -1344,9 +1367,9 @@ const WorkbookComparePanel = memo(({
       target: null,
       reason: 'programmatic',
     });
-    onActiveWorkbookSheetChange(workbookSections[index]?.name ?? null);
+    onActiveWorkbookSheetChange(displayedWorkbookSections[index]?.name ?? null);
     scrollRef.current?.scrollTo({ top: 0, left: 0 });
-  }, [onActiveWorkbookSheetChange, requestSelection, workbookSections]);
+  }, [displayedWorkbookSections, onActiveWorkbookSheetChange, requestSelection]);
   const handleSelectColumn = useCallback((column: number, side: 'base' | 'mine', meta?: {
     mode?: WorkbookSelectionMode;
     reason?: WorkbookSelectionRequest['reason'];
@@ -1445,6 +1468,7 @@ const WorkbookComparePanel = memo(({
     mineMergedRanges: sheetPresentation.mineMergeRanges,
     rowEntryByRowNumber,
     compareStateByRow,
+    maskedRegions: renderModel.maskedRegions,
     compareCellsByRowNumber,
     compareMode,
   });
@@ -1514,6 +1538,7 @@ const WorkbookComparePanel = memo(({
     baseRowEntryByRowNumber: rowEntryByRowNumber.base,
     mineRowEntryByRowNumber: rowEntryByRowNumber.mine,
     compareStateByRow,
+    maskedRegions: renderModel.maskedRegions,
     baseCompareCellsByRowNumber: compareCellsByRowNumber.base,
     mineCompareCellsByRowNumber: compareCellsByRowNumber.mine,
     compareMode,
@@ -1532,7 +1557,10 @@ const WorkbookComparePanel = memo(({
   }, [active, handleJumpToNextCollapse, handleJumpToPreviousCollapse, onCollapseNavigationReady]);
 
   return (
-    <WorkbookCompareShell
+    <WorkbookMaskedRegionRevealProvider
+      enabled={visibilityModel.policy.maskIrrelevantCells}
+      onRegionEnter={handleMaskedRegionEnter}>
+      <WorkbookCompareShell
       perfPanel={showPerfDebug ? <WorkbookPerfDebugPanel stats={perfStats} /> : null}
       mergeNotice={stackedVisibleMergeGroupCount > 0 ? (
         <div
@@ -1624,16 +1652,17 @@ const WorkbookComparePanel = memo(({
       ) : null}
       sheetTabs={(
         <WorkbookSheetTabs
-          sections={workbookSections}
+          sections={displayedWorkbookSections}
           activeIndex={resolvedActiveWorkbookSectionIdx}
           onSelect={handleSelectSheet}
           fontSize={fontSize}
-          modifiedSheetNames={modifiedSheetNames}
-          collapseUnchanged={collapseCtx}
+          modifiedSheetNames={visibilityModel.modifiedSheetNames}
+          collapseUnchanged={collapseCtx && !showOnlyDifferences}
           onCollapsedGroupsChange={setCollapsedSheetGroups}
         />
       )}
-    />
+      />
+    </WorkbookMaskedRegionRevealProvider>
   );
 });
 

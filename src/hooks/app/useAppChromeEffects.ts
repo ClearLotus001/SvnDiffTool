@@ -35,24 +35,30 @@ export default function useAppChromeEffects({
   // ── Persisted settings (derived from store) ───────────────────────────
   const layout = useAppStore((s) => s.layout);
   const collapseCtx = useAppStore((s) => s.collapseCtx);
+  const showOnlyDifferences = useAppStore((s) => s.showOnlyDifferences);
   const showWhitespace = useAppStore((s) => s.showWhitespace);
   const showHiddenColumns = useAppStore((s) => s.showHiddenColumns);
+  const botEnabled = useAppStore((s) => s.botEnabled);
   const fontSize = useAppStore((s) => s.fontSize);
 
   const settings = useMemo(() => ({
     themeKey,
     layout,
     collapseCtx,
+    showOnlyDifferences,
     showWhitespace,
     showHiddenColumns,
+    botEnabled,
     workbookCompareMode,
     fontSize,
   }), [
     collapseCtx,
     fontSize,
     layout,
+    showOnlyDifferences,
     showHiddenColumns,
     showWhitespace,
+    botEnabled,
     themeKey,
     workbookCompareMode,
   ]);

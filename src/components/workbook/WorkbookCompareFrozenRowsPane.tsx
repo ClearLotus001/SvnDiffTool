@@ -21,6 +21,7 @@ import type { WorkbookColumnsCanvasRow } from '@/components/workbook/WorkbookCol
 import type { WorkbookCanvasHoverCell } from '@/components/workbook/WorkbookCanvasHoverTooltip';
 import WorkbookColumnsCanvasStrip from '@/components/workbook/WorkbookColumnsCanvasStrip';
 import WorkbookStackedCanvasStrip from '@/components/workbook/WorkbookStackedCanvasStrip';
+import type { WorkbookMaskedRegionModel } from '@/utils/workbook/workbookMaskedRegionModel';
 
 interface WorkbookCompareFrozenRowsPaneProps {
   appearance?: 'header' | 'frozen';
@@ -59,6 +60,7 @@ interface WorkbookCompareFrozenRowsPaneProps {
   compareStateByRow: WorkbookCompareStateByRow;
   compareCellsByRowNumber: WorkbookCompareCellsMaps;
   compareMode: WorkbookCompareMode;
+  maskedRegions: WorkbookMaskedRegionModel;
 }
 
 export default function WorkbookCompareFrozenRowsPane({
@@ -98,6 +100,7 @@ export default function WorkbookCompareFrozenRowsPane({
   compareStateByRow,
   compareCellsByRowNumber,
   compareMode,
+  maskedRegions,
 }: WorkbookCompareFrozenRowsPaneProps) {
   const { t } = useI18n();
   if (frozenRowsViewportHeight <= 0) return null;
@@ -199,6 +202,7 @@ export default function WorkbookCompareFrozenRowsPane({
                     baseCompareCellsByRowNumber={compareCellsByRowNumber.base}
                     mineCompareCellsByRowNumber={compareCellsByRowNumber.mine}
                     compareMode={compareMode}
+                    maskedRegions={maskedRegions}
                   />
                 </div>
               </div>
@@ -241,6 +245,7 @@ export default function WorkbookCompareFrozenRowsPane({
                   baseCompareCellsByRowNumber={compareCellsByRowNumber.base}
                   mineCompareCellsByRowNumber={compareCellsByRowNumber.mine}
                   compareMode={compareMode}
+                  maskedRegions={maskedRegions}
                 />
               </div>
             </div>

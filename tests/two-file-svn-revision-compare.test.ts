@@ -10,6 +10,7 @@ import { strToU8, zipSync } from 'fflate';
 import { REMOTE_HEAD_ID } from '../electron/main/constants';
 import {
   buildDevWorkingCopyDiffData,
+  buildDiffData,
   buildLocalDiffData,
   buildTwoFileRevisionDiffData,
   loadWorkbookCompareModeData,
@@ -139,6 +140,8 @@ test('two working-copy files default to their independent latest revisions and r
     assert.equal(latest.mineContent, 'release latest\n');
     assert.equal(latest.baseRevisionInfo?.revision, 'r2');
     assert.equal(latest.mineRevisionInfo?.revision, 'r3');
+    assert.equal(latest.baseRevisionInfo?.message, 'update trunk');
+    assert.equal(latest.mineRevisionInfo?.message, 'update release');
     assert.deepEqual(latest.resetPair, {
       baseRevisionId: REMOTE_HEAD_ID,
       mineRevisionId: REMOTE_HEAD_ID,
@@ -164,12 +167,39 @@ test('two working-copy files default to their independent latest revisions and r
     assert.equal(switched.mineContent, 'release latest\n');
     assert.equal(switched.baseRevisionInfo?.revision, 'r1');
     assert.equal(switched.mineRevisionInfo?.revision, 'r3');
+    assert.equal(switched.baseRevisionInfo?.message, 'initial layout');
+    assert.equal(switched.mineRevisionInfo?.message, 'update release');
     const switchedBlame = await loadSvnLineBlame(
       switched.baseRevisionInfo?.id,
       switched.mineRevisionInfo?.id,
     );
     assert.equal(switchedBlame.base[0]?.revision, 'r1');
     assert.equal(switchedBlame.mine[0]?.revision, 'r3');
+
+    setActiveCliArgs({
+      ...EMPTY_CLI_ARGS,
+      basePath: trunkFile,
+      minePath: trunkFile,
+      baseName: 'sample.txt Revision 1',
+      mineName: 'sample.txt Revision 2',
+      baseUrl: `${trunkUrl}/sample.txt`,
+      mineUrl: `${trunkUrl}/sample.txt`,
+      baseRevision: '1',
+      mineRevision: '2',
+      pegRevision: '2',
+      fileName: 'sample.txt',
+    });
+    const cliRevisionCompare = await buildDiffData();
+    assert.equal(cliRevisionCompare.baseRevisionInfo?.message, 'initial layout');
+    assert.equal(cliRevisionCompare.mineRevisionInfo?.message, 'update trunk');
+    assert.ok(cliRevisionCompare.baseRevisionInfo?.author);
+    assert.ok(cliRevisionCompare.mineRevisionInfo?.date);
+
+    setActiveCliArgs({
+      ...EMPTY_CLI_ARGS,
+      basePath: trunkFile,
+      minePath: releaseFile,
+    });
 
     const trunkWorkbook = path.join(trunkWorkingCopy, 'sample.xlsx');
     const releaseWorkbook = path.join(releaseWorkingCopy, 'sample.xlsx');

@@ -42,6 +42,7 @@ import {
   detectLocalSvnVersioningStatus,
   getRevisionOptions,
   queryRevisionOptionsForTarget,
+  querySvnRevisionInfoForTarget,
   resolveLocalSvnUrl,
   resolveSvnTarget,
   resolveTimelineTargetUrl,
@@ -95,6 +96,24 @@ const EMPTY_FILE_PAYLOAD: FilePayload = {
 };
 const WORKBOOK_ALTERNATE_SNAPSHOT_WARMUP_DELAY_MS = 2_000;
 const WORKBOOK_ALTERNATE_SNAPSHOT_WARMUP_MAX_BYTES = 64 * 1024 * 1024;
+
+async function hydrateRevisionLogInfo(
+  info: SvnRevisionInfo | null,
+  target: string,
+): Promise<SvnRevisionInfo | null> {
+  if (
+    !info
+    || info.kind !== 'revision'
+    || !target.trim()
+    || info.message.trim()
+    || info.author.trim()
+    || info.date.trim()
+  ) {
+    return info;
+  }
+
+  return await querySvnRevisionInfoForTarget(target, info.id) ?? info;
+}
 
 function createWorkbookPayloadOptions(
   isWorkbook: boolean,
@@ -609,8 +628,12 @@ export async function buildDiffData(options: BuildDiffDataOptions = {}): Promise
     requestedMineRevisionId: resolvedMineRevisionId,
     revisionOptions,
   });
-  const baseRevisionInfo = pairInfo.base;
-  const mineRevisionInfo = pairInfo.mine;
+  const baseLogTarget = isRemoteRepositoryTarget(args.baseUrl) ? args.baseUrl : target;
+  const mineLogTarget = isRemoteRepositoryTarget(args.mineUrl) ? args.mineUrl : target;
+  const [baseRevisionInfo, mineRevisionInfo] = await Promise.all([
+    hydrateRevisionLogInfo(pairInfo.base, baseLogTarget),
+    hydrateRevisionLogInfo(pairInfo.mine, mineLogTarget),
+  ]);
   const resolvedBasePayloadInfo = baseRevisionInfo ?? createRequestedRevisionInfo('base', resolvedBaseRevisionId);
   const resolvedMinePayloadInfo = mineRevisionInfo ?? createRequestedRevisionInfo('mine', resolvedMineRevisionId);
   const workbookRequestContext = isWorkbook
@@ -1098,9 +1121,11 @@ async function resolveTwoFileRevisionSource(
 ): Promise<ResolvedTwoFileRevisionSource> {
   const normalizedRequestedId = requestedId.trim();
   if (normalizedRequestedId && normalizedRequestedId !== REMOTE_HEAD_ID) {
+    const fallbackInfo = createRequestedRevisionInfo(side, normalizedRequestedId);
+    const info = await hydrateRevisionLogInfo(fallbackInfo, target) ?? fallbackInfo;
     return {
-      id: normalizedRequestedId,
-      info: createRequestedRevisionInfo(side, normalizedRequestedId),
+      id: info.id,
+      info,
     };
   }
 

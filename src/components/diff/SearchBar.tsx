@@ -246,6 +246,7 @@ const SearchBar = memo(({
       ref={rootRef}
       onKeyDownCapture={(event) => {
         if (event.target === inputRef.current) return;
+        if ((event.target as HTMLElement | null)?.closest('[data-app-shortcuts="local"]')) return;
         if (event.key === 'ArrowDown') {
           event.preventDefault();
           event.stopPropagation();

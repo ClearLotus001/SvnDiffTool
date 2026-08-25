@@ -50,6 +50,7 @@ import { buildWorkbookRenderModel, type WorkbookRenderModel } from '@/utils/work
 import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
 import type { WorkbookCanvasRenderRow } from '@/components/workbook/WorkbookStackedCanvasStrip';
 import { ROW_H } from '@/hooks/virtualization/useVirtual';
+import type { WorkbookRenderPolicy } from '@/utils/workbook/workbookVisibilityModel';
 
 export type WorkbookCompareRenderItem =
   | { kind: 'row'; row: SplitRow; lineIdx: number }
@@ -231,6 +232,7 @@ export interface UseWorkbookCompareDerivedStateParams {
   freezeRowNumber: number;
   expandedBlocks: CollapseExpansionState;
   collapseCtx: boolean;
+  renderPolicy: WorkbookRenderPolicy;
   mode: CompareMode;
   compareMode: WorkbookCompareMode;
   baseVersion: string;
@@ -277,6 +279,7 @@ export function useWorkbookCompareDerivedState({
   freezeRowNumber,
   expandedBlocks,
   collapseCtx,
+  renderPolicy,
   mode,
   compareMode,
   baseVersion,
@@ -289,25 +292,29 @@ export function useWorkbookCompareDerivedState({
   protectedAutoCollapseColumns = [],
   protectedAutoCollapseColumnCount = 0,
 }: UseWorkbookCompareDerivedStateParams): UseWorkbookCompareDerivedStateResult {
+  const showOnlyDifferences = renderPolicy.mode === 'differences-only';
   const frozenRows = useMemo(() => {
     if (!activeWorkbookSection || freezeRowNumber <= 0) return [];
     return sectionRows.filter((row) => {
       const rowNumber = getWorkbookSplitRowNumber(row);
-      return rowNumber != null && rowNumber <= freezeRowNumber;
+      if (rowNumber == null || rowNumber > freezeRowNumber) return false;
+      if (!showOnlyDifferences || !isEqualWorkbookRow(row)) return true;
+      return row.lineIdxs.some((lineIdx) => protectedLineIdxSet.has(lineIdx));
     });
-  }, [activeWorkbookSection, freezeRowNumber, sectionRows]);
+  }, [activeWorkbookSection, freezeRowNumber, protectedLineIdxSet, sectionRows, showOnlyDifferences]);
 
   const collapsibleSheetView = useMemo(
     () => getWorkbookCollapsibleSheetView({
       sectionRows,
       sheetName: activeSheetCacheKey,
       protectedLineIdxSet,
+      showOnlyDifferences,
       contextLines: CONTEXT_LINES,
       blockPrefix: collapseBlockPrefix,
       equalityStrategyKey: 'compare-equal-row',
       isEqualRow: isEqualWorkbookRow,
     }),
-    [activeSheetCacheKey, collapseBlockPrefix, protectedLineIdxSet, sectionRows],
+    [activeSheetCacheKey, collapseBlockPrefix, protectedLineIdxSet, sectionRows, showOnlyDifferences],
   );
   const collapseSourceRows = collapsibleSheetView.visibleRows;
   const protectedLineSignature = useMemo(
@@ -347,6 +354,7 @@ export function useWorkbookCompareDerivedState({
       protectedLineSignature,
       freezeRowNumber,
       collapseCtx,
+      showOnlyDifferences,
       expandedBlocksSignature,
     ]);
     const cached = getWorkbookSharedCacheEntry(cacheBySectionRows, itemsCacheKey);
@@ -380,6 +388,7 @@ export function useWorkbookCompareDerivedState({
     activeSheetCacheKey,
     collapseBlockPrefix,
     collapseCtx,
+    showOnlyDifferences,
     effectiveExpandedBlocks,
     expandedBlocksSignature,
     freezeRowNumber,
@@ -404,6 +413,7 @@ export function useWorkbookCompareDerivedState({
       activeSheetCacheKey,
       freezeRowNumber,
       collapseCtx,
+      showOnlyDifferences,
       expandedBlocksSignature,
       hiddenRowsSignature,
     ]);
@@ -436,6 +446,7 @@ export function useWorkbookCompareDerivedState({
   }, [
     activeSheetCacheKey,
     collapseCtx,
+    showOnlyDifferences,
     collapsedItemsMeasured.duration,
     collapsedItemsMeasured.value,
     expandedBlocksSignature,
@@ -454,6 +465,7 @@ export function useWorkbookCompareDerivedState({
       activeSheetCacheKey,
       freezeRowNumber,
       collapseCtx,
+      showOnlyDifferences,
       hiddenRowsSignature,
       expandedBlocksSignature,
     ]);
@@ -478,6 +490,7 @@ export function useWorkbookCompareDerivedState({
   }, [
     activeSheetCacheKey,
     collapseCtx,
+    showOnlyDifferences,
     expandedBlocksSignature,
     freezeRowNumber,
     hiddenRowsSignature,
@@ -497,6 +510,7 @@ export function useWorkbookCompareDerivedState({
         activeSheetCacheKey,
         freezeRowNumber,
         collapseCtx,
+        showOnlyDifferences,
         hiddenRowsSignature,
         expandedBlocksSignature,
         mode,
@@ -517,6 +531,7 @@ export function useWorkbookCompareDerivedState({
     [
       activeSheetCacheKey,
       collapseCtx,
+      showOnlyDifferences,
       expandedBlocksSignature,
       freezeRowNumber,
       hiddenRowsSignature,
@@ -541,6 +556,7 @@ export function useWorkbookCompareDerivedState({
       revealedAutoColumns,
       protectedAutoCollapseColumns,
       protectedAutoCollapseColumnCount,
+      showOnlyDifferences,
     ),
     [
       activeHiddenColumns,
@@ -554,6 +570,7 @@ export function useWorkbookCompareDerivedState({
       protectedAutoCollapseColumnCount,
       revealedAutoColumns,
       sectionRows,
+      showOnlyDifferences,
       showHiddenColumns,
     ],
   );
@@ -598,6 +615,7 @@ export function useWorkbookCompareDerivedState({
       activeWorkbookSection?.name ?? '',
       freezeRowNumber,
       collapseCtx,
+      showOnlyDifferences,
       hiddenRowsSignature,
       expandedBlocksSignature,
       baseVersion,
@@ -613,6 +631,7 @@ export function useWorkbookCompareDerivedState({
       baseMergeRangesCacheId,
       baseVersion,
       collapseCtx,
+      showOnlyDifferences,
       expandedBlocksSignature,
       freezeRowNumber,
       hiddenRowsSignature,
@@ -869,6 +888,8 @@ export function useWorkbookCompareDerivedState({
       mineVersion,
       visibleColumns: sheetPresentation.visibleColumns,
       compareMode,
+      renderPolicy,
+      headerRowNumber: activeWorkbookSection?.firstDataRowNumber ?? 0,
       items,
       renderItemIndexesCacheKey: 'compare:render-items:v1',
       getRow: (item) => (item.kind === 'row' ? item.row : null),
@@ -877,10 +898,12 @@ export function useWorkbookCompareDerivedState({
     }),
     [
       activeSheetName,
+      activeWorkbookSection?.firstDataRowNumber,
       baseVersion,
       compareMode,
       items,
       mineVersion,
+      renderPolicy,
       sectionRows,
       sheetPresentation.visibleColumns,
     ],

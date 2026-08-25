@@ -35,7 +35,9 @@ export function shouldSuppressAppShortcutForModal(event: AppShortcutKeyLike): bo
 function isEditableTarget(target: EventTarget | null) {
   const el = target instanceof HTMLElement ? target : null;
   if (!el) return false;
-  return el.isContentEditable || Boolean(el.closest('input, textarea, select, [contenteditable="true"]'));
+  return el.isContentEditable || Boolean(el.closest(
+    'input, textarea, select, [contenteditable="true"], [data-app-shortcuts="local"]',
+  ));
 }
 
 export default function useAppKeyboardShortcuts({
@@ -52,6 +54,8 @@ export default function useAppKeyboardShortcuts({
   const setShowWhitespace = useAppStore((s) => s.setShowWhitespace);
   const setFontSize = useAppStore((s) => s.setFontSize);
   const setWorkbookContextMenu = useAppStore((s) => s.setWorkbookContextMenu);
+  const showOnlyDifferences = useAppStore((s) => s.showOnlyDifferences);
+  const canGotoLine = !(isWorkbookMode && showOnlyDifferences);
 
   const { state: dialogState, actions: dialogActions } = dialogs;
   const {
@@ -141,7 +145,7 @@ export default function useAppKeyboardShortcuts({
       }
       if (e.key === 'g' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        dialogActions.toggle('goto');
+        if (canGotoLine) dialogActions.toggle('goto');
         return;
       }
       if (e.key === 'F1') {
@@ -171,6 +175,7 @@ export default function useAppKeyboardShortcuts({
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [
+    canGotoLine,
     collapseNavigationRef,
     handleNavigationStep,
     handleSearchPreviewNav,

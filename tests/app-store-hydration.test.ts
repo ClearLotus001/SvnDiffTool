@@ -164,3 +164,32 @@ test('resetDiffSessionToHome clears transient comparison state and preserves pre
     useAppStore.setState(originalState, true);
   }
 });
+
+test('enabling differences-only view clears selections that could become invisible', () => {
+  const originalState = useAppStore.getState();
+  const cell = {
+    kind: 'cell' as const,
+    sheetName: 'Sheet1',
+    side: 'base' as const,
+    versionLabel: 'BASE',
+    rowNumber: 8,
+    colIndex: 1,
+    colLabel: 'B',
+    address: 'B8',
+    value: 'unchanged',
+    formula: '',
+  };
+
+  try {
+    useAppStore.setState({
+      showOnlyDifferences: false,
+      workbookSelection: { anchor: cell, primary: cell, items: [cell] },
+    });
+    useAppStore.getState().setShowOnlyDifferences(true);
+
+    assert.equal(useAppStore.getState().showOnlyDifferences, true);
+    assert.equal(useAppStore.getState().workbookSelection.primary, null);
+  } finally {
+    useAppStore.setState(originalState, true);
+  }
+});

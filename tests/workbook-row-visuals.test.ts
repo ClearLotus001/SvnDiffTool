@@ -63,9 +63,9 @@ test('workbook row visuals fall back to side colors for equal rows and support s
     theme: lightTheme,
     tone: 'equal',
     fallbackTone: 'base',
-  }), `${lightTheme.versionBase}bf`);
+  }), `${lightTheme.versionBase}e6`);
   assert.equal(resolveWorkbookRowBorderColor(lightTheme, 'delete', 'mine'), lightTheme.versionMine);
-  assert.equal(resolveWorkbookRowRuleColor(lightTheme, 'delete', 'mine'), `${lightTheme.versionMine}66`);
+  assert.equal(resolveWorkbookRowRuleColor(lightTheme, 'delete', 'mine'), `${lightTheme.versionMine}88`);
 });
 
 test('workbook row visuals resolve region and minimap tones consistently', () => {
@@ -107,7 +107,7 @@ test('workbook row visuals resolve row surface, selection accent and gutter back
     theme: lightTheme,
     selectionAccent: lightTheme.acc,
     isSelected: true,
-  }), `${lightTheme.acc}26`);
+  }), `${lightTheme.acc}40`);
   assert.equal(resolveWorkbookRowGutterBackground({
     theme: lightTheme,
     selectionAccent: lightTheme.acc,
@@ -119,17 +119,17 @@ test('workbook row visuals resolve row surface, selection accent and gutter back
     selectionAccent: lightTheme.versionBase,
     isSelected: false,
     versionSide: 'base',
-  }), `${lightTheme.versionBase}20`);
+  }), `${lightTheme.versionBase}32`);
   assert.equal(resolveWorkbookHeaderRowDividerColor(lightTheme), lightTheme.workbookHeaderBorder);
 });
 
 test('workbook header surfaces use a restrained cool slate hierarchy in every theme', () => {
   const highContrastTheme = getThemeTokensSnapshot('hc');
 
-  assert.equal(lightTheme.workbookHeaderBg, '#e9eff3');
-  assert.equal(lightTheme.workbookHeaderBorder, '#aab8c3');
-  assert.equal(darkTheme.workbookHeaderBg, '#1d2730');
-  assert.equal(darkTheme.workbookHeaderBorder, '#516474');
+  assert.equal(lightTheme.workbookHeaderBg, '#edf4fa');
+  assert.equal(lightTheme.workbookHeaderBorder, '#9fb3c4');
+  assert.equal(darkTheme.workbookHeaderBg, '#1b2b38');
+  assert.equal(darkTheme.workbookHeaderBorder, '#557085');
   assert.equal(highContrastTheme.workbookHeaderBg, '#1a1a1a');
   assert.equal(highContrastTheme.workbookHeaderBorder, '#7a8791');
   assert.equal(highContrastTheme.workbookGridBorder, '#3f4952');
@@ -149,15 +149,15 @@ test('workbook header surfaces use a restrained cool slate hierarchy in every th
   );
 });
 
-test('version accents use distinct natural colors with accessible theme contrast', () => {
-  assert.equal(lightTheme.acc, '#496778');
-  assert.equal(lightTheme.acc2, '#8a6a52');
-  assert.equal(darkTheme.acc, '#a6bdc9');
-  assert.equal(darkTheme.acc2, '#d0b49a');
-  assert.equal(lightTheme.versionBase, '#4b6a80');
-  assert.equal(lightTheme.versionMine, '#746252');
-  assert.equal(darkTheme.versionBase, '#9fb8c9');
-  assert.equal(darkTheme.versionMine, '#c7ae97');
+test('version accents use distinct blue and gold colors with accessible theme contrast', () => {
+  assert.equal(lightTheme.acc, '#246fae');
+  assert.equal(lightTheme.acc2, '#007a86');
+  assert.equal(darkTheme.acc, '#8ab8e3');
+  assert.equal(darkTheme.acc2, '#76c7d2');
+  assert.equal(lightTheme.versionBase, '#246fae');
+  assert.equal(lightTheme.versionMine, '#8d6200');
+  assert.equal(darkTheme.versionBase, '#8ab8e3');
+  assert.equal(darkTheme.versionMine, '#e6c95a');
   assert.ok(contrastRatio(lightTheme.versionBase, '#ffffff') >= 4.5);
   assert.ok(contrastRatio(lightTheme.versionMine, '#ffffff') >= 4.5);
   assert.ok(contrastRatio(darkTheme.versionBase, '#09090b') >= 4.5);
@@ -169,9 +169,9 @@ test('version accents use distinct natural colors with accessible theme contrast
 });
 
 test('semantic diff palette stays green red and yellow with accessible text contrast', () => {
-  assert.equal(lightTheme.addBrd, '#4e9b62');
-  assert.equal(lightTheme.delBrd, '#c7646b');
-  assert.equal(lightTheme.chgBrd, '#b69a3b');
+  assert.equal(lightTheme.addBrd, '#238f4b');
+  assert.equal(lightTheme.delBrd, '#d94b43');
+  assert.equal(lightTheme.chgBrd, '#b47700');
   assert.ok(contrastRatio(lightTheme.addTx, lightTheme.addBg) >= 4.5);
   assert.ok(contrastRatio(lightTheme.delTx, lightTheme.delBg) >= 4.5);
   assert.ok(contrastRatio(lightTheme.chgTx, lightTheme.chgBg) >= 4.5);
@@ -205,9 +205,9 @@ test('workbook accent surface visuals expose shared badge and button tokens', ()
   });
 });
 
-test('workbook version identity uses stronger fills without per-cell rails', () => {
+test('workbook version identity adds subtle side tint only to neutral body cells', () => {
   assert.deepEqual(resolveWorkbookVersionIdentityVisual(lightTheme, 'base', false), {
-    overlay: `${lightTheme.versionBase}28`,
+    overlay: `${lightTheme.versionBase}12`,
     rail: null,
     railWidth: 0,
   });
@@ -217,7 +217,12 @@ test('workbook version identity uses stronger fills without per-cell rails', () 
     railWidth: 0,
   });
   assert.deepEqual(resolveWorkbookVersionIdentityVisual(lightTheme, 'base', false, 'header'), {
-    overlay: null,
+    overlay: `${lightTheme.versionBase}24`,
+    rail: null,
+    railWidth: 0,
+  });
+  assert.deepEqual(resolveWorkbookVersionIdentityVisual(darkTheme, 'mine', false), {
+    overlay: `${darkTheme.versionMine}0d`,
     rail: null,
     railWidth: 0,
   });

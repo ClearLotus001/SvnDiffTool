@@ -25,6 +25,9 @@ export interface WorkbookCanvasHoverCell {
   address?: string;
   displayValue?: string;
   compareCell: WorkbookCompareCellState | null | undefined;
+  maskedRegionId?: string;
+  maskedRegionRowNumber?: number;
+  maskedRegionColumn?: number;
   wrapText?: boolean;
   isTextTruncated?: boolean;
 }

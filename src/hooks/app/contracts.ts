@@ -104,6 +104,7 @@ export interface WorkbookUiState {
   columnWidthBySheet: WorkbookColumnWidthBySheet;
   activeSheetName: string | null;
   showHiddenColumns: boolean;
+  showOnlyDifferences: boolean;
 }
 
 export interface WorkbookUiActions {
@@ -114,6 +115,7 @@ export interface WorkbookUiActions {
   setColumnWidthBySheet: (value: SetStateAction<WorkbookColumnWidthBySheet>) => void;
   setActiveSheetName: (value: SetStateAction<string | null>) => void;
   setShowHiddenColumns: (value: SetStateAction<boolean>) => void;
+  setShowOnlyDifferences: (value: SetStateAction<boolean>) => void;
 }
 
 export interface WorkbookUiController {

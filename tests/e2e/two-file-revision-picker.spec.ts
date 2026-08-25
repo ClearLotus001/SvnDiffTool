@@ -91,10 +91,10 @@ test('two-file comparison loads an independent revision timeline for each side',
   await expect(mineSourceBadge).toHaveText('SVN');
   await expect.poll(async () => baseSourceBadge.evaluate((element) => (
     element.parentElement?.nextElementSibling?.getAttribute('data-testid') ?? ''
-  ))).toBe('version-role-base');
+  ))).toBe('revision-author-tag');
   await expect.poll(async () => mineSourceBadge.evaluate((element) => (
     element.parentElement?.nextElementSibling?.getAttribute('data-testid') ?? ''
-  ))).toBe('version-role-mine');
+  ))).toBe('revision-author-tag');
   await expect.poll(async () => page.evaluate((testIds) => testIds.map((testId) => {
     const element = document.querySelector(`[data-testid="${testId}"]`);
     if (!element) return null;
@@ -102,15 +102,15 @@ test('two-file comparison loads an independent revision timeline for each side',
     return [style.height, style.borderRadius, style.paddingLeft, style.paddingRight, style.fontSize];
   }), [
     'source-badge-base',
-    'version-role-base',
+    'revision-author-tag',
     'reset-compare-tag',
-    'axis-tag-left-pane',
   ])).toEqual([
     ['20px', '5px', '6px', '6px', '10px'],
     ['20px', '5px', '6px', '6px', '10px'],
     ['20px', '5px', '6px', '6px', '10px'],
-    ['20px', '5px', '6px', '6px', '10px'],
   ]);
+  await expect(page.locator('[data-testid^="version-role-"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid^="axis-tag-"]')).toHaveCount(0);
   await expect.poll(async () => {
     const [baseColor, mineColor] = await Promise.all([
       baseSourceBadge.evaluate(element => window.getComputedStyle(element).color),

@@ -58,6 +58,7 @@ export function workbookRowTouchesOrAfter(row: SplitRow, lineIdx: number): boole
 }
 
 export function isEqualWorkbookRow(row: SplitRow): boolean {
+  if (row.workbookRowDelta) return !row.workbookRowDelta.hasChanges;
   return row.left?.type === 'equal' && row.right?.type === 'equal';
 }
 
@@ -185,6 +186,7 @@ export function buildWorkbookCompareCellsMaps(
   cacheByRows.set(cacheKey, next);
   return next;
 }
+
 
 export function buildWorkbookCompareStateByRow(
   rows: SplitRow[],

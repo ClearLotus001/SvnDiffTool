@@ -37,6 +37,7 @@ export function getWorkbookCollapsibleSheetView(params: {
   sheetName: string;
   hiddenLineIdxSet?: ReadonlySet<number>;
   protectedLineIdxSet?: ReadonlySet<number>;
+  showOnlyDifferences?: boolean;
   contextLines: number;
   blockPrefix: string;
   equalityStrategyKey: string;
@@ -47,6 +48,7 @@ export function getWorkbookCollapsibleSheetView(params: {
     sheetName,
     hiddenLineIdxSet = new Set<number>(),
     protectedLineIdxSet = new Set<number>(),
+    showOnlyDifferences = false,
     contextLines,
     blockPrefix,
     equalityStrategyKey,
@@ -63,15 +65,18 @@ export function getWorkbookCollapsibleSheetView(params: {
     contextLines,
     blockPrefix,
     equalityStrategyKey,
+    showOnlyDifferences,
     buildWorkbookHiddenLineSignature(hiddenLineIdxSet),
     buildWorkbookProtectedLineSignature(protectedLineIdxSet),
   ]);
   const cached = getWorkbookSharedCacheEntry(cacheByRows, cacheKey);
   if (cached) return cached;
 
-  const visibleRows = sectionRows.filter(
-    (row) => !row.lineIdxs.some((lineIdx) => hiddenLineIdxSet.has(lineIdx)),
-  );
+  const visibleRows = sectionRows.filter((row) => {
+    if (row.lineIdxs.some((lineIdx) => hiddenLineIdxSet.has(lineIdx))) return false;
+    if (!showOnlyDifferences || !isEqualRow(row)) return true;
+    return row.lineIdxs.some((lineIdx) => protectedLineIdxSet.has(lineIdx));
+  });
   const rowBlocks = buildCollapsibleRowBlocks(
     visibleRows,
     (row) => !row.lineIdxs.some((lineIdx) => protectedLineIdxSet.has(lineIdx)) && isEqualRow(row),

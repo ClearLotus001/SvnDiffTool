@@ -151,7 +151,7 @@ export function computeTooltipLayout(
 }
 
 const Tooltip = memo(({
-  content, children, placement = 'top', maxWidth = 260, width, disabled = false, surface = 'default', anchorStyle, sideBoundaryRef,
+  content, children, placement = 'top', maxWidth = 420, width, disabled = false, surface = 'default', anchorStyle, sideBoundaryRef,
 }: TooltipProps) => {
   const id = useId();
   const anchorRef = useRef<HTMLSpanElement>(null);
@@ -215,7 +215,7 @@ const Tooltip = memo(({
             : 'svn-tooltip-surface relative p-[8px_10px] rounded-xl border border-border-default text-text-title text-[13px] leading-tight font-ui text-center whitespace-normal shadow-[0_14px_30px_rgba(0,0,0,0.12)] glass'}
           style={{
             width: width == null
-              ? undefined
+              ? 'max-content'
               : `min(${Math.min(width, maxWidth)}px, calc(100vw - ${VIEWPORT_PADDING * 2}px))`,
             maxWidth: `min(${maxWidth}px, calc(100vw - ${VIEWPORT_PADDING * 2}px))`,
             background: surface === 'bare'

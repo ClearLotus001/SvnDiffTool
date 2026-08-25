@@ -1,5 +1,6 @@
 import type { WorkbookRowDeltaTone } from '@/types';
 import type { ThemeTokens } from '@/theme/tokens';
+import { resolveThemeAppearance } from '@/theme';
 import type { LineNumberTone } from '@/utils/diff/lineNumberTone';
 import {
   resolveDiffMiniMapPaint,
@@ -38,9 +39,20 @@ export function resolveWorkbookVersionIdentityVisual(
   hasSemanticDiff: boolean,
   surface: 'body' | 'header' = 'body',
 ): WorkbookVersionIdentityVisual {
-  const accent = resolveWorkbookVersionAccent(theme, side);
+  const isHighContrast = resolveThemeAppearance(theme) === 'high-contrast';
+  if (hasSemanticDiff || isHighContrast) {
+    return {
+      overlay: null,
+      rail: null,
+      railWidth: 0,
+    };
+  }
+
+  const overlayAlpha = surface === 'header'
+    ? (isLightWorkbookTheme(theme) ? '24' : '1a')
+    : (isLightWorkbookTheme(theme) ? '12' : '0d');
   return {
-    overlay: hasSemanticDiff || surface === 'header' ? null : `${accent}28`,
+    overlay: `${resolveWorkbookVersionAccent(theme, side)}${overlayAlpha}`,
     rail: null,
     railWidth: 0,
   };
@@ -52,6 +64,10 @@ function getWorkbookSideAccent(theme: ThemeTokens, sideAccent: Exclude<WorkbookR
 
 function withHexAlpha(color: string, hexAlpha: string): string {
   return color.startsWith('#') && color.length === 7 ? `${color}${hexAlpha}` : color;
+}
+
+function isLightWorkbookTheme(theme: ThemeTokens): boolean {
+  return resolveThemeAppearance(theme) === 'light';
 }
 
 export function mergeWorkbookSemanticTone(
@@ -222,9 +238,11 @@ export function resolveWorkbookRowGutterBackground(params: {
     isHeaderRow = false,
     versionSide = null,
   } = params;
-  if (isSelected) return `${selectionAccent}26`;
+  if (isSelected) return `${selectionAccent}${isLightWorkbookTheme(theme) ? '40' : '26'}`;
   if (isHeaderRow) return theme.workbookHeaderBg;
-  if (versionSide) return `${resolveWorkbookVersionAccent(theme, versionSide)}20`;
+  if (versionSide) {
+    return `${resolveWorkbookVersionAccent(theme, versionSide)}${isLightWorkbookTheme(theme) ? '32' : '20'}`;
+  }
   return theme.lnBg;
 }
 
@@ -247,7 +265,7 @@ export function resolveWorkbookRowRuleColor(
   sideAccent: WorkbookRowSideAccent = null,
 ): string {
   if (!sideAccent) return resolveWorkbookRowBorderColor(theme, tone, sideAccent);
-  return `${getWorkbookSideAccent(theme, sideAccent)}66`;
+  return `${getWorkbookSideAccent(theme, sideAccent)}${isLightWorkbookTheme(theme) ? '88' : '66'}`;
 }
 
 export function resolveWorkbookRowLineNumberColor(params: {
@@ -267,8 +285,9 @@ export function resolveWorkbookRowLineNumberColor(params: {
   if (semanticTone === 'add') return theme.addTx;
   if (semanticTone === 'delete') return theme.delTx;
   if (semanticTone === 'mixed') return theme.chgTx;
-  if (fallbackTone === 'base') return active ? theme.versionBase : withHexAlpha(theme.versionBase, 'bf');
-  if (fallbackTone === 'mine') return active ? theme.versionMine : withHexAlpha(theme.versionMine, 'bf');
+  const inactiveVersionAlpha = isLightWorkbookTheme(theme) ? 'e6' : 'bf';
+  if (fallbackTone === 'base') return active ? theme.versionBase : withHexAlpha(theme.versionBase, inactiveVersionAlpha);
+  if (fallbackTone === 'mine') return active ? theme.versionMine : withHexAlpha(theme.versionMine, inactiveVersionAlpha);
   return active ? theme.acc2 : theme.lnTx;
 }
 

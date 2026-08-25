@@ -60,8 +60,8 @@ test('workbook header surfaces stay opaque in left-right layout and square in co
     })
   ), [20, LN_W + 3 + WORKBOOK_CELL_WIDTH - 12]);
   expect(neutralHeaderSurfaces).toEqual([
-    [[233, 239, 243, 255], [236, 241, 244, 255]],
-    [[233, 239, 243, 255], [236, 241, 244, 255]],
+    [[237, 244, 250, 255], [214, 229, 241, 255]],
+    [[237, 244, 250, 255], [227, 227, 219, 255]],
   ]);
 
   const changedHeaderSurface = await horizontalHeaderCanvases.evaluateAll((elements, sampleX) => elements.map((element) => {
@@ -78,12 +78,36 @@ test('workbook header surfaces stay opaque in left-right layout and square in co
     ).data);
   }), LN_W + 3 + (WORKBOOK_CELL_WIDTH * 2) - 12);
   expect(changedHeaderSurface).toEqual([
-    [246, 240, 221, 255],
-    [246, 240, 221, 255],
+    [255, 240, 200, 255],
+    [255, 240, 200, 255],
   ]);
 
   const baseBodyCanvas = page.locator('[data-testid="workbook-pane-canvas-base"]:not([data-workbook-header-row-canvas="true"])');
   await expect(baseBodyCanvas).toHaveCount(1);
+  const horizontalBodyCanvases = page.locator([
+    '[data-testid="workbook-pane-canvas-base"]:not([data-workbook-header-row-canvas="true"])',
+    '[data-testid="workbook-pane-canvas-mine"]:not([data-workbook-header-row-canvas="true"])',
+  ].join(', '));
+  await expect(horizontalBodyCanvases).toHaveCount(2);
+  const horizontalVersionSurfaceColors = await horizontalBodyCanvases.evaluateAll((elements, sampleX) => (
+    elements.map((element) => {
+      if (!(element instanceof HTMLCanvasElement)) return [];
+      const context = element.getContext('2d');
+      if (!context) return [];
+      const scaleX = element.width / element.clientWidth;
+      const scaleY = element.height / element.clientHeight;
+      return Array.from(context.getImageData(
+        Math.floor(sampleX * scaleX),
+        Math.floor(12 * scaleY),
+        1,
+        1,
+      ).data);
+    })
+  ), LN_W + 3 + (WORKBOOK_CELL_WIDTH / 2));
+  expect(horizontalVersionSurfaceColors).toEqual([
+    [240, 245, 249, 255],
+    [246, 244, 238, 255],
+  ]);
   const terminalBoundarySamples = await baseBodyCanvas.evaluate((element, sampleXs) => {
     if (!(element instanceof HTMLCanvasElement)) return [];
     const context = element.getContext('2d');
@@ -150,7 +174,8 @@ test('workbook header surfaces stay opaque in left-right layout and square in co
   expect(versionSurfaceColors).toHaveLength(2);
   expect(versionSurfaceColors[0]?.nearLeft).toEqual(versionSurfaceColors[0]?.center);
   expect(versionSurfaceColors[1]?.nearLeft).toEqual(versionSurfaceColors[1]?.center);
-  expect(versionSurfaceColors[0]?.center).not.toEqual(versionSurfaceColors[1]?.center);
+  expect(versionSurfaceColors[0]?.center).toEqual([240, 245, 249, 255]);
+  expect(versionSurfaceColors[1]?.center).toEqual([246, 244, 238, 255]);
   expect(versionSurfaceColors[0]?.center[3]).toBe(255);
   expect(versionSurfaceColors[1]?.center[3]).toBe(255);
 
@@ -255,19 +280,19 @@ test('workbook header surfaces stay opaque in left-right layout and square in co
     };
   }, [baseCellCenterX, mineCellCenterX, sharedSelectionSeamX - 0.5, sharedSelectionSeamX + 0.5])).toEqual({
     outline: [
-      [75, 106, 128, 255],
-      [116, 98, 82, 255],
-      [75, 106, 128, 255],
-      [116, 98, 82, 255],
+      [36, 111, 174, 255],
+      [141, 98, 0, 255],
+      [36, 111, 174, 255],
+      [141, 98, 0, 255],
     ],
     interior: [
       cellInteriorBeforeSelection[0],
       cellInteriorBeforeSelection[1],
-      [75, 106, 128, 255],
+      [36, 111, 174, 255],
       cellInteriorBeforeSelection[1],
     ],
     sharedSeam: [
-      [75, 106, 128, 255],
+      [36, 111, 174, 255],
       cellInteriorBeforeSelection[1],
     ],
   });
@@ -409,7 +434,7 @@ test('high contrast workbook grid uses graphite hierarchy instead of pure white'
   const brightestGridEdge = gridPixels.edgeCandidates.reduce((brightest, candidate) => (
     Math.max(...candidate.slice(0, 3)) > Math.max(...brightest.slice(0, 3)) ? candidate : brightest
   ));
-  expect(Math.max(...gridPixels.interior.slice(0, 3))).toBeGreaterThanOrEqual(24);
+  expect(Math.max(...gridPixels.interior.slice(0, 3))).toBeGreaterThanOrEqual(20);
   expect(Math.max(...gridPixels.interior.slice(0, 3))).toBeLessThan(64);
   expect(Math.max(...brightestGridEdge.slice(0, 3))).toBeGreaterThanOrEqual(70);
   expect(Math.max(...brightestGridEdge.slice(0, 3))).toBeLessThan(140);

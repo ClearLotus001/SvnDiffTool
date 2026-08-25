@@ -1,4 +1,5 @@
 import type { ThemeTokens } from '@/theme/tokens';
+import { resolveThemeAppearance } from '@/theme';
 import type { WorkbookCompareMode } from '@/types';
 import { resolveDiffIndicatorThemeVisual } from '@/utils/diff/diffIndicatorVisuals';
 import type { WorkbookCompareCellState } from '@/utils/workbook/workbookCompare';
@@ -50,9 +51,10 @@ interface ResolveWorkbookCompareCellVisualOptions {
 
 function getWorkbookSideAccentVisual(theme: ThemeTokens, side: 'base' | 'mine'): WorkbookCompareCellVisual {
   const accent = resolveWorkbookVersionAccent(theme, side);
+  const isLightTheme = resolveThemeAppearance(theme) === 'light';
   return {
-    background: `${accent}12`,
-    border: `${accent}66`,
+    background: `${accent}${isLightTheme ? '1f' : '12'}`,
+    border: `${accent}${isLightTheme ? '8c' : '66'}`,
     textColor: accent,
     maskOverlay: null,
   };
@@ -125,10 +127,11 @@ export function resolveWorkbookCompareCellVisual({
   defaultTextColor,
 }: ResolveWorkbookCompareCellVisualOptions): WorkbookCompareCellVisual {
   if (!compareCell?.changed) {
+    const neutralContentBackground = T.bg0 === T.bg1 ? T.bg2 : T.bg1;
     return {
       background: isHeaderRow
         ? T.workbookHeaderBg
-        : hasEntry ? (hasContent ? T.bg1 : T.bg0) : T.bg2,
+        : hasEntry ? (hasContent ? neutralContentBackground : T.bg0) : T.bg2,
       border: hasEntry ? T.workbookGridBorderStrong : T.workbookGridBorder,
       textColor: isHeaderRow ? T.t0 : defaultTextColor,
       maskOverlay: compareCell?.masked && hasContent ? `${T.bg1}22` : null,

@@ -21,6 +21,12 @@ import {
   SEARCH_RESULT_ROW_H,
   SEARCH_RESULTS_VIEWPORT_H,
 } from '@/utils/diff/searchResultItems';
+import useSearchResultsPanelSize from '@/hooks/diff/useSearchResultsPanelSize';
+import {
+  clampSearchResultsPanelPosition,
+  getSearchResultsPanelHeightBounds,
+  getSearchResultsPanelWidthBounds,
+} from '@/utils/diff/searchResultsPanelLayout';
 
 function getResultsGridTemplateColumns(isWorkbookMode: boolean) {
   return isWorkbookMode
@@ -154,6 +160,21 @@ const SearchResultsPopover = memo(({
     left: position?.left ?? 24,
     top: position?.top ?? 88,
   });
+  const {
+    panelSize,
+    panelSizeRef,
+    activeResizeMode,
+    handleWidthResizePointerDown,
+    handleHeightResizePointerDown,
+    handleProportionalResizePointerDown,
+    handleWidthResizeKeyDown,
+    handleHeightResizeKeyDown,
+    handleProportionalResizeKeyDown,
+  } = useSearchResultsPanelSize({
+    panelRef,
+    currentPositionRef,
+    onPositionChange,
+  });
   const [isDragging, setIsDragging] = useState(false);
   const [scrollTop, setScrollTop] = useState(0);
   const highlightPattern = useMemo(
@@ -176,12 +197,18 @@ const SearchResultsPopover = memo(({
   }, [resolveResult, visibleWindow.endIndex, visibleWindow.startIndex]);
 
   const applyPanelPosition = useCallback((nextPosition: { left: number; top: number }) => {
-    currentPositionRef.current = nextPosition;
+    const clampedPosition = clampSearchResultsPanelPosition(
+      nextPosition,
+      panelSizeRef.current,
+      window.innerWidth,
+      window.innerHeight,
+    );
+    currentPositionRef.current = clampedPosition;
     const panel = panelRef.current;
     if (!panel) return;
-    panel.style.left = `${nextPosition.left}px`;
-    panel.style.top = `${nextPosition.top}px`;
-  }, []);
+    panel.style.left = `${clampedPosition.left}px`;
+    panel.style.top = `${clampedPosition.top}px`;
+  }, [panelSizeRef]);
 
   const ensureActiveResultVisible = useCallback(() => {
     const scrollElement = scrollRef.current;
@@ -227,9 +254,16 @@ const SearchResultsPopover = memo(({
     const handlePointerMove = (event: PointerEvent) => {
       const dragOffset = dragOffsetRef.current;
       if (!dragOffset) return;
-      const nextLeft = Math.max(8, Math.min(window.innerWidth - 320, event.clientX - dragOffset.x));
-      const nextTop = Math.max(8, Math.min(window.innerHeight - 120, event.clientY - dragOffset.y));
-      currentPositionRef.current = { left: nextLeft, top: nextTop };
+      const nextPosition = clampSearchResultsPanelPosition(
+        {
+          left: event.clientX - dragOffset.x,
+          top: event.clientY - dragOffset.y,
+        },
+        panelSizeRef.current,
+        window.innerWidth,
+        window.innerHeight,
+      );
+      currentPositionRef.current = nextPosition;
       if (dragFrameRef.current) return;
       dragFrameRef.current = requestAnimationFrame(() => {
         dragFrameRef.current = 0;
@@ -261,7 +295,7 @@ const SearchResultsPopover = memo(({
       dragOffsetRef.current = null;
       setIsDragging(false);
     };
-  }, [applyPanelPosition, onPositionChange]);
+  }, [applyPanelPosition, onPositionChange, panelSizeRef]);
 
   if (typeof document === 'undefined') return null;
 
@@ -273,15 +307,19 @@ const SearchResultsPopover = memo(({
           containerRef.current = node;
         }
       }}
-      className="motion-floating-panel z-[80] w-[min(920px,calc(100vw-56px))] overflow-hidden rounded-2xl border border-border-default bg-bg-surface-solid shadow-2xl"
+      data-testid="search-results-panel"
+      data-resizing={activeResizeMode ?? 'false'}
+      className="motion-floating-panel z-[80] flex flex-col overflow-hidden rounded-2xl border border-border-default bg-bg-surface-solid shadow-2xl"
       style={{
         position: 'fixed',
         left: position?.left ?? 24,
         top: position?.top ?? 88,
+        width: panelSize.width,
+        height: panelSize.height,
         boxShadow: `0 24px 56px -28px ${cssAlpha('border2', 'cc')}`,
       }}>
       <div
-        className="flex items-center justify-between gap-4 border-b border-border-default px-4 py-3"
+        className="flex shrink-0 items-center justify-between gap-4 border-b border-border-default px-4 py-3"
         onPointerDown={(event) => {
           if ((event.target as HTMLElement | null)?.closest('button')) return;
           const currentTarget = event.currentTarget.getBoundingClientRect();
@@ -326,7 +364,7 @@ const SearchResultsPopover = memo(({
         </div>
       </div>
       <div
-        className="grid items-center gap-4 border-b border-border-default px-4 py-2.5 text-[12px] font-ui font-bold text-text-secondary"
+        className="grid shrink-0 items-center gap-4 border-b border-border-default px-4 py-2.5 text-[12px] font-ui font-bold text-text-secondary"
         style={{
           gridTemplateColumns: getResultsGridTemplateColumns(isWorkbookMode),
           background: `linear-gradient(180deg, ${cssVar('bg1')} 0%, ${cssVar('bg0')} 100%)`,
@@ -346,7 +384,7 @@ const SearchResultsPopover = memo(({
       </div>
 
       {resultCount === 0 ? (
-        <div className="px-5 py-12 text-center text-[13px] text-text-secondary">
+        <div className="flex min-h-0 flex-1 items-center justify-center px-5 py-6 text-center text-[13px] text-text-secondary">
           {isSearching ? (
             <div className="inline-flex items-center gap-2 rounded-full border border-[var(--accent)]/18 bg-[var(--accent)]/[0.06] px-3 py-1.5 text-accent">
               <Loader2 size={14} className="animate-spin" />
@@ -361,7 +399,7 @@ const SearchResultsPopover = memo(({
           ref={scrollRef}
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
           data-testid="search-results-scroll"
-          className="relative h-[360px] overflow-y-auto overflow-x-hidden px-2 py-2">
+          className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 py-2">
           <div style={{ position: 'relative', height: visibleWindow.totalHeight }}>
             <div
               data-testid="search-results-window"
@@ -456,6 +494,77 @@ const SearchResultsPopover = memo(({
           </div>
         </div>
       )}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={t('searchResultsResizeWidth')}
+        aria-valuemin={getSearchResultsPanelWidthBounds(window.innerWidth).minWidth}
+        aria-valuemax={getSearchResultsPanelWidthBounds(window.innerWidth).maxWidth}
+        aria-valuenow={panelSize.width}
+        tabIndex={0}
+        data-app-shortcuts="local"
+        data-testid="search-results-width-handle"
+        onPointerDown={handleWidthResizePointerDown}
+        onKeyDownCapture={handleWidthResizeKeyDown}
+        className="group absolute bottom-4 right-0 top-[58px] z-20 w-2 cursor-ew-resize touch-none outline-none"
+        style={{
+          background: activeResizeMode === 'width'
+            ? `linear-gradient(90deg, transparent 0%, ${cssAlpha('acc', '14')} 100%)`
+            : undefined,
+        }}>
+        <span
+          className="absolute right-0.5 top-1/2 h-12 w-[3px] -translate-y-1/2 rounded-full transition-all duration-150 group-hover:h-16 group-focus-visible:h-16"
+          style={{
+            background: activeResizeMode === 'width' ? cssVar('acc') : cssAlpha('border2', '70'),
+            boxShadow: activeResizeMode === 'width'
+              ? `0 0 0 3px ${cssAlpha('acc', '16')}`
+              : `0 0 0 1px ${cssAlpha('bg0', '80')}`,
+          }}
+        />
+      </div>
+      <div
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label={t('searchResultsResizeHeight')}
+        aria-valuemin={getSearchResultsPanelHeightBounds(window.innerHeight).minHeight}
+        aria-valuemax={getSearchResultsPanelHeightBounds(window.innerHeight).maxHeight}
+        aria-valuenow={panelSize.height}
+        tabIndex={0}
+        data-app-shortcuts="local"
+        data-testid="search-results-height-handle"
+        onPointerDown={handleHeightResizePointerDown}
+        onKeyDownCapture={handleHeightResizeKeyDown}
+        className="group absolute bottom-0 left-0 right-4 z-20 h-2 cursor-ns-resize touch-none outline-none"
+        style={{
+          background: activeResizeMode === 'height'
+            ? `linear-gradient(180deg, transparent 0%, ${cssAlpha('acc', '14')} 100%)`
+            : undefined,
+        }}>
+        <span
+          className="absolute bottom-0.5 left-1/2 h-[3px] w-12 -translate-x-1/2 rounded-full transition-all duration-150 group-hover:w-16 group-focus-visible:w-16"
+          style={{
+            background: activeResizeMode === 'height' ? cssVar('acc') : cssAlpha('border2', '70'),
+            boxShadow: activeResizeMode === 'height'
+              ? `0 0 0 3px ${cssAlpha('acc', '16')}`
+              : `0 0 0 1px ${cssAlpha('bg0', '80')}`,
+          }}
+        />
+      </div>
+      <button
+        type="button"
+        aria-label={t('searchResultsResizeProportionally')}
+        data-app-shortcuts="local"
+        data-testid="search-results-proportional-handle"
+        onPointerDown={handleProportionalResizePointerDown}
+        onKeyDownCapture={handleProportionalResizeKeyDown}
+        className="absolute bottom-0 right-0 z-30 size-4 cursor-nwse-resize touch-none rounded-tl-md border-0 bg-transparent p-0 outline-none"
+        style={{
+          backgroundImage: `repeating-linear-gradient(135deg, transparent 0 3px, ${activeResizeMode === 'proportional' ? cssVar('acc') : cssAlpha('border2', '80')} 3px 4px)`,
+          boxShadow: activeResizeMode === 'proportional'
+            ? `-2px -2px 8px ${cssAlpha('acc', '18')}`
+            : undefined,
+        }}
+      />
     </div>
   );
 

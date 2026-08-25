@@ -35,6 +35,7 @@ export interface E2ELoadWorkbookDiffPayload extends E2ERevisionPayload {
   mineContent: string;
   layout?: LayoutMode;
   collapseCtx?: boolean;
+  showOnlyDifferences?: boolean;
 }
 
 export interface E2EBridgeSnapshot {

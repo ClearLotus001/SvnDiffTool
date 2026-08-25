@@ -22,6 +22,7 @@ import {
   X,
   Columns3,
   House,
+  ListFilter,
 } from 'lucide-react';
 import { useI18n } from '@/context/i18n';
 import type { AppUpdateState, ThemeKey, LayoutMode, WorkbookCompareMode } from '@/types';
@@ -35,6 +36,7 @@ type IconName =
   | 'prev' | 'next' | 'search' | 'goto'
   | 'language' | 'file' | 'help'
   | 'home'
+  | 'diffOnly'
   | 'update' | 'download' | 'install' | 'info' | 'chevronDown'
   | 'windowMinimize' | 'windowMaximize' | 'windowRestore' | 'windowClose';
 
@@ -51,6 +53,7 @@ const ICON_MAP: Record<IconName, React.ElementType> = {
   file: FileText,
   help: CircleHelp,
   home: House,
+  diffOnly: ListFilter,
   update: RefreshCw,
   download: Download,
   install: PackageCheck,
@@ -116,10 +119,14 @@ interface ToolbarProps {
   setShowSearch: React.Dispatch<React.SetStateAction<boolean>>;
   collapseCtx: boolean;
   setCollapseCtx: React.Dispatch<React.SetStateAction<boolean>>;
+  showOnlyDifferences: boolean;
+  setShowOnlyDifferences: React.Dispatch<React.SetStateAction<boolean>>;
   showWhitespace: boolean;
   setShowWhitespace: React.Dispatch<React.SetStateAction<boolean>>;
   showHiddenColumns: boolean;
   setShowHiddenColumns: React.Dispatch<React.SetStateAction<boolean>>;
+  botEnabled: boolean;
+  setBotEnabled: React.Dispatch<React.SetStateAction<boolean>>;
   workbookCompareMode: WorkbookCompareMode;
   setWorkbookCompareMode: (mode: WorkbookCompareMode) => void;
   fontSize: number;
@@ -146,7 +153,9 @@ const Toolbar = memo((props: ToolbarProps) => {
     themeKey, setThemeKey, layout, setLayout,
     hunkIdx, totalHunks, hunkTargetLabel = '', onPrev, onNext,
     showSearch, setShowSearch, collapseCtx, setCollapseCtx,
+    showOnlyDifferences, setShowOnlyDifferences,
     showWhitespace, setShowWhitespace, showHiddenColumns, setShowHiddenColumns,
+    botEnabled, setBotEnabled,
     workbookCompareMode, setWorkbookCompareMode,
     fontSize, setFontSize,
     onPickFile, onHome,
@@ -155,6 +164,7 @@ const Toolbar = memo((props: ToolbarProps) => {
   } = props;
 
   const { getThemeLabel, getLocaleLabel, getNextLocale, setLocale, t } = useI18n();
+  const showGotoAction = !(isWorkbookMode && showOnlyDifferences);
   const nextLocale = getNextLocale();
   const noDragStyle = (isElectron ? { WebkitAppRegion: 'no-drag' as const } : undefined) as CSSProperties | undefined;
   const noDragAnchorStyle = noDragStyle;
@@ -460,10 +470,26 @@ const Toolbar = memo((props: ToolbarProps) => {
             <Icon name="search" />
             {showActionText && <span>{t('toolbarSearchLabel')}</span>}
           </Btn>
-          <Btn onClick={onGoto} tooltip={t('toolbarGotoTitle')}>
-            <Icon name="goto" />
-            {showActionText && <span>{t('toolbarGotoLabel')}</span>}
-          </Btn>
+          {showGotoAction && (
+            <Btn onClick={onGoto} tooltip={t('toolbarGotoTitle')}>
+              <Icon name="goto" />
+              {showActionText && <span>{t('toolbarGotoLabel')}</span>}
+            </Btn>
+          )}
+          </Group>
+        )}
+
+        {showDiffControls && isWorkbookMode && (
+          <Group ariaLabel={t('toolbarDiffOnlyTitle')}>
+            <Btn
+              active={showOnlyDifferences}
+              pressed={showOnlyDifferences}
+              onClick={() => setShowOnlyDifferences((value) => !value)}
+              tooltip={t('toolbarDiffOnlyQuickTitle')}
+              testId="toolbar-diff-only">
+              <Icon name="diffOnly" />
+              {showActionText && <span>{t('toolbarDiffOnlyQuickLabel')}</span>}
+            </Btn>
           </Group>
         )}
 
@@ -471,10 +497,14 @@ const Toolbar = memo((props: ToolbarProps) => {
           <ToolbarViewMenu
             collapseCtx={collapseCtx}
             setCollapseCtx={setCollapseCtx}
+            showOnlyDifferences={showOnlyDifferences}
+            setShowOnlyDifferences={setShowOnlyDifferences}
             showWhitespace={showWhitespace}
             setShowWhitespace={setShowWhitespace}
             showHiddenColumns={showHiddenColumns}
             setShowHiddenColumns={setShowHiddenColumns}
+            botEnabled={botEnabled}
+            setBotEnabled={setBotEnabled}
             workbookCompareMode={workbookCompareMode}
             setWorkbookCompareMode={setWorkbookCompareMode}
             fontSize={fontSize}

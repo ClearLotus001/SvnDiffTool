@@ -59,6 +59,7 @@ interface UseWorkbookHorizontalStickyRenderPropsParams {
   baseRowEntryByRowNumber: ComponentProps<typeof WorkbookPaneCanvasStrip>['rowEntryByRowNumber'];
   mineRowEntryByRowNumber: ComponentProps<typeof WorkbookPaneCanvasStrip>['rowEntryByRowNumber'];
   compareStateByRow: ComponentProps<typeof WorkbookPaneCanvasStrip>['compareStateByRow'];
+  maskedRegions: ComponentProps<typeof WorkbookPaneCanvasStrip>['maskedRegions'];
   baseCompareCellsByRowNumber: ComponentProps<typeof WorkbookPaneCanvasStrip>['compareCellsByRowNumber'];
   mineCompareCellsByRowNumber: ComponentProps<typeof WorkbookPaneCanvasStrip>['compareCellsByRowNumber'];
   compareMode: WorkbookCompareMode;
@@ -95,6 +96,7 @@ export function useWorkbookHorizontalStickyRenderProps({
   baseRowEntryByRowNumber,
   mineRowEntryByRowNumber,
   compareStateByRow,
+  maskedRegions,
   baseCompareCellsByRowNumber,
   mineCompareCellsByRowNumber,
   compareMode,
@@ -152,6 +154,7 @@ export function useWorkbookHorizontalStickyRenderProps({
           mergedRanges: workbookSide === 'base' ? baseMergedRanges : mineMergedRanges,
           rowEntryByRowNumber: workbookSide === 'base' ? baseRowEntryByRowNumber : mineRowEntryByRowNumber,
           compareStateByRow,
+          maskedRegions,
           compareCellsByRowNumber: workbookSide === 'base' ? baseCompareCellsByRowNumber : mineCompareCellsByRowNumber,
           compareMode,
         },
@@ -170,6 +173,7 @@ export function useWorkbookHorizontalStickyRenderProps({
     baseVersion,
     compareMode,
     compareStateByRow,
+    maskedRegions,
     fontSize,
     freezeColumnCount,
     frozenRowsRangeLabelBySide,

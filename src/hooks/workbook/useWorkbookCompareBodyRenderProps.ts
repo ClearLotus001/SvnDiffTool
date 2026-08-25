@@ -47,6 +47,7 @@ interface UseWorkbookCompareBodyRenderPropsParams {
   baseRowEntryByRowNumber: ComponentProps<typeof WorkbookCompareBody>['stackedCanvasProps']['baseRowEntryByRowNumber'];
   mineRowEntryByRowNumber: ComponentProps<typeof WorkbookCompareBody>['stackedCanvasProps']['mineRowEntryByRowNumber'];
   compareStateByRow: ComponentProps<typeof WorkbookCompareBody>['stackedCanvasProps']['compareStateByRow'];
+  maskedRegions: ComponentProps<typeof WorkbookCompareBody>['stackedCanvasProps']['maskedRegions'];
   baseCompareCellsByRowNumber: ComponentProps<typeof WorkbookCompareBody>['stackedCanvasProps']['baseCompareCellsByRowNumber'];
   mineCompareCellsByRowNumber: ComponentProps<typeof WorkbookCompareBody>['stackedCanvasProps']['mineCompareCellsByRowNumber'];
   compareMode: WorkbookCompareMode;
@@ -83,6 +84,7 @@ export function useWorkbookCompareBodyRenderProps({
   baseRowEntryByRowNumber,
   mineRowEntryByRowNumber,
   compareStateByRow,
+  maskedRegions,
   baseCompareCellsByRowNumber,
   mineCompareCellsByRowNumber,
   compareMode,
@@ -108,6 +110,7 @@ export function useWorkbookCompareBodyRenderProps({
     baseRowEntryByRowNumber,
     mineRowEntryByRowNumber,
     compareStateByRow,
+    maskedRegions,
     baseCompareCellsByRowNumber,
     mineCompareCellsByRowNumber,
     compareMode,
@@ -120,6 +123,7 @@ export function useWorkbookCompareBodyRenderProps({
     columnLayoutByColumn,
     compareMode,
     compareStateByRow,
+    maskedRegions,
     fontSize,
     freezeColumnCount,
     headerRowNumber,
@@ -158,6 +162,7 @@ export function useWorkbookCompareBodyRenderProps({
     baseRowEntryByRowNumber,
     mineRowEntryByRowNumber,
     compareStateByRow,
+    maskedRegions,
     baseCompareCellsByRowNumber,
     mineCompareCellsByRowNumber,
     compareMode,
@@ -170,6 +175,7 @@ export function useWorkbookCompareBodyRenderProps({
     columnLayoutByColumn,
     compareMode,
     compareStateByRow,
+    maskedRegions,
     fontSize,
     freezeColumnCount,
     headerRowNumber,

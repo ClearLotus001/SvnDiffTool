@@ -49,6 +49,7 @@ interface UseAppRuntimeEffectsArgs {
   loadPhase: LoadPhase;
   loadPerfMetrics: DiffPerformanceMetrics | null;
   setCollapseCtx: Dispatch<SetStateAction<boolean>>;
+  setShowOnlyDifferences: Dispatch<SetStateAction<boolean>>;
   setLayout: Dispatch<SetStateAction<LayoutMode>>;
   activeSearchIdx: number;
   searchJumpNonce: number;
@@ -75,6 +76,7 @@ export default function useAppRuntimeEffects({
   loadPhase,
   loadPerfMetrics,
   setCollapseCtx,
+  setShowOnlyDifferences,
   setLayout,
   activeSearchIdx,
   searchJumpNonce,
@@ -120,6 +122,7 @@ export default function useAppRuntimeEffects({
       loadWorkbookDiff: async (payload) => {
         if (payload.layout) setLayout(payload.layout);
         if (typeof payload.collapseCtx === 'boolean') setCollapseCtx(payload.collapseCtx);
+        setShowOnlyDifferences(payload.showOnlyDifferences ?? false);
         await applyDiffData(buildE2EWorkbookDiffData(payload));
       },
       getSnapshot: () => ({
@@ -133,7 +136,16 @@ export default function useAppRuntimeEffects({
     return () => {
       delete window.__SVN_DIFF_E2E__;
     };
-  }, [applyDiffData, displayFileName, hasLoadedDiff, isWorkbookMode, layout, setCollapseCtx, setLayout]);
+  }, [
+    applyDiffData,
+    displayFileName,
+    hasLoadedDiff,
+    isWorkbookMode,
+    layout,
+    setCollapseCtx,
+    setLayout,
+    setShowOnlyDifferences,
+  ]);
 
   useEffect(() => {
     if (!shouldEnablePerfBridge()) return undefined;

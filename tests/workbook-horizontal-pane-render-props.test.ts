@@ -59,7 +59,8 @@ test('useWorkbookHorizontalPaneRenderProps uses the shared workbook content-left
       compareStateByRow: new Map(),
       baseCompareCellsByRowNumber: new Map(),
       mineCompareCellsByRowNumber: new Map(),
-      compareMode: 'strict',
+    compareMode: 'strict',
+    maskedRegions: { regionByCellKey: new Map(), regionCount: 0 },
     });
 
     return null;
@@ -156,7 +157,8 @@ test('useWorkbookHorizontalPaneRenderProps keeps horizontal focus geometry on th
       compareStateByRow: new Map(),
       baseCompareCellsByRowNumber: new Map(),
       mineCompareCellsByRowNumber: new Map(),
-      compareMode: 'strict',
+    compareMode: 'strict',
+    maskedRegions: { regionByCellKey: new Map(), regionCount: 0 },
     });
 
     return null;

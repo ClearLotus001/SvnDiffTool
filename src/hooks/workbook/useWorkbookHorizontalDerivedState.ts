@@ -40,6 +40,7 @@ import { buildWorkbookRenderModel, type WorkbookRenderModel } from '@/utils/work
 import { buildWorkbookExpandedBlocksSignature } from '@/utils/workbook/workbookExpandedBlocksSignature';
 import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
 import { ROW_H } from '@/hooks/virtualization/useVirtual';
+import type { WorkbookRenderPolicy } from '@/utils/workbook/workbookVisibilityModel';
 
 export interface WorkbookMeasuredValue<T> {
   value: T;
@@ -58,6 +59,7 @@ export interface UseWorkbookHorizontalDerivedStateParams {
   freezeRowNumber: number;
   expandedBlocks: CollapseExpansionState;
   collapseCtx: boolean;
+  renderPolicy: WorkbookRenderPolicy;
   compareMode: WorkbookCompareMode;
   baseVersion: string;
   mineVersion: string;
@@ -116,6 +118,7 @@ export function useWorkbookHorizontalDerivedState({
   freezeRowNumber,
   expandedBlocks,
   collapseCtx,
+  renderPolicy,
   compareMode,
   baseVersion,
   mineVersion,
@@ -127,17 +130,19 @@ export function useWorkbookHorizontalDerivedState({
   protectedAutoCollapseColumns = [],
   protectedAutoCollapseColumnCount = 0,
 }: UseWorkbookHorizontalDerivedStateParams): UseWorkbookHorizontalDerivedStateResult {
+  const showOnlyDifferences = renderPolicy.mode === 'differences-only';
   const collapsibleSheetView = useMemo(
     () => getWorkbookCollapsibleSheetView({
       sectionRows,
       sheetName: activeSheetCacheKey,
       protectedLineIdxSet,
+      showOnlyDifferences,
       contextLines: CONTEXT_LINES,
       blockPrefix: collapseBlockPrefix,
       equalityStrategyKey: 'split-equal-row',
       isEqualRow: isEqualWorkbookRow,
     }),
-    [activeSheetCacheKey, collapseBlockPrefix, protectedLineIdxSet, sectionRows],
+    [activeSheetCacheKey, collapseBlockPrefix, protectedLineIdxSet, sectionRows, showOnlyDifferences],
   );
   const protectedLineSignature = useMemo(
     () => buildWorkbookProtectedLineSignature(protectedLineIdxSet),
@@ -170,9 +175,11 @@ export function useWorkbookHorizontalDerivedState({
     if (!activeWorkbookSection || freezeRowNumber <= 0) return [];
     return sectionRows.filter((row) => {
       const rowNumber = getWorkbookSplitRowNumber(row);
-      return rowNumber != null && rowNumber <= freezeRowNumber;
+      if (rowNumber == null || rowNumber > freezeRowNumber) return false;
+      if (!showOnlyDifferences || !isEqualWorkbookRow(row)) return true;
+      return row.lineIdxs.some((lineIdx) => protectedLineIdxSet.has(lineIdx));
     });
-  }, [activeWorkbookSection, freezeRowNumber, sectionRows]);
+  }, [activeWorkbookSection, freezeRowNumber, protectedLineIdxSet, sectionRows, showOnlyDifferences]);
   const stickyHeaderRows = useMemo(
     () => frozenRows.filter((row) => {
       const rowNumber = getWorkbookSplitRowNumber(row);
@@ -198,6 +205,7 @@ export function useWorkbookHorizontalDerivedState({
       protectedLineSignature,
       freezeRowNumber,
       collapseCtx,
+      showOnlyDifferences,
       expandedBlocksSignature,
     ]);
     const cached = getWorkbookSharedCacheEntry(cacheBySectionRows, cacheKey);
@@ -231,6 +239,7 @@ export function useWorkbookHorizontalDerivedState({
     activeSheetCacheKey,
     collapseBlockPrefix,
     collapseCtx,
+    showOnlyDifferences,
     effectiveExpandedBlocks,
     expandedBlocksSignature,
     freezeRowNumber,
@@ -255,6 +264,7 @@ export function useWorkbookHorizontalDerivedState({
       activeSheetCacheKey,
       freezeRowNumber,
       collapseCtx,
+      showOnlyDifferences,
       expandedBlocksSignature,
       hiddenRowsSignature,
     ]);
@@ -287,6 +297,7 @@ export function useWorkbookHorizontalDerivedState({
   }, [
     activeSheetCacheKey,
     collapseCtx,
+    showOnlyDifferences,
     collapsedItemsMeasured.duration,
     collapsedItemsMeasured.value,
     expandedBlocksSignature,
@@ -305,6 +316,7 @@ export function useWorkbookHorizontalDerivedState({
       activeSheetCacheKey,
       freezeRowNumber,
       collapseCtx,
+      showOnlyDifferences,
       hiddenRowsSignature,
       expandedBlocksSignature,
     ]);
@@ -329,6 +341,7 @@ export function useWorkbookHorizontalDerivedState({
   }, [
     activeSheetCacheKey,
     collapseCtx,
+    showOnlyDifferences,
     expandedBlocksSignature,
     freezeRowNumber,
     hiddenRowsSignature,
@@ -346,6 +359,7 @@ export function useWorkbookHorizontalDerivedState({
       activeSheetCacheKey,
       freezeRowNumber,
       collapseCtx,
+      showOnlyDifferences,
       hiddenRowsSignature,
       expandedBlocksSignature,
     ]);
@@ -358,6 +372,7 @@ export function useWorkbookHorizontalDerivedState({
   }, [
     activeSheetCacheKey,
     collapseCtx,
+    showOnlyDifferences,
     expandedBlocksSignature,
     freezeRowNumber,
     hiddenRowsSignature,
@@ -379,6 +394,7 @@ export function useWorkbookHorizontalDerivedState({
       revealedAutoColumns,
       protectedAutoCollapseColumns,
       protectedAutoCollapseColumnCount,
+      showOnlyDifferences,
     ),
     [
       activeHiddenColumns,
@@ -392,6 +408,7 @@ export function useWorkbookHorizontalDerivedState({
       protectedAutoCollapseColumnCount,
       revealedAutoColumns,
       sectionRows,
+      showOnlyDifferences,
       showHiddenColumns,
     ],
   );
@@ -404,13 +421,15 @@ export function useWorkbookHorizontalDerivedState({
       mineVersion,
       visibleColumns: sheetPresentation.visibleColumns,
       compareMode,
+      renderPolicy,
+      headerRowNumber: activeWorkbookSection?.firstDataRowNumber ?? 0,
       items,
       renderItemIndexesCacheKey: 'horizontal:split-render-items:v1',
       getRow: (item) => (item.kind === 'split-line' ? item.row : null),
       getHiddenRows: (item) => (item.kind === 'hidden-rows' ? item.rows : null),
       getHiddenRowNumbers: (item) => (item.kind === 'hidden-rows' ? item.rowNumbers : null),
     }),
-    [activeSheetName, baseVersion, compareMode, items, mineVersion, sectionRows, sheetPresentation.visibleColumns],
+    [activeSheetName, activeWorkbookSection?.firstDataRowNumber, baseVersion, compareMode, items, mineVersion, renderPolicy, sectionRows, sheetPresentation.visibleColumns],
   );
 
   return {

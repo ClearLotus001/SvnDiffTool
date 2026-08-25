@@ -42,6 +42,23 @@ test('unchanged workbook cells bind directly to the selected light and dark them
   assert.notEqual(resolveEqual(lightTheme).background, resolveEqual(darkTheme).background);
 });
 
+test('high contrast workbook cells keep a graphite surface without version tinting', () => {
+  const highContrastTheme = getThemeTokensSnapshot('hc');
+  const visual = resolveWorkbookCompareCellVisual({
+    theme: highContrastTheme,
+    compareCell: undefined,
+    side: 'base',
+    hasEntry: true,
+    hasContent: true,
+    hasBaseRow: true,
+    hasMineRow: true,
+    defaultTextColor: highContrastTheme.t0,
+  });
+
+  assert.equal(visual.background, highContrastTheme.bg2);
+  assert.equal(visual.border, highContrastTheme.workbookGridBorderStrong);
+});
+
 test('unchanged workbook header cells share one neutral slate surface regardless of content', () => {
   const contentVisual = resolveWorkbookCompareCellVisual({
     theme: lightTheme,
@@ -140,8 +157,8 @@ test('stacked paired workbook changes can use the base side accent palette', () 
   });
 
   assert.deepEqual(visual, {
-    background: `${lightTheme.versionBase}12`,
-    border: `${lightTheme.versionBase}66`,
+    background: `${lightTheme.versionBase}1f`,
+    border: `${lightTheme.versionBase}8c`,
     textColor: lightTheme.versionBase,
     maskOverlay: null,
   });
@@ -161,8 +178,8 @@ test('stacked paired workbook changes can use the mine side accent palette', () 
   });
 
   assert.deepEqual(visual, {
-    background: `${lightTheme.versionMine}12`,
-    border: `${lightTheme.versionMine}66`,
+    background: `${lightTheme.versionMine}1f`,
+    border: `${lightTheme.versionMine}8c`,
     textColor: lightTheme.versionMine,
     maskOverlay: null,
   });

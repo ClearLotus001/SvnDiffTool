@@ -40,11 +40,13 @@ function renderStatsBar(
   options: {
     isWorkbookMode?: boolean;
     fileName?: string;
+    showGotoShortcut?: boolean;
   } = {},
 ): string {
   const {
     isWorkbookMode = true,
     fileName = '[1]新物品表.xlsm',
+    showGotoShortcut = true,
   } = options;
 
   return renderToStaticMarkup(
@@ -65,6 +67,7 @@ function renderStatsBar(
           baseVersionLabel: 'r1825384',
           mineVersionLabel: 'r1825385',
           isWorkbookMode,
+          showGotoShortcut,
           workbookCompareMode: 'strict',
           workbookSections,
           workbookArtifactDiff: showArtifactOnlyDiff
@@ -156,4 +159,22 @@ test('StatsBar places the file name after both comparison versions', () => {
   assert.ok(baseVersionIndex >= 0);
   assert.ok(mineVersionIndex > baseVersionIndex);
   assert.ok(fileNameIndex > mineVersionIndex);
+});
+
+test('StatsBar semantic pills use the same backgrounds and anchors as diff cells', () => {
+  const html = renderStatsBar(false);
+
+  assert.match(html, /--stats-chip-accent:var\(--diff-add-border\)/);
+  assert.match(html, /--stats-chip-tint:var\(--diff-add-bg\)/);
+  assert.match(html, /--stats-chip-accent:var\(--diff-remove-border\)/);
+  assert.match(html, /--stats-chip-tint:var\(--diff-remove-bg\)/);
+  assert.match(html, /--stats-chip-accent:var\(--diff-modify-border\)/);
+  assert.match(html, /--stats-chip-tint:var\(--diff-modify-bg\)/);
+});
+
+test('StatsBar hides the goto shortcut hint when goto is unavailable', () => {
+  const html = renderStatsBar(false, [], [], { showGotoShortcut: false });
+
+  assert.doesNotMatch(html, /Ctrl\+G/);
+  assert.match(html, /Ctrl\+F/);
 });

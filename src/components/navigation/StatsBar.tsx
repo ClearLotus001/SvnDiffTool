@@ -27,6 +27,7 @@ interface StatsBarProps {
   workbookArtifactDiff?: WorkbookArtifactDiff | null;
   workbookSections?: WorkbookSection[];
   lineSelectionSummary?: TextLineSelectionSummary | null;
+  showGotoShortcut?: boolean;
 }
 
 const SCROLL_RAIL_CLASS = 'overflow-x-auto overflow-y-hidden [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden';
@@ -89,6 +90,7 @@ const StatsBar = memo(({
   workbookArtifactDiff = null,
   workbookSections = [],
   lineSelectionSummary = null,
+  showGotoShortcut = true,
 }: StatsBarProps) => {
   const { t } = useI18n();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -104,6 +106,7 @@ const StatsBar = memo(({
   const addedPalette = resolveDiffIndicatorCssPalette('add');
   const deletedPalette = resolveDiffIndicatorCssPalette('delete');
   const modifiedPalette = resolveDiffIndicatorCssPalette('modify');
+  const shortcutHint = t(showGotoShortcut ? 'statsHints' : 'statsHintsWithoutGoto');
 
   useEffect(() => {
     const root = rootRef.current;
@@ -159,8 +162,8 @@ const StatsBar = memo(({
         style={makeChipStyle({
           accent: palette.accent,
           text: palette.text,
-          border: palette.border,
-          tint: palette.softBackground,
+          border: palette.accent,
+          tint: palette.background,
           shadow: palette.shadow,
         })}>
         <Dot />
@@ -343,9 +346,9 @@ const StatsBar = memo(({
             {t('statsLines', { count: totalLines })}
           </span>
           <span aria-hidden="true" className="app-stats-divider-dot shrink-0" />
-          <Tooltip content={t('statsHints')} maxWidth={420}>
+          <Tooltip content={shortcutHint} maxWidth={420}>
             <span className="max-w-[42vw] overflow-hidden text-ellipsis whitespace-nowrap font-ui text-[11px] text-text-secondary cursor-default text-right">
-              {t('statsHints')}
+              {shortcutHint}
             </span>
           </Tooltip>
         </div>

@@ -41,7 +41,7 @@ export function resolveWorkbookCanvasHoverVisibility(
     wrapText: Boolean(hover.wrapText),
     measureText,
   });
-  if (!hover.compareCell && !isTextTruncated) return null;
+  if (!hover.compareCell && !hover.maskedRegionId && !isTextTruncated) return null;
   return { ...hover, isTextTruncated };
 }
 

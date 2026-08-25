@@ -142,3 +142,99 @@ test('last active search result has no compositor mask or clipped viewport overl
     withinViewport: true,
   });
 });
+
+test('search results panel supports width height and proportional resizing', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await loadSearchWorkbook(page);
+  await page.keyboard.press('Control+f');
+  await page.locator('.searchbar-input').fill('Needle');
+
+  const panel = page.getByTestId('search-results-panel');
+  const widthHandle = page.getByTestId('search-results-width-handle');
+  const heightHandle = page.getByTestId('search-results-height-handle');
+  const proportionalHandle = page.getByTestId('search-results-proportional-handle');
+  await expect(panel).toBeVisible();
+  await expect(widthHandle).toHaveAttribute('role', 'separator');
+  await expect(heightHandle).toHaveAttribute('role', 'separator');
+  await expect(proportionalHandle).toBeVisible();
+  await expect.poll(() => panel.evaluate((element) => getComputedStyle(element).transform)).toBe('none');
+  const initialBox = await panel.boundingBox();
+  const handleBox = await widthHandle.boundingBox();
+  if (!initialBox || !handleBox) throw new Error('Search results resize controls are not visible.');
+
+  await page.mouse.move(handleBox.x + (handleBox.width / 2), handleBox.y + (handleBox.height / 2));
+  await page.mouse.down();
+  await expect(panel).toHaveAttribute('data-resizing', 'width');
+  await page.mouse.move(handleBox.x + (handleBox.width / 2) - 180, handleBox.y + (handleBox.height / 2));
+  await page.mouse.up();
+  await expect.poll(async () => (await panel.boundingBox())?.width ?? 0).toBeLessThan(initialBox.width - 150);
+  const resizedBox = await panel.boundingBox();
+  if (!resizedBox) throw new Error('Search results panel disappeared after resizing.');
+  const storedRatio = await page.evaluate(() => Number(
+    window.localStorage.getItem('versora.searchResultsPanelWidthRatio'),
+  ));
+  expect(storedRatio).toBeCloseTo(resizedBox.width / 1600, 2);
+
+  const heightHandleBox = await heightHandle.boundingBox();
+  if (!heightHandleBox) throw new Error('Search results height handle is not visible.');
+  await page.mouse.move(
+    heightHandleBox.x + (heightHandleBox.width / 2),
+    heightHandleBox.y + (heightHandleBox.height / 2),
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    heightHandleBox.x + (heightHandleBox.width / 2),
+    heightHandleBox.y + (heightHandleBox.height / 2) - 100,
+  );
+  await page.mouse.up();
+  await expect.poll(async () => (await panel.boundingBox())?.height ?? 0).toBeLessThan(initialBox.height - 80);
+  const heightResizedBox = await panel.boundingBox();
+  if (!heightResizedBox) throw new Error('Search results panel disappeared after height resizing.');
+
+  const proportionalHandleBox = await proportionalHandle.boundingBox();
+  if (!proportionalHandleBox) throw new Error('Search results proportional handle is not visible.');
+  const aspectRatioBefore = heightResizedBox.width / heightResizedBox.height;
+  await page.mouse.move(
+    proportionalHandleBox.x + (proportionalHandleBox.width / 2),
+    proportionalHandleBox.y + (proportionalHandleBox.height / 2),
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    proportionalHandleBox.x + (proportionalHandleBox.width / 2) - 72,
+    proportionalHandleBox.y + (proportionalHandleBox.height / 2) - 36,
+  );
+  await page.mouse.up();
+  const proportionalBox = await panel.boundingBox();
+  if (!proportionalBox) throw new Error('Search results panel disappeared after proportional resizing.');
+  expect(proportionalBox.width).toBeLessThan(heightResizedBox.width - 40);
+  expect(proportionalBox.height).toBeLessThan(heightResizedBox.height - 20);
+  expect(proportionalBox.width / proportionalBox.height).toBeCloseTo(aspectRatioBefore, 2);
+
+  const storedRatios = await page.evaluate(() => ({
+    width: Number(window.localStorage.getItem('versora.searchResultsPanelWidthRatio')),
+    height: Number(window.localStorage.getItem('versora.searchResultsPanelHeightRatio')),
+  }));
+  expect(storedRatios.width).toBeCloseTo(proportionalBox.width / 1600, 2);
+  expect(storedRatios.height).toBeCloseTo(proportionalBox.height / 900, 2);
+
+  await page.setViewportSize({ width: 1400, height: 800 });
+  await expect.poll(async () => Math.abs(
+    ((await panel.boundingBox())?.width ?? 0) - (storedRatios.width * 1400),
+  )).toBeLessThanOrEqual(1);
+  await expect.poll(async () => Math.abs(
+    ((await panel.boundingBox())?.height ?? 0) - (storedRatios.height * 800),
+  )).toBeLessThanOrEqual(1);
+
+  await widthHandle.focus();
+  const beforeKeyboardResize = (await panel.boundingBox())?.width ?? 0;
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(async () => (await panel.boundingBox())?.width ?? 0).toBeCloseTo(beforeKeyboardResize + 32, 0);
+
+  await heightHandle.focus();
+  await expect(heightHandle).toBeFocused();
+  const beforeKeyboardHeightResize = (await panel.boundingBox())?.height ?? 0;
+  const beforeKeyboardHeightValue = Number(await heightHandle.getAttribute('aria-valuenow'));
+  await heightHandle.press('ArrowDown');
+  await expect(heightHandle).toHaveAttribute('aria-valuenow', String(beforeKeyboardHeightValue + 28));
+  await expect.poll(async () => (await panel.boundingBox())?.height ?? 0).toBeCloseTo(beforeKeyboardHeightResize + 28, 0);
+});

@@ -13,25 +13,9 @@ import Tooltip from '@/components/shared/Tooltip';
 import PathTooltip from '@/components/shared/PathTooltip';
 
 const HEADER_STATUS_TAG_CLASS = 'inline-flex items-center h-5 px-1.5 rounded-[5px] whitespace-nowrap box-border border';
-const HEADER_TOOLBAR_TEXT_CLASS = 'font-ui text-[10px] font-semibold leading-none';
 const HEADER_TOOLBAR_TEXT_STRONG_CLASS = 'font-ui text-[10px] font-bold leading-none';
 const HEADER_TOOLBAR_TEXT_INNER_CLASS = 'inline-flex items-center h-full leading-none';
 const HEADER_TOOLBAR_VALUE_INNER_CLASS = 'inline-flex items-center h-full min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-ui text-[10px] font-semibold leading-none tracking-[-0.01em]';
-
-type SplitHeaderAxisKind =
-  | 'left-pane'
-  | 'right-pane'
-  | 'top-pane'
-  | 'bottom-pane'
-  | 'left-column'
-  | 'right-column'
-  | 'top-row'
-  | 'bottom-row';
-
-interface SplitHeaderAxisMeta {
-  label: string;
-  kind: SplitHeaderAxisKind;
-}
 
 interface SplitHeaderProps {
   baseName: string;
@@ -107,45 +91,6 @@ const SplitHeader = memo(({
     ? Math.max(0.2, Math.min(0.8, textSplitHeaderRatio || 0.5))
     : 0.5;
 
-  const resolveAxisMeta = (side: 'base' | 'mine'): SplitHeaderAxisMeta => {
-    if (isWorkbookMode && layout === 'unified') {
-      return {
-        label: side === 'base' ? t('splitHeaderAxisTop') : t('splitHeaderAxisBottom'),
-        kind: side === 'base' ? 'top-row' : 'bottom-row',
-      };
-    }
-    if (layout === 'split-v') {
-      if (isWorkbookMode) {
-        return {
-          label: side === 'base' ? t('splitHeaderAxisLeftColumn') : t('splitHeaderAxisRightColumn'),
-          kind: side === 'base' ? 'left-column' : 'right-column',
-        };
-      }
-      return {
-        label: side === 'base' ? t('splitHeaderAxisTop') : t('splitHeaderAxisBottom'),
-        kind: side === 'base' ? 'top-pane' : 'bottom-pane',
-      };
-    }
-    return {
-      label: side === 'base' ? t('splitHeaderAxisLeftPane') : t('splitHeaderAxisRightPane'),
-      kind: side === 'base' ? 'left-pane' : 'right-pane',
-    };
-  };
-
-  const renderRoleBadge = (side: 'base' | 'mine') => {
-    const accentVar = side === 'base' ? '--version-base' : '--version-mine';
-    const accentKey = side === 'base' ? 'versionBase' : 'versionMine';
-    const glyphCls = side === 'base' ? 'size-1 rounded-[2px] rotate-45' : 'size-[5px] rounded-full';
-    return (
-      <span
-        aria-hidden="true"
-        className="inline-flex items-center justify-center size-2 min-w-2 rounded-full shrink-0 box-border"
-        style={{ background: cssAlpha(accentKey, '14'), border: `1px solid ${cssAlpha(accentKey, '38')}` }}>
-        <span className={`block ${glyphCls}`} style={{ background: `var(${accentVar})`, boxShadow: `0 0 0 1px ${cssAlpha(accentKey, '22')}` }} />
-      </span>
-    );
-  };
-
   const renderMeta = (info: SvnRevisionInfo | null, fallbackText: string, accent: string /* CSS var name e.g. '--acc2' */) => {
     const primaryLog = buildRevisionLogText(info);
     const primary = primaryLog || fallbackText.trim();
@@ -217,24 +162,19 @@ const SplitHeader = memo(({
     );
   };
 
-  const renderAxisBadge = (axis: SplitHeaderAxisMeta, accent: string) => {
-    const isVertical = axis.kind.includes('left') || axis.kind.includes('right');
-    const isLeading = axis.kind.startsWith('left') || axis.kind.startsWith('top');
-    const gradientAngle = isVertical
-      ? (isLeading ? '90deg' : '270deg')
-      : (isLeading ? '180deg' : '0deg');
-
+  const renderAuthorBadge = (info: SvnRevisionInfo | null, accent: string) => {
+    const author = info?.author.trim() ?? '';
+    if (!author) return null;
     return (
       <span
-        data-testid={`axis-tag-${axis.kind}`}
-        className={`${HEADER_STATUS_TAG_CLASS} ${HEADER_TOOLBAR_TEXT_CLASS}`}
+        data-testid="revision-author-tag"
+        className={`${HEADER_STATUS_TAG_CLASS} max-w-32 shrink-0 font-ui text-[10px] font-semibold leading-none`}
         style={{
-          color: `color-mix(in srgb, var(${accent}) 84%, var(--text-title) 16%)`,
-          border: `1px solid color-mix(in srgb, var(${accent}) 22%, var(--border-color) 78%)`,
-          background: `linear-gradient(${gradientAngle}, color-mix(in srgb, var(${accent}) 14%, var(--bg-surface-hover) 86%) 0%, color-mix(in srgb, var(${accent}) 6%, var(--bg-surface-solid) 94%) 64%, var(--bg-surface-solid) 100%)`,
-          boxShadow: `inset 0 1px 0 color-mix(in srgb, var(${accent}) 18%, transparent), 0 10px 20px -24px color-mix(in srgb, var(${accent}) 46%, transparent)`,
+          color: `color-mix(in srgb, var(${accent}) 82%, var(--text-title) 18%)`,
+          borderColor: `color-mix(in srgb, var(${accent}) 24%, var(--border-color) 76%)`,
+          background: `color-mix(in srgb, var(${accent}) 7%, var(--bg-surface-solid) 93%)`,
         }}>
-        <span className={HEADER_TOOLBAR_TEXT_INNER_CLASS}>{axis.label}</span>
+        <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{author}</span>
       </span>
     );
   };
@@ -346,7 +286,7 @@ const SplitHeader = memo(({
   };
 
   const headerSide = (
-    side: 'base' | 'mine', axis: SplitHeaderAxisMeta, title: string, name: string,
+    side: 'base' | 'mine', title: string, name: string,
     version: string, info: SvnRevisionInfo | null, sourceKind: ComparisonSourceKind | null,
     divider = false,
   ) => {
@@ -361,54 +301,13 @@ const SplitHeader = memo(({
     return (
       <div
         data-split-header-side={side}
-        className="grid gap-1.5 min-w-0 p-[7px_14px_8px] min-h-[54px] bg-transparent border-t border-border-default"
+        className="flex items-center gap-3 min-w-0 p-[7px_14px] min-h-[42px] bg-transparent border-t border-border-default"
         style={{ borderLeft: divider ? `1px solid var(--border-color)` : 'none' }}>
-        <div className="flex items-center justify-between gap-3 min-w-0 flex-wrap">
-          <div className="inline-flex items-center gap-1 min-w-0 flex-wrap">
-            {renderSourceBadge(side, sourceKind)}
-            <span
-              data-testid={`version-role-${side}`}
-              className={`${HEADER_STATUS_TAG_CLASS} ${HEADER_TOOLBAR_TEXT_STRONG_CLASS} gap-1`}
-              style={{
-                color: `var(${accent})`,
-                borderColor: `color-mix(in srgb, var(${accent}) 30%, var(--border-color) 70%)`,
-                background: `color-mix(in srgb, var(${accent}) 9%, var(--bg-surface-solid) 91%)`,
-              }}>
-              {renderRoleBadge(side)}
-              <span className={HEADER_TOOLBAR_TEXT_INNER_CLASS}>{title}</span>
-            </span>
-            {side === 'base' && onResetCompare && (
-              <button
-                type="button"
-                data-testid="reset-compare-tag"
-                onClick={onResetCompare}
-                disabled={!canResetCompare || isSwitchingRevisions}
-                className={`
-                  ${HEADER_STATUS_TAG_CLASS}
-                  ${HEADER_TOOLBAR_TEXT_STRONG_CLASS}
-                  ${canResetCompare && !isSwitchingRevisions ? 'text-text-primary cursor-pointer hover:text-accent hover:brightness-110' : 'text-text-secondary cursor-default'}
-                  transition-all duration-150
-                `}
-                style={{
-                  borderColor: `color-mix(in srgb, var(${accent}) 20%, var(--border-color) 80%)`,
-                  background: `color-mix(in srgb, var(${accent}) 5%, var(--bg-surface-solid) 95%)`,
-                }}>
-                <span className={HEADER_TOOLBAR_TEXT_INNER_CLASS}>{t('revisionPickerReset')}</span>
-              </button>
-            )}
-            {renderAxisBadge(axis, accent)}
-          </div>
-          <div className="inline-flex items-center gap-1.5 min-w-0 shrink-0">
-            {hasRevisionSwitch
-              ? renderRevisionSelect(side, info)
-              : renderStaticVersion(side, staticVersionLabel, name || staticVersionLabel, accent)}
-            {renderCopyButton(side, normalizedVersion || staticVersionLabel)}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="flex items-center min-w-0 flex-1 min-h-7 pl-1">
-            {isTwoFileCompare ? (
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          {renderSourceBadge(side, sourceKind)}
+          {renderAuthorBadge(info, accent)}
+          <div className="flex items-center min-w-0 flex-1 min-h-7">
+            {isTwoFileCompare && !buildRevisionLogText(info) ? (
               <PathTooltip path={name || title}>
                 <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-text-secondary text-[11px] font-code">
                   {name || title}
@@ -423,6 +322,31 @@ const SplitHeader = memo(({
             ))}
           </div>
         </div>
+        <div className="inline-flex items-center gap-1.5 min-w-0 shrink-0">
+          {side === 'base' && onResetCompare && (
+            <button
+              type="button"
+              data-testid="reset-compare-tag"
+              onClick={onResetCompare}
+              disabled={!canResetCompare || isSwitchingRevisions}
+              className={`
+                ${HEADER_STATUS_TAG_CLASS}
+                ${HEADER_TOOLBAR_TEXT_STRONG_CLASS}
+                ${canResetCompare && !isSwitchingRevisions ? 'text-text-primary cursor-pointer hover:text-accent hover:brightness-110' : 'text-text-secondary cursor-default'}
+                transition-all duration-150
+              `}
+              style={{
+                borderColor: `color-mix(in srgb, var(${accent}) 20%, var(--border-color) 80%)`,
+                background: `color-mix(in srgb, var(${accent}) 5%, var(--bg-surface-solid) 95%)`,
+              }}>
+              <span className={HEADER_TOOLBAR_TEXT_INNER_CLASS}>{t('revisionPickerReset')}</span>
+            </button>
+          )}
+          {hasRevisionSwitch
+            ? renderRevisionSelect(side, info)
+            : renderStaticVersion(side, staticVersionLabel, name || staticVersionLabel, accent)}
+          {renderCopyButton(side, normalizedVersion || staticVersionLabel)}
+        </div>
       </div>
     );
   };
@@ -436,10 +360,10 @@ const SplitHeader = memo(({
           : 'minmax(0, 1fr) minmax(0, 1fr)',
       }}>
       <div className="min-w-0">
-        {headerSide('base', resolveAxisMeta('base'), baseTitle, baseDisplayName, baseVersion, baseRevisionInfo, baseSourceKind, false)}
+        {headerSide('base', baseTitle, baseDisplayName, baseVersion, baseRevisionInfo, baseSourceKind, false)}
       </div>
       <div className="min-w-0">
-        {headerSide('mine', resolveAxisMeta('mine'), mineTitle, mineDisplayName, mineVersion, mineRevisionInfo, mineSourceKind, true)}
+        {headerSide('mine', mineTitle, mineDisplayName, mineVersion, mineRevisionInfo, mineSourceKind, true)}
       </div>
     </div>
   );

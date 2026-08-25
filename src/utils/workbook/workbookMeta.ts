@@ -288,6 +288,26 @@ function collectMergedColumns(ranges: WorkbookMergeRange[]): Set<number> {
   return cols;
 }
 
+function addIntersectingMergedColumns(
+  ranges: WorkbookMergeRange[],
+  anchorColumns: ReadonlySet<number>,
+  targetColumns: Set<number>,
+) {
+  ranges.forEach((range) => {
+    let intersects = false;
+    for (let column = range.startCol; column <= range.endCol; column += 1) {
+      if (anchorColumns.has(column)) {
+        intersects = true;
+        break;
+      }
+    }
+    if (!intersects) return;
+    for (let column = range.startCol; column <= range.endCol; column += 1) {
+      targetColumns.add(column);
+    }
+  });
+}
+
 export function buildWorkbookSheetPresentation(
   rows: SplitRow[],
   sheetName: string,
@@ -301,6 +321,7 @@ export function buildWorkbookSheetPresentation(
   revealedAutoColumns: number[] = [],
   protectedAutoCollapseColumns: number[] = [],
   protectedAutoCollapseColumnCount = 0,
+  hideUnchangedColumns = false,
 ): WorkbookSheetPresentation {
   const baseSheet = baseMetadata?.sheets[sheetName] ?? null;
   const mineSheet = mineMetadata?.sheets[sheetName] ?? null;
@@ -320,6 +341,7 @@ export function buildWorkbookSheetPresentation(
     revealedAutoColumns.join(','),
     protectedAutoCollapseColumns.join(','),
     protectedAutoCollapseColumnCount,
+    hideUnchangedColumns ? 'diff-only' : 'all-columns',
     getCacheObjectId(baseSheet),
     getCacheObjectId(mineSheet),
   ].join('::');
@@ -354,20 +376,36 @@ export function buildWorkbookSheetPresentation(
 
   const allColumns = [...candidateColumns].sort((left, right) => left - right);
 
-  const protectedColumns = new Set<number>([
-    ...revealedAutoColumns,
-    ...protectedAutoCollapseColumns,
-    ...allColumns.slice(0, Math.max(0, protectedAutoCollapseColumnCount)),
-    ...collectMergedColumns(baseSheet?.mergeRanges ?? []),
-    ...collectMergedColumns(mineSheet?.mergeRanges ?? []),
-  ]);
-  if (autoCollapseUnchangedColumns) {
+  const protectedColumns = new Set<number>(hideUnchangedColumns
+    ? protectedAutoCollapseColumns
+    : [
+        ...revealedAutoColumns,
+        ...protectedAutoCollapseColumns,
+        ...allColumns.slice(0, Math.max(0, protectedAutoCollapseColumnCount)),
+        ...collectMergedColumns(baseSheet?.mergeRanges ?? []),
+        ...collectMergedColumns(mineSheet?.mergeRanges ?? []),
+      ]);
+  let hasStructuralColumnChange = false;
+  if (autoCollapseUnchangedColumns || hideUnchangedColumns) {
     rows.forEach((row) => {
-      buildWorkbookSplitRowCompareState(row, undefined, compareMode).changedColumns
+      const rowDelta = buildWorkbookSplitRowCompareState(row, undefined, compareMode);
+      if (rowDelta.structuralChange) hasStructuralColumnChange = true;
+      rowDelta.changedColumns
         .forEach((column) => protectedColumns.add(column));
     });
   }
-  const autoCollapsedColumns = autoCollapseUnchangedColumns
+  if (hideUnchangedColumns) {
+    if (hasStructuralColumnChange) {
+      allColumns.forEach((column) => protectedColumns.add(column));
+    }
+    const mergeAnchors = new Set(protectedColumns);
+    addIntersectingMergedColumns(baseSheet?.mergeRanges ?? [], mergeAnchors, protectedColumns);
+    addIntersectingMergedColumns(mineSheet?.mergeRanges ?? [], mergeAnchors, protectedColumns);
+  }
+  const differenceOnlyHiddenColumnSet = new Set(hideUnchangedColumns
+    ? allColumns.filter((column) => !protectedColumns.has(column))
+    : []);
+  const autoCollapsedColumns = autoCollapseUnchangedColumns && !hideUnchangedColumns
     ? buildWorkbookAutoCollapsedColumns(allColumns, protectedColumns)
     : [];
   const autoCollapsedColumnSet = new Set(autoCollapsedColumns);
@@ -382,6 +420,7 @@ export function buildWorkbookSheetPresentation(
         )
       )
       && !autoCollapsedColumnSet.has(column)
+      && !differenceOnlyHiddenColumnSet.has(column)
     ));
 
   if (visibleColumns.length === 0) visibleColumns = [0];

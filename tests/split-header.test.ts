@@ -64,6 +64,10 @@ test('SplitHeader keeps revision picker compact and shows the revision log as a 
   assert.doesNotMatch(html, /\stitle="/);
   assert.match(html, /var\(--version-base\)/);
   assert.match(html, /var\(--version-mine\)/);
+  assert.doesNotMatch(html, /data-testid="version-role-/);
+  assert.doesNotMatch(html, /data-testid="axis-tag-/);
+  assert.equal((html.match(/data-testid="revision-author-tag"/g) ?? []).length, 2);
+  assert.ok(html.indexOf('winxzhang') < html.indexOf('修复版本切换后日志摘要缺失的问题'));
 });
 
 test('SplitHeader shows distinct labels and full paths for a two-file comparison', () => {
@@ -97,4 +101,46 @@ test('SplitHeader shows distinct labels and full paths for a two-file comparison
   assert.match(html, /E:\\QSM_TDRS\\Trunk\\Tools\\TDR_res\\Excel\\\[1\]新物品表\.xlsm/);
   assert.match(html, />文件</);
   assert.doesNotMatch(html, />版本号</);
+});
+
+test('SplitHeader shows commit logs instead of file revisions for a two-file SVN comparison', () => {
+  const baseRevisionInfo = createRevisionInfo({
+    id: 'r1952783',
+    revision: 'r1952783',
+    message: '修复物品配置的默认值',
+  });
+  const mineRevisionInfo = createRevisionInfo({
+    id: 'r1952784',
+    revision: 'r1952784',
+    message: '补充新品活动配置',
+  });
+  const html = renderToStaticMarkup(
+    React.createElement(
+      ThemeContext.Provider,
+      { value: 'light' },
+      React.createElement(
+        I18nProvider,
+        { initialLocale: 'zh-CN' },
+        React.createElement(SplitHeader, {
+          baseName: '新物品表.xlsm Revision 1952783',
+          mineName: '新物品表.xlsm Revision 1952784',
+          baseTitle: '版本 A',
+          mineTitle: '版本 B',
+          isTwoFileCompare: true,
+          layout: 'split-h',
+          isWorkbookMode: true,
+          baseRevisionInfo,
+          mineRevisionInfo,
+        }),
+      ),
+    ),
+  );
+
+  assert.match(html, /修复物品配置的默认值/);
+  assert.match(html, /补充新品活动配置/);
+  assert.doesNotMatch(html, />新物品表\.xlsm Revision 1952783</);
+  assert.doesNotMatch(html, />新物品表\.xlsm Revision 1952784</);
+  assert.doesNotMatch(html, /data-testid="version-role-/);
+  assert.doesNotMatch(html, /data-testid="axis-tag-/);
+  assert.equal((html.match(/data-testid="revision-author-tag"/g) ?? []).length, 2);
 });

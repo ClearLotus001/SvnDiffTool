@@ -148,3 +148,36 @@ test('getWorkbookSheetMaxRowNumber returns the maximum row number for the active
   assert.equal(getWorkbookSheetMaxRowNumber(diffLines, lineSheetContexts, 'Thing'), 15);
   assert.equal(getWorkbookSheetMaxRowNumber(diffLines, lineSheetContexts, 'Other'), 88);
 });
+
+test('differences-only goto resolves only among visible diff line indexes', () => {
+  const diffLines = [
+    createDiffLine('equal', 2, 2),
+    createDiffLine('delete', 3, null),
+    createDiffLine('add', null, 3),
+    createDiffLine('equal', 9, 9),
+  ];
+  const lineSheetContexts: WorkbookLineSheetContext[] = diffLines.map(() => ({
+    baseSheetName: 'Thing',
+    mineSheetName: 'Thing',
+  }));
+  const allowedLineIndexes = new Set([1, 2]);
+
+  const resolved = resolveWorkbookGotoTarget({
+    lineNo: 2,
+    diffLines,
+    lineSheetContexts,
+    sheetName: 'Thing',
+    preferredSide: 'mine',
+    baseVersionLabel: 'BASE',
+    mineVersionLabel: 'MINE',
+    allowedLineIndexes,
+  });
+
+  assert.equal(resolved?.selection.rowNumber, 3);
+  assert.equal(getWorkbookSheetMaxRowNumber(
+    diffLines,
+    lineSheetContexts,
+    'Thing',
+    allowedLineIndexes,
+  ), 3);
+});

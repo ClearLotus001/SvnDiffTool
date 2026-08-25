@@ -31,6 +31,32 @@ const sectionRows: SplitRow[] = Array.from({ length: 4 }, (_, index) => {
   };
 });
 
+const differenceSectionRows: SplitRow[] = sectionRows.map((row, index) => (
+  index === 2
+    ? {
+        ...row,
+        left: row.left ? { ...row.left, type: 'delete' as const } : null,
+        right: row.right ? { ...row.right, type: 'add' as const } : null,
+      }
+    : row
+));
+
+const precomputedDifferenceRows: SplitRow[] = sectionRows.map((row, index) => (
+  index === 2
+    ? {
+        ...row,
+        workbookRowDelta: {
+          cellDeltas: new Map(),
+          changedColumns: [1],
+          strictOnlyColumns: [],
+          changedCount: 1,
+          hasChanges: true,
+          tone: 'mixed' as const,
+        },
+      }
+    : row
+));
+
 const activeWorkbookSection: Parameters<typeof useWorkbookHorizontalDerivedState>[0]['activeWorkbookSection'] = {
   name: 'Thing',
   displayName: 'Thing',
@@ -65,6 +91,7 @@ function renderHorizontalDerivedState(
       freezeRowNumber: 1,
       expandedBlocks: {},
       collapseCtx: true,
+      renderPolicy: { mode: 'full', maskIrrelevantCells: false },
       compareMode: 'strict',
       baseVersion: 'BASE',
       mineVersion: 'MINE',
@@ -106,4 +133,55 @@ test('useWorkbookHorizontalDerivedState reuses hidden-row overlay derivations fo
   assert.equal(first.renderItemsMeasured, second.renderItemsMeasured);
   assert.equal(first.itemsMeasured, second.itemsMeasured);
   assert.equal(first.itemHeights, second.itemHeights);
+});
+
+test('useWorkbookHorizontalDerivedState can project only changed workbook rows', () => {
+  const result = renderHorizontalDerivedState({
+    sectionRows: differenceSectionRows,
+    protectedLineIdxSet: new Set([1]),
+    renderPolicy: { mode: 'differences-only', maskIrrelevantCells: true },
+  });
+
+  assert.deepEqual(result.frozenRows.map((row) => row.lineIdx), [1]);
+  assert.deepEqual(result.items.map((item) => item.kind), ['split-line']);
+  const item = result.items[0];
+  assert.equal(item?.kind === 'split-line' ? item.lineIdx : null, 3);
+});
+
+test('differences-only mode trusts precomputed cell deltas over equal line shells', () => {
+  const result = renderHorizontalDerivedState({
+    sectionRows: precomputedDifferenceRows,
+    protectedLineIdxSet: new Set([1]),
+    renderPolicy: { mode: 'differences-only', maskIrrelevantCells: true },
+  });
+
+  assert.deepEqual(result.frozenRows.map((row) => row.lineIdx), [1]);
+  assert.deepEqual(result.items.map((item) => item.kind === 'split-line' ? item.lineIdx : null), [3]);
+});
+
+test('differences-only mode keeps explicitly protected search rows visible', () => {
+  const result = renderHorizontalDerivedState({
+    protectedLineIdxSet: new Set([1, 2]),
+    renderPolicy: { mode: 'differences-only', maskIrrelevantCells: true },
+  });
+
+  assert.deepEqual(result.frozenRows.map((row) => row.lineIdx), [1]);
+  assert.deepEqual(result.items.map((item) => item.kind === 'split-line' ? item.lineIdx : null), [2]);
+});
+
+test('differences-only cache stays isolated from the full-row projection', () => {
+  const full = renderHorizontalDerivedState({
+    sectionRows: differenceSectionRows,
+    collapseCtx: false,
+    renderPolicy: { mode: 'full', maskIrrelevantCells: false },
+  });
+  const differences = renderHorizontalDerivedState({
+    sectionRows: differenceSectionRows,
+    collapseCtx: false,
+    renderPolicy: { mode: 'differences-only', maskIrrelevantCells: true },
+  });
+
+  assert.notEqual(full.collapsedItemsMeasured, differences.collapsedItemsMeasured);
+  assert.equal(full.items.length, 3);
+  assert.equal(differences.items.length, 1);
 });

@@ -152,3 +152,31 @@ test('buildWorkbookSheetPresentation auto-collapses unchanged column runs and pr
   assert.deepEqual(revealed.autoCollapsedColumns, [5]);
   assert.deepEqual(revealed.visibleColumns, [0, 1, 2, 3, 4, 6]);
 });
+
+test('differences-only presentation removes unchanged columns without rendering collapse markers', () => {
+  const base = [
+    createWorkbookSheetLine('Thing'),
+    createWorkbookRowLine(1, ['A', 'B', 'C', 'D', 'E']),
+    createWorkbookRowLine(2, ['a', 'b', 'c', 'before', 'e']),
+  ].join('\n');
+  const mine = [
+    createWorkbookSheetLine('Thing'),
+    createWorkbookRowLine(1, ['A', 'B', 'C', 'D', 'E']),
+    createWorkbookRowLine(2, ['a', 'b', 'c', 'after', 'e']),
+  ].join('\n');
+  const diffLines = computeWorkbookDiff(base, mine);
+  const sections = getWorkbookSections(diffLines);
+  const rows = buildWorkbookSectionRowIndex(diffLines, sections).get('Thing')?.rows ?? [];
+
+  const differencesOnly = buildWorkbookSheetPresentation(
+    rows, 'Thing', null, null, 5, false, 'strict', [], false, [], [], 0, true,
+  );
+  const withProtectedTarget = buildWorkbookSheetPresentation(
+    rows, 'Thing', null, null, 5, false, 'strict', [], false, [], [1], 0, true,
+  );
+
+  assert.deepEqual(differencesOnly.visibleColumns, [3]);
+  assert.deepEqual(differencesOnly.autoCollapsedColumns, []);
+  assert.deepEqual(differencesOnly.hiddenColumnSegments, []);
+  assert.deepEqual(withProtectedTarget.visibleColumns, [1, 3]);
+});
