@@ -6,14 +6,11 @@ export interface DisplayedDiffStats {
   modified: number;
 }
 
-/**
- * A modification occupies one removed line and one added line in the rendered
- * diff, while also remaining visible as its own semantic category.
- */
+/** Mutually exclusive product-facing difference categories. */
 export function resolveDisplayedDiffStats(stats: TextDiffStats): DisplayedDiffStats {
   return {
-    added: stats.add + stats.chg,
-    removed: stats.del + stats.chg,
+    added: stats.add,
+    removed: stats.del,
     modified: stats.chg,
   };
 }

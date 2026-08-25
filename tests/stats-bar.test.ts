@@ -121,6 +121,33 @@ test('StatsBar uses replacement-aware modified counts for unrelated add/delete l
   assert.match(html, /~0/);
 });
 
+test('StatsBar does not double-count modifications as additions and removals', () => {
+  const html = renderStatsBar(false, [
+    {
+      type: 'delete',
+      base: 'old value',
+      mine: null,
+      baseLineNo: 1,
+      mineLineNo: null,
+      baseCharSpans: null,
+      mineCharSpans: null,
+    },
+    {
+      type: 'add',
+      base: null,
+      mine: 'new value',
+      baseLineNo: null,
+      mineLineNo: 1,
+      baseCharSpans: null,
+      mineCharSpans: null,
+    },
+  ], [], { isWorkbookMode: false });
+
+  assert.match(html, /\+0/);
+  assert.match(html, /-0/);
+  assert.match(html, /~1/);
+});
+
 test('StatsBar renders workbook sheet change counts without double-counting renames', () => {
   const html = renderStatsBar(false, [], [
     makeWorkbookSection('Added', 'add'),

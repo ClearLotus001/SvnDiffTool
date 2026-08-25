@@ -157,19 +157,19 @@ test('diff summary messages describe text and workbook changes deterministically
   assert.equal(messages[0]?.source, 'diff-summary');
   assert.equal(diffMessage?.text, 'I counted:');
   assert.deepEqual(diffMessage?.tags, [
-    { label: 'added', value: 7, tone: 'positive' },
-    { label: 'removed', value: 5, tone: 'negative' },
+    { label: 'added', value: 4, tone: 'positive' },
+    { label: 'removed', value: 2, tone: 'negative' },
     { label: 'modified', value: 3, tone: 'warning' },
   ]);
   assert.match(text, /3 worksheets/);
   assert.match(text, /1 added, 0 deleted, and 1 renamed/);
 });
 
-test('Bot diff tags use the same rendered-line counts as the status bar', () => {
+test('Bot diff tags keep additions deletions and modifications mutually exclusive', () => {
   const [message] = resolveDiffSummaryMessages({
     enabled: true,
     isWorkbookMode: false,
-    stats: { add: 0, del: 1, chg: 1 },
+    stats: { add: 0, del: 0, chg: 2 },
     workbookSections: [],
     modifiedWorkbookSheetNames: new Set(),
     workbookArtifactDiff: null,
@@ -177,8 +177,8 @@ test('Bot diff tags use the same rendered-line counts as the status bar', () => 
   });
 
   assert.deepEqual(message?.tags, [
-    { label: 'added', value: 1, tone: 'positive' },
-    { label: 'removed', value: 2, tone: 'negative' },
-    { label: 'modified', value: 1, tone: 'warning' },
+    { label: 'added', value: 0, tone: 'positive' },
+    { label: 'removed', value: 0, tone: 'negative' },
+    { label: 'modified', value: 2, tone: 'warning' },
   ]);
 });
