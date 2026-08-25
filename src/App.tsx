@@ -78,6 +78,7 @@ import { copyText } from '@/utils/app/clipboard';
 import { shouldOpenTwoFilePicker } from '@/utils/app/filePickerRouting';
 import { recordPerfBridgeEvent } from '@/utils/app/perfBridge';
 import { findWorkbookDiffRegionNavigationIndex } from '@/utils/workbook/workbookDiffRegion';
+import { summarizeWorkbookCellChanges } from '@/utils/workbook/workbookCellChangeSummary';
 
 // ═════════════════════════════════════════════════════════════════════════════
 // ROOT APP
@@ -458,6 +459,20 @@ export default function App() {
     t,
   });
   const globalBotNotice = appUpdateBotNotice ?? devGlobalBotNotice;
+  const activeWorkbookCellChangeSummary = useMemo(() => (
+    isWorkbookMode
+      ? summarizeWorkbookCellChanges(
+          activeWorkbookSheetName,
+          workbookSectionRowIndex,
+          workbookCompareMode,
+        )
+      : null
+  ), [
+    activeWorkbookSheetName,
+    isWorkbookMode,
+    workbookCompareMode,
+    workbookSectionRowIndex,
+  ]);
   const globalBotAmbientMessages = useMemo(() => resolveDiffSummaryMessages({
     enabled: hasLoadedDiff && !isLoadingDiff,
     isWorkbookMode,
@@ -465,6 +480,9 @@ export default function App() {
     workbookSections,
     modifiedWorkbookSheetNames: workbookVisibilityModel.modifiedSheetNames,
     workbookArtifactDiff,
+    ...(activeWorkbookCellChangeSummary
+      ? { workbookCellChangeSummary: activeWorkbookCellChangeSummary }
+      : {}),
     t,
   }), [
     hasLoadedDiff,
@@ -473,6 +491,7 @@ export default function App() {
     t,
     textDiffPresentation.stats,
     workbookArtifactDiff,
+    activeWorkbookCellChangeSummary,
     workbookSections,
     workbookVisibilityModel.modifiedSheetNames,
   ]);
@@ -982,6 +1001,7 @@ export default function App() {
               isWorkbookMode={isWorkbookMode}
               workbookCompareMode={workbookCompareMode}
               workbookArtifactDiff={workbookArtifactDiff}
+              workbookCellChangeSummary={activeWorkbookCellChangeSummary}
               workbookSections={workbookSections}
               lineSelectionSummary={!isWorkbookMode ? textLineSelectionSummary : null}
               showGotoShortcut={!(isWorkbookMode && showOnlyDifferences)}

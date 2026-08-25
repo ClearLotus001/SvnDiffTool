@@ -80,6 +80,7 @@
   "updateBotInstallAction": "安装更新",
   "updateBotDownloadProgress": "更新下载进度",
   "globalBotDiffSummary": "我数过了：",
+  "globalBotWorkbookCellSummary": "当前页签：",
   "globalBotWorkbookChangedSheets": "这次有 {count} 个页签发生变化。",
   "globalBotWorkbookChangedSheetsNamed": "这次有 {count} 个页签发生变化：{names}。",
   "globalBotWorkbookStructureSummary": "页签结构有变化：新增 {added}、删除 {deleted}、重命名 {renamed}。",

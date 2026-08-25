@@ -149,17 +149,18 @@ test('diff summary messages describe text and workbook changes deterministically
     ],
     modifiedWorkbookSheetNames: new Set(['Orders', 'Archive', 'Old name', 'New name']),
     workbookArtifactDiff: null,
+    workbookCellChangeSummary: { added: 9, removed: 3, modified: 1, strictOnly: 0 },
     t,
   });
   const text = messages.map((message) => message.text).join('\n');
   const diffMessage = messages.find((message) => message.id.startsWith('diff:'));
 
   assert.equal(messages[0]?.source, 'diff-summary');
-  assert.equal(diffMessage?.text, 'I counted:');
+  assert.equal(diffMessage?.text, 'Current worksheet:');
   assert.deepEqual(diffMessage?.tags, [
-    { label: 'added', value: 4, tone: 'positive' },
-    { label: 'removed', value: 2, tone: 'negative' },
-    { label: 'modified', value: 3, tone: 'warning' },
+    { label: 'added', value: 9, tone: 'positive' },
+    { label: 'removed', value: 3, tone: 'negative' },
+    { label: 'modified', value: 1, tone: 'warning' },
   ]);
   assert.match(text, /3 worksheets/);
   assert.match(text, /1 added, 0 deleted, and 1 renamed/);

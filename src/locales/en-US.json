@@ -80,6 +80,7 @@
   "updateBotInstallAction": "Install update",
   "updateBotDownloadProgress": "Update download progress",
   "globalBotDiffSummary": "I counted:",
+  "globalBotWorkbookCellSummary": "Current worksheet:",
   "globalBotWorkbookChangedSheets": "Changes affect {count} worksheets.",
   "globalBotWorkbookChangedSheetsNamed": "Changes affect {count} worksheets: {names}.",
   "globalBotWorkbookStructureSummary": "Worksheet structure changed: {added} added, {deleted} deleted, and {renamed} renamed.",

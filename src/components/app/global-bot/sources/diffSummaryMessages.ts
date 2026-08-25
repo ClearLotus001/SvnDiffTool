@@ -4,6 +4,7 @@ import type { WorkbookSection } from '@/utils/workbook/workbookSections';
 import { summarizeWorkbookSectionChanges } from '@/utils/workbook/workbookSections';
 import type { GlobalBotMessage } from '@/components/app/global-bot/messages/types';
 import { resolveDisplayedDiffStats } from '@/utils/diff/diffStatsPresentation';
+import type { WorkbookCellChangeSummary } from '@/utils/workbook/workbookCellChangeSummary';
 
 interface ResolveDiffSummaryMessagesOptions {
   enabled: boolean;
@@ -12,6 +13,7 @@ interface ResolveDiffSummaryMessagesOptions {
   workbookSections: readonly WorkbookSection[];
   modifiedWorkbookSheetNames: ReadonlySet<string>;
   workbookArtifactDiff: WorkbookArtifactDiff | null;
+  workbookCellChangeSummary?: WorkbookCellChangeSummary;
   t: TranslationFn;
 }
 
@@ -47,18 +49,21 @@ export function resolveDiffSummaryMessages({
   workbookSections,
   modifiedWorkbookSheetNames,
   workbookArtifactDiff,
+  workbookCellChangeSummary,
   t,
 }: ResolveDiffSummaryMessagesOptions): GlobalBotMessage[] {
   if (!enabled) return [];
 
   const messages: GlobalBotMessage[] = [];
-  const total = stats.add + stats.del + stats.chg;
+  const displayedStats = isWorkbookMode && workbookCellChangeSummary
+    ? workbookCellChangeSummary
+    : resolveDisplayedDiffStats(stats);
+  const total = displayedStats.added + displayedStats.removed + displayedStats.modified;
   if (total > 0) {
-    const displayedStats = resolveDisplayedDiffStats(stats);
     messages.push({
       ...makeMessage(
-        `diff:${stats.add}:${stats.del}:${stats.chg}`,
-        t('globalBotDiffSummary'),
+        `diff:${displayedStats.added}:${displayedStats.removed}:${displayedStats.modified}`,
+        t(isWorkbookMode ? 'globalBotWorkbookCellSummary' : 'globalBotDiffSummary'),
         60,
       ),
       tags: [

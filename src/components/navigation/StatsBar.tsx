@@ -12,6 +12,7 @@ import {
 import type { WorkbookSection } from '@/utils/workbook/workbookSections';
 import { summarizeWorkbookSectionChanges } from '@/utils/workbook/workbookSections';
 import { resolveDisplayedDiffStats } from '@/utils/diff/diffStatsPresentation';
+import type { WorkbookCellChangeSummary } from '@/utils/workbook/workbookCellChangeSummary';
 
 interface StatsBarProps {
   textDiffPresentation: TextDiffPresentation;
@@ -27,6 +28,7 @@ interface StatsBarProps {
   workbookCompareMode?: WorkbookCompareMode;
   workbookArtifactDiff?: WorkbookArtifactDiff | null;
   workbookSections?: WorkbookSection[];
+  workbookCellChangeSummary?: WorkbookCellChangeSummary | null;
   lineSelectionSummary?: TextLineSelectionSummary | null;
   showGotoShortcut?: boolean;
 }
@@ -90,6 +92,7 @@ const StatsBar = memo(({
   workbookCompareMode = 'strict',
   workbookArtifactDiff = null,
   workbookSections = [],
+  workbookCellChangeSummary = null,
   lineSelectionSummary = null,
   showGotoShortcut = true,
 }: StatsBarProps) => {
@@ -99,7 +102,12 @@ const StatsBar = memo(({
   const [showTrailingFade, setShowTrailingFade] = useState(false);
 
   const stats = useMemo(() => textDiffPresentation.stats, [textDiffPresentation]);
-  const displayedStats = useMemo(() => resolveDisplayedDiffStats(stats), [stats]);
+  const displayedStats = useMemo(
+    () => (isWorkbookMode && workbookCellChangeSummary
+      ? workbookCellChangeSummary
+      : resolveDisplayedDiffStats(stats)),
+    [isWorkbookMode, stats, workbookCellChangeSummary],
+  );
   const workbookSectionSummary = useMemo(
     () => summarizeWorkbookSectionChanges(workbookSections),
     [workbookSections],

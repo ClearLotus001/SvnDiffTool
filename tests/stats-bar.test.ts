@@ -9,6 +9,7 @@ import { I18nProvider } from '../src/context/i18n';
 import { ThemeContext } from '../src/context/theme';
 import { buildTextDiffPresentation } from '../src/engine/text/textChangeAlignment';
 import type { WorkbookSection } from '../src/utils/workbook/workbookSections';
+import type { WorkbookCellChangeSummary } from '../src/utils/workbook/workbookCellChangeSummary';
 
 function makeWorkbookSection(
   name: string,
@@ -41,12 +42,14 @@ function renderStatsBar(
     isWorkbookMode?: boolean;
     fileName?: string;
     showGotoShortcut?: boolean;
+    workbookCellChangeSummary?: WorkbookCellChangeSummary | null;
   } = {},
 ): string {
   const {
     isWorkbookMode = true,
     fileName = '[1]新物品表.xlsm',
     showGotoShortcut = true,
+    workbookCellChangeSummary = null,
   } = options;
 
   return renderToStaticMarkup(
@@ -70,6 +73,7 @@ function renderStatsBar(
           showGotoShortcut,
           workbookCompareMode: 'strict',
           workbookSections,
+          workbookCellChangeSummary,
           workbookArtifactDiff: showArtifactOnlyDiff
             ? {
                 hasArtifactOnlyDiff: true,
@@ -145,6 +149,17 @@ test('StatsBar does not double-count modifications as additions and removals', (
 
   assert.match(html, /\+0/);
   assert.match(html, /-0/);
+  assert.match(html, /~1/);
+});
+
+test('StatsBar uses active worksheet cell classifications in workbook mode', () => {
+  const html = renderStatsBar(false, [], [], {
+    isWorkbookMode: true,
+    workbookCellChangeSummary: { added: 9, removed: 3, modified: 1, strictOnly: 0 },
+  });
+
+  assert.match(html, /\+9/);
+  assert.match(html, /-3/);
   assert.match(html, /~1/);
 });
 
