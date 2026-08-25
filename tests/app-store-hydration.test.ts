@@ -140,6 +140,7 @@ test('resetDiffSessionToHome clears transient comparison state and preserves pre
         baseCharSpans: null,
         mineCharSpans: null,
       }],
+      diffTypeFilter: 'delete',
       searchQ: 'changed',
       hunkIdx: 3,
       revisionOptions: [{
@@ -153,6 +154,7 @@ test('resetDiffSessionToHome clears transient comparison state and preserves pre
     useAppStore.getState().resetDiffSessionToHome();
     const nextState = useAppStore.getState();
     assert.equal(nextState.fileName, '');
+    assert.equal(nextState.diffTypeFilter, 'all');
     assert.equal(nextState.diffLines.length, 0);
     assert.equal(nextState.searchQ, '');
     assert.equal(nextState.hunkIdx, 0);

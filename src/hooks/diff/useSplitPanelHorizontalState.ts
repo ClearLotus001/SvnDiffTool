@@ -65,6 +65,7 @@ export function useSplitPanelHorizontalState({
   const splitRatioFrameRef = useRef(0);
   const pendingSplitRatioRef = useRef(initialSplitRatio);
   const syncOwnerRef = useRef<'left' | 'right' | null>(null);
+  const syncReleaseFrameRef = useRef(0);
   const [splitRatio, setSplitRatio] = useState(initialSplitRatio);
   const [isResizingSplitter, setIsResizingSplitter] = useState(false);
 
@@ -177,22 +178,22 @@ export function useSplitPanelHorizontalState({
     const targetSide = source === 'left' ? 'right' : 'left';
     if (!from || !to) return;
     if (syncOwnerRef.current && syncOwnerRef.current !== source) return;
+    const syncTop = Math.abs(to.scrollTop - from.scrollTop) > 1;
+    const syncLeft = Math.abs(to.scrollLeft - from.scrollLeft) > 1;
+    if (!syncTop && !syncLeft) return;
+
     syncOwnerRef.current = source;
-    let didSync = false;
+    onWillSyncTarget?.(targetSide);
+    to.scrollTo({
+      top: syncTop ? from.scrollTop : to.scrollTop,
+      left: syncLeft ? from.scrollLeft : to.scrollLeft,
+      behavior: 'auto',
+    });
+    onDidSync?.();
 
-    if (Math.abs(to.scrollTop - from.scrollTop) > 1) {
-      onWillSyncTarget?.(targetSide);
-      to.scrollTop = from.scrollTop;
-      didSync = true;
-    }
-    if (Math.abs(to.scrollLeft - from.scrollLeft) > 1) {
-      onWillSyncTarget?.(targetSide);
-      to.scrollLeft = from.scrollLeft;
-      didSync = true;
-    }
-    if (didSync) onDidSync?.();
-
-    requestAnimationFrame(() => {
+    if (syncReleaseFrameRef.current) cancelAnimationFrame(syncReleaseFrameRef.current);
+    syncReleaseFrameRef.current = requestAnimationFrame(() => {
+      syncReleaseFrameRef.current = 0;
       syncOwnerRef.current = null;
     });
   }, [enabled, onDidSync, onWillSyncTarget]);
@@ -211,6 +212,7 @@ export function useSplitPanelHorizontalState({
 
   useEffect(() => () => {
     if (splitRatioFrameRef.current) cancelAnimationFrame(splitRatioFrameRef.current);
+    if (syncReleaseFrameRef.current) cancelAnimationFrame(syncReleaseFrameRef.current);
     stopSplitterResize();
   }, [stopSplitterResize]);
 

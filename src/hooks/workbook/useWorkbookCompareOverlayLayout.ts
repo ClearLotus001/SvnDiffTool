@@ -24,7 +24,7 @@ interface UseWorkbookCompareOverlayLayoutParams {
   viewportHeight: number;
   activeDiffRegion: WorkbookDiffRegion | null;
   activeSheetName: string | null;
-  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
+  columnLayoutByColumn: ReadonlyMap<number, HorizontalVirtualColumnEntry>;
   contentLeft: number;
   frozenWidth: number;
   freezeColumnCount: number;

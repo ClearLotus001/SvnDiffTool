@@ -1,10 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { computeVirtualWindow } from '../src/hooks/virtualization/useVirtual';
 import {
+  computeVirtualWindow,
+  doesVirtualWindowCoverViewport,
+  shouldRetainVirtualWindow,
+} from '../src/hooks/virtualization/useVirtual';
+import {
+  computeVariableRange,
+  doesVariableVirtualRangeCoverViewport,
+  shouldRetainVariableVirtualRange,
+} from '../src/hooks/virtualization/useVariableVirtual';
+import {
+  buildHorizontalColumnLayoutBase,
+  buildHorizontalVirtualColumnsLayout,
   computeHorizontalWindow,
   createFullHorizontalWindow,
+  overlayFrozenHorizontalColumnLayout,
   preparePositionedMergedColumnRanges,
   resolveStableHorizontalColumnEntries,
 } from '../src/hooks/virtualization/useHorizontalVirtualColumns';
@@ -23,6 +35,101 @@ test('computeVirtualWindow clamps overscrolled viewports back into the available
 
   assert.equal(window.startIdx, 6);
   assert.equal(window.endIdx, 10);
+});
+
+test('fixed-height virtualization retains its overscan window until the viewport nears an edge', () => {
+  const count = 10_000;
+  const rowHeight = 24;
+  const viewportHeight = 600;
+  const initial = computeVirtualWindow(count, rowHeight, viewportHeight, 0, 12, 1.5);
+
+  assert.equal(shouldRetainVirtualWindow(
+    initial,
+    count,
+    rowHeight,
+    viewportHeight,
+    rowHeight * 10,
+    12,
+    1.5,
+  ), true);
+  assert.equal(shouldRetainVirtualWindow(
+    initial,
+    count,
+    rowHeight,
+    viewportHeight,
+    rowHeight * 20,
+    12,
+    1.5,
+  ), false);
+});
+
+test('fixed-height virtualization detects fast jumps outside the prepared window', () => {
+  const current = computeVirtualWindow(10_000, 24, 600, 0, 12, 1.5);
+
+  assert.equal(doesVirtualWindowCoverViewport(current, 10_000, 24, 600, 240), true);
+  assert.equal(doesVirtualWindowCoverViewport(current, 10_000, 24, 600, 24_000), false);
+});
+
+test('fixed-height virtualization avoids rebuilding the window for every scrolled row', () => {
+  const count = 10_000;
+  const rowHeight = 24;
+  const viewportHeight = 600;
+  let current = computeVirtualWindow(count, rowHeight, viewportHeight, 0, 12, 1.5);
+  let updates = 1;
+
+  for (let row = 1; row <= 80; row += 1) {
+    const scrollTop = row * rowHeight;
+    if (!shouldRetainVirtualWindow(current, count, rowHeight, viewportHeight, scrollTop, 12, 1.5)) {
+      current = computeVirtualWindow(count, rowHeight, viewportHeight, scrollTop, 12, 1.5);
+      updates += 1;
+    }
+
+    const visibleStart = Math.floor(scrollTop / rowHeight);
+    const visibleEnd = Math.ceil((scrollTop + viewportHeight) / rowHeight);
+    assert.ok(current.startIdx <= visibleStart);
+    assert.ok(current.endIdx >= visibleEnd);
+  }
+
+  assert.ok(updates <= 6, `expected at most 6 window updates, got ${updates}`);
+});
+
+test('variable-height virtualization retains a covered range and refreshes near its guard band', () => {
+  const heights = Array.from({ length: 10_000 }, (_, index) => (index % 7 === 0 ? 48 : 24));
+  const prefixSums = new Array<number>(heights.length + 1).fill(0);
+  heights.forEach((height, index) => {
+    prefixSums[index + 1] = prefixSums[index]! + height;
+  });
+  const totalH = prefixSums[prefixSums.length - 1] ?? 0;
+  const averageHeight = totalH / heights.length;
+  const viewportHeight = 600;
+  const params = {
+    heightsLength: heights.length,
+    prefixSums,
+    totalH,
+    averageHeight,
+    viewH: viewportHeight,
+    overscanMin: 12,
+    overscanFactor: 1.5,
+  };
+  let current = computeVariableRange({ ...params, scrollTop: 0 });
+  let updates = 1;
+
+  assert.equal(doesVariableVirtualRangeCoverViewport(current, { ...params, scrollTop: 240 }), true);
+  assert.equal(doesVariableVirtualRangeCoverViewport(current, { ...params, scrollTop: 24_000 }), false);
+
+  for (let row = 1; row <= 80; row += 1) {
+    const scrollTop = prefixSums[row] ?? 0;
+    if (!shouldRetainVariableVirtualRange(current, { ...params, scrollTop })) {
+      current = computeVariableRange({ ...params, scrollTop });
+      updates += 1;
+    }
+
+    const visibleBottom = Math.min(totalH, scrollTop + viewportHeight);
+    assert.ok((prefixSums[current.startIdx] ?? 0) <= scrollTop);
+    assert.ok((prefixSums[current.endIdx] ?? totalH) >= visibleBottom);
+  }
+
+  assert.ok(updates <= 7, `expected at most 7 variable window updates, got ${updates}`);
 });
 
 test('computeHorizontalWindow expands the virtual range to fully cover merged columns', () => {
@@ -62,6 +169,31 @@ test('computeHorizontalWindow uses prefix sums for variable column widths', () =
   assert.equal(window.startIndex, 1);
   assert.equal(window.endIndex, 2);
   assert.equal(window.visibleColumnCount, 1);
+});
+
+test('merged-column positioning uses visible-column bounds for enormous sparse ranges', () => {
+  const positioned = preparePositionedMergedColumnRanges(
+    [0, 2, 5, 1_000_000_000],
+    [{ startRow: 1, endRow: 1, startCol: 1, endCol: 999_999_999 }],
+  );
+
+  assert.deepEqual(positioned, [{ startPosition: 1, endPosition: 2 }]);
+});
+
+test('shared horizontal layout contains reusable width and merge metrics', () => {
+  const layout = buildHorizontalVirtualColumnsLayout({
+    columns: [0, 2, 5],
+    cellWidth: 120,
+    frozenCount: 1,
+    getColumnWidth: column => column === 2 ? 180 : 120,
+    mergedRanges: [{ startRow: 1, endRow: 1, startCol: 1, endCol: 4 }],
+  });
+
+  assert.deepEqual(layout.frozenPrefixSums, [0, 120]);
+  assert.deepEqual(layout.nonFrozenPrefixSums, [0, 180, 300]);
+  assert.equal(layout.fullFrozenWidth, 120);
+  assert.equal(layout.totalNonFrozenWidth, 300);
+  assert.deepEqual(layout.positionedMergedRanges, [{ startPosition: 1, endPosition: 1 }]);
 });
 
 test('createFullHorizontalWindow returns a stable all-column window for narrow workbooks', () => {
@@ -120,4 +252,35 @@ test('resolveStableHorizontalColumnEntries reuses cached entries for the same la
 
   assert.equal(resolved.entries, previousEntries);
   assert.equal(resolved.layout, layout);
+});
+
+test('frozen column overlays reuse every non-frozen entry from the base layout', () => {
+  const entries = Array.from({ length: 1_000 }, (_, column) => ({
+    column,
+    position: column,
+    width: 120,
+    displayWidth: 120,
+    offset: column * 120,
+    absoluteOffset: column * 120,
+  }));
+  const base = buildHorizontalColumnLayoutBase(entries, 4, 320, 480);
+  const overlay = overlayFrozenHorizontalColumnLayout(base, entries.slice(0, 4), 96);
+
+  assert.equal(overlay.size, entries.length);
+  assert.equal(overlay.get(500), base.get(500));
+  assert.notEqual(overlay.get(0), base.get(0));
+  assert.equal(overlay.get(0)?.offset, -96);
+  assert.equal(overlay.get(3)?.offset, 264);
+  assert.equal(overlay.get(4)?.offset, 320);
+  assert.equal([...overlay].length, entries.length);
+});
+
+test('zero frozen-column scroll reuses the complete base layout identity', () => {
+  const entries = [
+    { column: 0, position: 0, width: 120, displayWidth: 120, offset: 0, absoluteOffset: 0 },
+    { column: 1, position: 1, width: 120, displayWidth: 120, offset: 120, absoluteOffset: 120 },
+  ];
+  const base = buildHorizontalColumnLayoutBase(entries, 1, 120, 120);
+
+  assert.equal(overlayFrozenHorizontalColumnLayout(base, entries.slice(0, 1), 0), base);
 });

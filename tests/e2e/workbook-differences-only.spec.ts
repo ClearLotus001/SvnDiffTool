@@ -57,25 +57,14 @@ test('workbook display menu can persist the differences-only view', async ({ pag
   ))).toBe(true);
 
   await page.keyboard.press('Escape');
-  await page.mouse.move(0, 0);
-  await expect(page.getByRole('tooltip')).toHaveCount(0);
+  await expect(page.getByTestId('diff-filter-all')).toHaveAttribute('aria-checked', 'true');
   const quickToggle = page.getByTestId('toolbar-diff-only');
-  await expect(quickToggle).toHaveAttribute('aria-label', 'Hide unchanged rows and show differences only');
   await expect(quickToggle).toHaveAttribute('aria-pressed', 'true');
   await quickToggle.click();
   await expect(quickToggle).toHaveAttribute('aria-pressed', 'false');
   await expect.poll(async () => page.evaluate(() => (
     JSON.parse(window.localStorage.getItem('versora.settings') ?? '{}').showOnlyDifferences
   ))).toBe(false);
-
-  await page.mouse.move(0, 0);
-  await quickToggle.hover();
-  const quickTooltip = page.getByRole('tooltip');
-  await expect(quickTooltip).toHaveText('Hide unchanged rows and show differences only');
-  await expect.poll(async () => {
-    const box = await quickTooltip.boundingBox();
-    return box ? box.height : Number.POSITIVE_INFINITY;
-  }).toBeLessThanOrEqual(40);
 });
 
 test('differences-only view removes unchanged worksheet tabs', async ({ page }) => {
@@ -314,4 +303,52 @@ test('differences-only hides goto line controls and shortcut', async ({ page }) 
   await expect(page.locator('.app-stats-bar')).not.toContainText('Ctrl+G goto');
   await page.keyboard.press('Control+g');
   await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('differences-only disables adjacent workbook hunk navigation', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.addInitScript(() => {
+    window.localStorage.setItem('versora.locale', 'en-US');
+    window.localStorage.setItem('versora.settings', JSON.stringify({
+      themeKey: 'light',
+      showOnlyDifferences: true,
+      settingsSchemaVersion: 2,
+    }));
+    window.versora = { getLaunchContext: () => new Promise(() => {}) } as NonNullable<typeof window.versora>;
+  });
+  await page.goto('/?__e2e=1');
+  await page.waitForFunction(() => Boolean(window.__SVN_DIFF_E2E__));
+  await page.evaluate(async () => {
+    await window.__SVN_DIFF_E2E__!.loadWorkbookDiff({
+      fileName: 'differences-only-hunks.xlsx',
+      layout: 'split-h',
+      collapseCtx: false,
+      showOnlyDifferences: true,
+      baseContent: [
+        '@@sheet\tChanged',
+        '@@row\t1\tID\tName',
+        '@@row\t2\t1\tBefore A',
+        '@@row\t8\t2\tSame',
+        '@@row\t14\t3\tBefore B',
+      ].join('\n'),
+      mineContent: [
+        '@@sheet\tChanged',
+        '@@row\t1\tID\tName',
+        '@@row\t2\t1\tAfter A',
+        '@@row\t8\t2\tSame',
+        '@@row\t14\t3\tAfter B',
+      ].join('\n'),
+    });
+  });
+  await page.waitForFunction(() => window.__SVN_DIFF_E2E__?.getSnapshot().isWorkbookMode === true);
+
+  const nextHunk = page.getByRole('button', { name: 'Next hunk (F7)' });
+  await expect(nextHunk).toHaveCount(0);
+  await expect(page.locator('.app-stats-bar')).not.toContainText('F7 next');
+  await page.keyboard.press('F7');
+  await expect(nextHunk).toHaveCount(0);
+
+  await page.getByTestId('toolbar-diff-only').click();
+  await expect(nextHunk).toHaveCount(1);
+  await expect(page.locator('.app-stats-bar')).toContainText('F7 next');
 });

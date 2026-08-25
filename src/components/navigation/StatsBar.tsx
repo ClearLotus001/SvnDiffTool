@@ -31,6 +31,7 @@ interface StatsBarProps {
   workbookCellChangeSummary?: WorkbookCellChangeSummary | null;
   lineSelectionSummary?: TextLineSelectionSummary | null;
   showGotoShortcut?: boolean;
+  showHunkNavigationShortcut?: boolean;
 }
 
 const SCROLL_RAIL_CLASS = 'overflow-x-auto overflow-y-hidden [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden';
@@ -95,6 +96,7 @@ const StatsBar = memo(({
   workbookCellChangeSummary = null,
   lineSelectionSummary = null,
   showGotoShortcut = true,
+  showHunkNavigationShortcut = true,
 }: StatsBarProps) => {
   const { t } = useI18n();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -116,7 +118,13 @@ const StatsBar = memo(({
   const addedPalette = resolveDiffIndicatorCssPalette('add');
   const deletedPalette = resolveDiffIndicatorCssPalette('delete');
   const modifiedPalette = resolveDiffIndicatorCssPalette('modify');
-  const shortcutHint = t(showGotoShortcut ? 'statsHints' : 'statsHintsWithoutGoto');
+  const shortcutHint = t(
+    !showHunkNavigationShortcut
+      ? 'statsHintsWithoutHunkNavigation'
+      : showGotoShortcut
+        ? 'statsHints'
+        : 'statsHintsWithoutGoto',
+  );
 
   useEffect(() => {
     const root = rootRef.current;

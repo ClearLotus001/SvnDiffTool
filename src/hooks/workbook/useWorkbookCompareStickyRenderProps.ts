@@ -31,7 +31,7 @@ interface UseWorkbookCompareStickyRenderPropsParams {
   selection: WorkbookSelectionState;
   fontSize: number;
   renderColumns: HorizontalVirtualColumnEntry[];
-  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
+  columnLayoutByColumn: ReadonlyMap<number, HorizontalVirtualColumnEntry>;
   stackedHeaderSide: 'base' | 'mine';
   hiddenColumnSegments: ComponentProps<typeof WorkbookCompareStickyCanvas>['headerProps']['hiddenColumnSegments'];
   onSelectColumn: ComponentProps<typeof WorkbookCompareStickyCanvas>['headerProps']['onSelectColumn'];

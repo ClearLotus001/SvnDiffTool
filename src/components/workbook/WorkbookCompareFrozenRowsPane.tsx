@@ -53,7 +53,7 @@ interface WorkbookCompareFrozenRowsPaneProps {
   fontSize: number;
   visibleColumns: number[];
   renderColumns: HorizontalVirtualColumnEntry[];
-  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
+  columnLayoutByColumn: ReadonlyMap<number, HorizontalVirtualColumnEntry>;
   baseMergedRanges: ReadonlyArray<WorkbookMergeRange>;
   mineMergedRanges: ReadonlyArray<WorkbookMergeRange>;
   rowEntryByRowNumber: WorkbookRowEntryMaps;

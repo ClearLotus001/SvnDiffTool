@@ -42,7 +42,7 @@ interface WorkbookRegionOverlayGeometryOptions {
   region: WorkbookDiffRegion;
   visibleRowFrames: Map<number, { top: number; height: number }>;
   boundsModes: WorkbookRegionOverlayBoundsMode[];
-  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
+  columnLayoutByColumn: ReadonlyMap<number, HorizontalVirtualColumnEntry>;
   contentLeft: number;
   scrollLeft: number;
   frozenWidth: number;
@@ -60,7 +60,7 @@ interface WorkbookRegionOverlayVerticalBounds {
 interface BuildWorkbookPatchOverlayBoxesParams {
   region: WorkbookDiffRegion;
   visibleRows: Array<[number, { top: number; height: number }]>;
-  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
+  columnLayoutByColumn: ReadonlyMap<number, HorizontalVirtualColumnEntry>;
   contentLeft: number;
   scrollLeft: number;
   frozenWidth: number;
@@ -73,7 +73,7 @@ interface BuildWorkbookPatchOverlayBoxesParams {
 interface BuildWorkbookRegionOutlineOverlayBoxesParams {
   region: WorkbookDiffRegion;
   visibleRows: Array<[number, { top: number; height: number }]>;
-  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
+  columnLayoutByColumn: ReadonlyMap<number, HorizontalVirtualColumnEntry>;
   contentLeft: number;
   scrollLeft: number;
   frozenWidth: number;
@@ -237,7 +237,7 @@ function getWorkbookCanvasSpanGeometryFromOffsets(params: {
 
 export function resolveWorkbookRegionHorizontalBounds(params: {
   region: WorkbookDiffRegion;
-  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
+  columnLayoutByColumn: ReadonlyMap<number, HorizontalVirtualColumnEntry>;
   freezeColumnCount: number;
   resolvePatchBoundsModes: (patch: WorkbookDiffRegion['patches'][number]) => WorkbookRegionOverlayBoundsMode[];
   fallbackBoundsModes?: WorkbookRegionOverlayBoundsMode[];

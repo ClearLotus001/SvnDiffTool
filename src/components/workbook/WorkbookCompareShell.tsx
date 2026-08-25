@@ -5,6 +5,7 @@ interface WorkbookCompareShellProps {
   mergeNotice?: ReactNode;
   frozenOverflowBar?: ReactNode;
   mainContent: ReactNode;
+  fastScrollLayer?: ReactNode;
   collapseJumpButton: ReactNode;
   miniMap: ReactNode;
   hoverTooltip?: ReactNode;
@@ -16,6 +17,7 @@ export default function WorkbookCompareShell({
   mergeNotice,
   frozenOverflowBar,
   mainContent,
+  fastScrollLayer,
   collapseJumpButton,
   miniMap,
   hoverTooltip,
@@ -29,6 +31,7 @@ export default function WorkbookCompareShell({
       <div className="flex-1 flex overflow-hidden min-w-0 min-h-0">
         <div className="relative flex-1 flex flex-col min-w-0 min-h-0">
           {mainContent}
+          {fastScrollLayer}
           {collapseJumpButton}
         </div>
         {miniMap}

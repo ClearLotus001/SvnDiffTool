@@ -28,7 +28,7 @@ test('masked region model merges adjacent irrelevant cells and pairs both versio
     rows: [row(2, 1), row(3, 1)],
     visibleColumns: [0, 1, 2],
     compareMode: 'strict',
-    renderPolicy: { mode: 'differences-only', maskIrrelevantCells: true },
+    renderPolicy: { mode: 'differences-only', maskIrrelevantCells: true, diffTypeFilter: 'all' },
     sheetName: 'Sheet1',
     headerRowNumber: 1,
   });
@@ -49,7 +49,7 @@ test('full render policy does not build masked regions', () => {
     rows: [row(2, 1)],
     visibleColumns: [0, 1, 2],
     compareMode: 'strict',
-    renderPolicy: { mode: 'full', maskIrrelevantCells: false },
+    renderPolicy: { mode: 'full', maskIrrelevantCells: false, diffTypeFilter: 'all' },
     sheetName: 'Sheet1',
     headerRowNumber: 1,
   });

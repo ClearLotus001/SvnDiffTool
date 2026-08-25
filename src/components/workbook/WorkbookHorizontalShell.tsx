@@ -20,6 +20,7 @@ interface WorkbookHorizontalShellProps {
   frozenOverflowBar?: ReactNode;
   leftPane: ReactNode;
   rightPane: ReactNode;
+  fastScrollLayer?: ReactNode;
   collapseJumpButton: ReactNode;
   miniMap: ReactNode;
   hoverTooltip?: ReactNode;
@@ -40,6 +41,7 @@ export default function WorkbookHorizontalShell({
   frozenOverflowBar,
   leftPane,
   rightPane,
+  fastScrollLayer,
   collapseJumpButton,
   miniMap,
   hoverTooltip,
@@ -57,6 +59,7 @@ export default function WorkbookHorizontalShell({
             ref={paneContainerRef}
             className="flex-1 min-w-0 min-h-0"
             style={{
+              position: 'relative',
               display: 'grid',
               gridTemplateColumns: paneGridTemplateColumns,
               alignItems: 'stretch',
@@ -106,6 +109,7 @@ export default function WorkbookHorizontalShell({
               />
             </div>
             {rightPane}
+            {fastScrollLayer}
           </div>
           {collapseJumpButton}
         </div>

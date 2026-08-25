@@ -19,7 +19,7 @@ interface WorkbookActiveRegionOverlayLayerProps {
   activeDiffRegion: WorkbookDiffRegion | null;
   activeSheetName: string | null;
   visibleRowFrames: Map<number, { top: number; height: number }>;
-  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
+  columnLayoutByColumn: ReadonlyMap<number, HorizontalVirtualColumnEntry>;
   contentLeft: number;
   frozenWidth: number;
   freezeColumnCount: number;
@@ -70,7 +70,7 @@ interface BuildWorkbookActiveRegionOverlayBoxSetParams {
   activeDiffRegion: WorkbookDiffRegion | null;
   activeSheetName: string | null;
   visibleRows: Array<[number, { top: number; height: number }]>;
-  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
+  columnLayoutByColumn: ReadonlyMap<number, HorizontalVirtualColumnEntry>;
   contentLeft: number;
   scrollLeft: number;
   frozenWidth: number;

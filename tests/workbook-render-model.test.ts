@@ -39,7 +39,7 @@ function buildModel(sectionRows: SplitRow[], items: RenderModelProbeItem[]) {
     mineVersion: 'MINE',
     visibleColumns: [0],
     compareMode: 'strict',
-    renderPolicy: { mode: 'full', maskIrrelevantCells: false },
+    renderPolicy: { mode: 'full', maskIrrelevantCells: false, diffTypeFilter: 'all' },
     headerRowNumber: 1,
     items,
     renderItemIndexesCacheKey: 'probe:model:v1',

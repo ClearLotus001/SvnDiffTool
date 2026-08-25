@@ -108,6 +108,7 @@ import WorkbookCompareBody from '@/components/workbook/WorkbookCompareBody';
 import WorkbookCompareShell from '@/components/workbook/WorkbookCompareShell';
 import WorkbookCompareStickyCanvas from '@/components/workbook/WorkbookCompareStickyCanvas';
 import WorkbookCompareStickyRegion from '@/components/workbook/WorkbookCompareStickyRegion';
+import WorkbookCompareFastScrollViewport from '@/components/workbook/WorkbookCompareFastScrollViewport';
 import { WorkbookMaskedRegionRevealProvider } from '@/components/workbook/WorkbookMaskedRegionRevealContext';
 import { useAppStore } from '@/store/appStore';
 import {
@@ -126,13 +127,13 @@ import {
 } from '@/utils/workbook/workbookAutoCollapse';
 import { buildWorkbookNavigationLayoutKey } from '@/utils/workbook/workbookNavigationLayoutKey';
 import {
+  filterWorkbookRowsByVisibility,
   filterWorkbookSectionsByVisibility,
   type WorkbookVisibilityModel,
 } from '@/utils/workbook/workbookVisibilityModel';
 
 type CompareMode = 'stacked' | 'columns';
 
-const EMPTY_HEIGHTS: number[] = [];
 const WORKBOOK_STABLE_COLUMN_WINDOW_LIMIT = 96;
 
 export interface WorkbookComparePanelProps {
@@ -299,9 +300,17 @@ const WorkbookComparePanel = memo(({
       ? `${guidedPulseNonce}:${activeHunkIdx}:${activeDiffRegion.id}`
       : null
   ), [active, activeDiffRegion, activeHunkIdx, activeWorkbookSection?.name, guidedPulseNonce]);
-  const sectionRows = useMemo(
+  const sourceSectionRows = useMemo(
     () => (activeWorkbookSection ? (workbookSectionRowIndex.get(activeWorkbookSection.name)?.rows ?? []) : []),
     [activeWorkbookSection, workbookSectionRowIndex],
+  );
+  const sectionRows = useMemo(
+    () => filterWorkbookRowsByVisibility(
+      visibilityModel,
+      activeWorkbookSection,
+      sourceSectionRows,
+    ),
+    [activeWorkbookSection, sourceSectionRows, visibilityModel],
   );
   const protectedLineIdxSet = useMemo(() => {
     const next = new Set<number>();
@@ -446,19 +455,16 @@ const WorkbookComparePanel = memo(({
   const visibleRowItemIndexByLineIdx = mode === 'stacked'
     ? stackedVisibleRowItemIndexByLineIdx
     : columnVisibleRowItemIndexByLineIdx;
-  const columnsVariableVirtualHeights = mode === 'columns' ? itemHeights : EMPTY_HEIGHTS;
-  const columnsVariableVirtual = useVariableVirtual(
-    columnsVariableVirtualHeights,
+  const activeVirtual = useVariableVirtual(
+    mode === 'stacked' ? stackedVirtualHeights : itemHeights,
     scrollRef as RefObject<HTMLDivElement | null>,
-    { overscanMin: 12, overscanFactor: 1.5, syncKey: activeWorkbookSection?.name ?? '' },
+    {
+      overscanMin: mode === 'stacked' ? 2 : 12,
+      overscanFactor: mode === 'stacked' ? 0.75 : 1.5,
+      syncKey: activeWorkbookSection?.name ?? '',
+      enableFastScrollSession: true,
+    },
   );
-  const stackedVariableVirtualHeights = mode === 'stacked' ? stackedVirtualHeights : EMPTY_HEIGHTS;
-  const stackedVariableVirtual = useVariableVirtual(
-    stackedVariableVirtualHeights,
-    scrollRef as RefObject<HTMLDivElement | null>,
-    { overscanMin: 2, overscanFactor: 0.75, syncKey: activeWorkbookSection?.name ?? '' },
-  );
-  const activeVirtual = mode === 'stacked' ? stackedVariableVirtual : columnsVariableVirtual;
   const {
     totalH,
     startIdx,
@@ -1624,6 +1630,24 @@ const WorkbookComparePanel = memo(({
             <WorkbookCompareBody {...bodyRenderProps} />
           </div>
         </div>
+      )}
+      fastScrollLayer={(
+        <WorkbookCompareFastScrollViewport
+          scrollRef={scrollRef as RefObject<HTMLDivElement | null>}
+          viewportWidth={virtualColumns.debug.viewportWidth}
+          viewportHeight={rowVirtualDebug.viewportHeight}
+          stickyHeaderHeight={stickyHeaderHeight}
+          minBodyWidth={minBodyWidth}
+          mode={mode}
+          items={items}
+          itemHeights={itemHeights}
+          stackedVirtualItems={stackedVirtualItems}
+          guidedHunkRange={guidedHunkRange}
+          activeSearchLineIdx={activeSearchLineIdx}
+          searchMatchSet={searchMatchSet}
+          columnsCanvasProps={bodyRenderProps.columnsCanvasProps}
+          stackedCanvasProps={bodyRenderProps.stackedCanvasProps}
+        />
       )}
       collapseJumpButton={(
         <CollapseJumpButton

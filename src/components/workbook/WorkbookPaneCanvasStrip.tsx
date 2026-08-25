@@ -85,6 +85,13 @@ import useWorkbookCanvasHoverController, { resolveWorkbookCanvasHoverForCanvas }
 import useWorkbookCanvasSelectionInteractions from '@/components/workbook/useWorkbookCanvasSelectionInteractions';
 import { useWorkbookMaskedRegionReveal } from '@/components/workbook/WorkbookMaskedRegionRevealContext';
 import type { WorkbookCompareStateByRow } from '@/utils/workbook/workbookPanelHelpers';
+import { subscribeWorkbookCanvasScrollFrame } from '@/utils/workbook/workbookCanvasFrameScheduler';
+import {
+  buildWorkbookCanvasBitmapCacheKey,
+  buildWorkbookCanvasBitmapViewportColumnKey,
+  restoreWorkbookCanvasBitmap,
+  storeWorkbookCanvasBitmap,
+} from '@/utils/workbook/workbookCanvasBitmapCache';
 
 export interface WorkbookPaneCanvasRow {
   row: SplitRow;
@@ -113,7 +120,7 @@ interface WorkbookPaneCanvasStripProps {
   fontSize: number;
   visibleColumns: number[];
   renderColumns: HorizontalVirtualColumnEntry[];
-  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
+  columnLayoutByColumn: ReadonlyMap<number, HorizontalVirtualColumnEntry>;
   mergedRanges: ReadonlyArray<WorkbookMergeRange>;
   rowEntryByRowNumber: Map<number, WorkbookRowEntry>;
   compareStateByRow: WorkbookCompareStateByRow;
@@ -154,7 +161,6 @@ const WorkbookPaneCanvasStrip = memo(({
 }: WorkbookPaneCanvasStripProps) => {
   const T = useThemeTokens();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rafRef = useRef(0);
   const clearHoverRef = useRef<() => void>(() => {});
   const clearMaskedRegionRef = useRef<() => void>(() => {});
   const hasActiveHoverRef = useRef<() => boolean>(() => false);
@@ -223,6 +229,27 @@ const WorkbookPaneCanvasStrip = memo(({
     const contentLeft = LN_W + 3;
     return { frozenEntries, floatingEntries, frozenWidth, contentLeft };
   }, [renderColumns, freezeColumnCount]);
+  const bitmapCacheEnabled = !dragPreviewActive && Object.keys(motionByRegion).length === 0;
+  const bitmapCacheBaseKey = useMemo(() => buildWorkbookCanvasBitmapCacheKey('pane', [
+    sheetName,
+    side,
+    versionLabel,
+    rows.map(row => `${row.row.lineIdx}:${Number(row.isSearchMatch)}:${Number(row.isActiveSearch)}:${Number(row.isGuided)}:${Number(row.isGuidedStart)}:${Number(row.isGuidedEnd)}`).join(','),
+    viewportWidth,
+    height,
+    freezeColumnCount,
+    headerRowNumber,
+    fontSize,
+    compareMode,
+    selection,
+    T,
+    mergedRanges,
+    rowEntryByRowNumber,
+    compareStateByRow,
+    compareCellsByRowNumber,
+    maskedRegions,
+    motionByRegion,
+  ]), [T, compareCellsByRowNumber, compareMode, compareStateByRow, fontSize, freezeColumnCount, headerRowNumber, height, maskedRegions, mergedRanges, motionByRegion, rowEntryByRowNumber, rows, selection, sheetName, side, versionLabel, viewportWidth]);
   const hitColumnFramesCacheRef = useRef<{
     columnPartition: typeof columnPartition;
     scrollLeft: number;
@@ -270,6 +297,12 @@ const WorkbookPaneCanvasStrip = memo(({
 
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
+      const viewportColumnKey = buildWorkbookCanvasBitmapViewportColumnKey(
+        getHitColumnFrames(currentScrollLeft),
+        width,
+      );
+      const bitmapCacheKey = `${bitmapCacheBaseKey}|columns:${viewportColumnKey}|x:${currentScrollLeft.toFixed(2)}`;
+      if (bitmapCacheEnabled && restoreWorkbookCanvasBitmap(canvas, bitmapCacheKey)) return;
 
       ctx.save();
       ctx.scale(dpr, dpr);
@@ -870,43 +903,27 @@ const WorkbookPaneCanvasStrip = memo(({
       }
 
       ctx.restore();
+      if (bitmapCacheEnabled) storeWorkbookCanvasBitmap(canvas, bitmapCacheKey);
     };
 
     drawRef.current = draw;
-    if (rafRef.current) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = 0;
-    }
     draw();
 
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      rafRef.current = 0;
-    };
-  }, [columnLayoutByColumn, columnPartition, compareCellsByRowNumber, compareMode, contentWidth, dragPreviewActive, freezeColumnCount, headerRowNumber, height, maskedRegions, mergedRanges, motionByRegion, renderedColumnNumbers, renderColumns, renderRows, renderedRowNumbers, rowEntryByRowNumber, rowLayoutByRowNumber, scrollRef, selectionLookup, sheetName, side, sizes.line, sizes.ui, T, viewportWidth]);
+    return undefined;
+  }, [bitmapCacheBaseKey, bitmapCacheEnabled, columnLayoutByColumn, columnPartition, compareCellsByRowNumber, compareMode, contentWidth, dragPreviewActive, freezeColumnCount, getHitColumnFrames, headerRowNumber, height, maskedRegions, mergedRanges, motionByRegion, renderedColumnNumbers, renderColumns, renderRows, renderedRowNumbers, rowEntryByRowNumber, rowLayoutByRowNumber, scrollRef, selectionLookup, sheetName, side, sizes.line, sizes.ui, T, viewportWidth]);
 
   useEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller) return;
 
     let lastScrollLeft = scroller.scrollLeft ?? 0;
-    const onScroll = () => {
-      const nextScrollLeft = scroller.scrollLeft ?? 0;
+    return subscribeWorkbookCanvasScrollFrame(scroller, ({ scrollLeft: nextScrollLeft }) => {
       if (nextScrollLeft === lastScrollLeft) return;
       lastScrollLeft = nextScrollLeft;
       if (hasActiveHoverRef.current()) clearHoverRef.current();
       clearMaskedRegionRef.current();
-      if (rafRef.current) return;
-      rafRef.current = requestAnimationFrame(() => {
-        rafRef.current = 0;
-        drawRef.current('scroll');
-      });
-    };
-
-    scroller.addEventListener('scroll', onScroll, { passive: true });
-    return () => {
-      scroller.removeEventListener('scroll', onScroll);
-    };
+      drawRef.current('scroll');
+    });
   }, [scrollRef]);
 
   const resolveHit = (

@@ -11,6 +11,7 @@ import {
   resolveWorkbookOverlayPalette,
   type WorkbookRowSemanticTone,
 } from '@/utils/workbook/workbookRowVisuals';
+import { subscribeWorkbookCanvasScrollFrame } from '@/utils/workbook/workbookCanvasFrameScheduler';
 
 export type { WorkbookDiffRegionOverlayBox };
 
@@ -422,7 +423,6 @@ const WorkbookDiffRegionOverlay = memo(({
   const drawRef = useRef<((reason?: string) => void) | null>(null);
   const lastDebugLogAtRef = useRef(0);
   const lastScrollLeftRef = useRef(0);
-  const scrollRafRef = useRef(0);
   const [pulseNonce, setPulseNonce] = useState(0);
   const [pulseProgress, setPulseProgress] = useState(1);
   const effectiveCanvasHeight = canvasHeight;
@@ -652,19 +652,9 @@ const WorkbookDiffRegionOverlay = memo(({
     const scroller = scrollRef.current;
     if (!scroller) return;
 
-    const scheduleDraw = (reason: string) => {
-      if (scrollRafRef.current) return;
-      scrollRafRef.current = requestAnimationFrame(() => {
-        scrollRafRef.current = 0;
-        drawRef.current?.(reason);
-      });
-    };
-
-    const handleScroll = () => {
+    return subscribeWorkbookCanvasScrollFrame(scroller, ({ scrollLeft, scrollTop }) => {
       // The compositor scrolls the canvas with the workbook content, so redraw
       // only for horizontal column changes or when the buffer must move.
-      const scrollLeft = Math.max(0, scroller.scrollLeft);
-      const scrollTop = Math.max(0, scroller.scrollTop);
       const outOfBounds = scrollTop < canvasAnchorTop
         || scrollTop + viewportHeight > canvasAnchorTop + canvasHeight;
 
@@ -675,14 +665,9 @@ const WorkbookDiffRegionOverlay = memo(({
 
       if (scrollLeft !== lastScrollLeftRef.current) {
         lastScrollLeftRef.current = scrollLeft;
-        scheduleDraw('scroll');
+        drawRef.current?.('scroll');
       }
-    };
-    scroller.addEventListener('scroll', handleScroll, { passive: true });
-    return () => {
-      scroller.removeEventListener('scroll', handleScroll);
-      if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
-    };
+    });
   }, [canvasAnchorTop, canvasHeight, onRepositionNeeded, scrollRef, viewportHeight]);
 
   if (viewportWidth <= 0 || viewportHeight <= 0) return null;

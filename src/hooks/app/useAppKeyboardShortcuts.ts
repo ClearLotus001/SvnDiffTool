@@ -7,6 +7,7 @@ import { useAppStore } from '@/store/appStore';
 interface UseAppKeyboardShortcutsArgs {
   dialogs: DialogController;
   isWorkbookMode: boolean;
+  hunkNavigationEnabled: boolean;
   selectedCell: WorkbookSelectedCell | null;
   handleNavigationStep: (direction: -1 | 1) => void;
   handleSearchPreviewNav: (dir: 1 | -1) => void;
@@ -43,6 +44,7 @@ function isEditableTarget(target: EventTarget | null) {
 export default function useAppKeyboardShortcuts({
   dialogs,
   isWorkbookMode,
+  hunkNavigationEnabled,
   selectedCell,
   handleNavigationStep,
   handleSearchPreviewNav,
@@ -55,7 +57,10 @@ export default function useAppKeyboardShortcuts({
   const setFontSize = useAppStore((s) => s.setFontSize);
   const setWorkbookContextMenu = useAppStore((s) => s.setWorkbookContextMenu);
   const showOnlyDifferences = useAppStore((s) => s.showOnlyDifferences);
-  const canGotoLine = !(isWorkbookMode && showOnlyDifferences);
+  const diffTypeFilter = useAppStore((s) => s.diffTypeFilter);
+  const canGotoLine = !(
+    isWorkbookMode && (showOnlyDifferences || diffTypeFilter !== 'all')
+  );
 
   const { state: dialogState, actions: dialogActions } = dialogs;
   const {
@@ -135,7 +140,9 @@ export default function useAppKeyboardShortcuts({
       }
       if (e.key === 'F7') {
         e.preventDefault();
-        startTransition(() => handleNavigationStep(e.shiftKey ? -1 : 1));
+        if (hunkNavigationEnabled) {
+          startTransition(() => handleNavigationStep(e.shiftKey ? -1 : 1));
+        }
         return;
       }
       if (e.key === 'f' && (e.ctrlKey || e.metaKey)) {
@@ -181,6 +188,7 @@ export default function useAppKeyboardShortcuts({
     handleSearchPreviewNav,
     handleSearchNav,
     hasBlockingModal,
+    hunkNavigationEnabled,
     isWorkbookMode,
     selectedCell,
     dialogActions,

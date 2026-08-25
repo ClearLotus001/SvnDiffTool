@@ -29,6 +29,7 @@ import {
   resolveWorkbookVersionAccent,
 } from '@/utils/workbook/workbookRowVisuals';
 import WorkbookAnchorTooltip, { type WorkbookAnchorTooltipState } from '@/components/workbook/WorkbookAnchorTooltip';
+import { subscribeWorkbookCanvasScrollFrame } from '@/utils/workbook/workbookCanvasFrameScheduler';
 import {
   formatWorkbookHiddenColumnMarkerCount,
   getWorkbookHiddenColumnMarkerWidth,
@@ -56,7 +57,7 @@ interface WorkbookCanvasHeaderStripProps {
   selection: WorkbookSelectionState;
   fontSize: number;
   renderColumns: HorizontalVirtualColumnEntry[];
-  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
+  columnLayoutByColumn: ReadonlyMap<number, HorizontalVirtualColumnEntry>;
   fixedSide?: 'base' | 'mine';
   showFixedSideAccent?: boolean;
   hiddenColumnSegments?: WorkbookHiddenColumnSegment[];
@@ -126,7 +127,6 @@ const WorkbookCanvasHeaderStrip = memo(({
   const themeKey = useTheme();
   const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rafRef = useRef(0);
   const sizes = useMemo(() => getWorkbookFontScale(fontSize), [fontSize]);
   const suppressClickRef = useRef(false);
   const [cursor, setCursor] = useState<'default' | 'pointer' | 'col-resize'>('default');
@@ -140,16 +140,6 @@ const WorkbookCanvasHeaderStrip = memo(({
     const contentLeft = LN_W + 3;
     return { frozenEntries, floatingEntries, frozenWidth, contentLeft };
   }, [renderColumns, freezeColumnCount]);
-
-  useEffect(() => {
-    const scroller = scrollRef.current;
-    if (!scroller) return undefined;
-    const handleScroll = () => setHiddenColumnHover((prev) => (prev !== null ? null : prev));
-    scroller.addEventListener('scroll', handleScroll, { passive: true });
-    return () => {
-      scroller.removeEventListener('scroll', handleScroll);
-    };
-  }, [scrollRef]);
 
   const resolveHiddenIndicatorLayouts = useCallback((currentScrollLeft: number) => {
     const contentLeft = LN_W + 3;
@@ -534,16 +524,9 @@ const WorkbookCanvasHeaderStrip = memo(({
     };
 
     drawRef.current = draw;
-    if (rafRef.current) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = 0;
-    }
     draw();
 
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      rafRef.current = 0;
-    };
+    return undefined;
   }, [
     contentWidth,
     cursor,
@@ -576,21 +559,12 @@ const WorkbookCanvasHeaderStrip = memo(({
     if (!scroller) return;
 
     let lastScrollLeft = scroller.scrollLeft ?? 0;
-    const onScroll = () => {
-      const nextScrollLeft = scroller.scrollLeft ?? 0;
+    return subscribeWorkbookCanvasScrollFrame(scroller, ({ scrollLeft: nextScrollLeft }) => {
+      setHiddenColumnHover((prev) => (prev !== null ? null : prev));
       if (nextScrollLeft === lastScrollLeft) return;
       lastScrollLeft = nextScrollLeft;
-      if (rafRef.current) return;
-      rafRef.current = requestAnimationFrame(() => {
-        rafRef.current = 0;
-        drawRef.current();
-      });
-    };
-
-    scroller.addEventListener('scroll', onScroll, { passive: true });
-    return () => {
-      scroller.removeEventListener('scroll', onScroll);
-    };
+      drawRef.current();
+    });
   }, [scrollRef]);
 
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {

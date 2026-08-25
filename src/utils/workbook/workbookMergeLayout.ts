@@ -208,7 +208,7 @@ export function getWorkbookSelectionSpanForSelection(
 export function getWorkbookColumnSpanBounds(
   startCol: number,
   endCol: number,
-  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>,
+  columnLayoutByColumn: ReadonlyMap<number, HorizontalVirtualColumnEntry>,
   mode: WorkbookColumnSpanMode,
   freezeColumnCount: number,
 ): WorkbookColumnSpanBounds | null {
@@ -468,7 +468,7 @@ export function getWorkbookMergedCompareCellFromRows(
 
 function getWorkbookVisibleStartColumn(params: {
   range: WorkbookMergeRange;
-  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
+  columnLayoutByColumn: ReadonlyMap<number, HorizontalVirtualColumnEntry>;
   contentLeft: number;
   currentScrollLeft: number;
   freezeColumnCount: number;
@@ -618,7 +618,7 @@ export function getWorkbookMergeDrawInfo(params: {
   rowLayoutByRowNumber?: Map<number, { top: number; height: number }>;
   renderedColumns?: number[];
   mergedRanges: ReadonlyArray<WorkbookMergeRange>;
-  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
+  columnLayoutByColumn: ReadonlyMap<number, HorizontalVirtualColumnEntry>;
   contentLeft: number;
   currentScrollLeft: number;
   freezeColumnCount: number;

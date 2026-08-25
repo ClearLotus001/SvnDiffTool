@@ -10,7 +10,7 @@ test('workbook differences-only view is enabled by default', () => {
 
 test('legacy settings migrate to differences-only while current settings preserve user choice', () => {
   const previousWindow = globalThis.window;
-  let stored = JSON.stringify({ showOnlyDifferences: false });
+  let stored = JSON.stringify({ showOnlyDifferences: false, diffTypeFilter: 'delete' });
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
     value: {
@@ -27,6 +27,7 @@ test('legacy settings migrate to differences-only while current settings preserv
     saveStoredAppSettings({ ...migrated, showOnlyDifferences: false, botEnabled: false });
     assert.equal(getStoredAppSettings().showOnlyDifferences, false);
     assert.equal(getStoredAppSettings().botEnabled, false);
+    assert.equal('diffTypeFilter' in JSON.parse(stored), false);
   } finally {
     if (previousWindow === undefined) {
       Reflect.deleteProperty(globalThis, 'window');

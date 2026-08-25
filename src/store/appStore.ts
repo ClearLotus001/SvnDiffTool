@@ -16,6 +16,7 @@ import type { SetStateAction } from 'react';
 import type {
   AppUpdateState,
   CompareContext,
+  DiffTypeFilter,
   DiffLine,
   DiffSourceNoticeCode,
   LayoutMode,
@@ -64,6 +65,7 @@ interface UiSettingsSlice {
   layout: LayoutMode;
   collapseCtx: boolean;
   showOnlyDifferences: boolean;
+  diffTypeFilter: DiffTypeFilter;
   showWhitespace: boolean;
   showHiddenColumns: boolean;
   botEnabled: boolean;
@@ -73,6 +75,7 @@ interface UiSettingsSlice {
   setLayout: (v: SetStateAction<LayoutMode>) => void;
   setCollapseCtx: (v: SetStateAction<boolean>) => void;
   setShowOnlyDifferences: (v: SetStateAction<boolean>) => void;
+  setDiffTypeFilter: (v: SetStateAction<DiffTypeFilter>) => void;
   setShowWhitespace: (v: SetStateAction<boolean>) => void;
   setShowHiddenColumns: (v: SetStateAction<boolean>) => void;
   setBotEnabled: (v: SetStateAction<boolean>) => void;
@@ -274,6 +277,7 @@ export const useAppStore = create<AppState>()((set) => ({
   layout: initialSettings.layout,
   collapseCtx: initialSettings.collapseCtx,
   showOnlyDifferences: initialSettings.showOnlyDifferences,
+  diffTypeFilter: 'all',
   showWhitespace: initialSettings.showWhitespace,
   showHiddenColumns: initialSettings.showHiddenColumns,
   botEnabled: initialSettings.botEnabled,
@@ -293,6 +297,7 @@ export const useAppStore = create<AppState>()((set) => ({
       } : {}),
     };
   }),
+  setDiffTypeFilter: setter(set, 'diffTypeFilter'),
   setShowWhitespace: setter(set, 'showWhitespace'),
   setShowHiddenColumns: setter(set, 'showHiddenColumns'),
   setBotEnabled: setter(set, 'botEnabled'),
@@ -447,6 +452,7 @@ export const useAppStore = create<AppState>()((set) => ({
     mineWorkbookMetadata: payload.mineWorkbookMetadata,
   })),
   resetDiffSessionToHome: () => set((state) => ({
+    diffTypeFilter: 'all',
     diffLines: [],
     diffSourceNoticeCode: null,
     diffSourceNoticeDismissed: false,

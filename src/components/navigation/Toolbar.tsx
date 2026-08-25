@@ -113,6 +113,7 @@ interface ToolbarProps {
   hunkIdx: number;
   totalHunks: number;
   hunkTargetLabel?: string;
+  showHunkNavigation?: boolean;
   onPrev: () => void;
   onNext: () => void;
   showSearch: boolean;
@@ -140,6 +141,7 @@ interface ToolbarProps {
   usesNativeWindowControls: boolean;
   isWindowMaximized: boolean;
   isWorkbookMode: boolean;
+  workbookContentFiltered: boolean;
   updateState: AppUpdateState | null;
   onCheckForUpdates: () => void;
   onDownloadUpdate: () => void;
@@ -151,7 +153,7 @@ const Toolbar = memo((props: ToolbarProps) => {
     isHome = false,
     fileName,
     themeKey, setThemeKey, layout, setLayout,
-    hunkIdx, totalHunks, hunkTargetLabel = '', onPrev, onNext,
+    hunkIdx, totalHunks, hunkTargetLabel = '', showHunkNavigation = true, onPrev, onNext,
     showSearch, setShowSearch, collapseCtx, setCollapseCtx,
     showOnlyDifferences, setShowOnlyDifferences,
     showWhitespace, setShowWhitespace, showHiddenColumns, setShowHiddenColumns,
@@ -159,12 +161,12 @@ const Toolbar = memo((props: ToolbarProps) => {
     workbookCompareMode, setWorkbookCompareMode,
     fontSize, setFontSize,
     onPickFile, onHome,
-    onGoto, onHelp, onAbout, isElectron, usesNativeWindowControls, isWindowMaximized, isWorkbookMode,
+    onGoto, onHelp, onAbout, isElectron, usesNativeWindowControls, isWindowMaximized, isWorkbookMode, workbookContentFiltered,
     updateState, onCheckForUpdates, onDownloadUpdate, onInstallUpdate,
   } = props;
 
   const { getThemeLabel, getLocaleLabel, getNextLocale, setLocale, t } = useI18n();
-  const showGotoAction = !(isWorkbookMode && showOnlyDifferences);
+  const showGotoAction = !(isWorkbookMode && workbookContentFiltered);
   const nextLocale = getNextLocale();
   const noDragStyle = (isElectron ? { WebkitAppRegion: 'no-drag' as const } : undefined) as CSSProperties | undefined;
   const noDragAnchorStyle = noDragStyle;
@@ -429,7 +431,7 @@ const Toolbar = memo((props: ToolbarProps) => {
         )}
 
         {/* Hunk navigation */}
-        {showDiffControls && (
+        {showDiffControls && showHunkNavigation && (
           <Group ariaLabel={t('toolbarNextHunkTitle')}>
           <Btn onClick={onPrev} tooltip={t('toolbarPrevHunkTitle')} compact>
             <Icon name="prev" />

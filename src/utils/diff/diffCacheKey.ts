@@ -7,7 +7,9 @@ function hasBytePayload(value: unknown): value is Uint8Array {
 export function buildDiffCacheKey(data: DiffData, compareMode: WorkbookCompareMode): string {
   const sourceIdentity = data.sourceIdentity?.trim();
   if (sourceIdentity) {
-    return [compareMode, sourceIdentity].join('::');
+    return data.isSideOrderSwapped
+      ? [compareMode, sourceIdentity, 'side-order-swapped'].join('::')
+      : [compareMode, sourceIdentity].join('::');
   }
 
   return [

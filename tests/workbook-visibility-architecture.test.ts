@@ -34,6 +34,8 @@ test('workbook visibility model is shared by panels search goto and canvas polic
   assert.match(appContent, /visibilityModel=\{workbookVisibilityModel\}/);
   assert.match(comparePanel, /filterWorkbookSectionsByVisibility/);
   assert.match(horizontalPanel, /filterWorkbookSectionsByVisibility/);
+  assert.match(comparePanel, /filterWorkbookRowsByVisibility/);
+  assert.match(horizontalPanel, /filterWorkbookRowsByVisibility/);
   assert.equal(fs.existsSync(path.resolve('src/utils/workbook/workbookDifferencesOnlyNavigation.ts')), false);
 });
 

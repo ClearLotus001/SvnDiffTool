@@ -77,12 +77,6 @@ export function useWorkbookHorizontalViewportSync({
   const restoreRafRef = useRef(0);
   const lastRestoredSnapshotKeyRef = useRef('');
   const lastViewportSheetNameRef = useRef<string | null>(activeSheetName);
-  const lastSnapshotScrollRef = useRef({
-    leftScrollTop: 0,
-    leftScrollLeft: 0,
-    rightScrollTop: 0,
-    rightScrollLeft: 0,
-  });
   const userScrollPauseUntilRef = useRef(0);
   const programmaticScrollUntilRef = useRef<{ left: number; right: number }>({ left: 0, right: 0 });
   const lastAutoRowKeyRef = useRef('');
@@ -113,7 +107,6 @@ export function useWorkbookHorizontalViewportSync({
   const emitLayoutSnapshot = useCallback(() => {
     if (!active || !onLayoutSnapshotChange) return;
     const scrollState = readSnapshotScrollState();
-    lastSnapshotScrollRef.current = scrollState;
     const snapshot = buildWorkbookHorizontalLayoutSnapshot(
       activeSheetName,
       activeRegionId,
@@ -180,13 +173,21 @@ export function useWorkbookHorizontalViewportSync({
     }
     syncScrollPosition(source);
     if (isProgrammaticTargetScroll) return;
+    scheduleLayoutSnapshot('deferred');
+  }, [scheduleLayoutSnapshot, syncScrollPosition]);
 
-    const nextScrollState = readSnapshotScrollState();
-    const previousScrollState = lastSnapshotScrollRef.current;
-    const verticalChanged = Math.abs(nextScrollState.leftScrollTop - previousScrollState.leftScrollTop) > 1
-      || Math.abs(nextScrollState.rightScrollTop - previousScrollState.rightScrollTop) > 1;
-    scheduleLayoutSnapshot(verticalChanged ? 'frame' : 'deferred');
-  }, [readSnapshotScrollState, scheduleLayoutSnapshot, syncScrollPosition]);
+  useEffect(() => {
+    const left = leftScrollRef.current;
+    const right = rightScrollRef.current;
+    if (!left || !right) return;
+    const handleScrollEnd = () => scheduleLayoutSnapshot('frame');
+    left.addEventListener('scrollend', handleScrollEnd);
+    right.addEventListener('scrollend', handleScrollEnd);
+    return () => {
+      left.removeEventListener('scrollend', handleScrollEnd);
+      right.removeEventListener('scrollend', handleScrollEnd);
+    };
+  }, [leftScrollRef, rightScrollRef, scheduleLayoutSnapshot]);
 
   useEffect(() => {
     scheduleLayoutSnapshot();

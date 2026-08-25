@@ -11,7 +11,7 @@ import type { WorkbookHorizontalPaneSide } from '@/hooks/workbook/useWorkbookHor
 interface HorizontalPaneVirtualColumnsLike {
   debug: { viewportWidth: number };
   columnEntries: HorizontalVirtualColumnEntry[];
-  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
+  columnLayoutByColumn: ReadonlyMap<number, HorizontalVirtualColumnEntry>;
   frozenWidth: number;
 }
 

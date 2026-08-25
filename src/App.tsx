@@ -64,7 +64,6 @@ import PerfBar from '@/components/app/PerfBar';
 import GlobalBot from '@/components/app/global-bot/GlobalBot';
 import { resolveAppUpdateNotice } from '@/components/app/global-bot/sources/appUpdateNotice';
 import { resolveDiffSummaryMessages } from '@/components/app/global-bot/sources/diffSummaryMessages';
-import useDevPreviewNotice from '@/components/app/global-bot/sources/useDevPreviewNotice';
 import AppUpdateInstalledNoticeBar from '@/components/app/AppUpdateInstalledNoticeBar';
 import DiffSourceNoticeBar from '@/components/diff/DiffSourceNoticeBar';
 import DiffLoadErrorNoticeBar from '@/components/diff/DiffLoadErrorNoticeBar';
@@ -72,6 +71,7 @@ import SearchBar from '@/components/diff/SearchBar';
 import WorkbookFormulaBar from '@/components/workbook/WorkbookFormulaBar';
 import WorkbookArtifactNoticeBar from '@/components/workbook/WorkbookArtifactNoticeBar';
 import Toolbar from '@/components/navigation/Toolbar';
+import DiffFilterToolbar from '@/components/navigation/DiffFilterToolbar';
 import SplitHeader from '@/components/navigation/SplitHeader';
 import StatsBar from '@/components/navigation/StatsBar';
 import { copyText } from '@/utils/app/clipboard';
@@ -79,6 +79,7 @@ import { shouldOpenTwoFilePicker } from '@/utils/app/filePickerRouting';
 import { recordPerfBridgeEvent } from '@/utils/app/perfBridge';
 import { findWorkbookDiffRegionNavigationIndex } from '@/utils/workbook/workbookDiffRegion';
 import { summarizeWorkbookCellChanges } from '@/utils/workbook/workbookCellChangeSummary';
+import { swapDiffDataSides } from '@/utils/diff/swapDiffSides';
 
 // ═════════════════════════════════════════════════════════════════════════════
 // ROOT APP
@@ -95,6 +96,7 @@ export default function App() {
   const layout = useAppStore((s) => s.layout);
   const collapseCtx = useAppStore((s) => s.collapseCtx);
   const showOnlyDifferences = useAppStore((s) => s.showOnlyDifferences);
+  const diffTypeFilter = useAppStore((s) => s.diffTypeFilter);
   const showWhitespace = useAppStore((s) => s.showWhitespace);
   const showHiddenColumns = useAppStore((s) => s.showHiddenColumns);
   const botEnabled = useAppStore((s) => s.botEnabled);
@@ -104,6 +106,7 @@ export default function App() {
   const setLayout = useAppStore((s) => s.setLayout);
   const setCollapseCtx = useAppStore((s) => s.setCollapseCtx);
   const setShowOnlyDifferences = useAppStore((s) => s.setShowOnlyDifferences);
+  const setDiffTypeFilter = useAppStore((s) => s.setDiffTypeFilter);
   const setShowWhitespace = useAppStore((s) => s.setShowWhitespace);
   const setShowHiddenColumns = useAppStore((s) => s.setShowHiddenColumns);
   const setBotEnabled = useAppStore((s) => s.setBotEnabled);
@@ -296,6 +299,7 @@ export default function App() {
 
   // ── useAppViewModel ───────────────────────────────────────────────────
   const {
+    presentedDiffLines,
     displayBaseName,
     displayMineName,
     twoFileBasePath,
@@ -327,6 +331,7 @@ export default function App() {
     workbookSectionRowIndex,
     workbookVisibilityModel,
     isWorkbookMode,
+    hunkNavigationEnabled,
     workbookDiffRegions,
     activeWorkbookDiffRegion,
     activeWorkbookSharedExpandedBlocks,
@@ -346,6 +351,8 @@ export default function App() {
     workbookSharedExpandedBlocksRef,
     scrollToIndexRef,
     currentDiffData: currentDiffDataRef.current,
+    diffTypeFilter,
+    showOnlyDifferences,
   });
   const textDiffPresentation = useMemo(() => ({
     stats: preparedTextAnalysis?.stats ?? textDiffStats,
@@ -454,11 +461,48 @@ export default function App() {
     onDownload: handleDownloadAppUpdate,
     onInstall: handleInstallDownloadedUpdate,
   }), [appUpdateState, handleDownloadAppUpdate, handleInstallDownloadedUpdate, t]);
-  const devGlobalBotNotice = useDevPreviewNotice({
-    enabled: import.meta.env.DEV && isDevMode && botEnabled,
-    t,
-  });
-  const globalBotNotice = appUpdateBotNotice ?? devGlobalBotNotice;
+
+  const handleSwapComparisonSides = useCallback(async () => {
+    const currentData = currentDiffDataRef.current;
+    if (!currentData || isLoadingDiff) return;
+
+    if (
+      isElectron
+      && compareContext === 'literal_two_file_compare'
+      && currentData.basePath
+      && currentData.minePath
+      && window.versora?.loadLocalFileDiff
+    ) {
+      await handleCompareLocalFiles(currentData.minePath, currentData.basePath);
+      return;
+    }
+
+    const currentBaseRevisionId = currentData.baseRevisionInfo?.id ?? '';
+    const currentMineRevisionId = currentData.mineRevisionInfo?.id ?? '';
+    const canReloadRevisionPair = compareContext === 'literal_two_file_compare'
+      ? typeof window.versora?.loadTwoFileRevisionDiff === 'function'
+      : typeof window.versora?.loadRevisionDiff === 'function';
+    if (
+      isElectron
+      && currentBaseRevisionId
+      && currentMineRevisionId
+      && canReloadRevisionPair
+    ) {
+      await handleRevisionCompareChange(currentMineRevisionId, currentBaseRevisionId);
+      return;
+    }
+
+    await applyDiffData(swapDiffDataSides(currentData), {
+      loadingAlreadyStarted: true,
+    });
+  }, [
+    applyDiffData,
+    compareContext,
+    handleCompareLocalFiles,
+    handleRevisionCompareChange,
+    isElectron,
+    isLoadingDiff,
+  ]);
   const activeWorkbookCellChangeSummary = useMemo(() => (
     isWorkbookMode
       ? summarizeWorkbookCellChanges(
@@ -607,7 +651,7 @@ export default function App() {
   const [textLineSelectionSummary, setTextLineSelectionSummary] = useState<TextLineSelectionSummary | null>(null);
 
   const panelProps = useMemo(() => ({
-    diffLines,
+    diffLines: presentedDiffLines,
     splitRowDescriptors: preparedTextAnalysis?.splitRowDescriptors ?? null,
     textDiffPresentation,
     syntaxPresentation,
@@ -623,7 +667,7 @@ export default function App() {
     onCollapseNavigationReady: handleCollapseNavigationReady,
     onLineSelectionChange: setTextLineSelectionSummary,
   }), [
-    diffLines, preparedTextAnalysis, textDiffPresentation, syntaxPresentation, baseVersionLabel, mineVersionLabel, collapseCtx, hunkIdx,
+    presentedDiffLines, preparedTextAnalysis, textDiffPresentation, syntaxPresentation, baseVersionLabel, mineVersionLabel, collapseCtx, hunkIdx,
     searchMatches, activeSearchIdx, hunkPositions, searchJumpNonce,
     showWhitespace, fontSize,
     isWorkbookMode, activeWorkbookGuidedRange, hunks,
@@ -631,6 +675,7 @@ export default function App() {
   ]);
 
   const handleNavigationStep = useCallback((direction: -1 | 1) => startTransition(() => {
+    if (!hunkNavigationEnabled) return;
     // A cyclic navigation can resolve to the current index (most notably for
     // a single diff). Keep a separate activation nonce so clicking the button
     // still re-focuses an off-screen workbook cell.
@@ -650,6 +695,7 @@ export default function App() {
     });
   }), [
     activeWorkbookSheetName,
+    hunkNavigationEnabled,
     isWorkbookMode,
     navigationCount,
     setGuidedPulseNonce,
@@ -732,6 +778,7 @@ export default function App() {
   useAppKeyboardShortcuts({
     dialogs,
     isWorkbookMode,
+    hunkNavigationEnabled,
     selectedCell,
     handleNavigationStep,
     handleSearchPreviewNav,
@@ -810,6 +857,7 @@ export default function App() {
             layout={layout}             setLayout={handleLayoutChange}
             hunkIdx={hunkIdx}           totalHunks={navigationCount}
             hunkTargetLabel={currentNavigationLabel}
+            showHunkNavigation={hunkNavigationEnabled}
             onPrev={handleHunkPrev}
             onNext={handleHunkNext}
             showSearch={showSearch}     setShowSearch={setShowSearch}
@@ -830,15 +878,23 @@ export default function App() {
             usesNativeWindowControls={usesNativeWindowControls}
             isWindowMaximized={isWindowMaximized}
             isWorkbookMode={isWorkbookMode}
+            workbookContentFiltered={workbookVisibilityModel.policy.mode === 'differences-only'}
             updateState={appUpdateState}
             onCheckForUpdates={handleCheckForAppUpdate}
             onDownloadUpdate={handleDownloadAppUpdate}
             onInstallUpdate={handleInstallDownloadedUpdate}
           />
 
+          {hasLoadedDiff && !isLoadingDiff && (
+            <DiffFilterToolbar
+              value={diffTypeFilter}
+              onChange={setDiffTypeFilter}
+            />
+          )}
+
           {botEnabled && (
             <GlobalBot
-              notice={globalBotNotice}
+              notice={appUpdateBotNotice}
               ambientMessages={globalBotAmbientMessages}
             />
           )}
@@ -909,6 +965,7 @@ export default function App() {
               onRevisionDateTimeQuery={handleRevisionDateTimeQuery}
               onBaseCopy={!isWorkbookMode ? handleCopyBaseVersion : undefined}
               onMineCopy={!isWorkbookMode ? handleCopyMineVersion : undefined}
+              onSwapSides={() => { void handleSwapComparisonSides(); }}
             />
           )}
 
@@ -1004,7 +1061,8 @@ export default function App() {
               workbookCellChangeSummary={activeWorkbookCellChangeSummary}
               workbookSections={workbookSections}
               lineSelectionSummary={!isWorkbookMode ? textLineSelectionSummary : null}
-              showGotoShortcut={!(isWorkbookMode && showOnlyDifferences)}
+              showGotoShortcut={!(isWorkbookMode && workbookVisibilityModel.policy.mode === 'differences-only')}
+              showHunkNavigationShortcut={hunkNavigationEnabled}
             />
           )}
 

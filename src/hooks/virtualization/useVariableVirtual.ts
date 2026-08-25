@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { flushSync } from 'react-dom';
 import { scrollElementForNavigation } from '@/utils/navigation/animatedScroll';
+import {
+  VIRTUAL_FAST_SCROLL_ACTIVE_ATTRIBUTE,
+  VIRTUAL_FAST_SCROLL_END_EVENT,
+  VIRTUAL_FAST_SCROLL_OWNER_ATTRIBUTE,
+  beginVirtualFastScrollSession,
+  endVirtualFastScrollSession,
+  getVirtualFastScrollOwner,
+  isVirtualFastScrollSessionActive,
+} from '@/utils/virtualization/fastScrollSession';
 
 export interface VariableVirtualDebugInfo {
   viewportHeight: number;
@@ -22,6 +32,7 @@ interface UseVariableVirtualOptions {
   overscanFactor?: number;
   syncKey?: string | number | null;
   getScrollFollowers?: (() => readonly HTMLElement[]) | undefined;
+  enableFastScrollSession?: boolean;
 }
 
 const DEFAULT_OVERSCAN_MIN = 12;
@@ -47,7 +58,7 @@ function findIndexForOffset(prefixSums: number[], offset: number): number {
   return Math.max(0, low - 1);
 }
 
-function computeVariableRange(params: {
+export interface ComputeVariableRangeParams {
   heightsLength: number;
   prefixSums: number[];
   totalH: number;
@@ -56,7 +67,16 @@ function computeVariableRange(params: {
   viewH: number;
   overscanMin: number;
   overscanFactor: number;
-}) {
+}
+
+export interface VariableVirtualRange {
+  startIdx: number;
+  endIdx: number;
+  offsetTop: number;
+  overscan: number;
+}
+
+export function computeVariableRange(params: ComputeVariableRangeParams): VariableVirtualRange {
   const {
     heightsLength,
     prefixSums,
@@ -89,6 +109,80 @@ function computeVariableRange(params: {
   };
 }
 
+export function shouldRetainVariableVirtualRange(
+  currentRange: VariableVirtualRange,
+  params: ComputeVariableRangeParams,
+): boolean {
+  const {
+    heightsLength,
+    prefixSums,
+    totalH,
+    averageHeight,
+    scrollTop,
+    viewH,
+    overscanMin,
+    overscanFactor,
+  } = params;
+  const maxScrollTop = Math.max(0, totalH - Math.max(0, viewH));
+  const clampedScrollTop = Math.max(0, Math.min(scrollTop, maxScrollTop));
+  const visibleBottom = Math.min(totalH, clampedScrollTop + Math.max(0, viewH));
+  const visibleItemCount = Math.max(1, Math.ceil(viewH / Math.max(averageHeight, 1)));
+  const overscan = Math.max(overscanMin, Math.ceil(visibleItemCount * overscanFactor));
+
+  if (
+    currentRange.overscan !== overscan
+    || currentRange.startIdx < 0
+    || currentRange.endIdx < currentRange.startIdx
+    || currentRange.endIdx > heightsLength
+  ) {
+    return false;
+  }
+
+  if (!doesVariableVirtualRangeCoverViewport(currentRange, params)) return false;
+
+  const rangeTop = prefixSums[currentRange.startIdx] ?? 0;
+  const rangeBottom = prefixSums[currentRange.endIdx] ?? totalH;
+
+  const guardPx = Math.max(1, overscan * Math.max(averageHeight, 1) * 0.5);
+  const hasLeadingGuard = currentRange.startIdx === 0
+    || clampedScrollTop - rangeTop >= guardPx;
+  const hasTrailingGuard = currentRange.endIdx === heightsLength
+    || rangeBottom - visibleBottom >= guardPx;
+  return hasLeadingGuard && hasTrailingGuard;
+}
+
+export function doesVariableVirtualRangeCoverViewport(
+  currentRange: VariableVirtualRange,
+  params: Pick<
+    ComputeVariableRangeParams,
+    'heightsLength' | 'prefixSums' | 'totalH' | 'scrollTop' | 'viewH'
+  >,
+): boolean {
+  const {
+    heightsLength,
+    prefixSums,
+    totalH,
+    scrollTop,
+    viewH,
+  } = params;
+  if (
+    currentRange.startIdx < 0
+    || currentRange.endIdx < currentRange.startIdx
+    || currentRange.endIdx > heightsLength
+  ) {
+    return false;
+  }
+
+  const maxScrollTop = Math.max(0, totalH - Math.max(0, viewH));
+  const clampedScrollTop = Math.max(0, Math.min(scrollTop, maxScrollTop));
+  const visibleBottom = Math.min(totalH, clampedScrollTop + Math.max(0, viewH));
+  const rangeTop = prefixSums[currentRange.startIdx] ?? 0;
+  const rangeBottom = prefixSums[currentRange.endIdx] ?? totalH;
+  return currentRange.offsetTop === rangeTop
+    && rangeTop <= clampedScrollTop
+    && rangeBottom >= visibleBottom;
+}
+
 export function useVariableVirtual(
   heights: number[],
   scrollRef: RefObject<HTMLDivElement | null>,
@@ -98,8 +192,9 @@ export function useVariableVirtual(
   const overscanFactor = options.overscanFactor ?? DEFAULT_OVERSCAN_FACTOR;
   const syncKey = options.syncKey ?? null;
   const getScrollFollowers = options.getScrollFollowers;
+  const enableFastScrollSession = options.enableFastScrollSession ?? false;
   const [viewH, setViewH] = useState(600);
-  const [rangeState, setRangeState] = useState({ startIdx: 0, endIdx: 0, offsetTop: 0, overscan: overscanMin });
+  const [rangeState, setRangeState] = useState<VariableVirtualRange>({ startIdx: 0, endIdx: 0, offsetTop: 0, overscan: overscanMin });
   const latestScrollTopRef = useRef(0);
   const viewHRef = useRef(600);
   const rafRef = useRef<number>(0);
@@ -121,7 +216,7 @@ export function useVariableVirtual(
 
   const applyRange = useCallback((nextScrollTop: number, nextViewH: number) => {
     const calcStart = getNow();
-    const next = computeVariableRange({
+    const params: ComputeVariableRangeParams = {
       heightsLength: heights.length,
       prefixSums,
       totalH,
@@ -130,10 +225,16 @@ export function useVariableVirtual(
       viewH: nextViewH,
       overscanMin,
       overscanFactor,
-    });
+    };
+    const prev = rangeRef.current;
+    if (shouldRetainVariableVirtualRange(prev, params)) {
+      lastCalcMsRef.current = getNow() - calcStart;
+      return;
+    }
+
+    const next = computeVariableRange(params);
     lastCalcMsRef.current = getNow() - calcStart;
 
-    const prev = rangeRef.current;
     if (
       prev.startIdx === next.startIdx
       && prev.endIdx === next.endIdx
@@ -171,22 +272,77 @@ export function useVariableVirtual(
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
+    let implicitFastScrollTimeout: number | null = null;
+
+    const scheduleImplicitFastScrollEnd = () => {
+      if (implicitFastScrollTimeout != null) window.clearTimeout(implicitFastScrollTimeout);
+      implicitFastScrollTimeout = window.setTimeout(() => {
+        implicitFastScrollTimeout = null;
+        endVirtualFastScrollSession(el, 'implicit');
+      }, 96);
+    };
 
     const onScroll = () => {
       latestScrollTopRef.current = Math.max(0, Math.round(el.scrollTop));
+      if (isVirtualFastScrollSessionActive(el)) {
+        if (rafRef.current) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = 0;
+        }
+        if (getVirtualFastScrollOwner(el) === 'implicit') scheduleImplicitFastScrollEnd();
+        return;
+      }
+      if (!doesVariableVirtualRangeCoverViewport(rangeRef.current, {
+        heightsLength: heights.length,
+        prefixSums,
+        totalH,
+        scrollTop: latestScrollTopRef.current,
+        viewH: viewHRef.current,
+      })) {
+        if (rafRef.current) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = 0;
+        }
+        if (enableFastScrollSession) {
+          beginVirtualFastScrollSession(el, 'implicit');
+          scheduleImplicitFastScrollEnd();
+          return;
+        }
+        flushSync(() => {
+          applyRange(latestScrollTopRef.current, viewHRef.current);
+        });
+        return;
+      }
       if (rafRef.current) return;
       rafRef.current = requestAnimationFrame(() => {
         rafRef.current = 0;
         applyRange(latestScrollTopRef.current, viewHRef.current);
       });
     };
+    const onFastScrollEnd = () => {
+      latestScrollTopRef.current = Math.max(0, Math.round(el.scrollTop));
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = 0;
+      }
+      flushSync(() => {
+        applyRange(latestScrollTopRef.current, viewHRef.current);
+      });
+    };
 
     el.addEventListener('scroll', onScroll, { passive: true });
+    el.addEventListener(VIRTUAL_FAST_SCROLL_END_EVENT, onFastScrollEnd);
     return () => {
       el.removeEventListener('scroll', onScroll);
+      el.removeEventListener(VIRTUAL_FAST_SCROLL_END_EVENT, onFastScrollEnd);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (implicitFastScrollTimeout != null) window.clearTimeout(implicitFastScrollTimeout);
+      if (getVirtualFastScrollOwner(el) === 'implicit') {
+        el.removeAttribute(VIRTUAL_FAST_SCROLL_ACTIVE_ATTRIBUTE);
+        el.removeAttribute(VIRTUAL_FAST_SCROLL_OWNER_ATTRIBUTE);
+      }
     };
-  }, [applyRange, scrollRef]);
+  }, [applyRange, enableFastScrollSession, heights.length, prefixSums, scrollRef, totalH]);
 
   useEffect(() => {
     applyRange(latestScrollTopRef.current, viewHRef.current);

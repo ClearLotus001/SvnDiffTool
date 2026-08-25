@@ -34,6 +34,7 @@ interface UseHorizontalVirtualColumnsOptions {
   maxFrozenViewportRatio?: number;
   minFrozenViewport?: number;
   disableVirtualizationBelow?: number;
+  preparedLayout?: HorizontalVirtualColumnsLayout;
 }
 
 interface HorizontalVirtualColumnsResult {
@@ -45,7 +46,7 @@ interface HorizontalVirtualColumnsResult {
   isFrozenOverflowing: boolean;
   leadingSpacerWidth: number;
   trailingSpacerWidth: number;
-  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
+  columnLayoutByColumn: ReadonlyMap<number, HorizontalVirtualColumnEntry>;
   debug: {
     viewportWidth: number;
     scrollLeft: number;
@@ -62,7 +63,7 @@ const DEFAULT_OVERSCAN_FACTOR = 2;
 const DEFAULT_MIN_SCROLLABLE_VIEWPORT = 320;
 const DEFAULT_MAX_FROZEN_VIEWPORT_RATIO = 0.6;
 
-interface PositionedMergedColumnRange {
+export interface PositionedMergedColumnRange {
   startPosition: number;
   endPosition: number;
 }
@@ -72,6 +73,29 @@ interface HorizontalWindow {
   endIndex: number;
   visibleColumnCount: number;
   overscan: number;
+}
+
+export interface HorizontalVirtualColumnsLayout {
+  clampedFrozenCount: number;
+  frozenEntries: HorizontalVirtualColumnEntry[];
+  frozenDisplayWidths: number[];
+  frozenPrefixSums: number[];
+  nonFrozenEntries: HorizontalVirtualColumnEntry[];
+  nonFrozenDisplayWidths: number[];
+  nonFrozenPrefixSums: number[];
+  fullFrozenWidth: number;
+  totalNonFrozenWidth: number;
+  positionedMergedRanges: PositionedMergedColumnRange[];
+  allEntries: HorizontalVirtualColumnEntry[];
+}
+
+export interface BuildHorizontalVirtualColumnsLayoutParams {
+  columns: number[];
+  cellWidth: number;
+  frozenCount: number;
+  widthMultiplier?: number;
+  getColumnWidth?: ((column: number) => number) | undefined;
+  mergedRanges?: WorkbookMergeRange[];
 }
 
 export function createFullHorizontalWindow(columnCount: number): HorizontalWindow {
@@ -126,6 +150,94 @@ function buildPrefixSums(widths: number[]): number[] {
   return prefixSums;
 }
 
+class LayeredReadonlyMap<K, V> implements ReadonlyMap<K, V> {
+  constructor(
+    private readonly base: ReadonlyMap<K, V>,
+    private readonly overrides: ReadonlyMap<K, V>,
+  ) {}
+
+  get size(): number {
+    let extraKeys = 0;
+    this.overrides.forEach((_value, key) => {
+      if (!this.base.has(key)) extraKeys += 1;
+    });
+    return this.base.size + extraKeys;
+  }
+
+  get(key: K): V | undefined {
+    return this.overrides.has(key) ? this.overrides.get(key) : this.base.get(key);
+  }
+
+  has(key: K): boolean {
+    return this.overrides.has(key) || this.base.has(key);
+  }
+
+  *entries(): MapIterator<[K, V]> {
+    const emitted = new Set<K>();
+    for (const [key, value] of this.base) {
+      emitted.add(key);
+      yield [key, this.overrides.get(key) ?? value];
+    }
+    for (const [key, value] of this.overrides) {
+      if (!emitted.has(key)) yield [key, value];
+    }
+  }
+
+  *keys(): MapIterator<K> {
+    for (const [key] of this.entries()) yield key;
+  }
+
+  *values(): MapIterator<V> {
+    for (const [, value] of this.entries()) yield value;
+  }
+
+  forEach(callbackfn: (value: V, key: K, map: ReadonlyMap<K, V>) => void, thisArg?: unknown): void {
+    for (const [key, value] of this.entries()) callbackfn.call(thisArg, value, key, this);
+  }
+
+  [Symbol.iterator](): MapIterator<[K, V]> {
+    return this.entries();
+  }
+}
+
+export function buildHorizontalColumnLayoutBase(
+  allEntries: readonly HorizontalVirtualColumnEntry[],
+  clampedFrozenCount: number,
+  visibleFrozenWidth: number,
+  fullFrozenWidth: number,
+): ReadonlyMap<number, HorizontalVirtualColumnEntry> {
+  return new Map(allEntries.map((entry) => {
+    const absoluteOffset = entry.absoluteOffset ?? entry.offset;
+    const offset = entry.position < clampedFrozenCount
+      ? absoluteOffset
+      : visibleFrozenWidth + (absoluteOffset - fullFrozenWidth);
+    return [entry.column, {
+      ...entry,
+      absoluteOffset,
+      offset,
+    }];
+  }));
+}
+
+export function overlayFrozenHorizontalColumnLayout(
+  baseLayout: ReadonlyMap<number, HorizontalVirtualColumnEntry>,
+  frozenEntries: readonly HorizontalVirtualColumnEntry[],
+  frozenScrollLeft: number,
+): ReadonlyMap<number, HorizontalVirtualColumnEntry> {
+  if (frozenScrollLeft === 0 || frozenEntries.length === 0) return baseLayout;
+  const overrides = new Map<number, HorizontalVirtualColumnEntry>();
+  frozenEntries.forEach((entry) => {
+    const baseEntry = baseLayout.get(entry.column) ?? entry;
+    const absoluteOffset = baseEntry.absoluteOffset ?? baseEntry.offset;
+    overrides.set(entry.column, {
+      ...baseEntry,
+      absoluteOffset,
+      offset: absoluteOffset - frozenScrollLeft,
+    });
+  });
+  return new LayeredReadonlyMap(baseLayout, overrides);
+}
+
 function upperBound(values: number[], target: number): number {
   let low = 0;
   let high = values.length;
@@ -148,6 +260,43 @@ export function preparePositionedMergedColumnRanges(
 ): PositionedMergedColumnRange[] {
   if (columns.length === 0 || mergedRanges.length === 0) return [];
 
+  const columnsAreAscending = columns.every((column, index) => index === 0 || column >= columns[index - 1]!);
+  if (columnsAreAscending) {
+    const lowerBoundColumn = (target: number) => {
+      let low = 0;
+      let high = columns.length;
+      while (low < high) {
+        const mid = Math.floor((low + high) / 2);
+        if ((columns[mid] ?? 0) < target) low = mid + 1;
+        else high = mid;
+      }
+      return low;
+    };
+    const upperBoundColumn = (target: number) => {
+      let low = 0;
+      let high = columns.length;
+      while (low < high) {
+        const mid = Math.floor((low + high) / 2);
+        if ((columns[mid] ?? 0) <= target) low = mid + 1;
+        else high = mid;
+      }
+      return low;
+    };
+
+    return mergedRanges.flatMap((range) => {
+      const startPosition = lowerBoundColumn(range.startCol);
+      const endPosition = upperBoundColumn(range.endCol) - 1;
+      if (
+        startPosition >= columns.length
+        || endPosition < startPosition
+        || (columns[startPosition] ?? Number.POSITIVE_INFINITY) > range.endCol
+      ) {
+        return [];
+      }
+      return [{ startPosition, endPosition }];
+    });
+  }
+
   const positionByColumn = new Map<number, number>();
   columns.forEach((column, position) => {
     positionByColumn.set(column, position);
@@ -167,6 +316,55 @@ export function preparePositionedMergedColumnRanges(
     if (!Number.isFinite(startPosition) || !Number.isFinite(endPosition)) return [];
     return [{ startPosition, endPosition }];
   });
+}
+
+export function buildHorizontalVirtualColumnsLayout({
+  columns,
+  cellWidth,
+  frozenCount,
+  widthMultiplier = 1,
+  getColumnWidth,
+  mergedRanges = [],
+}: BuildHorizontalVirtualColumnsLayoutParams): HorizontalVirtualColumnsLayout {
+  let runningOffset = 0;
+  const columnMetrics: HorizontalVirtualColumnEntry[] = columns.map((column, position) => {
+    const width = clampWorkbookColumnWidth(getColumnWidth?.(column) ?? cellWidth);
+    const displayWidth = width * widthMultiplier;
+    const entry: HorizontalVirtualColumnEntry = {
+      column,
+      position,
+      width,
+      displayWidth,
+      offset: runningOffset,
+      absoluteOffset: runningOffset,
+    };
+    runningOffset += displayWidth;
+    return entry;
+  });
+  const clampedFrozenCount = Math.min(frozenCount, columns.length);
+  const frozenEntries = columnMetrics.slice(0, clampedFrozenCount);
+  const nonFrozenEntries = columnMetrics.slice(clampedFrozenCount);
+  const frozenDisplayWidths = frozenEntries.map((entry) => entry.displayWidth);
+  const nonFrozenDisplayWidths = nonFrozenEntries.map((entry) => entry.displayWidth);
+  const frozenPrefixSums = buildPrefixSums(frozenDisplayWidths);
+  const nonFrozenPrefixSums = buildPrefixSums(nonFrozenDisplayWidths);
+  const fullFrozenWidth = frozenPrefixSums[frozenPrefixSums.length - 1] ?? 0;
+  const totalNonFrozenWidth = nonFrozenPrefixSums[nonFrozenPrefixSums.length - 1] ?? 0;
+  const positionedMergedRanges = preparePositionedMergedColumnRanges(columns, mergedRanges);
+
+  return {
+    clampedFrozenCount,
+    frozenEntries,
+    frozenDisplayWidths,
+    frozenPrefixSums,
+    nonFrozenEntries,
+    nonFrozenDisplayWidths,
+    nonFrozenPrefixSums,
+    fullFrozenWidth,
+    totalNonFrozenWidth,
+    positionedMergedRanges,
+    allEntries: columnMetrics,
+  };
 }
 
 export function computeHorizontalWindow(
@@ -290,6 +488,7 @@ export function useHorizontalVirtualColumns({
   maxFrozenViewportRatio = DEFAULT_MAX_FROZEN_VIEWPORT_RATIO,
   minFrozenViewport,
   disableVirtualizationBelow = 0,
+  preparedLayout,
 }: UseHorizontalVirtualColumnsOptions): HorizontalVirtualColumnsResult {
   const [viewportWidth, setViewportWidth] = useState(1200);
   const [windowRange, setWindowRange] = useState<HorizontalWindow>({
@@ -310,45 +509,14 @@ export function useHorizontalVirtualColumns({
   const lastCalcMsRef = useRef(0);
   const syncKeyRef = useRef(syncKey);
 
-  const layout = useMemo(() => {
-    let runningOffset = 0;
-    const columnMetrics: HorizontalVirtualColumnEntry[] = columns.map((column, position) => {
-      const width = clampWorkbookColumnWidth(getColumnWidth?.(column) ?? cellWidth);
-      const displayWidth = width * widthMultiplier;
-      const entry: HorizontalVirtualColumnEntry = {
-        column,
-        position,
-        width,
-        displayWidth,
-        offset: runningOffset,
-        absoluteOffset: runningOffset,
-      };
-      runningOffset += displayWidth;
-      return entry;
-    });
-    const clampedFrozenCount = Math.min(frozenCount, columns.length);
-    const frozenEntries = columnMetrics.slice(0, clampedFrozenCount);
-    const nonFrozenEntries = columnMetrics.slice(clampedFrozenCount);
-    const frozenDisplayWidths = frozenEntries.map((entry) => entry.displayWidth);
-    const nonFrozenDisplayWidths = nonFrozenEntries.map((entry) => entry.displayWidth);
-    const nonFrozenPrefixSums = buildPrefixSums(nonFrozenDisplayWidths);
-    const fullFrozenWidth = frozenEntries.reduce((sum, entry) => sum + entry.displayWidth, 0);
-    const totalNonFrozenWidth = nonFrozenPrefixSums[nonFrozenPrefixSums.length - 1] ?? 0;
-    const positionedMergedRanges = preparePositionedMergedColumnRanges(columns, mergedRanges);
-
-    return {
-      clampedFrozenCount,
-      frozenEntries,
-      frozenDisplayWidths,
-      nonFrozenEntries,
-      nonFrozenDisplayWidths,
-      nonFrozenPrefixSums,
-      fullFrozenWidth,
-      totalNonFrozenWidth,
-      positionedMergedRanges,
-      allEntries: columnMetrics,
-    };
-  }, [cellWidth, columns, frozenCount, getColumnWidth, mergedRanges, widthMultiplier]);
+  const layout = useMemo(() => preparedLayout ?? buildHorizontalVirtualColumnsLayout({
+    columns,
+    cellWidth,
+    frozenCount,
+    widthMultiplier,
+    getColumnWidth,
+    mergedRanges,
+  }), [cellWidth, columns, frozenCount, getColumnWidth, mergedRanges, preparedLayout, widthMultiplier]);
 
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
@@ -564,9 +732,21 @@ export function useHorizontalVirtualColumns({
           layout.positionedMergedRanges,
           overscanMin,
           overscanFactor,
-          buildPrefixSums(layout.frozenDisplayWidths),
+          layout.frozenPrefixSums,
         )
-  ), [layout.frozenDisplayWidths, layout.frozenEntries.length, layout.positionedMergedRanges, overscanFactor, overscanMin, paneState.clampedFrozenScrollLeft, paneState.visibleFrozenWidth, shouldRenderAllColumns]);
+  ), [layout.frozenDisplayWidths, layout.frozenEntries.length, layout.frozenPrefixSums, layout.positionedMergedRanges, overscanFactor, overscanMin, paneState.clampedFrozenScrollLeft, paneState.visibleFrozenWidth, shouldRenderAllColumns]);
+
+  const baseColumnLayoutByColumn = useMemo(() => buildHorizontalColumnLayoutBase(
+    layout.allEntries,
+    layout.clampedFrozenCount,
+    paneState.visibleFrozenWidth,
+    layout.fullFrozenWidth,
+  ), [layout, paneState.visibleFrozenWidth]);
+  const dynamicColumnLayoutByColumn = useMemo(() => overlayFrozenHorizontalColumnLayout(
+    baseColumnLayoutByColumn,
+    layout.frozenEntries,
+    paneState.clampedFrozenScrollLeft,
+  ), [baseColumnLayoutByColumn, layout.frozenEntries, paneState.clampedFrozenScrollLeft]);
 
   const columnEntriesCacheRef = useRef<HorizontalVirtualColumnEntriesCache>({
     key: '',
@@ -599,27 +779,12 @@ export function useHorizontalVirtualColumns({
     }
 
     const {
-      allEntries,
       frozenEntries,
       nonFrozenEntries,
       nonFrozenPrefixSums,
       fullFrozenWidth,
       totalNonFrozenWidth,
     } = layout;
-
-    const dynamicColumnLayoutByColumn = new Map<number, HorizontalVirtualColumnEntry>(
-      allEntries.map((entry) => {
-        const absoluteOffset = entry.absoluteOffset ?? entry.offset;
-        const offset = entry.position < layout.clampedFrozenCount
-          ? absoluteOffset - paneState.clampedFrozenScrollLeft
-          : paneState.visibleFrozenWidth + (absoluteOffset - fullFrozenWidth);
-        return [entry.column, {
-          ...entry,
-          absoluteOffset,
-          offset,
-        }];
-      }),
-    );
 
     const visibleFrozenEntries = frozenEntries.length > 0
       ? frozenEntries
@@ -684,6 +849,7 @@ export function useHorizontalVirtualColumns({
     effectiveFrozenWindowRange.overscan,
     effectiveFrozenWindowRange.startIndex,
     effectiveWindowRange,
+    dynamicColumnLayoutByColumn,
     layout,
     paneState.clampedFrozenScrollLeft,
     paneState.isFrozenOverflowing,

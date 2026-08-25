@@ -27,6 +27,11 @@ import {
   resolveMiniMapTrackHeight,
 } from '@/utils/diff/minimapInteraction';
 import { resolveWorkbookMiniMapPaint } from '@/utils/workbook/workbookRowVisuals';
+import {
+  beginVirtualFastScrollSession,
+  clearVirtualFastScrollSession,
+  endVirtualFastScrollSession,
+} from '@/utils/virtualization/fastScrollSession';
 
 export type WorkbookMiniMapTone = 'equal' | 'add' | 'delete' | 'modify' | 'strict-only' | 'mixed';
 export type WorkbookMiniMapPaintTone = Exclude<WorkbookMiniMapTone, 'equal' | 'mixed'>;
@@ -176,6 +181,17 @@ export function computeMiniMapTargetScrollTop(
   return Math.max(0, Math.min(maxScrollTop, targetCenter - (viewportHeight / 2)));
 }
 
+export function interpolateMiniMapDragScrollTop(
+  currentScrollTop: number,
+  targetScrollTop: number,
+  factor = 0.72,
+): number {
+  const normalizedFactor = Math.max(0, Math.min(1, factor));
+  const distance = targetScrollTop - currentScrollTop;
+  if (Math.abs(distance) < 0.5) return targetScrollTop;
+  return currentScrollTop + (distance * normalizedFactor);
+}
+
 export function resolveWorkbookMiniMapProjectionHeight(
   contentHeight: number,
   viewportHeight: number,
@@ -222,26 +238,29 @@ const WorkbookMiniMap = memo(({
   const viewportRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef<WorkbookMiniMapDragState | null>(null);
   const dragScrollFrameRef = useRef(0);
+  const clickScrollEndFrameRef = useRef(0);
   const pendingDragScrollTopRef = useRef<number | null>(null);
   const [contHeight, setContHeight] = useState(320);
   const [isDragging, setIsDragging] = useState(false);
 
-  const applyViewport = (top: number, height: number) => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    viewport.style.transform = `translate3d(0, ${top}px, 0)`;
-    viewport.style.height = `${height}px`;
-  };
-
   const flushPendingDragScroll = () => {
     dragScrollFrameRef.current = 0;
-    const nextScrollTop = pendingDragScrollTopRef.current;
-    pendingDragScrollTopRef.current = null;
+    const targetScrollTop = pendingDragScrollTopRef.current;
     const el = scrollRef.current;
-    if (!el || nextScrollTop == null) return;
+    if (!el || targetScrollTop == null) return;
+    const reduceMotion = typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const nextScrollTop = reduceMotion
+      ? targetScrollTop
+      : interpolateMiniMapDragScrollTop(el.scrollTop, targetScrollTop);
     if (Math.abs(el.scrollTop - nextScrollTop) >= 0.5) {
       el.scrollTop = nextScrollTop;
     }
+    if (dragStateRef.current && Math.abs(targetScrollTop - nextScrollTop) >= 0.5) {
+      dragScrollFrameRef.current = requestAnimationFrame(flushPendingDragScroll);
+      return;
+    }
+    pendingDragScrollTopRef.current = null;
   };
 
   useEffect(() => {
@@ -331,38 +350,78 @@ const WorkbookMiniMap = memo(({
     const cont = contRef.current;
     if (!el || !cont) return;
 
-    const updateViewport = () => {
-      const H = resolveMiniMapTrackHeight(cont.clientHeight || contHeight, el.clientHeight);
+    let frameId = 0;
+    let pendingScrollTop = Math.max(0, el.scrollTop);
+    let heightDirty = true;
+    let layoutMetrics = {
+      viewportHeight: Math.max(0, el.clientHeight),
+      contentHeight: resolveMiniMapContentHeight(contentHeight, el.scrollHeight, el.clientHeight),
+      minimapHeight: resolveMiniMapTrackHeight(cont.clientHeight || contHeight, el.clientHeight),
+    };
+
+    const flushViewport = () => {
+      frameId = 0;
+      const viewport = viewportRef.current;
+      if (!viewport) return;
       const metrics = computeMiniMapViewportMetrics({
-        scrollTop: el.scrollTop,
-        viewportHeight: el.clientHeight,
-        contentHeight: resolveMiniMapContentHeight(contentHeight, el.scrollHeight, el.clientHeight),
-        minimapHeight: H,
+        scrollTop: pendingScrollTop,
+        ...layoutMetrics,
       });
-      applyViewport(metrics.top, metrics.height);
+      const nextTransform = `translate3d(0, ${metrics.top}px, 0)`;
+      if (viewport.style.transform !== nextTransform) {
+        viewport.style.transform = nextTransform;
+      }
+      if (heightDirty) {
+        const nextHeight = `${metrics.height}px`;
+        if (viewport.style.height !== nextHeight) {
+          viewport.style.height = nextHeight;
+        }
+        heightDirty = false;
+      }
+    };
+
+    const scheduleViewport = () => {
+      if (frameId) return;
+      frameId = requestAnimationFrame(flushViewport);
+    };
+
+    const updateLayoutMetrics = () => {
+      const viewportHeight = Math.max(0, el.clientHeight);
+      layoutMetrics = {
+        viewportHeight,
+        contentHeight: resolveMiniMapContentHeight(contentHeight, el.scrollHeight, viewportHeight),
+        minimapHeight: resolveMiniMapTrackHeight(cont.clientHeight || contHeight, viewportHeight),
+      };
+      pendingScrollTop = Math.max(0, el.scrollTop);
+      heightDirty = true;
+      scheduleViewport();
     };
 
     const onScroll = () => {
-      updateViewport();
+      pendingScrollTop = Math.max(0, el.scrollTop);
+      scheduleViewport();
     };
 
-    const ro = new ResizeObserver(updateViewport);
+    const ro = new ResizeObserver(updateLayoutMetrics);
     ro.observe(cont);
     ro.observe(el);
     el.addEventListener('scroll', onScroll, { passive: true });
-    updateViewport();
+    updateLayoutMetrics();
 
     return () => {
       el.removeEventListener('scroll', onScroll);
       ro.disconnect();
+      if (frameId) cancelAnimationFrame(frameId);
     };
   }, [contentHeight, contHeight, scrollRef]);
 
   useEffect(() => () => {
-    if (dragScrollFrameRef.current) {
-      cancelAnimationFrame(dragScrollFrameRef.current);
-    }
-  }, []);
+    if (dragScrollFrameRef.current) cancelAnimationFrame(dragScrollFrameRef.current);
+    if (clickScrollEndFrameRef.current) cancelAnimationFrame(clickScrollEndFrameRef.current);
+    dragStateRef.current = null;
+    const scroller = scrollRef.current;
+    if (scroller) clearVirtualFastScrollSession(scroller, 'minimap');
+  }, [scrollRef]);
 
   const handleClick = (event: MouseEvent<HTMLDivElement>) => {
     const start = typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -373,12 +432,22 @@ const WorkbookMiniMap = memo(({
     const rect = cont.getBoundingClientRect();
     const H = resolveMiniMapTrackHeight(cont.clientHeight || contHeight, el.clientHeight);
     const ratio = (event.clientY - rect.top) / H;
-    const nextTop = computeMiniMapTargetScrollTop(
-      ratio,
-      resolveMiniMapContentHeight(contentHeight, el.scrollHeight, el.clientHeight),
-      el.clientHeight,
-    );
+    const contentExtent = resolveMiniMapContentHeight(contentHeight, el.scrollHeight, el.clientHeight);
+    const nextTop = computeMiniMapTargetScrollTop(ratio, contentExtent, el.clientHeight);
+    beginVirtualFastScrollSession(el, 'minimap');
     el.scrollTo({ top: nextTop, behavior: 'auto' });
+    if (clickScrollEndFrameRef.current) cancelAnimationFrame(clickScrollEndFrameRef.current);
+    let remainingFrames = 4;
+    const finishClickScroll = () => {
+      remainingFrames -= 1;
+      if (remainingFrames > 0) {
+        clickScrollEndFrameRef.current = requestAnimationFrame(finishClickScroll);
+        return;
+      }
+      clickScrollEndFrameRef.current = 0;
+      endVirtualFastScrollSession(el, 'minimap');
+    };
+    clickScrollEndFrameRef.current = requestAnimationFrame(finishClickScroll);
     if (debugRef) {
       const duration = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - start;
       const current = debugRef.current ?? { clickCount: 0, lastClickMs: 0 };
@@ -431,6 +500,10 @@ const WorkbookMiniMap = memo(({
     const cont = contRef.current;
     const el = scrollRef.current;
     if (!cont || !el) return;
+    if (clickScrollEndFrameRef.current) {
+      cancelAnimationFrame(clickScrollEndFrameRef.current);
+      clickScrollEndFrameRef.current = 0;
+    }
 
     const H = resolveMiniMapTrackHeight(cont.clientHeight || contHeight, el.clientHeight);
     const metrics = computeMiniMapViewportMetrics({
@@ -447,6 +520,7 @@ const WorkbookMiniMap = memo(({
       maxScrollTop: metrics.maxScrollTop,
       trackHeight: metrics.trackHeight,
     };
+    beginVirtualFastScrollSession(el, 'minimap');
     setIsDragging(true);
     event.currentTarget.setPointerCapture?.(event.pointerId);
     event.preventDefault();
@@ -474,11 +548,20 @@ const WorkbookMiniMap = memo(({
   const finishViewportDrag = (event: PointerEvent<HTMLDivElement>) => {
     const dragState = dragStateRef.current;
     if (!dragState || dragState.pointerId !== event.pointerId) return;
+    const el = scrollRef.current;
     if (dragScrollFrameRef.current) {
       cancelAnimationFrame(dragScrollFrameRef.current);
-      flushPendingDragScroll();
+      dragScrollFrameRef.current = 0;
+    }
+    const finalScrollTop = pendingDragScrollTopRef.current;
+    pendingDragScrollTopRef.current = null;
+    if (el && finalScrollTop != null && Math.abs(el.scrollTop - finalScrollTop) >= 0.5) {
+      el.scrollTop = finalScrollTop;
     }
     dragStateRef.current = null;
+    if (el) {
+      endVirtualFastScrollSession(el, 'minimap');
+    }
     setIsDragging(false);
     if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -524,6 +607,8 @@ const WorkbookMiniMap = memo(({
           touchAction: 'none',
           userSelect: 'none',
           contain: 'layout paint style',
+          willChange: 'transform',
+          transition: isDragging ? 'none' : 'transform 90ms cubic-bezier(0.2, 0.8, 0.2, 1)',
           zIndex: 3,
         }}
       />

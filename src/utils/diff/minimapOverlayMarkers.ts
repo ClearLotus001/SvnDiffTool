@@ -100,12 +100,12 @@ export function buildMiniMapOverlayMarkers<
   const markers = rawMarkers.map((marker) => {
     const rawTop = (marker.start / total) * canvasSize;
     const rawBottom = (marker.end / total) * canvasSize;
-    const rawHeight = Math.max(rawBottom - rawTop, 1);
-    const targetHeight = Math.min(canvasSize, Math.max(normalizedMinMarkerHeight, Math.ceil(rawHeight)));
+    const rawHeight = Math.max(rawBottom - rawTop, Number.EPSILON);
+    const targetHeight = Math.min(canvasSize, Math.max(normalizedMinMarkerHeight, rawHeight));
     const centeredTop = rawTop - ((targetHeight - rawHeight) / 2);
     const clampedTop = Math.max(0, Math.min(canvasSize - targetHeight, centeredTop));
-    const top = Math.round(clampedTop);
-    const height = Math.max(1, Math.min(canvasSize - top, Math.round(targetHeight)));
+    const top = clampedTop;
+    const height = Math.max(1, Math.min(canvasSize - top, targetHeight));
 
     return {
       tone: marker.tone,
@@ -115,7 +115,12 @@ export function buildMiniMapOverlayMarkers<
     };
   });
 
-  const mergedMarkers: Array<{ tone: TTone; top: number; height: number; extra: TExtra }> = [];
+  const mergedMarkers: Array<{
+    tone: TTone;
+    top: number;
+    height: number;
+    extra: TExtra;
+  }> = [];
   markers.forEach((marker) => {
     const previous = mergedMarkers.at(-1);
     if (!previous) {
@@ -125,7 +130,10 @@ export function buildMiniMapOverlayMarkers<
 
     const previousBottom = previous.top + previous.height;
     const markerBottom = marker.top + marker.height;
-    if (marker.top <= previousBottom) {
+    // Adjacent markers occupy distinct pixel ranges and must keep their own
+    // semantic colors. Merge only when minimum-height expansion or rounding
+    // makes the painted ranges actually overlap.
+    if (marker.top < previousBottom) {
       previous.top = Math.min(previous.top, marker.top);
       previous.height = Math.max(previousBottom, markerBottom) - previous.top;
       previous.tone = previous.tone === marker.tone

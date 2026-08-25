@@ -45,3 +45,15 @@ test('buildDiffCacheKey still separates compare modes for the same source', () =
 
   assert.notEqual(buildDiffCacheKey(data, 'strict'), buildDiffCacheKey(data, 'content'));
 });
+
+test('buildDiffCacheKey separates swapped side order for the same source identity', () => {
+  const data = createDiffData({
+    sourceIdentity: 'cli::same-source',
+  });
+  const swapped = createDiffData({
+    sourceIdentity: 'cli::same-source',
+    isSideOrderSwapped: true,
+  });
+
+  assert.notEqual(buildDiffCacheKey(data, 'strict'), buildDiffCacheKey(swapped, 'strict'));
+});

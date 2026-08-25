@@ -1,12 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import React from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 
 import { resolveAppUpdateNotice } from '../src/components/app/global-bot/sources/appUpdateNotice';
 import { resolveDiffSummaryMessages } from '../src/components/app/global-bot/sources/diffSummaryMessages';
-import useDevPreviewNotice from '../src/components/app/global-bot/sources/useDevPreviewNotice';
 import { EMOTION_IDS } from '../src/components/app/global-bot/emotion-ball/emotionIds';
 import { translate, type TranslationFn } from '../src/i18n/core';
 import type { AppUpdateState } from '../src/types';
@@ -99,22 +96,6 @@ test('the app update source maps updater phases into generic bot notices', () =>
     onDownload,
     onInstall,
   }), null);
-});
-
-test('the development preview starts with the real update notice mapping', () => {
-  function DevPreviewHost() {
-    const notice = useDevPreviewNotice({ enabled: true, t });
-    return React.createElement('output', {
-      'data-source': notice?.source,
-      'data-mood': notice?.mood,
-    }, notice?.text);
-  }
-
-  const html = renderToStaticMarkup(React.createElement(DevPreviewHost));
-
-  assert.match(html, /data-source="update"/);
-  assert.match(html, /data-mood="attentive"/);
-  assert.match(html, /DEV · Version 9\.9\.9-dev is here/);
 });
 
 test('diff summary messages describe text and workbook changes deterministically', () => {

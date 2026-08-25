@@ -32,7 +32,10 @@ import {
 } from '@/hooks/diff/useSplitPanelHorizontalState';
 import { useVirtual, ROW_H } from '@/hooks/virtualization/useVirtual';
 import { useVariableVirtual } from '@/hooks/virtualization/useVariableVirtual';
-import { useHorizontalVirtualColumns } from '@/hooks/virtualization/useHorizontalVirtualColumns';
+import {
+  buildHorizontalVirtualColumnsLayout,
+  useHorizontalVirtualColumns,
+} from '@/hooks/virtualization/useHorizontalVirtualColumns';
 import {
   useWorkbookCollapseNavigationState,
   type WorkbookRowCollapseNavigationTarget,
@@ -117,6 +120,7 @@ import WorkbookPerfDebugPanel from '@/components/workbook/WorkbookPerfDebugPanel
 import WorkbookFrozenPaneOverflowBar from '@/components/workbook/WorkbookFrozenPaneOverflowBar';
 import WorkbookSheetTabs from '@/components/workbook/WorkbookSheetTabs';
 import WorkbookHorizontalRenderPane from '@/components/workbook/WorkbookHorizontalRenderPane';
+import WorkbookHorizontalFastScrollLayer from '@/components/workbook/WorkbookHorizontalFastScrollLayer';
 import WorkbookHorizontalShell from '@/components/workbook/WorkbookHorizontalShell';
 import { WorkbookMaskedRegionRevealProvider } from '@/components/workbook/WorkbookMaskedRegionRevealContext';
 import { useAppStore } from '@/store/appStore';
@@ -133,6 +137,7 @@ import {
 } from '@/utils/workbook/workbookAutoCollapse';
 import { buildWorkbookNavigationLayoutKey } from '@/utils/workbook/workbookNavigationLayoutKey';
 import {
+  filterWorkbookRowsByVisibility,
   filterWorkbookSectionsByVisibility,
   type WorkbookVisibilityModel,
 } from '@/utils/workbook/workbookVisibilityModel';
@@ -381,9 +386,17 @@ const WorkbookHorizontalPanel = memo(({
   const activeSearchLineIdx = activeSearchIdx >= 0
     ? (searchMatches[activeSearchIdx]?.lineIdx ?? -1)
     : -1;
-  const sectionRows = useMemo(
+  const sourceSectionRows = useMemo(
     () => (activeWorkbookSection ? (workbookSectionRowIndex.get(activeWorkbookSection.name)?.rows ?? []) : []),
     [activeWorkbookSection, workbookSectionRowIndex],
+  );
+  const sectionRows = useMemo(
+    () => filterWorkbookRowsByVisibility(
+      visibilityModel,
+      activeWorkbookSection,
+      sourceSectionRows,
+    ),
+    [activeWorkbookSection, sourceSectionRows, visibilityModel],
   );
   const protectedLineIdxSet = useMemo(() => {
     const next = new Set<number>();
@@ -519,6 +532,7 @@ const WorkbookHorizontalPanel = memo(({
       overscanFactor: 1.5,
       syncKey: activeWorkbookSection?.name ?? '',
       getScrollFollowers: getBodyScrollFollowers,
+      enableFastScrollSession: true,
     },
   );
   const activeSheetName = activeWorkbookSection?.name ?? '';
@@ -530,6 +544,13 @@ const WorkbookHorizontalPanel = memo(({
     () => [...sheetPresentation.baseMergeRanges, ...sheetPresentation.mineMergeRanges],
     [sheetPresentation.baseMergeRanges, sheetPresentation.mineMergeRanges],
   );
+  const sharedVirtualColumnsLayout = useMemo(() => buildHorizontalVirtualColumnsLayout({
+    columns: sheetPresentation.visibleColumns,
+    cellWidth: WORKBOOK_CELL_WIDTH,
+    frozenCount: freezeColumnCount,
+    getColumnWidth: resolveColumnWidth,
+    mergedRanges: mergedRangesForVirtualColumns,
+  }), [freezeColumnCount, mergedRangesForVirtualColumns, resolveColumnWidth, sheetPresentation.visibleColumns]);
   const leftVirtualColumns = useHorizontalVirtualColumns({
     scrollRef: leftScrollRef as RefObject<HTMLDivElement | null>,
     frozenScrollRef: frozenColumnsScrollRef as RefObject<HTMLDivElement | null>,
@@ -542,6 +563,7 @@ const WorkbookHorizontalPanel = memo(({
     overscanFactor: 1.5,
     disableVirtualizationBelow: WORKBOOK_STABLE_COLUMN_WINDOW_LIMIT,
     syncKey: activeWorkbookSection?.name ?? '',
+    preparedLayout: sharedVirtualColumnsLayout,
   });
   const rightVirtualColumns = useHorizontalVirtualColumns({
     scrollRef: rightScrollRef as RefObject<HTMLDivElement | null>,
@@ -555,6 +577,7 @@ const WorkbookHorizontalPanel = memo(({
     overscanFactor: 1.5,
     disableVirtualizationBelow: WORKBOOK_STABLE_COLUMN_WINDOW_LIMIT,
     syncKey: activeWorkbookSection?.name ?? '',
+    preparedLayout: sharedVirtualColumnsLayout,
   });
   const paneVirtualColumnsBySide = useMemo(
     () => ({
@@ -1544,6 +1567,23 @@ const WorkbookHorizontalPanel = memo(({
       ) : null}
       leftPane={renderPane(leftScrollRef, 'left', () => handlePaneScroll('left'))}
       rightPane={renderPane(rightScrollRef, 'right', () => handlePaneScroll('right'))}
+      fastScrollLayer={(
+        <WorkbookHorizontalFastScrollLayer
+          sessionScrollRef={leftScrollRef as RefObject<HTMLDivElement | null>}
+          paneGridTemplateColumns={paneGridTemplateColumns}
+          viewportHeight={rowVirtualDebug.viewportHeight}
+          stickyHeaderHeight={stickyHeaderHeight}
+          items={items}
+          itemHeights={itemHeights}
+          guidedHunkRange={guidedHunkRange}
+          activeSearchLineIdx={activeSearchLineIdx}
+          searchMatchSet={searchMatchSet}
+          panes={{
+            left: paneRenderPropsBySide.left.bodyCanvasProps,
+            right: paneRenderPropsBySide.right.bodyCanvasProps,
+          }}
+        />
+      )}
       collapseJumpButton={(
         <CollapseJumpButton
           onPrev={handleJumpToPreviousCollapse}

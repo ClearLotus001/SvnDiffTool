@@ -91,7 +91,7 @@ function renderHorizontalDerivedState(
       freezeRowNumber: 1,
       expandedBlocks: {},
       collapseCtx: true,
-      renderPolicy: { mode: 'full', maskIrrelevantCells: false },
+      renderPolicy: { mode: 'full', maskIrrelevantCells: false, diffTypeFilter: 'all' },
       compareMode: 'strict',
       baseVersion: 'BASE',
       mineVersion: 'MINE',
@@ -139,7 +139,7 @@ test('useWorkbookHorizontalDerivedState can project only changed workbook rows',
   const result = renderHorizontalDerivedState({
     sectionRows: differenceSectionRows,
     protectedLineIdxSet: new Set([1]),
-    renderPolicy: { mode: 'differences-only', maskIrrelevantCells: true },
+    renderPolicy: { mode: 'differences-only', maskIrrelevantCells: true, diffTypeFilter: 'all' },
   });
 
   assert.deepEqual(result.frozenRows.map((row) => row.lineIdx), [1]);
@@ -152,7 +152,7 @@ test('differences-only mode trusts precomputed cell deltas over equal line shell
   const result = renderHorizontalDerivedState({
     sectionRows: precomputedDifferenceRows,
     protectedLineIdxSet: new Set([1]),
-    renderPolicy: { mode: 'differences-only', maskIrrelevantCells: true },
+    renderPolicy: { mode: 'differences-only', maskIrrelevantCells: true, diffTypeFilter: 'all' },
   });
 
   assert.deepEqual(result.frozenRows.map((row) => row.lineIdx), [1]);
@@ -162,7 +162,7 @@ test('differences-only mode trusts precomputed cell deltas over equal line shell
 test('differences-only mode keeps explicitly protected search rows visible', () => {
   const result = renderHorizontalDerivedState({
     protectedLineIdxSet: new Set([1, 2]),
-    renderPolicy: { mode: 'differences-only', maskIrrelevantCells: true },
+    renderPolicy: { mode: 'differences-only', maskIrrelevantCells: true, diffTypeFilter: 'all' },
   });
 
   assert.deepEqual(result.frozenRows.map((row) => row.lineIdx), [1]);
@@ -173,12 +173,12 @@ test('differences-only cache stays isolated from the full-row projection', () =>
   const full = renderHorizontalDerivedState({
     sectionRows: differenceSectionRows,
     collapseCtx: false,
-    renderPolicy: { mode: 'full', maskIrrelevantCells: false },
+    renderPolicy: { mode: 'full', maskIrrelevantCells: false, diffTypeFilter: 'all' },
   });
   const differences = renderHorizontalDerivedState({
     sectionRows: differenceSectionRows,
     collapseCtx: false,
-    renderPolicy: { mode: 'differences-only', maskIrrelevantCells: true },
+    renderPolicy: { mode: 'differences-only', maskIrrelevantCells: true, diffTypeFilter: 'all' },
   });
 
   assert.notEqual(full.collapsedItemsMeasured, differences.collapsedItemsMeasured);

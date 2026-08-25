@@ -302,14 +302,22 @@ export function getRevisionOptionsStatus(
   return data.revisionOptions?.length ? 'loaded' : 'idle';
 }
 
-export function getCompareContextLabels(compareContext: CompareContext) {
+export function getCompareContextLabels(compareContext: CompareContext, swapped = false) {
   if (compareContext === 'standard_local_compare') {
-    return {
+    const labels = {
       baseTitleKey: 'splitHeaderCompareVersionTitle',
       mineTitleKey: 'splitHeaderWorkingCopyTitle',
       baseStatsKey: 'statsCompareVersion',
       mineStatsKey: 'statsWorkingCopy',
     } as const;
+    return swapped
+      ? {
+          baseTitleKey: labels.mineTitleKey,
+          mineTitleKey: labels.baseTitleKey,
+          baseStatsKey: labels.mineStatsKey,
+          mineStatsKey: labels.baseStatsKey,
+        } as const
+      : labels;
   }
   if (compareContext === 'revision_vs_revision_compare' || compareContext === 'git_compare') {
     return {

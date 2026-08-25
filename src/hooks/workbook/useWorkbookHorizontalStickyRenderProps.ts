@@ -13,7 +13,7 @@ export type WorkbookHorizontalPaneSide = 'left' | 'right';
 interface HorizontalPaneVirtualColumnsLike {
   debug: { viewportWidth: number };
   columnEntries: HorizontalVirtualColumnEntry[];
-  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
+  columnLayoutByColumn: ReadonlyMap<number, HorizontalVirtualColumnEntry>;
 }
 
 export interface WorkbookHorizontalStickyRenderSideProps {

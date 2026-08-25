@@ -41,7 +41,7 @@ interface UseWorkbookCompareBodyRenderPropsParams {
   fontSize: number;
   visibleColumns: number[];
   renderColumns: HorizontalVirtualColumnEntry[];
-  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
+  columnLayoutByColumn: ReadonlyMap<number, HorizontalVirtualColumnEntry>;
   baseMergedRanges: ReadonlyArray<WorkbookMergeRange>;
   mineMergedRanges: ReadonlyArray<WorkbookMergeRange>;
   baseRowEntryByRowNumber: ComponentProps<typeof WorkbookCompareBody>['stackedCanvasProps']['baseRowEntryByRowNumber'];

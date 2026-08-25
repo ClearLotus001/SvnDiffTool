@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Copy } from 'lucide-react';
+import { ArrowLeftRight, Check, Copy } from 'lucide-react';
 import type { ComparisonSourceKind, LayoutMode, SvnRevisionInfo } from '@/types';
 import { useI18n } from '@/context/i18n';
 import { TEXT_DIFF_MINIMAP_WIDTH } from '@/constants/layout';
@@ -50,6 +50,7 @@ interface SplitHeaderProps {
   onRevisionDateTimeQuery?: ((side: 'base' | 'mine', value: string) => void) | undefined;
   onBaseCopy?: (() => Promise<boolean> | boolean | void) | undefined;
   onMineCopy?: (() => Promise<boolean> | boolean | void) | undefined;
+  onSwapSides?: (() => void) | undefined;
 }
 
 function buildRevisionLogText(info: SvnRevisionInfo | null) {
@@ -74,7 +75,7 @@ const SplitHeader = memo(({
   isLoadingMoreRevisions = false, isSearchingRevisionDateTime = false,
   onRevisionChange, onOpenRevisionPicker, onResetCompare, canResetCompare = false,
   onLoadMoreRevisions, onRevisionDateTimeQuery,
-  onBaseCopy, onMineCopy,
+  onBaseCopy, onMineCopy, onSwapSides,
 }: SplitHeaderProps) => {
   const { t } = useI18n();
   const textSplitHeaderRatio = useAppStore((s) => s.textSplitHeaderRatio);
@@ -302,7 +303,11 @@ const SplitHeader = memo(({
       <div
         data-split-header-side={side}
         className="flex items-center gap-3 min-w-0 p-[7px_14px] min-h-[42px] bg-transparent border-t border-border-default"
-        style={{ borderLeft: divider ? `1px solid var(--border-color)` : 'none' }}>
+        style={{
+          borderLeft: divider ? `1px solid var(--border-color)` : 'none',
+          paddingRight: side === 'base' && onSwapSides ? 28 : 14,
+          paddingLeft: side === 'mine' && onSwapSides ? 28 : 14,
+        }}>
         <div className="flex items-center gap-2 min-w-0 flex-1">
           {renderSourceBadge(side, sourceKind)}
           {renderAuthorBadge(info, accent)}
@@ -353,7 +358,7 @@ const SplitHeader = memo(({
 
   const pairedHeader = (
     <div
-      className="grid gap-0 min-w-0"
+      className="relative grid gap-0 min-w-0"
       style={{
         gridTemplateColumns: horizontalSplitHeader
           ? `minmax(0, ${(resolvedSplitRatio * 100).toFixed(3)}%) minmax(0, ${((1 - resolvedSplitRatio) * 100).toFixed(3)}%)`
@@ -365,6 +370,27 @@ const SplitHeader = memo(({
       <div className="min-w-0">
         {headerSide('mine', mineTitle, mineDisplayName, mineVersion, mineRevisionInfo, mineSourceKind, true)}
       </div>
+      {onSwapSides && (
+        <Tooltip
+          content={t('splitHeaderSwapSides')}
+          anchorStyle={{
+            position: 'absolute',
+            left: `${(resolvedSplitRatio * 100).toFixed(3)}%`,
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 20,
+          }}>
+          <button
+            type="button"
+            data-testid="split-header-swap"
+            aria-label={t('splitHeaderSwapSides')}
+            disabled={isSwitchingRevisions}
+            onClick={onSwapSides}
+            className="size-7 rounded-full border border-border-strong bg-bg-surface-solid text-text-primary inline-flex items-center justify-center cursor-pointer shadow-[0_6px_18px_-10px_var(--border-strong)] transition-[color,background,border-color,box-shadow,transform] duration-150 hover:text-accent hover:border-accent/50 hover:shadow-[0_8px_22px_-11px_var(--accent)] active:scale-95 disabled:opacity-45 disabled:cursor-wait focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/35">
+            <ArrowLeftRight size={13} strokeWidth={2.25} />
+          </button>
+        </Tooltip>
+      )}
     </div>
   );
 

@@ -75,6 +75,14 @@ const DARK_SHADER_PALETTE: ShaderPalette = {
   shadeOpacity: 0.26,
 };
 
+const AMBIENT_FRAME_INTERVAL_MS = 1000 / 8;
+const AMBIENT_RESIZE_SETTLE_MS = 180;
+const AMBIENT_GRAIN_TEXTURE_SIZE = 256;
+const AMBIENT_MESH_PIXEL_STEP = 7;
+const AMBIENT_MESH_WIDTH_RANGE = { min: 160, max: 320 } as const;
+const AMBIENT_MESH_HEIGHT_RANGE = { min: 100, max: 210 } as const;
+const CARD_PIXEL_RESIZE_SETTLE_MS = 140;
+
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
@@ -287,7 +295,8 @@ function HomeAmbientCanvas() {
     let dpr = 1;
     let meshWidth = 1;
     let meshHeight = 1;
-    const frameInterval = 1000 / 10;
+    let resizeTimer: number | null = null;
+    let grainPattern: CanvasPattern | null = null;
 
     const isLightTheme = () => document.documentElement.classList.contains('theme-light');
     const isHighContrastTheme = () => document.documentElement.classList.contains('theme-hc');
@@ -320,16 +329,17 @@ function HomeAmbientCanvas() {
     };
 
     const buildGrainTexture = () => {
-      const pixelWidth = Math.max(1, Math.floor(width * dpr));
-      const pixelHeight = Math.max(1, Math.floor(height * dpr));
-      grainCanvas.width = pixelWidth;
-      grainCanvas.height = pixelHeight;
+      grainCanvas.width = AMBIENT_GRAIN_TEXTURE_SIZE;
+      grainCanvas.height = AMBIENT_GRAIN_TEXTURE_SIZE;
 
-      const image = grainCtx.createImageData(pixelWidth, pixelHeight);
+      const image = grainCtx.createImageData(
+        AMBIENT_GRAIN_TEXTURE_SIZE,
+        AMBIENT_GRAIN_TEXTURE_SIZE,
+      );
       const { data } = image;
-      for (let y = 0; y < pixelHeight; y += 1) {
-        for (let x = 0; x < pixelWidth; x += 1) {
-          const index = (y * pixelWidth + x) * 4;
+      for (let y = 0; y < AMBIENT_GRAIN_TEXTURE_SIZE; y += 1) {
+        for (let x = 0; x < AMBIENT_GRAIN_TEXTURE_SIZE; x += 1) {
+          const index = (y * AMBIENT_GRAIN_TEXTURE_SIZE + x) * 4;
           const value = hashPoint(x + 4.17, y + 8.91) > 0.5 ? 255 : 0;
           data[index] = value;
           data[index + 1] = value;
@@ -338,6 +348,7 @@ function HomeAmbientCanvas() {
         }
       }
       grainCtx.putImageData(image, 0, 0);
+      grainPattern = ctx.createPattern(grainCanvas, 'repeat');
     };
 
     const renderShaderMesh = (time: number, palette: ShaderPalette) => {
@@ -451,14 +462,21 @@ function HomeAmbientCanvas() {
       dpr = Math.min(window.devicePixelRatio || 1, 1.25);
       width = Math.max(1, rect.width);
       height = Math.max(1, rect.height);
-      meshWidth = clampNumber(Math.floor(width / 5), 180, 430);
-      meshHeight = clampNumber(Math.floor(meshWidth * (height / width)), 120, 280);
+      meshWidth = clampNumber(
+        Math.floor(width / AMBIENT_MESH_PIXEL_STEP),
+        AMBIENT_MESH_WIDTH_RANGE.min,
+        AMBIENT_MESH_WIDTH_RANGE.max,
+      );
+      meshHeight = clampNumber(
+        Math.floor(meshWidth * (height / width)),
+        AMBIENT_MESH_HEIGHT_RANGE.min,
+        AMBIENT_MESH_HEIGHT_RANGE.max,
+      );
       canvas.width = Math.floor(width * dpr);
       canvas.height = Math.floor(height * dpr);
       meshCanvas.width = meshWidth;
       meshCanvas.height = meshHeight;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      buildGrainTexture();
       paint(performance.now());
     };
 
@@ -512,7 +530,10 @@ function HomeAmbientCanvas() {
       ctx.save();
       ctx.globalCompositeOperation = lightTheme ? 'overlay' : 'screen';
       ctx.globalAlpha = palette.grainOpacity;
-      ctx.drawImage(grainCanvas, 0, 0, width, height);
+      if (grainPattern) {
+        ctx.fillStyle = grainPattern;
+        ctx.fillRect(0, 0, width, height);
+      }
       ctx.restore();
 
       ctx.save();
@@ -535,29 +556,45 @@ function HomeAmbientCanvas() {
       }
       frameRef.current = window.setInterval(() => {
         paint(performance.now());
-      }, frameInterval);
+      }, AMBIENT_FRAME_INTERVAL_MS);
+    };
+
+    const stop = () => {
+      if (frameRef.current === null) return;
+      window.clearInterval(frameRef.current);
+      frameRef.current = null;
+    };
+
+    const scheduleResize = () => {
+      // Keep the live-resize path intentionally cheap. The CSS-sized canvas
+      // stretches its last frame while the DOM follows the viewport; the
+      // expensive backing-store and shader rebuild happens only after the
+      // drag settles.
+      stop();
+      if (resizeTimer !== null) {
+        window.clearTimeout(resizeTimer);
+      }
+      resizeTimer = window.setTimeout(() => {
+        resizeTimer = null;
+        resize();
+        start();
+      }, AMBIENT_RESIZE_SETTLE_MS);
     };
 
     const handleReducedMotionChange = () => {
-      if (frameRef.current !== null) {
-        window.clearInterval(frameRef.current);
-        frameRef.current = null;
-      }
+      stop();
       start();
     };
 
+    buildGrainTexture();
     resize();
     start();
 
-    const resizeObserver = new ResizeObserver(() => {
-      resize();
-      start();
-    });
     const themeObserver = new MutationObserver(() => {
-      resize();
+      paint(performance.now());
       start();
     });
-    resizeObserver.observe(canvas);
+    window.addEventListener('resize', scheduleResize);
     themeObserver.observe(document.documentElement, {
       attributeFilter: ['class'],
       attributes: true,
@@ -565,11 +602,12 @@ function HomeAmbientCanvas() {
     media.addEventListener('change', handleReducedMotionChange);
 
     return () => {
-      resizeObserver.disconnect();
+      window.removeEventListener('resize', scheduleResize);
       themeObserver.disconnect();
       media.removeEventListener('change', handleReducedMotionChange);
-      if (frameRef.current !== null) {
-        window.clearInterval(frameRef.current);
+      stop();
+      if (resizeTimer !== null) {
+        window.clearTimeout(resizeTimer);
       }
     };
   }, []);
@@ -613,6 +651,7 @@ function PixelCardField({ accent, disabled = false }: { accent: string; disabled
     let width = 1;
     let height = 1;
     let isActive = false;
+    let resizeTimer: number | null = null;
 
     const cancelCurrentFrame = () => {
       if (frameHandle === null) return;
@@ -714,20 +753,33 @@ function PixelCardField({ accent, disabled = false }: { accent: string; disabled
       }
     };
 
+    const schedulePixelResize = () => {
+      cancelCurrentFrame();
+      if (resizeTimer !== null) {
+        window.clearTimeout(resizeTimer);
+      }
+      resizeTimer = window.setTimeout(() => {
+        resizeTimer = null;
+        if (isActive) {
+          handleAnimation('appear');
+        } else {
+          initializePixels();
+        }
+      }, CARD_PIXEL_RESIZE_SETTLE_MS);
+    };
+
     initializePixels();
 
-    const resizeObserver = new ResizeObserver(() => {
-      initializePixels();
-      if (isActive) {
-        handleAnimation('appear');
-      }
-    });
+    const resizeObserver = new ResizeObserver(schedulePixelResize);
     resizeObserver.observe(host);
 
     if (disabled) {
       return () => {
         resizeObserver.disconnect();
         cancelCurrentFrame();
+        if (resizeTimer !== null) {
+          window.clearTimeout(resizeTimer);
+        }
         ctx.clearRect(0, 0, width, height);
       };
     }
@@ -746,6 +798,9 @@ function PixelCardField({ accent, disabled = false }: { accent: string; disabled
       host.removeEventListener('focusout', handleFocusOut);
       media.removeEventListener('change', handleReducedMotionChange);
       cancelCurrentFrame();
+      if (resizeTimer !== null) {
+        window.clearTimeout(resizeTimer);
+      }
     };
   }, [accent, disabled]);
 

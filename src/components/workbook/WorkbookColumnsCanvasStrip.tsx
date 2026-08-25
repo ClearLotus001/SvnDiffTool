@@ -91,6 +91,13 @@ import useWorkbookCanvasHoverController, { resolveWorkbookCanvasHoverForCanvas }
 import useWorkbookCanvasSelectionInteractions from '@/components/workbook/useWorkbookCanvasSelectionInteractions';
 import { useWorkbookMaskedRegionReveal } from '@/components/workbook/WorkbookMaskedRegionRevealContext';
 import type { WorkbookCompareStateByRow } from '@/utils/workbook/workbookPanelHelpers';
+import { subscribeWorkbookCanvasScrollFrame } from '@/utils/workbook/workbookCanvasFrameScheduler';
+import {
+  buildWorkbookCanvasBitmapCacheKey,
+  buildWorkbookCanvasBitmapViewportColumnKey,
+  restoreWorkbookCanvasBitmap,
+  storeWorkbookCanvasBitmap,
+} from '@/utils/workbook/workbookCanvasBitmapCache';
 
 export interface WorkbookColumnsCanvasRow {
   row: SplitRow;
@@ -120,7 +127,7 @@ interface WorkbookColumnsCanvasStripProps {
   fontSize: number;
   visibleColumns: number[];
   renderColumns: HorizontalVirtualColumnEntry[];
-  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
+  columnLayoutByColumn: ReadonlyMap<number, HorizontalVirtualColumnEntry>;
   baseMergedRanges: ReadonlyArray<WorkbookMergeRange>;
   mineMergedRanges: ReadonlyArray<WorkbookMergeRange>;
   baseRowEntryByRowNumber: Map<number, WorkbookRowEntry>;
@@ -167,7 +174,6 @@ const WorkbookColumnsCanvasStrip = memo(({
 }: WorkbookColumnsCanvasStripProps) => {
   const T = useThemeTokens();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rafRef = useRef(0);
   const clearHoverRef = useRef<() => void>(() => {});
   const clearMaskedRegionRef = useRef<() => void>(() => {});
   const hasActiveHoverRef = useRef<() => boolean>(() => false);
@@ -251,6 +257,30 @@ const WorkbookColumnsCanvasStrip = memo(({
     const contentLeft = LN_W + 3;
     return { frozenEntries, floatingEntries, frozenPairWidth, contentLeft };
   }, [renderColumns, freezeColumnCount]);
+  const bitmapCacheEnabled = !dragPreviewActive && Object.keys(motionByRegion).length === 0;
+  const bitmapCacheBaseKey = useMemo(() => buildWorkbookCanvasBitmapCacheKey('columns', [
+    sheetName,
+    baseVersion,
+    mineVersion,
+    rows.map(row => `${row.row.lineIdx}:${row.renderMode}:${Number(row.isSearchMatch)}:${Number(row.isActiveSearch)}:${Number(row.isGuided)}:${Number(row.isGuidedStart)}:${Number(row.isGuidedEnd)}`).join(','),
+    viewportWidth,
+    height,
+    freezeColumnCount,
+    headerRowNumber,
+    fontSize,
+    compareMode,
+    selection,
+    T,
+    baseMergedRanges,
+    mineMergedRanges,
+    baseRowEntryByRowNumber,
+    mineRowEntryByRowNumber,
+    compareStateByRow,
+    baseCompareCellsByRowNumber,
+    mineCompareCellsByRowNumber,
+    maskedRegions,
+    motionByRegion,
+  ]), [T, baseCompareCellsByRowNumber, baseMergedRanges, baseRowEntryByRowNumber, baseVersion, compareMode, compareStateByRow, fontSize, freezeColumnCount, headerRowNumber, height, maskedRegions, mineCompareCellsByRowNumber, mineMergedRanges, mineRowEntryByRowNumber, mineVersion, motionByRegion, rows, selection, sheetName, viewportWidth]);
   const hitColumnFramesCacheRef = useRef<{
     columnPartition: typeof columnPartition;
     scrollLeft: number;
@@ -299,6 +329,12 @@ const WorkbookColumnsCanvasStrip = memo(({
 
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
+      const viewportColumnKey = buildWorkbookCanvasBitmapViewportColumnKey(
+        getHitColumnFrames(currentScrollLeft),
+        width,
+      );
+      const bitmapCacheKey = `${bitmapCacheBaseKey}|columns:${viewportColumnKey}|x:${currentScrollLeft.toFixed(2)}`;
+      if (bitmapCacheEnabled && restoreWorkbookCanvasBitmap(canvas, bitmapCacheKey)) return;
 
       ctx.save();
       ctx.scale(dpr, dpr);
@@ -964,43 +1000,27 @@ const WorkbookColumnsCanvasStrip = memo(({
       }
 
       ctx.restore();
+      if (bitmapCacheEnabled) storeWorkbookCanvasBitmap(canvas, bitmapCacheKey);
     };
 
     drawRef.current = draw;
-    if (rafRef.current) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = 0;
-    }
     draw();
 
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      rafRef.current = 0;
-    };
-  }, [baseCompareCellsByRowNumber, baseMergedRanges, baseRenderedRowNumbers, baseRowEntryByRowNumber, columnLayoutByColumn, columnPartition, compareMode, contentWidth, dragPreviewActive, freezeColumnCount, headerRowNumber, height, maskedRegions, mineCompareCellsByRowNumber, mineMergedRanges, mineRenderedRowNumbers, mineRowEntryByRowNumber, motionByRegion, primarySelection?.side, renderedColumnNumbers, renderColumns, renderRows, rowLayoutByRowNumber, scrollRef, selectionLookup, sheetName, sizes.line, sizes.ui, T, viewportWidth]);
+    return undefined;
+  }, [baseCompareCellsByRowNumber, baseMergedRanges, baseRenderedRowNumbers, baseRowEntryByRowNumber, bitmapCacheBaseKey, bitmapCacheEnabled, columnLayoutByColumn, columnPartition, compareMode, contentWidth, dragPreviewActive, freezeColumnCount, getHitColumnFrames, headerRowNumber, height, maskedRegions, mineCompareCellsByRowNumber, mineMergedRanges, mineRenderedRowNumbers, mineRowEntryByRowNumber, motionByRegion, primarySelection?.side, renderedColumnNumbers, renderColumns, renderRows, rowLayoutByRowNumber, scrollRef, selectionLookup, sheetName, sizes.line, sizes.ui, T, viewportWidth]);
 
   useEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller) return;
 
     let lastScrollLeft = scroller.scrollLeft ?? 0;
-    const onScroll = () => {
-      const nextScrollLeft = scroller.scrollLeft ?? 0;
+    return subscribeWorkbookCanvasScrollFrame(scroller, ({ scrollLeft: nextScrollLeft }) => {
       if (nextScrollLeft === lastScrollLeft) return;
       lastScrollLeft = nextScrollLeft;
       if (hasActiveHoverRef.current()) clearHoverRef.current();
       clearMaskedRegionRef.current();
-      if (rafRef.current) return;
-      rafRef.current = requestAnimationFrame(() => {
-        rafRef.current = 0;
-        drawRef.current('scroll');
-      });
-    };
-
-    scroller.addEventListener('scroll', onScroll, { passive: true });
-    return () => {
-      scroller.removeEventListener('scroll', onScroll);
-    };
+      drawRef.current('scroll');
+    });
   }, [scrollRef]);
 
   const resolveHit = (

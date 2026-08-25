@@ -55,6 +55,7 @@ export interface RevisionSelectionPair {
 }
 
 export interface DiffData extends DiffMeta {
+  isSideOrderSwapped?: boolean;
   source?: ComparisonSourceDescriptor;
   sourceIdentity?: string;
   basePath?: string;

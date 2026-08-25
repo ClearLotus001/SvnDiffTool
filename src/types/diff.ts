@@ -3,6 +3,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type LineType = 'equal' | 'add' | 'delete';
+export type DiffTypeFilter = 'all' | 'add' | 'modify' | 'delete';
 
 export interface CharSpan {
   highlight: boolean;

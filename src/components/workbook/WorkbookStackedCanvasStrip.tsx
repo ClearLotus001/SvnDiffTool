@@ -92,6 +92,13 @@ import {
   getWorkbookStackedVisibleBands,
 } from '@/utils/workbook/workbookRowBehavior';
 import type { WorkbookCompareStateByRow } from '@/utils/workbook/workbookPanelHelpers';
+import { subscribeWorkbookCanvasScrollFrame } from '@/utils/workbook/workbookCanvasFrameScheduler';
+import {
+  buildWorkbookCanvasBitmapCacheKey,
+  buildWorkbookCanvasBitmapViewportColumnKey,
+  restoreWorkbookCanvasBitmap,
+  storeWorkbookCanvasBitmap,
+} from '@/utils/workbook/workbookCanvasBitmapCache';
 import {
   buildWorkbookCanvasHitColumnFrames,
   findWorkbookCanvasHitXFrame,
@@ -138,7 +145,7 @@ interface WorkbookStackedCanvasStripProps {
   fontSize: number;
   visibleColumns: number[];
   renderColumns: HorizontalVirtualColumnEntry[];
-  columnLayoutByColumn: Map<number, HorizontalVirtualColumnEntry>;
+  columnLayoutByColumn: ReadonlyMap<number, HorizontalVirtualColumnEntry>;
   baseMergedRanges: ReadonlyArray<WorkbookMergeRange>;
   mineMergedRanges: ReadonlyArray<WorkbookMergeRange>;
   baseRowEntryByRowNumber: Map<number, WorkbookRowEntry>;
@@ -258,7 +265,6 @@ const WorkbookStackedCanvasStrip = memo(({
 }: WorkbookStackedCanvasStripProps) => {
   const T = useThemeTokens();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rafRef = useRef(0);
   const clearHoverRef = useRef<() => void>(() => {});
   const clearMaskedRegionRef = useRef<() => void>(() => {});
   const hasActiveHoverRef = useRef<() => boolean>(() => false);
@@ -557,6 +563,30 @@ const WorkbookStackedCanvasStrip = memo(({
     const contentLeft = LN_W + 3;
     return { frozenEntries, floatingEntries, frozenWidth, contentLeft };
   }, [renderColumns, freezeColumnCount]);
+  const bitmapCacheEnabled = !dragPreviewActive && Object.keys(motionByRegion).length === 0;
+  const bitmapCacheBaseKey = useMemo(() => buildWorkbookCanvasBitmapCacheKey('stacked', [
+    sheetName,
+    baseVersion,
+    mineVersion,
+    groups.map(group => `${group.key}:${group.rows.map(row => `${row.row.lineIdx}:${row.renderMode}:${Number(row.isSearchMatch)}:${Number(row.isActiveSearch)}:${Number(row.isGuided)}:${Number(row.isGuidedStart)}:${Number(row.isGuidedEnd)}`).join(',')}`).join(';'),
+    viewportWidth,
+    totalHeight,
+    freezeColumnCount,
+    headerRowNumber,
+    fontSize,
+    compareMode,
+    selection,
+    T,
+    baseMergedRanges,
+    mineMergedRanges,
+    baseRowEntryByRowNumber,
+    mineRowEntryByRowNumber,
+    compareStateByRow,
+    baseCompareCellsByRowNumber,
+    mineCompareCellsByRowNumber,
+    maskedRegions,
+    motionByRegion,
+  ]), [T, baseCompareCellsByRowNumber, baseMergedRanges, baseRowEntryByRowNumber, baseVersion, compareMode, compareStateByRow, fontSize, freezeColumnCount, groups, headerRowNumber, maskedRegions, mineCompareCellsByRowNumber, mineMergedRanges, mineRowEntryByRowNumber, mineVersion, motionByRegion, selection, sheetName, totalHeight, viewportWidth]);
 
   const hitColumnFramesCacheRef = useRef<{
     columnPartition: typeof columnPartition;
@@ -607,6 +637,12 @@ const WorkbookStackedCanvasStrip = memo(({
 
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
+      const viewportColumnKey = buildWorkbookCanvasBitmapViewportColumnKey(
+        getHitColumnFrames(currentScrollLeft),
+        width,
+      );
+      const bitmapCacheKey = `${bitmapCacheBaseKey}|columns:${viewportColumnKey}|x:${currentScrollLeft.toFixed(2)}`;
+      if (bitmapCacheEnabled && restoreWorkbookCanvasBitmap(canvas, bitmapCacheKey)) return;
 
       ctx.save();
       ctx.scale(dpr, dpr);
@@ -1287,47 +1323,27 @@ const WorkbookStackedCanvasStrip = memo(({
       }
 
       ctx.restore();
+      if (bitmapCacheEnabled) storeWorkbookCanvasBitmap(canvas, bitmapCacheKey);
     };
 
     drawRef.current = draw;
-    // Cancel any pending scroll-driven rAF — this layout-triggered draw
-    // already reflects the latest state. Without this, the scroll handler's
-    // rAF could fire in the same frame and cause a redundant full canvas
-    // repaint, which is the primary cause of horizontal scroll jank.
-    if (rafRef.current) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = 0;
-    }
     draw();
 
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      rafRef.current = 0;
-    };
-  }, [baseMergedRanges, columnLayoutByColumn, columnPartition, compareMode, contentWidth, dragPreviewActive, freezeColumnCount, groupRuntimeByKey, headerRowNumber, maskedRegions, mineMergedRanges, motionByRegion, renderBands, renderedColumnNumbers, renderColumns, scrollRef, selectionLookup, sheetName, sizes.line, sizes.ui, T, totalHeight, viewportWidth]);
+    return undefined;
+  }, [baseMergedRanges, bitmapCacheBaseKey, bitmapCacheEnabled, columnLayoutByColumn, columnPartition, compareMode, contentWidth, dragPreviewActive, freezeColumnCount, getHitColumnFrames, groupRuntimeByKey, headerRowNumber, maskedRegions, mineMergedRanges, motionByRegion, renderBands, renderedColumnNumbers, renderColumns, scrollRef, selectionLookup, sheetName, sizes.line, sizes.ui, T, totalHeight, viewportWidth]);
 
   useEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller) return;
 
     let lastScrollLeft = scroller.scrollLeft ?? 0;
-    const onScroll = () => {
-      const nextScrollLeft = scroller.scrollLeft ?? 0;
+    return subscribeWorkbookCanvasScrollFrame(scroller, ({ scrollLeft: nextScrollLeft }) => {
       if (nextScrollLeft === lastScrollLeft) return;
       lastScrollLeft = nextScrollLeft;
       if (hasActiveHoverRef.current()) clearHoverRef.current();
       clearMaskedRegionRef.current();
-      if (rafRef.current) return;
-      rafRef.current = requestAnimationFrame(() => {
-        rafRef.current = 0;
-        drawRef.current('scroll');
-      });
-    };
-
-    scroller.addEventListener('scroll', onScroll, { passive: true });
-    return () => {
-      scroller.removeEventListener('scroll', onScroll);
-    };
+      drawRef.current('scroll');
+    });
   }, [scrollRef]);
 
   const resolveHit = (

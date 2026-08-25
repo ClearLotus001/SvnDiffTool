@@ -22,6 +22,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, type RefObject } from 'react';
+import { flushSync } from 'react-dom';
 import type { VirtualState } from '@/types';
 import { scrollElementForNavigation } from '@/utils/navigation/animatedScroll';
 
@@ -87,6 +88,76 @@ export function computeVirtualWindow(
   };
 }
 
+export function shouldRetainVirtualWindow(
+  currentRange: VirtualWindow,
+  count: number,
+  rowHeight: number,
+  viewH: number,
+  scrollTop: number,
+  overscanMin = DEFAULT_OVERSCAN_MIN,
+  overscanFactor = DEFAULT_OVERSCAN_FACTOR,
+): boolean {
+  const normalizedRowHeight = Math.max(rowHeight, 1);
+  const totalH = count * rowHeight;
+  const maxScrollTop = Math.max(0, totalH - Math.max(0, viewH));
+  const clampedScrollTop = Math.max(0, Math.min(scrollTop, maxScrollTop));
+  const visibleRowCount = Math.max(1, Math.ceil(viewH / normalizedRowHeight));
+  const overscan = Math.max(overscanMin, Math.ceil(visibleRowCount * overscanFactor));
+
+  if (
+    currentRange.totalH !== totalH
+    || currentRange.visibleRowCount !== visibleRowCount
+    || currentRange.overscan !== overscan
+    || currentRange.startIdx < 0
+    || currentRange.endIdx < currentRange.startIdx
+    || currentRange.endIdx > count
+  ) {
+    return false;
+  }
+
+  if (!doesVirtualWindowCoverViewport(currentRange, count, rowHeight, viewH, scrollTop)) return false;
+
+  const visibleStart = Math.max(0, Math.min(count, Math.floor(clampedScrollTop / normalizedRowHeight)));
+  const visibleEnd = Math.max(
+    visibleStart,
+    Math.min(count, Math.ceil((clampedScrollTop + Math.max(0, viewH)) / normalizedRowHeight)),
+  );
+  const guardRows = Math.max(1, Math.floor(overscan * 0.5));
+  const hasLeadingGuard = currentRange.startIdx === 0
+    || visibleStart - currentRange.startIdx >= guardRows;
+  const hasTrailingGuard = currentRange.endIdx === count
+    || currentRange.endIdx - visibleEnd >= guardRows;
+  return hasLeadingGuard && hasTrailingGuard;
+}
+
+export function doesVirtualWindowCoverViewport(
+  currentRange: VirtualWindow,
+  count: number,
+  rowHeight: number,
+  viewH: number,
+  scrollTop: number,
+): boolean {
+  const normalizedRowHeight = Math.max(rowHeight, 1);
+  const totalH = count * rowHeight;
+  if (
+    currentRange.totalH !== totalH
+    || currentRange.startIdx < 0
+    || currentRange.endIdx < currentRange.startIdx
+    || currentRange.endIdx > count
+  ) {
+    return false;
+  }
+
+  const maxScrollTop = Math.max(0, totalH - Math.max(0, viewH));
+  const clampedScrollTop = Math.max(0, Math.min(scrollTop, maxScrollTop));
+  const visibleStart = Math.max(0, Math.min(count, Math.floor(clampedScrollTop / normalizedRowHeight)));
+  const visibleEnd = Math.max(
+    visibleStart,
+    Math.min(count, Math.ceil((clampedScrollTop + Math.max(0, viewH)) / normalizedRowHeight)),
+  );
+  return currentRange.startIdx <= visibleStart && currentRange.endIdx >= visibleEnd;
+}
+
 export function useVirtual(
   count: number,
   scrollRef: RefObject<HTMLDivElement | null>,
@@ -121,6 +192,20 @@ export function useVirtual(
 
   const applyWindowRange = useCallback((scrollTop: number, nextViewH: number) => {
     const calcStart = getNow();
+    const prevRange = rangeRef.current;
+    if (shouldRetainVirtualWindow(
+      prevRange,
+      countRef.current,
+      rowHeight,
+      nextViewH,
+      scrollTop,
+      overscanMin,
+      overscanFactor,
+    )) {
+      lastCalcMsRef.current = getNow() - calcStart;
+      return;
+    }
+
     const nextRange = computeVirtualWindow(
       countRef.current,
       rowHeight,
@@ -131,7 +216,6 @@ export function useVirtual(
     );
     lastCalcMsRef.current = getNow() - calcStart;
 
-    const prevRange = rangeRef.current;
     if (
       prevRange.startIdx === nextRange.startIdx
       && prevRange.endIdx === nextRange.endIdx
@@ -163,7 +247,7 @@ export function useVirtual(
     setViewH(prev => (prev === nextViewH ? prev : nextViewH));
     applyWindowRange(Math.max(0, Math.round(el.scrollTop)), nextViewH);
     return () => ro.disconnect();
-  }, [applyWindowRange, scrollRef]);
+  }, [applyWindowRange, rowHeight, scrollRef]);
 
   // Keep up with thumb dragging without pushing React through more than one
   // rerender per frame.
@@ -172,6 +256,22 @@ export function useVirtual(
     if (!el) return;
     const onScroll = () => {
       latestScrollTopRef.current = Math.max(0, Math.round(el.scrollTop));
+      if (!doesVirtualWindowCoverViewport(
+        rangeRef.current,
+        countRef.current,
+        rowHeight,
+        viewHRef.current,
+        latestScrollTopRef.current,
+      )) {
+        if (rafRef.current) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = 0;
+        }
+        flushSync(() => {
+          applyWindowRange(latestScrollTopRef.current, viewHRef.current);
+        });
+        return;
+      }
       if (rafRef.current) return;
       rafRef.current = requestAnimationFrame(() => {
         rafRef.current = 0;
@@ -183,7 +283,7 @@ export function useVirtual(
       el.removeEventListener('scroll', onScroll);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [applyWindowRange, scrollRef]);
+  }, [applyWindowRange, rowHeight, scrollRef]);
 
   useEffect(() => {
     applyWindowRange(latestScrollTopRef.current, viewHRef.current);

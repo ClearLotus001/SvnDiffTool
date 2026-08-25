@@ -14,6 +14,7 @@ const INITIAL_SHOW_FALLBACK_MS = process.env.NODE_ENV === 'development' ? 10_000
 const WINDOWED_STARTUP_INSET = 14;
 const WINDOW_CORNER_RADIUS = 18;
 const NATIVE_ROUNDED_CORNERS_MIN_WINDOWS_BUILD = 22000;
+const RESIZE_SHAPE_SETTLE_MS = 120;
 
 function shouldEnablePerfBridge(): boolean {
   return process.env.SVN_DIFF_PERF_BRIDGE?.trim() === '1';
@@ -99,7 +100,10 @@ function buildRoundedWindowShape(width: number, height: number, radius: number) 
 function applyRoundedShape(win: BrowserWindow): void {
   if (process.platform !== 'win32' || win.isDestroyed()) return;
   if (supportsNativeRoundedCorners()) {
-    win.setShape([]);
+    // Windows 11 already clips BrowserWindow corners natively. Calling
+    // setShape() for every resize frame invalidates the HWND region and can
+    // leave Chromium's surface composited at the previous window size while
+    // the native window keeps growing, exposing the BrowserWindow background.
     return;
   }
 
@@ -274,11 +278,51 @@ export function createWindow(): void {
 
   applyRoundedShape(win);
 
-  win.on('resize', () => applyRoundedShape(win));
-  win.on('maximize', () => applyRoundedShape(win));
-  win.on('unmaximize', () => applyRoundedShape(win));
-  win.on('enter-full-screen', () => applyRoundedShape(win));
-  win.on('leave-full-screen', () => applyRoundedShape(win));
+  let resizeShapeTimer: ReturnType<typeof setTimeout> | null = null;
+  let customShapeClearedForResize = false;
+  const usesCustomRoundedShape = process.platform === 'win32' && !supportsNativeRoundedCorners();
+
+  const cancelScheduledRoundedShape = () => {
+    if (resizeShapeTimer === null) return;
+    clearTimeout(resizeShapeTimer);
+    resizeShapeTimer = null;
+  };
+
+  const clearCustomShapeForResize = () => {
+    if (!usesCustomRoundedShape || win.isDestroyed() || customShapeClearedForResize) return;
+    // On older Windows versions, remove the fixed-size region once at the
+    // beginning of a live resize so newly exposed pixels are never clipped.
+    win.setShape([]);
+    customShapeClearedForResize = true;
+  };
+
+  const scheduleRoundedShapeAfterResize = () => {
+    if (!usesCustomRoundedShape || win.isDestroyed()) return;
+
+    clearCustomShapeForResize();
+
+    cancelScheduledRoundedShape();
+    resizeShapeTimer = setTimeout(() => {
+      resizeShapeTimer = null;
+      customShapeClearedForResize = false;
+      applyRoundedShape(win);
+    }, RESIZE_SHAPE_SETTLE_MS);
+  };
+
+  const applyRoundedShapeForWindowState = () => {
+    cancelScheduledRoundedShape();
+    customShapeClearedForResize = false;
+    applyRoundedShape(win);
+  };
+
+  if (usesCustomRoundedShape) {
+    win.on('will-resize', clearCustomShapeForResize);
+    win.on('resize', scheduleRoundedShapeAfterResize);
+    win.on('maximize', applyRoundedShapeForWindowState);
+    win.on('unmaximize', applyRoundedShapeForWindowState);
+    win.on('enter-full-screen', applyRoundedShapeForWindowState);
+    win.on('leave-full-screen', applyRoundedShapeForWindowState);
+  }
   win.on('show', () => {
     writeExternalDiffDebugLog('window:show', {
       bounds: win.getBounds(),
@@ -291,6 +335,7 @@ export function createWindow(): void {
     });
   });
   win.on('closed', () => {
+    cancelScheduledRoundedShape();
     writeExternalDiffDebugLog('window:closed');
   });
 
