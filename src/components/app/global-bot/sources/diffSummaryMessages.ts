@@ -3,6 +3,7 @@ import type { TextDiffStats, WorkbookArtifactDiff } from '@/types';
 import type { WorkbookSection } from '@/utils/workbook/workbookSections';
 import { summarizeWorkbookSectionChanges } from '@/utils/workbook/workbookSections';
 import type { GlobalBotMessage } from '@/components/app/global-bot/messages/types';
+import { resolveDisplayedDiffStats } from '@/utils/diff/diffStatsPresentation';
 
 interface ResolveDiffSummaryMessagesOptions {
   enabled: boolean;
@@ -53,6 +54,7 @@ export function resolveDiffSummaryMessages({
   const messages: GlobalBotMessage[] = [];
   const total = stats.add + stats.del + stats.chg;
   if (total > 0) {
+    const displayedStats = resolveDisplayedDiffStats(stats);
     messages.push({
       ...makeMessage(
         `diff:${stats.add}:${stats.del}:${stats.chg}`,
@@ -60,9 +62,9 @@ export function resolveDiffSummaryMessages({
         60,
       ),
       tags: [
-        { label: t('statsAdded'), value: stats.add, tone: 'positive' },
-        { label: t('statsRemoved'), value: stats.del, tone: 'negative' },
-        { label: t('statsModified'), value: stats.chg, tone: 'warning' },
+        { label: t('statsAdded'), value: displayedStats.added, tone: 'positive' },
+        { label: t('statsRemoved'), value: displayedStats.removed, tone: 'negative' },
+        { label: t('statsModified'), value: displayedStats.modified, tone: 'warning' },
       ],
     });
   }

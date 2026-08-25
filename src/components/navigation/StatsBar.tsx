@@ -11,6 +11,7 @@ import {
 } from '@/utils/diff/diffIndicatorVisuals';
 import type { WorkbookSection } from '@/utils/workbook/workbookSections';
 import { summarizeWorkbookSectionChanges } from '@/utils/workbook/workbookSections';
+import { resolveDisplayedDiffStats } from '@/utils/diff/diffStatsPresentation';
 
 interface StatsBarProps {
   textDiffPresentation: TextDiffPresentation;
@@ -98,6 +99,7 @@ const StatsBar = memo(({
   const [showTrailingFade, setShowTrailingFade] = useState(false);
 
   const stats = useMemo(() => textDiffPresentation.stats, [textDiffPresentation]);
+  const displayedStats = useMemo(() => resolveDisplayedDiffStats(stats), [stats]);
   const workbookSectionSummary = useMemo(
     () => summarizeWorkbookSectionChanges(workbookSections),
     [workbookSections],
@@ -225,9 +227,9 @@ const StatsBar = memo(({
             ref={scrollRef}
             className={`flex-1 min-w-0 ${SCROLL_RAIL_CLASS}`}>
             <div className="inline-flex items-center gap-1.5 min-w-max pr-1">
-              {metric(addedPalette, `+${stats.add + stats.chg}`, t('statsAdded'))}
-              {metric(deletedPalette, `-${stats.del + stats.chg}`, t('statsRemoved'))}
-              {metric(modifiedPalette, `~${stats.chg}`, t('statsModified'))}
+              {metric(addedPalette, `+${displayedStats.added}`, t('statsAdded'))}
+              {metric(deletedPalette, `-${displayedStats.removed}`, t('statsRemoved'))}
+              {metric(modifiedPalette, `~${displayedStats.modified}`, t('statsModified'))}
 
               {isWorkbookMode && (
                 <Tooltip
