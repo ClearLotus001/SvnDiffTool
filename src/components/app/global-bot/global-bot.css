@@ -34,7 +34,7 @@
 }
 
 .cl-ai-root {
-    --cl-font-body: "Manrope Variable", "Noto Sans SC Variable", "Segoe UI Variable", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --cl-font-body: "Manrope Variable", "Segoe UI Variable", "PingFang SC", "Microsoft YaHei", sans-serif;
     --cl-paper: #f3f1eb;
     --cl-surface: #fffefa;
     --cl-ink: #111111;
