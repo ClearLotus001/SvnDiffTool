@@ -25,6 +25,7 @@ let _cachedSvnTarget: string | null | undefined;
 let _cachedTimelineTarget: string | null | undefined;
 let _activeCliArgs: CliArgs = { ...EMPTY_CLI_ARGS };
 let _hasPendingLaunchDiffRequest = false;
+let _sessionCacheGeneration = 0;
 
 export function getMainWindow(): BrowserWindow | null {
   return _mainWindow;
@@ -54,12 +55,28 @@ export function getActiveCliArgs(): CliArgs {
   return _activeCliArgs;
 }
 
+export function getSessionCacheGeneration(): number {
+  return _sessionCacheGeneration;
+}
+
+export function clearMainSessionCaches(): void {
+  _sessionCacheGeneration += 1;
+  cachedRevisionOptionPages.clear();
+  filePayloadCache.clear();
+  revisionPayloadCache.clear();
+  fileEqualityCache.clear();
+  workbookCompareCache.clear();
+  workbookCompareInFlight.clear();
+  workbookMetadataCache.clear();
+  workbookMetadataInFlight.clear();
+  clearSvnProbeCaches();
+}
+
 export function setActiveCliArgs(nextArgs: CliArgs): void {
+  clearMainSessionCaches();
   _activeCliArgs = { ...nextArgs };
   _cachedSvnTarget = undefined;
   _cachedTimelineTarget = undefined;
-  cachedRevisionOptionPages.clear();
-  clearSvnProbeCaches();
   writeExternalDiffDebugLog('active-cli-args-updated', _activeCliArgs);
 }
 

@@ -5,6 +5,7 @@ import {
   TooltipArrow,
   TOOLTIP_GLASS_BACKDROP_FILTER,
   TOOLTIP_GLASS_BORDER_COLOR,
+  TOOLTIP_GLASS_BOX_SHADOW,
   TOOLTIP_GLASS_FILL_COLOR,
   TOOLTIP_PORTAL_Z_INDEX,
 } from '@/components/shared/Tooltip';
@@ -64,11 +65,12 @@ const WorkbookAnchorTooltip = memo(({ hover }: WorkbookAnchorTooltipProps) => {
       style={{ left: layout.left, top: layout.top, zIndex: TOOLTIP_PORTAL_Z_INDEX }}>
       <div
         ref={bubbleRef}
-        className="svn-tooltip-surface relative max-w-[280px] px-2.5 py-1.5 rounded-[10px] font-ui text-app-xs leading-[1.35] whitespace-nowrap shadow-[0_14px_30px_rgba(0,0,0,0.12)] border border-border-default text-text-title glass"
+        className="svn-tooltip-surface relative max-w-[280px] px-2.5 py-1.5 rounded-[10px] font-ui text-app-xs leading-[1.35] whitespace-nowrap border border-border-default text-text-title glass"
         style={{
           background: TOOLTIP_GLASS_FILL_COLOR,
           backdropFilter: TOOLTIP_GLASS_BACKDROP_FILTER,
           WebkitBackdropFilter: TOOLTIP_GLASS_BACKDROP_FILTER,
+          boxShadow: TOOLTIP_GLASS_BOX_SHADOW,
         }}>
         {hover.text}
         <TooltipArrow

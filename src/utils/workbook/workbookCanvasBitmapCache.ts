@@ -112,10 +112,14 @@ interface WorkbookCanvasBitmap {
   height: number;
 }
 
+function disposeBitmapSource(source: WorkbookCanvasBitmapSource): void {
+  if ('close' in source && typeof source.close === 'function') source.close();
+}
+
 const bitmapCache = new WorkbookCanvasBitmapLru<WorkbookCanvasBitmap>(
   DEFAULT_BITMAP_CACHE_BUDGET,
   bitmap => {
-    if (typeof ImageBitmap !== 'undefined' && bitmap.source instanceof ImageBitmap) bitmap.source.close();
+    disposeBitmapSource(bitmap.source);
   },
 );
 const pendingBitmapBudget = new WorkbookCanvasBitmapPendingBudget(
@@ -124,6 +128,22 @@ const pendingBitmapBudget = new WorkbookCanvasBitmapPendingBudget(
 );
 const objectIds = new WeakMap<object, number>();
 let nextObjectId = 1;
+let bitmapCacheGeneration = 0;
+
+export function clearWorkbookCanvasBitmapCache(): void {
+  bitmapCacheGeneration += 1;
+  bitmapCache.clear();
+}
+
+export function getWorkbookCanvasBitmapCacheStats() {
+  return {
+    entries: bitmapCache.size,
+    bytes: bitmapCache.bytes,
+    pendingEntries: pendingBitmapBudget.count,
+    pendingBytes: pendingBitmapBudget.bytes,
+    generation: bitmapCacheGeneration,
+  };
+}
 
 function getObjectId(value: object): number {
   const existing = objectIds.get(value);
@@ -189,10 +209,20 @@ export function restoreWorkbookCanvasBitmap(canvas: HTMLCanvasElement, key: stri
   return true;
 }
 
-function storeBitmapSource(key: string, source: WorkbookCanvasBitmapSource, width: number, height: number): void {
+function storeBitmapSource(
+  key: string,
+  source: WorkbookCanvasBitmapSource,
+  width: number,
+  height: number,
+  generation: number,
+): void {
+  if (generation !== bitmapCacheGeneration) {
+    disposeBitmapSource(source);
+    return;
+  }
   const bytes = width * height * 4;
   if (bytes > MAX_BITMAP_CACHE_ENTRY_BYTES) {
-    if (typeof ImageBitmap !== 'undefined' && source instanceof ImageBitmap) source.close();
+    disposeBitmapSource(source);
     return;
   }
   bitmapCache.set(key, { source, width, height }, bytes);
@@ -202,6 +232,7 @@ export function storeWorkbookCanvasBitmap(canvas: HTMLCanvasElement, key: string
   const width = canvas.width;
   const height = canvas.height;
   const bytes = width * height * 4;
+  const generation = bitmapCacheGeneration;
   if (bytes <= 0 || bytes > MAX_BITMAP_CACHE_ENTRY_BYTES) return;
   if (typeof createImageBitmap === 'function') {
     if (!pendingBitmapBudget.reserve(key, bytes)) return;
@@ -213,7 +244,7 @@ export function storeWorkbookCanvasBitmap(canvas: HTMLCanvasElement, key: string
       return;
     }
     void bitmapPromise
-      .then(bitmap => storeBitmapSource(key, bitmap, width, height))
+      .then(bitmap => storeBitmapSource(key, bitmap, width, height, generation))
       .finally(() => pendingBitmapBudget.release(key));
     return;
   }
@@ -222,5 +253,5 @@ export function storeWorkbookCanvasBitmap(canvas: HTMLCanvasElement, key: string
   copy.width = canvas.width;
   copy.height = canvas.height;
   copy.getContext('2d')?.drawImage(canvas, 0, 0);
-  storeBitmapSource(key, copy, copy.width, copy.height);
+  storeBitmapSource(key, copy, copy.width, copy.height, generation);
 }

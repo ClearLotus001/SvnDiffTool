@@ -1,5 +1,13 @@
 import { expect, test } from '@playwright/test';
 
+function normalizeCssHex(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (/^#[0-9a-f]{3}$/.test(normalized)) {
+    return `#${[...normalized.slice(1)].map(character => character.repeat(2)).join('')}`;
+  }
+  return normalized;
+}
+
 test('goto action keeps the correct inverse contrast in every theme', async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem('versora.locale', 'zh-CN');
@@ -48,7 +56,13 @@ test('goto action keeps the correct inverse contrast in every theme', async ({ p
         visualBackgroundImage: getComputedStyle(element, '::after').backgroundImage,
       };
     });
-    expect({ color: style.color, activeBackground: style.activeBackground }).toEqual(expected[theme]);
+    expect({
+      color: style.color,
+      activeBackground: normalizeCssHex(style.activeBackground),
+    }).toEqual({
+      color: expected[theme].color,
+      activeBackground: normalizeCssHex(expected[theme].activeBackground),
+    });
     if (theme === 'hc') {
       expect(style.visualBackground).toBe('rgb(255, 255, 0)');
       expect(style.visualBackgroundImage).toBe('none');

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { cssAlpha, cssVar } from '../src/theme/cssUtils';
+import { cssVar } from '../src/theme/cssUtils';
 import {
   composeTextRowBackground,
   resolveTextDiffCssPalette,
@@ -16,7 +16,7 @@ test('modify tone exposes the shared yellow diff palette', () => {
     rowBackground: cssVar('chgBg'),
     accent: cssVar('chgBrd'),
     prefix: cssVar('chgTx'),
-    inlineHighlight: cssAlpha('chgTx', '40'),
+    inlineHighlight: cssVar('chgHl'),
   });
 });
 

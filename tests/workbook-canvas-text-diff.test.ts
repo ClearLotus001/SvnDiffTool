@@ -109,7 +109,7 @@ test('workbook canvas text diff uses a stronger fill and semantic edge', () => {
   const theme = getThemeTokensSnapshot('light');
   assert.deepEqual(
     resolveWorkbookCanvasTextDiffHighlight(theme, createCellDelta('2026', '2050')),
-    { background: `${theme.chgTx}40`, edge: `${theme.chgBrd}cc` },
+    { background: theme.chgHl, edge: `${theme.chgBrd}cc` },
   );
   assert.deepEqual(
     resolveWorkbookCanvasTextDiffHighlight(theme, createCellDelta(' ', '', { strictOnly: true })),

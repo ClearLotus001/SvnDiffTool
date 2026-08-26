@@ -29,6 +29,7 @@ export const TOOLTIP_PORTAL_Z_INDEX = 10000;
 export const TOOLTIP_GLASS_BORDER_COLOR = 'var(--liquid-glass-border, var(--border-color))';
 export const TOOLTIP_GLASS_FILL_COLOR = 'var(--liquid-glass-bg-strong, var(--bg-surface-solid))';
 export const TOOLTIP_GLASS_BACKDROP_FILTER = 'var(--glass-blur)';
+export const TOOLTIP_GLASS_BOX_SHADOW = '0 14px 30px var(--liquid-glass-shadow)';
 const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
 interface TooltipArrowProps {
@@ -212,7 +213,7 @@ const Tooltip = memo(({
           ref={bubbleRef}
           className={surface === 'bare'
             ? 'relative'
-            : 'svn-tooltip-surface relative p-[8px_10px] rounded-xl border border-border-default text-text-title text-[13px] leading-tight font-ui text-center whitespace-normal shadow-[0_14px_30px_rgba(0,0,0,0.12)] glass'}
+            : 'svn-tooltip-surface relative p-[8px_10px] rounded-xl border border-border-default text-text-title text-[13px] leading-tight font-ui text-center whitespace-normal glass'}
           style={{
             width: width == null
               ? 'max-content'
@@ -221,12 +222,13 @@ const Tooltip = memo(({
             background: surface === 'bare'
               ? 'transparent'
               : `
-                radial-gradient(ellipse at 12% 0%, color-mix(in srgb, var(--liquid-glass-specular, white) 22%, transparent) 0%, transparent 42%),
-                linear-gradient(180deg, color-mix(in srgb, var(--liquid-glass-rim, white) 24%, transparent) 0%, transparent 58%),
+                radial-gradient(ellipse at 12% 0%, color-mix(in srgb, var(--liquid-glass-specular) 22%, transparent) 0%, transparent 42%),
+                linear-gradient(180deg, color-mix(in srgb, var(--liquid-glass-rim) 24%, transparent) 0%, transparent 58%),
                 ${TOOLTIP_GLASS_FILL_COLOR}
               `,
             backdropFilter: surface === 'bare' ? undefined : TOOLTIP_GLASS_BACKDROP_FILTER,
             WebkitBackdropFilter: surface === 'bare' ? undefined : TOOLTIP_GLASS_BACKDROP_FILTER,
+            boxShadow: surface === 'bare' ? undefined : TOOLTIP_GLASS_BOX_SHADOW,
           }}>
           {resolvedContent}
           {surface !== 'bare' && (

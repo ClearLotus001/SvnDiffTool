@@ -107,7 +107,7 @@ function applyMiniMapTonePaint(
   if (resolvedTones.length > 1) {
     if (resolvedTones.includes('modify')) {
       const modifyPaint = resolveDiffMiniMapPaint(theme, 'modify');
-      ctx.fillStyle = modifyPaint.color ?? theme.chgTx;
+      ctx.fillStyle = modifyPaint.color ?? theme.chgBrd;
       ctx.fillRect(left, top, width, height);
 
       const accentStripeWidth = Math.max(2, Math.min(6, Math.floor(width * 0.14)));
@@ -131,7 +131,7 @@ function applyMiniMapTonePaint(
         ? left + width
         : left + (stripeWidth * (index + 1));
       const stripePaint = resolveDiffMiniMapPaint(theme, stripeTone);
-      ctx.fillStyle = stripePaint.color ?? theme.chgTx;
+      ctx.fillStyle = stripePaint.color ?? theme.chgBrd;
       ctx.fillRect(stripeLeft, top, Math.max(1, nextLeft - stripeLeft), height);
     });
     return ctx.fillStyle;
@@ -142,7 +142,7 @@ function applyMiniMapTonePaint(
 
   const gradient = ctx.createLinearGradient(left, top, left + width, top);
   const stops = paint.stops ?? [];
-  if (stops.length === 0) return resolveDiffMiniMapPaint(theme, 'modify').color ?? theme.chgTx;
+  if (stops.length === 0) return resolveDiffMiniMapPaint(theme, 'modify').color ?? theme.chgBrd;
   stops.forEach((stop) => {
     gradient.addColorStop(stop.offset, stop.color);
   });

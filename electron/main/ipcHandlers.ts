@@ -11,7 +11,9 @@ import {
   getAppUpdater,
   getHasPendingLaunchDiffRequest,
   getMainWindow,
+  clearMainSessionCaches,
 } from './state.js';
+import { clearAnalysisSnapshotCache } from './analysisSnapshotService.js';
 import { getStartupPalette, readStartupAppearance, writeStartupAppearance } from './startupAppearance.js';
 import {
   buildDiffData,
@@ -114,6 +116,13 @@ function buildDiagnosticReportFileName(defaultFileName?: string): string {
 // ---------------------------------------------------------------------------
 
 export function registerIpcHandlers(): void {
+  safeHandle('release-session-resources', () => {
+    clearMainSessionCaches();
+    clearAnalysisSnapshotCache();
+    clearActiveGitWorkingFileSession();
+    clearActiveTwoFileVersionSession();
+  });
+
   safeHandle('get-launch-context', async (): Promise<LaunchContextPayload> => (
     buildLaunchContextPayload()
   ));

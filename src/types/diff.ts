@@ -174,7 +174,8 @@ export interface DiffPerformanceMetrics {
   metadataMs?: number;
   diffMs?: number;
   rustDiffMs?: number;
-  totalAppMs?: number;
+  rendererApplyMs?: number;
+  requestToCommitMs?: number;
   diffLineCount?: number;
 }
 

@@ -176,14 +176,12 @@ test(`fast workbook minimap dragging keeps a rendered canvas over the ${layout} 
     element.scrollTop = (element.scrollHeight - element.clientHeight) * 0.4;
     await new Promise(resolve => setTimeout(resolve, 40));
     const activeViewportCount = document.querySelectorAll('[data-workbook-fast-scroll-viewport]').length;
-    await new Promise(resolve => setTimeout(resolve, 240));
     return {
       activeViewportCount,
-      settledViewportCount: document.querySelectorAll('[data-workbook-fast-scroll-viewport]').length,
     };
   });
   expect(implicitSession.activeViewportCount).toBeGreaterThan(0);
-  expect(implicitSession.settledViewportCount).toBe(0);
+  await expect(page.locator('[data-workbook-fast-scroll-viewport]')).toHaveCount(0, { timeout: 1_000 });
 
   const beforeClickScrollTop = await scrollers.first().evaluate(element => element.scrollTop);
   await page.mouse.click(

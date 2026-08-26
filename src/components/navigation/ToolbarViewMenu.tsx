@@ -29,28 +29,28 @@ const createMenuButtonStyle = (active: boolean, interactiveStyle: CSSProperties)
   borderColor: active ? cssAlpha('acc', '66') : 'var(--liquid-glass-border, var(--border-color))',
   background: active
     ? `linear-gradient(180deg, ${cssAlpha('acc', '24')} 0%, color-mix(in srgb, var(--liquid-control-fill, var(--bg-surface-hover)) 76%, var(--accent) 12%) 100%)`
-    : 'linear-gradient(180deg, color-mix(in srgb, var(--liquid-glass-highlight, white) 18%, transparent) 0%, var(--liquid-control-fill, var(--bg-surface-hover)) 100%)',
+    : 'linear-gradient(180deg, color-mix(in srgb, var(--liquid-glass-highlight) 18%, transparent) 0%, var(--liquid-control-fill) 100%)',
   boxShadow: active
-    ? `inset 0 1px 0 var(--liquid-glass-highlight, rgba(255,255,255,0.18)), 0 10px 24px -20px ${cssAlpha('acc', '66')}`
-    : 'inset 0 1px 0 var(--liquid-glass-highlight, rgba(255,255,255,0.14)), 0 8px 20px -20px var(--liquid-glass-shadow, rgba(0,0,0,0.28))',
+    ? `inset 0 1px 0 var(--liquid-glass-highlight), 0 10px 24px -20px ${cssAlpha('acc', '66')}`
+    : 'inset 0 1px 0 var(--liquid-glass-highlight), 0 8px 20px -20px var(--liquid-glass-shadow)',
 });
 
 const createSwitchTrackStyle = (checked: boolean): CSSProperties => ({
   borderRadius: 999,
   border: `1px solid ${checked ? cssAlpha('acc', '88') : 'var(--liquid-glass-border, var(--border-color))'}`,
   background: checked
-    ? `linear-gradient(180deg, ${cssVar('acc')} 0%, color-mix(in srgb, ${cssVar('acc')} 78%, black 10%) 100%)`
+    ? `linear-gradient(180deg, ${cssVar('acc')} 0%, color-mix(in srgb, ${cssVar('acc')} 78%, var(--text-title) 10%) 100%)`
     : 'color-mix(in srgb, var(--text-secondary) 16%, var(--liquid-control-fill, var(--bg-surface-hover)) 84%)',
   boxShadow: checked
-    ? `0 0 0 3px ${cssAlpha('acc', '18')}, inset 0 1px 0 color-mix(in srgb, white 34%, transparent)`
-    : 'inset 0 1px 0 var(--liquid-glass-highlight, rgba(255,255,255,0.14))',
+    ? `0 0 0 3px ${cssAlpha('acc', '18')}, inset 0 1px 0 color-mix(in srgb, var(--liquid-glass-highlight) 34%, transparent)`
+    : 'inset 0 1px 0 var(--liquid-glass-highlight)',
 });
 
 const createSwitchKnobStyle = (checked: boolean): CSSProperties => ({
   borderRadius: 999,
   transform: checked ? 'translateX(16px)' : 'translateX(0)',
   background: checked ? 'var(--btn-active-text)' : 'var(--text-secondary)',
-  boxShadow: '0 2px 6px color-mix(in srgb, black 24%, transparent)',
+  boxShadow: '0 2px 6px color-mix(in srgb, var(--liquid-glass-shadow) 24%, transparent)',
 });
 
 interface ToolbarViewMenuProps {
@@ -219,7 +219,7 @@ const ToolbarViewMenu = memo(({
           top: menuLayout.top,
           left: menuLayout.left,
           width: MENU_WIDTH,
-          boxShadow: `inset 0 1px 0 var(--liquid-glass-highlight, rgba(255,255,255,0.18)), 0 22px 54px -34px var(--liquid-glass-shadow, var(--border-strong))`,
+          boxShadow: 'inset 0 1px 0 var(--liquid-glass-highlight), 0 22px 54px -34px var(--liquid-glass-shadow)',
           ...interactiveStyle,
         }}>
         <div className="grid gap-1.5">

@@ -105,7 +105,7 @@ const RevisionLogHoverCard = memo(({
             style={{
               width: `min(${MAX_CARD_WIDTH}px, calc(100vw - 24px))`,
               maxWidth: MAX_CARD_WIDTH,
-              boxShadow: `0 28px 60px -34px rgba(0, 0, 0, 0.28), 0 12px 28px -20px ${cssAlphaRaw(accent, '55')}`,
+              boxShadow: `0 28px 60px -34px var(--liquid-glass-shadow), 0 12px 28px -20px ${cssAlphaRaw(accent, '55')}`,
               backdropFilter: 'blur(14px)',
             }}>
             <div className="grid gap-2.5 min-w-0">

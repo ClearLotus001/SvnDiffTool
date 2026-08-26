@@ -1,4 +1,4 @@
-import { cssAlpha, cssVar } from '@/theme/cssUtils';
+import { cssVar } from '@/theme/cssUtils';
 import type { DiffLine, SplitRow } from '@/types';
 
 export type TextDiffVisualTone = 'equal' | 'add' | 'delete' | 'modify';
@@ -82,7 +82,7 @@ export function resolveTextDiffCssPalette(
       rowBackground: cssVar('chgBg'),
       accent: cssVar('chgBrd'),
       prefix: cssVar('chgTx'),
-      inlineHighlight: cssAlpha('chgTx', '40'),
+      inlineHighlight: cssVar('chgHl'),
     };
   }
 

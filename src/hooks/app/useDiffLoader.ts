@@ -10,15 +10,17 @@ import type {
   WorkbookMetadataSource,
 } from '@/types';
 import { EMPTY_COLLAPSE_EXPANSION_STATE, type CollapseExpansionState } from '@/utils/collapse/collapseState';
-import { buildDiffCacheKey } from '@/utils/diff/diffCacheKey';
+import { buildDiffCacheKey, buildDiffSessionKey } from '@/utils/diff/diffCacheKey';
 import { attachLineBlameToDiffLines } from '@/utils/diff/lineBlame';
 import { materializeCompactTransportDiffData } from '@/utils/diff/compactTextDiffLines';
 import { createEmptyTextLayoutSnapshots, type TextLayoutSnapshotsByMode } from '@/utils/diff/textLayoutState';
 import { isWorkbookFileName, resolveDiffTexts } from '@/utils/diff/diffSource';
-import { computeTextDiffAsync } from '@/utils/diff/computeTextDiffAsync';
+import { computeTextDiffAsync, warmTextDiffWorker } from '@/utils/diff/computeTextDiffAsync';
+import { disposeTextSearchWorker } from '@/utils/diff/computeSearchMatchesAsync';
 import { createEmptyWorkbookLayoutSnapshots, type WorkbookLayoutSnapshotsByMode } from '@/utils/workbook/workbookLayoutState';
 import { resolveWorkbookMetadataAsync } from '@/utils/workbook/resolveWorkbookMetadataAsync';
 import { computeWorkbookDiffAsync } from '@/utils/workbook/computeWorkbookDiffAsync';
+import { clearWorkbookCanvasBitmapCache } from '@/utils/workbook/workbookCanvasBitmapCache';
 import { isWorkbookTextPair } from '@/engine/workbook/workbookDiff';
 import { recordPerfBridgeEvent } from '@/utils/app/perfBridge';
 import {
@@ -117,10 +119,13 @@ export default function useDiffLoader({
   const { actions: diffLoadActions } = diffLoad;
   const { actions: revisionActions } = revisionQuery;
   const workbookUiStateRef = useRef(workbookUi.state);
+  const loadStartedAtBySeqRef = useRef(new Map<number, number>());
   workbookUiStateRef.current = workbookUi.state;
 
   const beginDiffLoad = useCallback(async () => {
     const seq = ++loadSeqRef.current;
+    loadStartedAtBySeqRef.current.set(seq, getNow());
+    warmTextDiffWorker();
     recordPerfBridgeEvent('diff-payload:request', {
       reason: 'begin-diff-load',
       seq,
@@ -134,6 +139,7 @@ export default function useDiffLoader({
   }, [diffLoadActions, loadSeqRef, workbookCompareModeRef]);
 
   const failDiffLoad = useCallback((seq: number, error: unknown) => {
+    loadStartedAtBySeqRef.current.delete(seq);
     if (seq !== loadSeqRef.current) return;
     diffLoadActions.setLoading(false);
     diffLoadActions.setError(error instanceof Error ? error.message : String(error));
@@ -189,6 +195,12 @@ export default function useDiffLoader({
       source: transportData.perf?.source ?? 'local-dev',
     });
     const data = materializeCompactTransportDiffData(transportData);
+    const previousData = currentDiffDataRef.current;
+    if (previousData && buildDiffSessionKey(previousData) !== buildDiffSessionKey(data)) {
+      diffResultCacheRef.current.clear();
+      clearWorkbookCanvasBitmapCache();
+      disposeTextSearchWorker();
+    }
     const transportHydrateMs = getNow() - applyStart;
     const preservedWorkbookViewState = options?.preserveWorkbookViewState
       ? {
@@ -396,7 +408,6 @@ export default function useDiffLoader({
           diffLoadActions.setMetrics((prev) => (prev ? {
             ...prev,
             metadataMs: metadataResult.duration,
-            totalAppMs: Math.max(prev.totalAppMs ?? 0, getNow() - applyStart),
           } : prev));
           debugLog('metadata:loaded', {
             compareMode,
@@ -419,13 +430,17 @@ export default function useDiffLoader({
           cachedResult?.baseWorkbookMetadata ?? data.baseWorkbookMetadata ?? null,
           cachedResult?.mineWorkbookMetadata ?? data.mineWorkbookMetadata ?? null,
         );
+        const rendererApplyMs = getNow() - applyStart;
+        const requestStartedAt = loadStartedAtBySeqRef.current.get(seq);
+        const requestToCommitMs = requestStartedAt == null ? null : getNow() - requestStartedAt;
         diffLoadActions.setMetrics({
           source: data.perf?.source ?? 'local-dev',
           ...data.perf,
           textResolveMs,
           metadataMs: 0,
           diffMs: data.perf?.diffMs ?? 0,
-          totalAppMs: getNow() - applyStart,
+          rendererApplyMs,
+          ...(requestToCommitMs != null ? { requestToCommitMs } : {}),
           diffLineCount: cachedDiffLines?.length ?? 0,
         });
         recordPerfBridgeEvent('apply-diff-data:commit', {
@@ -434,14 +449,16 @@ export default function useDiffLoader({
           cached: true,
           fileName: data.fileName,
           diffLineCount: cachedDiffLines?.length ?? 0,
-          totalAppMs: getNow() - applyStart,
+          rendererApplyMs,
+          requestToCommitMs,
         });
         debugLog('apply-diff-data:done', {
           seq,
           compareMode,
           cached: true,
           diffLineCount: cachedDiffLines?.length ?? 0,
-          totalAppMs: Number((getNow() - applyStart).toFixed(1)),
+          rendererApplyMs: Number(rendererApplyMs.toFixed(1)),
+          requestToCommitMs: requestToCommitMs == null ? null : Number(requestToCommitMs.toFixed(1)),
           perf: data.perf ?? null,
         });
         scheduleMetadataTask();
@@ -486,20 +503,22 @@ export default function useDiffLoader({
         }
       }
       if (seq !== loadSeqRef.current) return;
-      const totalAppMs = getNow() - applyStart;
-
       hydrateDiffSession(
         data,
         nextDiffLines,
         data.baseWorkbookMetadata ?? null,
         data.mineWorkbookMetadata ?? null,
       );
+      const rendererApplyMs = getNow() - applyStart;
+      const requestStartedAt = loadStartedAtBySeqRef.current.get(seq);
+      const requestToCommitMs = requestStartedAt == null ? null : getNow() - requestStartedAt;
       diffLoadActions.setMetrics({
         source: data.perf?.source ?? 'local-dev',
         ...data.perf,
         textResolveMs,
         diffMs: shouldUsePreparedDiff ? preparedDiffDuration : diffDuration,
-        totalAppMs,
+        rendererApplyMs,
+        ...(requestToCommitMs != null ? { requestToCommitMs } : {}),
         diffLineCount: nextDiffLines.length,
       });
       recordPerfBridgeEvent('apply-diff-data:commit', {
@@ -508,7 +527,8 @@ export default function useDiffLoader({
         cached: false,
         fileName: data.fileName,
         diffLineCount: nextDiffLines.length,
-        totalAppMs,
+        rendererApplyMs,
+        requestToCommitMs,
         textResolveMs,
         diffMs: shouldUsePreparedDiff ? preparedDiffDuration : diffDuration,
       });
@@ -519,7 +539,8 @@ export default function useDiffLoader({
         diffLineCount: nextDiffLines.length,
         textResolveMs: Number(textResolveMs.toFixed(1)),
         diffMs: Number(diffDuration.toFixed(1)),
-        totalAppMs: Number(totalAppMs.toFixed(1)),
+        rendererApplyMs: Number(rendererApplyMs.toFixed(1)),
+        requestToCommitMs: requestToCommitMs == null ? null : Number(requestToCommitMs.toFixed(1)),
         source: data.perf?.source ?? 'local-dev',
       });
       rememberCachedDiffResult(diffResultCacheRef.current, cacheKey, buildCachedDiffResult({
@@ -546,6 +567,7 @@ export default function useDiffLoader({
       }
       diffLoadActions.setError(error instanceof Error ? error.message : String(error));
     } finally {
+      loadStartedAtBySeqRef.current.delete(seq);
       if (seq === loadSeqRef.current) {
         diffLoadActions.setLoading(false);
       }

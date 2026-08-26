@@ -36,6 +36,23 @@ test('minimap viewport thumb stays visible above the diff overlay', async ({ pag
 
   const thumb = page.locator('.minimap-viewport-frosted').first();
   await expect(thumb).toBeVisible();
+  await expect.poll(async () => thumb.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const railRect = element.parentElement?.getBoundingClientRect() ?? rect;
+    const shell = element.parentElement?.parentElement;
+    const viewportScroller = shell?.querySelector('.overflow-y-auto.overflow-x-auto, .overflow-auto') as HTMLElement | null;
+    if (!viewportScroller) return Number.POSITIVE_INFINITY;
+    const mapHeight = Math.min(railRect.height, viewportScroller.clientHeight);
+    const maxScrollTop = Math.max(0, viewportScroller.scrollHeight - viewportScroller.clientHeight);
+    const expectedHeight = Math.min(
+      mapHeight,
+      Math.max(20, (viewportScroller.clientHeight / Math.max(viewportScroller.scrollHeight, viewportScroller.clientHeight, 1)) * mapHeight),
+    );
+    const expectedTop = maxScrollTop > 0
+      ? (viewportScroller.scrollTop / maxScrollTop) * Math.max(0, mapHeight - expectedHeight)
+      : 0;
+    return Math.abs((rect.top - railRect.top) - expectedTop);
+  })).toBeLessThanOrEqual(1);
 
   const metrics = await thumb.evaluate((element) => {
     const style = getComputedStyle(element);

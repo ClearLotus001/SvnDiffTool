@@ -23,7 +23,8 @@ interface DiffPerformanceMetrics {
   metadataMs?: number;
   diffMs?: number;
   rustDiffMs?: number;
-  totalAppMs?: number;
+  rendererApplyMs?: number;
+  requestToCommitMs?: number;
   diffLineCount?: number;
 }
 
@@ -104,6 +105,19 @@ const compareModeTestIds: Record<WorkbookCompareMode, string> = {
   strict: 'toolbar-compare-strict',
   content: 'toolbar-compare-content',
 };
+
+const CI_PERFORMANCE_BUDGETS = {
+  'large-text': {
+    launchReadyMs: 6_000,
+    initialBridgeMs: 1_200,
+    transitionBridgeMs: 300,
+  },
+  'large-workbook': {
+    launchReadyMs: 4_000,
+    initialBridgeMs: 1_200,
+    transitionBridgeMs: 300,
+  },
+} as const;
 
 function parseIterations(): number {
   const raw = process.argv.find((argument) => argument.startsWith('--iterations='))?.split('=')[1]
@@ -202,6 +216,10 @@ async function ensureBuiltArtifacts() {
       'Please run "npm run build:renderer && npm run build:electron && npm run build:rust" first.',
     );
   }
+}
+
+function hasCiFlag(): boolean {
+  return process.argv.includes('--ci');
 }
 
 async function fileExists(targetPath: string): Promise<boolean> {
@@ -519,28 +537,28 @@ async function switchWorkbookCompareMode(
     };
   }
 
-  return measureTransition(
-    page,
-    snapshot,
-    {
-      compareMode: targetCompareMode,
-      isWorkbookMode: true,
-    },
-    async () => {
-      await page.getByTestId('toolbar-view-menu').click();
-      try {
+  await page.getByTestId('toolbar-view-menu').click();
+  try {
+    return await measureTransition(
+      page,
+      snapshot,
+      {
+        compareMode: targetCompareMode,
+        isWorkbookMode: true,
+      },
+      async () => {
         await page.getByTestId(compareModeTestIds[targetCompareMode]).click({ timeout: 5_000 });
-      } catch (error) {
-        const currentSnapshot = await getPerfSnapshot(page).catch(() => null);
-        const diagnostics = await getCompareMenuDiagnostics(page).catch(() => null);
-        throw new Error(
-          `Failed to open workbook compare mode '${targetCompareMode}'. ` +
-          `snapshot=${JSON.stringify(currentSnapshot)} diagnostics=${JSON.stringify(diagnostics)} ` +
-          `cause=${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    },
-  );
+      },
+    );
+  } catch (error) {
+    const currentSnapshot = await getPerfSnapshot(page).catch(() => null);
+    const diagnostics = await getCompareMenuDiagnostics(page).catch(() => null);
+    throw new Error(
+      `Failed to open workbook compare mode '${targetCompareMode}'. ` +
+      `snapshot=${JSON.stringify(currentSnapshot)} diagnostics=${JSON.stringify(diagnostics)} ` +
+      `cause=${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 async function measureLaunchAndReady(
@@ -793,10 +811,40 @@ function printScenarioSummary(result: ScenarioResult) {
     process.stdout.write(
       `[${result.name}] latest perf: main=${formatMs(latestMetrics.mainLoadMs ?? 0)} ` +
       `diff=${formatMs(latestMetrics.diffMs ?? latestMetrics.rustDiffMs ?? 0)} ` +
-      `total=${formatMs(latestMetrics.totalAppMs ?? 0)} ` +
+      `apply=${formatMs(latestMetrics.rendererApplyMs ?? 0)} ` +
+      `requestToCommit=${latestMetrics.requestToCommitMs == null ? 'n/a' : formatMs(latestMetrics.requestToCommitMs)} ` +
       `lines=${latestMetrics.diffLineCount ?? 'n/a'}\n`,
     );
   }
+}
+
+function assertCiPerformanceBudgets(results: ScenarioResult[]): void {
+  const failures: string[] = [];
+  results.forEach((result) => {
+    const budgets = CI_PERFORMANCE_BUDGETS[result.name as keyof typeof CI_PERFORMANCE_BUDGETS];
+    if (!budgets) return;
+    result.iterations.forEach((measurement, index) => {
+      const iteration = index + 1;
+      if (measurement.launchReadyMs > budgets.launchReadyMs) {
+        failures.push(`${result.name} iteration ${iteration} launch ${formatMs(measurement.launchReadyMs)} > ${formatMs(budgets.launchReadyMs)}`);
+      }
+      const initialBridgeMs = measurement.initialReadyBreakdown?.bridgeTotalMs;
+      if (initialBridgeMs != null && initialBridgeMs > budgets.initialBridgeMs) {
+        failures.push(`${result.name} iteration ${iteration} initial renderer ${formatMs(initialBridgeMs)} > ${formatMs(budgets.initialBridgeMs)}`);
+      }
+      const transitionBridgeMs = result.name === 'large-text'
+        ? measurement.splitHBreakdown?.bridgeTotalMs
+        : measurement.contentModeBreakdown?.bridgeTotalMs;
+      if (transitionBridgeMs != null && transitionBridgeMs > budgets.transitionBridgeMs) {
+        failures.push(`${result.name} iteration ${iteration} transition ${formatMs(transitionBridgeMs)} > ${formatMs(budgets.transitionBridgeMs)}`);
+      }
+    });
+  });
+
+  if (failures.length > 0) {
+    throw new Error(`Performance budgets failed:\n${failures.map(failure => `- ${failure}`).join('\n')}`);
+  }
+  process.stdout.write('\n[benchmark] CI performance budgets passed.\n');
 }
 
 async function main() {
@@ -820,16 +868,18 @@ async function main() {
     printScenarioSummary(textScenario);
     printScenarioSummary(workbookScenario);
 
+    const scenarioResults = [textScenario, workbookScenario];
     const report = {
       generatedAt: new Date().toISOString(),
       iterations,
-      scenarios: [textScenario, workbookScenario],
+      scenarios: scenarioResults,
     };
     const reportDir = path.join(rootDir, 'logs');
     await fs.mkdir(reportDir, { recursive: true });
     const reportPath = path.join(reportDir, `perf-benchmark-${Date.now()}.json`);
     await fs.writeFile(reportPath, JSON.stringify(report, null, 2), 'utf-8');
     process.stdout.write(`\n[benchmark] report written: ${reportPath}\n`);
+    if (hasCiFlag()) assertCiPerformanceBudgets(scenarioResults);
   } finally {
     await fs.rm(sampleDir, { recursive: true, force: true });
   }

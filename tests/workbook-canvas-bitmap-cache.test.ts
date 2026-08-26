@@ -6,6 +6,9 @@ import {
   WorkbookCanvasBitmapPendingBudget,
   buildWorkbookCanvasBitmapCacheKey,
   buildWorkbookCanvasBitmapViewportColumnKey,
+  clearWorkbookCanvasBitmapCache,
+  getWorkbookCanvasBitmapCacheStats,
+  storeWorkbookCanvasBitmap,
 } from '../src/utils/workbook/workbookCanvasBitmapCache';
 
 test('workbook canvas bitmap cache evicts the least recently used tile by byte budget', () => {
@@ -21,6 +24,41 @@ test('workbook canvas bitmap cache evicts the least recently used tile by byte b
   assert.equal(cache.get('c'), 'tile-c');
   assert.equal(cache.bytes, 80);
   assert.deepEqual(disposed, ['tile-b']);
+});
+
+test('clearing the workbook bitmap cache disposes stale snapshots that finish later', async () => {
+  const previousCreateImageBitmap = globalThis.createImageBitmap;
+  let resolveBitmap!: (bitmap: ImageBitmap) => void;
+  let closeCount = 0;
+  const pendingBitmap = new Promise<ImageBitmap>((resolve) => {
+    resolveBitmap = resolve;
+  });
+  globalThis.createImageBitmap = (() => pendingBitmap) as typeof createImageBitmap;
+
+  try {
+    clearWorkbookCanvasBitmapCache();
+    const generation = getWorkbookCanvasBitmapCacheStats().generation;
+    storeWorkbookCanvasBitmap({ width: 10, height: 10 } as HTMLCanvasElement, 'pending');
+    assert.equal(getWorkbookCanvasBitmapCacheStats().pendingEntries, 1);
+
+    clearWorkbookCanvasBitmapCache();
+    resolveBitmap({ close: () => { closeCount += 1; } } as ImageBitmap);
+    await pendingBitmap;
+    await new Promise(resolve => setImmediate(resolve));
+
+    const stats = getWorkbookCanvasBitmapCacheStats();
+    assert.equal(stats.generation, generation + 1);
+    assert.equal(stats.entries, 0);
+    assert.equal(stats.pendingEntries, 0);
+    assert.equal(closeCount, 1);
+  } finally {
+    clearWorkbookCanvasBitmapCache();
+    if (previousCreateImageBitmap === undefined) {
+      Reflect.deleteProperty(globalThis, 'createImageBitmap');
+    } else {
+      globalThis.createImageBitmap = previousCreateImageBitmap;
+    }
+  }
 });
 
 test('workbook canvas bitmap cache rejects a tile larger than its complete budget', () => {

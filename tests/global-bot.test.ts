@@ -5,11 +5,63 @@ import test from 'node:test';
 import { resolveAppUpdateNotice } from '../src/components/app/global-bot/sources/appUpdateNotice';
 import { resolveDiffSummaryMessages } from '../src/components/app/global-bot/sources/diffSummaryMessages';
 import { EMOTION_IDS } from '../src/components/app/global-bot/emotion-ball/emotionIds';
+import {
+  activateEngine,
+  deactivateEngine,
+  EMOTION_ENGINE_MAX_FPS,
+} from '../src/components/app/global-bot/emotion-ball/engine/scheduler';
 import { translate, type TranslationFn } from '../src/i18n/core';
 import type { AppUpdateState } from '../src/types';
 import type { WorkbookSection } from '../src/utils/workbook/workbookSections';
 
 const t: TranslationFn = (key, ...args) => translate('en-US', key, ...args);
+
+test('the shared emotion scheduler stays awake while capping engine updates at 60 FPS', () => {
+  const previousWindow = globalThis.window;
+  const callbacks = new Map<number, FrameRequestCallback>();
+  let nextHandle = 1;
+  globalThis.window = {
+    requestAnimationFrame: (callback: FrameRequestCallback) => {
+      const handle = nextHandle;
+      nextHandle += 1;
+      callbacks.set(handle, callback);
+      return handle;
+    },
+    cancelAnimationFrame: (handle: number) => {
+      callbacks.delete(handle);
+    },
+  } as Window & typeof globalThis;
+
+  const renderedAt: number[] = [];
+  const engine = {
+    onAnimationFrame: (now: number) => renderedAt.push(now),
+  };
+  const runNextFrame = (now: number) => {
+    const next = callbacks.entries().next().value as [number, FrameRequestCallback] | undefined;
+    assert.ok(next, 'an active engine should keep requesting animation frames');
+    callbacks.delete(next[0]);
+    next[1](now);
+  };
+
+  try {
+    assert.equal(EMOTION_ENGINE_MAX_FPS, 60);
+    activateEngine(engine);
+    runNextFrame(0);
+    runNextFrame(8);
+    runNextFrame(16);
+    runNextFrame(17);
+
+    assert.deepEqual(renderedAt, [0, 17]);
+    assert.equal(callbacks.size, 1);
+  } finally {
+    deactivateEngine(engine);
+    if (previousWindow === undefined) {
+      Reflect.deleteProperty(globalThis, 'window');
+    } else {
+      globalThis.window = previousWindow;
+    }
+  }
+});
 
 function createUpdateState(status: AppUpdateState['status']): AppUpdateState {
   return {
@@ -29,6 +81,7 @@ function createUpdateState(status: AppUpdateState['status']): AppUpdateState {
 
 test('the global bot retains its emotion, portal, idle, drag, and Electron no-drag architecture', () => {
   const globalBot = fs.readFileSync('src/components/app/global-bot/GlobalBot.tsx', 'utf8');
+  const app = fs.readFileSync('src/App.tsx', 'utf8');
   const draggableOrb = fs.readFileSync('src/components/app/global-bot/useDraggableOrb.ts', 'utf8');
   const speechBubble = fs.readFileSync(
     'src/components/app/global-bot/GlobalBotSpeechBubble.tsx',
@@ -41,6 +94,8 @@ test('the global bot retains its emotion, portal, idle, drag, and Electron no-dr
   const botStyles = fs.readFileSync('src/components/app/global-bot/global-bot.css', 'utf8');
 
   assert.equal(EMOTION_IDS.length, 32);
+  assert.match(app, /lazy\(\(\) => import\('@\/components\/app\/global-bot\/GlobalBot'\)\)/);
+  assert.match(app, /<Suspense fallback=\{null\}>[\s\S]*<GlobalBot/);
   assert.match(globalBot, /createPortal/);
   assert.match(globalBot, /useEmotionController\(true\)/);
   assert.match(globalBot, /useOrbChatter/);

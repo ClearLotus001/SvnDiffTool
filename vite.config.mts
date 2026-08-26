@@ -1,8 +1,9 @@
 import { fileURLToPath, URL } from 'node:url';
 
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { restoreStandardBackdropFilter } from './scripts/viteCss';
 
 function resolveManualChunk(id: string): string | undefined {
   const normalized = id.replace(/\\/g, '/');
@@ -22,8 +23,24 @@ function resolveManualChunk(id: string): string | undefined {
   return undefined;
 }
 
+function preserveBackdropFilterPlugin(): Plugin {
+  return {
+    name: 'versora-preserve-backdrop-filter',
+    enforce: 'post',
+    generateBundle(_options, bundle) {
+      Object.values(bundle).forEach((entry) => {
+        if (entry.type !== 'asset' || !entry.fileName.endsWith('.css')) return;
+        const css = typeof entry.source === 'string'
+          ? entry.source
+          : Buffer.from(entry.source).toString('utf8');
+        entry.source = restoreStandardBackdropFilter(css);
+      });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss({ optimize: false })],
+  plugins: [react(), tailwindcss({ optimize: false }), preserveBackdropFilterPlugin()],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -33,10 +50,9 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    // Tailwind/Vite's production CSS optimizer drops standard backdrop-filter
-    // and leaves only the WebKit-prefixed declaration. Electron's Chromium
-    // ignores that prefix, so preserve authored CSS for packaged glass effects.
-    cssMinify: false,
+    // Restore the standard declaration after minification for Electron's
+    // Chromium; the post-build plugin keeps both prefixed and standard forms.
+    cssMinify: 'lightningcss',
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -50,11 +66,11 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    watch: process.platform === 'win32'
-      ? {
+    ...(process.platform === 'win32'
+      ? { watch: {
           usePolling: true,
           interval: 150,
-        }
-      : undefined,
+        } }
+      : {}),
   },
 });

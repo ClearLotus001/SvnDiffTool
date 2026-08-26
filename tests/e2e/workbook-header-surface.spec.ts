@@ -1,5 +1,13 @@
 import { expect, test } from '@playwright/test';
 
+function normalizeCssHex(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (/^#[0-9a-f]{3}$/.test(normalized)) {
+    return `#${[...normalized.slice(1)].map(character => character.repeat(2)).join('')}`;
+  }
+  return normalized;
+}
+
 import { LN_W } from '../../src/constants/layout';
 import { WORKBOOK_CELL_WIDTH } from '../../src/utils/workbook/workbookDisplay';
 
@@ -398,11 +406,13 @@ test('high contrast workbook grid uses graphite hierarchy instead of pure white'
       globalStrong: style.getPropertyValue('--border-strong').trim(),
     };
   });
-  expect(workbookGridTokens).toEqual({
-    grid: '#3F4952',
-    gridStrong: '#56616B',
-    header: '#7A8791',
-    globalStrong: '#FFFFFF',
+  expect(Object.fromEntries(
+    Object.entries(workbookGridTokens).map(([key, value]) => [key, normalizeCssHex(value)]),
+  )).toEqual({
+    grid: '#3f4952',
+    gridStrong: '#56616b',
+    header: '#7a8791',
+    globalStrong: '#ffffff',
   });
 
   const bodyCanvas = page.locator(

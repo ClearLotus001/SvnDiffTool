@@ -8,7 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
-  useRef, useCallback, useEffect, useMemo, useState, startTransition, type SetStateAction,
+  lazy, Suspense, useRef, useCallback, useEffect, useMemo, useState, startTransition, type SetStateAction,
 } from 'react';
 
 import type {
@@ -61,7 +61,6 @@ import {
 import { getPreparedWorkbookDeltaForMode } from '@/hooks/app/helpers';
 import { useAppStore } from '@/store/appStore';
 import PerfBar from '@/components/app/PerfBar';
-import GlobalBot from '@/components/app/global-bot/GlobalBot';
 import { resolveAppUpdateNotice } from '@/components/app/global-bot/sources/appUpdateNotice';
 import { resolveDiffSummaryMessages } from '@/components/app/global-bot/sources/diffSummaryMessages';
 import AppUpdateInstalledNoticeBar from '@/components/app/AppUpdateInstalledNoticeBar';
@@ -77,7 +76,9 @@ import StatsBar from '@/components/navigation/StatsBar';
 import { copyText } from '@/utils/app/clipboard';
 import { shouldOpenTwoFilePicker } from '@/utils/app/filePickerRouting';
 import { recordPerfBridgeEvent } from '@/utils/app/perfBridge';
+import { disposeTextSearchWorker } from '@/utils/diff/computeSearchMatchesAsync';
 import { findWorkbookDiffRegionNavigationIndex } from '@/utils/workbook/workbookDiffRegion';
+import { clearWorkbookCanvasBitmapCache } from '@/utils/workbook/workbookCanvasBitmapCache';
 import { summarizeWorkbookCellChanges } from '@/utils/workbook/workbookCellChangeSummary';
 import { swapDiffDataSides } from '@/utils/diff/swapDiffSides';
 
@@ -86,6 +87,7 @@ import { swapDiffDataSides } from '@/utils/diff/swapDiffSides';
 // ═════════════════════════════════════════════════════════════════════════════
 
 const EMPTY_REPLACEMENT_PAIR_INDEX = new Map<number, number>();
+const GlobalBot = lazy(() => import('@/components/app/global-bot/GlobalBot'));
 
 export default function App() {
   const { t } = useI18n();
@@ -740,6 +742,10 @@ export default function App() {
     revisionQuerySeqRef.current += 1;
     hasLoadedDiffRef.current = false;
     currentDiffDataRef.current = null;
+    diffResultCacheRef.current.clear();
+    clearWorkbookCanvasBitmapCache();
+    disposeTextSearchWorker();
+    void window.versora?.releaseSessionResources?.();
     revisionOptionsRef.current = [];
     textLayoutSnapshotsRef.current = createEmptyTextLayoutSnapshots();
     textSharedExpandedBlocksRef.current = EMPTY_COLLAPSE_EXPANSION_STATE;
@@ -893,10 +899,12 @@ export default function App() {
           )}
 
           {botEnabled && (
-            <GlobalBot
-              notice={appUpdateBotNotice}
-              ambientMessages={globalBotAmbientMessages}
-            />
+            <Suspense fallback={null}>
+              <GlobalBot
+                notice={appUpdateBotNotice}
+                ambientMessages={globalBotAmbientMessages}
+              />
+            </Suspense>
           )}
 
           {isDevMode && <PerfBar metrics={loadPerfMetrics} />}

@@ -145,7 +145,7 @@ const SplitHeader = memo(({
     const tooltip = sourceKind === 'git'
       ? t('splitHeaderGitRepository')
       : t('splitHeaderSvnRepository');
-    const color = sourceKind === 'git' ? '#f05a3c' : '#6f91bd';
+    const color = sourceKind === 'git' ? 'var(--source-git)' : 'var(--source-svn)';
     return (
       <Tooltip content={tooltip}>
         <span

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildDiffCacheKey } from '../src/utils/diff/diffCacheKey';
+import { buildDiffCacheKey, buildDiffSessionKey } from '../src/utils/diff/diffCacheKey';
 import type { DiffData } from '../src/types';
 
 function createDiffData(overrides: Partial<DiffData> = {}): DiffData {
@@ -44,6 +44,14 @@ test('buildDiffCacheKey still separates compare modes for the same source', () =
   });
 
   assert.notEqual(buildDiffCacheKey(data, 'strict'), buildDiffCacheKey(data, 'content'));
+});
+
+test('buildDiffSessionKey stays stable across compare modes while changing with the source', () => {
+  const first = createDiffData({ sourceIdentity: 'cli::first-source' });
+  const second = createDiffData({ sourceIdentity: 'cli::second-source' });
+
+  assert.equal(buildDiffSessionKey(first), 'cli::first-source');
+  assert.notEqual(buildDiffSessionKey(first), buildDiffSessionKey(second));
 });
 
 test('buildDiffCacheKey separates swapped side order for the same source identity', () => {

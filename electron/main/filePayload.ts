@@ -38,6 +38,7 @@ import { getExtension, getPeggedSvnTarget, isWorkbookFile, normalizeRevisionNumb
 import {
   filePayloadCache,
   getActiveCliArgs,
+  getSessionCacheGeneration,
   revisionPayloadCache,
   workbookCompareCache,
   workbookCompareInFlight,
@@ -71,6 +72,7 @@ export async function readFilePayload(
   filePath: string,
   options: ReadFilePayloadOptions = {},
 ): Promise<FilePayload> {
+  const cacheGeneration = getSessionCacheGeneration();
   if (!filePath) {
     return {
       content: null,
@@ -140,7 +142,7 @@ export async function readFilePayload(
         ...payload,
         bytes: null,
       };
-      rememberCacheEntry(filePayloadCache, filePath, {
+      if (getSessionCacheGeneration() === cacheGeneration) rememberCacheEntry(filePayloadCache, filePath, {
         mtimeMs: stat.mtimeMs,
         size: stat.size,
         payload: cachePayload,
@@ -168,7 +170,7 @@ export async function readFilePayload(
         byteLength: Buffer.byteLength(content, 'utf-8'),
       },
     };
-    rememberCacheEntry(filePayloadCache, filePath, {
+    if (getSessionCacheGeneration() === cacheGeneration) rememberCacheEntry(filePayloadCache, filePath, {
       mtimeMs: stat.mtimeMs,
       size: stat.size,
       payload,
@@ -273,6 +275,7 @@ export async function readRevisionPayload(
   fileName: string,
   options: ReadFilePayloadOptions = {},
 ): Promise<FilePayload> {
+  const cacheGeneration = getSessionCacheGeneration();
   const args = getActiveCliArgs();
   if (source.id === '__base_input__') {
     writeExternalDiffDebugLog('read-revision-payload', {
@@ -367,7 +370,7 @@ export async function readRevisionPayload(
         bytes: null,
       }
     : mergedPayload;
-  rememberCacheEntry(revisionPayloadCache, revisionCacheKey, {
+  if (getSessionCacheGeneration() === cacheGeneration) rememberCacheEntry(revisionPayloadCache, revisionCacheKey, {
     payload: cachePayload,
     memoryBytes: estimatePayloadMemoryBytes(cachePayload),
     coverage: isWorkbookFile(fileName)
@@ -391,6 +394,7 @@ export async function resolveWorkbookMetadataPairPayload(
   minePathCandidate: string,
   fileName: string,
 ): Promise<WorkbookMetadataPayload | null> {
+  const cacheGeneration = getSessionCacheGeneration();
   if (!isWorkbookFile(fileName)) return null;
 
   const cacheContext = await getLocalWorkbookPairCacheContext(
@@ -400,7 +404,9 @@ export async function resolveWorkbookMetadataPairPayload(
   );
   if (!cacheContext) return null;
 
-  const cachedPayload = workbookMetadataCache.get(cacheContext.key);
+  const cachedPayload = getSessionCacheGeneration() === cacheGeneration
+    ? workbookMetadataCache.get(cacheContext.key)
+    : null;
   if (
     cachedPayload
     && cachedPayload.leftMtimeMs === cacheContext.leftMtimeMs
@@ -414,7 +420,9 @@ export async function resolveWorkbookMetadataPairPayload(
     return cachedPayload.payload;
   }
 
-  const inFlight = workbookMetadataInFlight.get(cacheContext.key);
+  const inFlight = getSessionCacheGeneration() === cacheGeneration
+    ? workbookMetadataInFlight.get(cacheContext.key)
+    : null;
   if (inFlight) {
     return inFlight;
   }
@@ -437,19 +445,23 @@ export async function resolveWorkbookMetadataPairPayload(
       },
     };
 
-    rememberCacheEntry(workbookMetadataCache, cacheContext.key, {
-      leftMtimeMs: cacheContext.leftMtimeMs,
-      rightMtimeMs: cacheContext.rightMtimeMs,
-      leftSize: cacheContext.leftSize,
-      rightSize: cacheContext.rightSize,
-      payload,
-      memoryBytes: estimateWorkbookMetadataPayloadMemoryBytes(payload),
-    }, WORKBOOK_METADATA_CACHE_LIMIT, WORKBOOK_METADATA_CACHE_MAX_BYTES);
+    if (getSessionCacheGeneration() === cacheGeneration) {
+      rememberCacheEntry(workbookMetadataCache, cacheContext.key, {
+        leftMtimeMs: cacheContext.leftMtimeMs,
+        rightMtimeMs: cacheContext.rightMtimeMs,
+        leftSize: cacheContext.leftSize,
+        rightSize: cacheContext.rightSize,
+        payload,
+        memoryBytes: estimateWorkbookMetadataPayloadMemoryBytes(payload),
+      }, WORKBOOK_METADATA_CACHE_LIMIT, WORKBOOK_METADATA_CACHE_MAX_BYTES);
+    }
 
     return payload;
   })();
 
-  workbookMetadataInFlight.set(cacheContext.key, resolver);
+  if (getSessionCacheGeneration() === cacheGeneration) {
+    workbookMetadataInFlight.set(cacheContext.key, resolver);
+  }
   try {
     return await resolver;
   } finally {
@@ -466,7 +478,9 @@ export async function resolveWorkbookMetadataPairPayload(
 function rememberWorkbookComparePayload(
   cacheContext: LocalWorkbookPairCacheContext,
   payload: ResolvedWorkbookCompareModePayload,
+  cacheGeneration: number,
 ): void {
+  if (getSessionCacheGeneration() !== cacheGeneration) return;
   const inlineStoredPayload = storeWorkbookCompareCachePayloadInline(payload);
   rememberCacheEntry(workbookCompareCache, cacheContext.key, {
     leftMtimeMs: cacheContext.leftMtimeMs,
@@ -480,6 +494,7 @@ function rememberWorkbookComparePayload(
   if (!shouldCompressWorkbookCompareCachePayload(inlineStoredPayload.estimatedMemoryBytes)) return;
   void storeWorkbookCompareCachePayload(payload)
     .then((storedPayload) => {
+      if (getSessionCacheGeneration() !== cacheGeneration) return;
       const current = workbookCompareCache.get(cacheContext.key);
       if (
         !current
@@ -570,6 +585,7 @@ export async function resolveWorkbookCompareModePayload(
   fileName: string,
   compareMode: WorkbookCompareMode,
 ): Promise<ResolvedWorkbookCompareModePayload | null> {
+  const cacheGeneration = getSessionCacheGeneration();
   if (!isWorkbookFile(fileName)) return null;
   const cacheContext = await getLocalWorkbookPairCacheContext(
     basePathCandidate,
@@ -577,7 +593,9 @@ export async function resolveWorkbookCompareModePayload(
     `compare:${compareMode}`,
   );
   if (cacheContext) {
-    const cached = workbookCompareCache.get(cacheContext.key);
+    const cached = getSessionCacheGeneration() === cacheGeneration
+      ? workbookCompareCache.get(cacheContext.key)
+      : null;
     if (
       cached
       && cached.leftMtimeMs === cacheContext.leftMtimeMs
@@ -600,7 +618,9 @@ export async function resolveWorkbookCompareModePayload(
         );
       }
     }
-    const inFlight = workbookCompareInFlight.get(cacheContext.key);
+    const inFlight = getSessionCacheGeneration() === cacheGeneration
+      ? workbookCompareInFlight.get(cacheContext.key)
+      : null;
     if (inFlight) {
       return inFlight;
     }
@@ -661,13 +681,14 @@ export async function resolveWorkbookCompareModePayload(
               alternate,
               sharedRustDiffMs || alternate.parseMs,
             ),
+            cacheGeneration,
           );
         },
       );
       if (primary.diffLines) {
         sharedRustDiffMs = primary.parseMs;
         const primaryPayload = buildPayload(compareMode, primary, primary.parseMs);
-        rememberWorkbookComparePayload(cacheContext!, primaryPayload);
+        rememberWorkbookComparePayload(cacheContext!, primaryPayload, cacheGeneration);
         logDebugTiming('workbook-compare-dual-mode:primary-ready', {
           fileName,
           requestedMode: compareMode,
@@ -690,16 +711,18 @@ export async function resolveWorkbookCompareModePayload(
     if (!directResult?.diffLines) return null;
 
     const payload = buildPayload(compareMode, directResult, directResult.parseMs);
-    if (cacheContext) rememberWorkbookComparePayload(cacheContext, payload);
+    if (cacheContext) rememberWorkbookComparePayload(cacheContext, payload, cacheGeneration);
     return payload;
   })();
 
-  if (cacheContext) {
+  if (cacheContext && getSessionCacheGeneration() === cacheGeneration) {
     workbookCompareInFlight.set(cacheContext.key, resolver);
     try {
       return await resolver;
     } finally {
-      workbookCompareInFlight.delete(cacheContext.key);
+      if (workbookCompareInFlight.get(cacheContext.key) === resolver) {
+        workbookCompareInFlight.delete(cacheContext.key);
+      }
     }
   }
 

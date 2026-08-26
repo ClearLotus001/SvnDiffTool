@@ -3,7 +3,18 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { promisify } from 'node:util';
-import { APP_ROOT, RUST_COMMAND_TIMEOUT_MS, RUST_MAX_BUFFER, RUST_PARSER_NAME, SVN_BINARY_MAX_BUFFER, SVN_TEXT_MAX_BUFFER } from './constants.js';
+import {
+  APP_ROOT,
+  RUST_COMMAND_TIMEOUT_MS,
+  RUST_MAX_BUFFER,
+  RUST_PARSER_NAME,
+  SVN_BINARY_MAX_BUFFER,
+  SVN_COMMAND_MAX_CONCURRENCY,
+  SVN_COMMAND_MAX_QUEUE,
+  SVN_COMMAND_TIMEOUT_MS,
+  SVN_TEXT_MAX_BUFFER,
+} from './constants.js';
+import { BoundedCommandGate } from './commandGate.js';
 import { logDebugTiming, logRustDebugStderr } from './logger.js';
 import { logMainWarn } from '../logging.js';
 import {
@@ -67,12 +78,14 @@ async function execFileBufferCommand(
   file: string,
   args: string[],
   maxBuffer: number,
+  timeout?: number,
 ): Promise<{ ok: boolean; stdout: Buffer; stderr: string }> {
   try {
     const result = await execFileAsync(file, args, {
       encoding: 'buffer',
       windowsHide: true,
       maxBuffer,
+      ...(timeout != null ? { timeout } : {}),
     }) as { stdout: Buffer; stderr: Buffer };
 
     return {
@@ -98,12 +111,30 @@ async function execFileBufferCommand(
 // SVN command wrappers
 // ---------------------------------------------------------------------------
 
+const svnCommandGate = new BoundedCommandGate(
+  SVN_COMMAND_MAX_CONCURRENCY,
+  SVN_COMMAND_MAX_QUEUE,
+  'Too many SVN commands are already running or queued.',
+);
+
 export function runSvnUtf8(args: string[]): Promise<{ ok: boolean; stdout: string; stderr: string }> {
-  return execFileTextCommand('svn', args, SVN_TEXT_MAX_BUFFER);
+  return svnCommandGate
+    .run(() => execFileTextCommand('svn', args, SVN_TEXT_MAX_BUFFER, SVN_COMMAND_TIMEOUT_MS))
+    .catch((error: unknown) => ({
+      ok: false,
+      stdout: '',
+      stderr: error instanceof Error ? error.message : String(error),
+    }));
 }
 
 export function runSvnBuffer(args: string[]): Promise<{ ok: boolean; stdout: Buffer; stderr: string }> {
-  return execFileBufferCommand('svn', args, SVN_BINARY_MAX_BUFFER);
+  return svnCommandGate
+    .run(() => execFileBufferCommand('svn', args, SVN_BINARY_MAX_BUFFER, SVN_COMMAND_TIMEOUT_MS))
+    .catch((error: unknown) => ({
+      ok: false,
+      stdout: Buffer.alloc(0),
+      stderr: error instanceof Error ? error.message : String(error),
+    }));
 }
 
 // ---------------------------------------------------------------------------

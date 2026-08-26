@@ -1,7 +1,6 @@
 import type { DiffLine } from '@/types';
 import { computeDiff } from '@/engine/text/diff';
 import { createLatestWorkerClient } from '@/utils/async/latestWorkerClient';
-import { scheduleWorkerWarmup } from '@/utils/async/workerWarmup';
 
 interface TextDiffWorkerRequest {
   requestId: number;
@@ -55,11 +54,9 @@ const textDiffWorkerClient = createLatestWorkerClient<
   workerMessageErrorMessage: 'Failed to receive text diff worker result.',
 });
 
-scheduleWorkerWarmup(() => {
-  // Pre-create the Worker so the first diff computation doesn't pay the
-  // cold-start cost (module parse + JIT) of Worker initialization.
+export function warmTextDiffWorker(): void {
   textDiffWorkerClient.warmup();
-});
+}
 
 export function computeTextDiffAsync(
   baseText: string,

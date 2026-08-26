@@ -32,6 +32,18 @@ export const RUST_COMMAND_TIMEOUT_MS = Number.isFinite(configuredRustCommandTime
   : 120_000;
 export const SVN_TEXT_MAX_BUFFER = 64 * 1024 * 1024;
 export const SVN_BINARY_MAX_BUFFER = 256 * 1024 * 1024;
+const configuredSvnCommandTimeoutMs = Number(process.env.VERSORA_SVN_TIMEOUT_MS ?? 60_000);
+const configuredSvnCommandConcurrency = Number(process.env.VERSORA_SVN_MAX_CONCURRENCY ?? 4);
+const configuredSvnCommandQueue = Number(process.env.VERSORA_SVN_MAX_QUEUE ?? 12);
+export const SVN_COMMAND_TIMEOUT_MS = Number.isFinite(configuredSvnCommandTimeoutMs)
+  ? Math.max(1_000, configuredSvnCommandTimeoutMs)
+  : 60_000;
+export const SVN_COMMAND_MAX_CONCURRENCY = Number.isFinite(configuredSvnCommandConcurrency)
+  ? Math.max(1, Math.min(16, Math.floor(configuredSvnCommandConcurrency)))
+  : 4;
+export const SVN_COMMAND_MAX_QUEUE = Number.isFinite(configuredSvnCommandQueue)
+  ? Math.max(0, Math.min(64, Math.floor(configuredSvnCommandQueue)))
+  : 12;
 export const FILE_PAYLOAD_CACHE_LIMIT = 12;
 export const REVISION_PAYLOAD_CACHE_LIMIT = 24;
 export const FILE_PAYLOAD_CACHE_MAX_BYTES = 64 * 1024 * 1024;

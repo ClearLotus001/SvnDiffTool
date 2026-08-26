@@ -26,6 +26,7 @@ import {
   resolveWorkbookHeaderRowDividerColor,
   resolveWorkbookMiniMapColor,
   resolveWorkbookMiniMapPaint,
+  resolveWorkbookOverlayPalette,
   resolveWorkbookRowBorderColor,
   resolveWorkbookRowGutterBackground,
   resolveWorkbookRowLineNumberColor,
@@ -39,7 +40,7 @@ import {
 test('workbook row visuals use semantic add/delete/mixed colors', () => {
   assert.equal(resolveWorkbookRowBorderColor(lightTheme, 'add'), lightTheme.addBrd);
   assert.equal(resolveWorkbookRowBorderColor(lightTheme, 'delete'), lightTheme.delBrd);
-  assert.equal(resolveWorkbookRowBorderColor(lightTheme, 'mixed'), lightTheme.chgTx);
+  assert.equal(resolveWorkbookRowBorderColor(lightTheme, 'mixed'), lightTheme.chgBrd);
 
   assert.equal(resolveWorkbookRowLineNumberColor({
     theme: lightTheme,
@@ -182,8 +183,22 @@ test('semantic diff palette stays green red and yellow with accessible text cont
 
 test('workbook aux bar palette follows semantic tones', () => {
   const palette = resolveWorkbookAuxBarPalette(lightTheme, 'mixed');
-  assert.equal(palette.accent, lightTheme.chgTx);
+  assert.equal(palette.border, `${lightTheme.chgBrd}66`);
+  assert.equal(palette.accent, lightTheme.chgBrd);
+  assert.equal(palette.buttonBorder, `${lightTheme.chgBrd}55`);
   assert.equal(palette.buttonText, lightTheme.chgTx);
+});
+
+test('workbook overlay outlines use semantic border colors', () => {
+  const added = resolveWorkbookOverlayPalette(lightTheme, 'add');
+  const deleted = resolveWorkbookOverlayPalette(lightTheme, 'delete');
+  const modified = resolveWorkbookOverlayPalette(lightTheme, 'mixed');
+
+  assert.equal(added.mid, lightTheme.addBrd);
+  assert.equal(deleted.mid, lightTheme.delBrd);
+  assert.equal(modified.mid, lightTheme.chgBrd);
+  assert.equal(modified.continuation, `${lightTheme.chgBrd}38`);
+  assert.equal(modified.shine, `${lightTheme.chgBrd}44`);
 });
 
 test('workbook visible row labels expose sparse row gaps without materializing blank rows', () => {

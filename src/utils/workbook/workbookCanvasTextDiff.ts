@@ -101,7 +101,7 @@ export function resolveWorkbookCanvasTextDiffHighlight(
         edge: `${theme.searchHl}cc`,
       }
     : {
-        background: `${theme.chgTx}40`,
+        background: theme.chgHl,
         edge: `${theme.chgBrd}cc`,
       };
 }

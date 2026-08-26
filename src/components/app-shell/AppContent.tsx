@@ -153,7 +153,7 @@ function renderBootstrappingState() {
       data-testid="app-bootstrapping-state"
       aria-hidden="true"
       className="flex-1 w-full min-w-0 min-h-0 bg-bg-base"
-      style={{ background: 'var(--boot-bg, #08090D)' }}
+      style={{ background: 'var(--boot-bg, var(--bg-base))' }}
     />
   );
 }

@@ -1,7 +1,6 @@
 import type { SyntaxPresentation } from '@/types';
 import type { SupportedShikiLanguage } from '@/utils/diff/shikiSupportedLanguages';
 import { createLatestWorkerClient } from '@/utils/async/latestWorkerClient';
-import { scheduleWorkerWarmup } from '@/utils/async/workerWarmup';
 
 interface ComputeSyntaxTokensOptions {
   baseText: string;
@@ -52,10 +51,6 @@ const syntaxHighlightWorkerClient = createLatestWorkerClient<
   workerErrorMessage: 'Failed to compute syntax highlighting in worker.',
   workerMessageErrorMessage: 'Failed to receive syntax highlight worker result.',
   workerUnavailableMessage: 'Web Worker is unavailable.',
-});
-
-scheduleWorkerWarmup(() => {
-  syntaxHighlightWorkerClient.warmup();
 });
 
 export function computeSyntaxTokensAsync(

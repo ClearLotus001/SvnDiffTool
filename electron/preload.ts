@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 const versoraApi = {
   notifyRendererReady: () => ipcRenderer.send('renderer-ready'),
+  releaseSessionResources: () => ipcRenderer.invoke('release-session-resources'),
   saveStartupAppearance: (appearance: { themeKey?: 'dark' | 'light' | 'hc'; locale?: 'zh-CN' | 'en-US' }) => ipcRenderer.send('save-startup-appearance', appearance),
   getLaunchContext: () => ipcRenderer.invoke('get-launch-context'),
   getDiffData: (compareMode?: 'strict' | 'content') => ipcRenderer.invoke('get-diff-data', { compareMode }),

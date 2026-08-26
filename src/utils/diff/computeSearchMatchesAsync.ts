@@ -4,7 +4,6 @@ import {
   type SearchScanResult,
 } from '@/engine/text/search';
 import { createLatestWorkerClient } from '@/utils/async/latestWorkerClient';
-import { scheduleWorkerWarmup } from '@/utils/async/workerWarmup';
 
 interface SearchOptions {
   query: string;
@@ -113,9 +112,9 @@ const textSearchWorkerClient = createLatestWorkerClient<
   },
 });
 
-scheduleWorkerWarmup(() => {
-  textSearchWorkerClient.warmup();
-});
+export function disposeTextSearchWorker(): void {
+  textSearchWorkerClient.dispose();
+}
 
 export function computeSearchMatchesAsync(
   searchableLines: string[],
@@ -123,6 +122,7 @@ export function computeSearchMatchesAsync(
   lineStartOffsets: number[] | null = null,
 ): Promise<SearchScanResult> {
   if (!options.query) {
+    if (workerSearchableLines || workerLineStartOffsets) disposeTextSearchWorker();
     return Promise.resolve({ matches: [], totalCount: 0, truncated: false });
   }
   return textSearchWorkerClient.compute({ searchableLines, lineStartOffsets, options });

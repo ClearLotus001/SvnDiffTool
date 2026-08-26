@@ -452,7 +452,7 @@ const Toolbar = memo((props: ToolbarProps) => {
                   overflow-hidden text-ellipsis whitespace-nowrap
                 "
                 style={{
-                  background: `color-mix(in srgb, var(--acc2, #6a9bcc) 6%, transparent)`,
+                  background: 'color-mix(in srgb, var(--acc2) 6%, transparent)',
                   ...noDragStyle,
                 }}>
                 {hunkTargetLabel}

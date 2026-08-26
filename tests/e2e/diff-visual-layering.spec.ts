@@ -115,7 +115,7 @@ test('logical text selection keeps character diff highlight visible', async ({ p
   }).first();
   await expect(selectedDiffMark).toBeVisible();
   await expect(selectedDiffMark).toHaveAttribute('style', /--text-selection-bg/);
-  await expect(selectedDiffMark).toHaveAttribute('style', /--diff-modify-text/);
+  await expect(selectedDiffMark).toHaveAttribute('style', /--diff-modify-hl/);
 });
 
 test('character diff highlight preserves syntax foreground color', async ({ page }) => {

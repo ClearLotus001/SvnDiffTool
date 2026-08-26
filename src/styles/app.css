@@ -88,6 +88,10 @@
   --color-version-base: var(--version-base);
   --color-version-mine: var(--version-mine);
 
+  /* ── 来源标识色 ── */
+  --color-source-git: var(--source-git);
+  --color-source-svn: var(--source-svn);
+
   /* ── 按钮激活态文字 ── */
   --color-btn-active-text: var(--btn-active-text);
 
@@ -162,12 +166,12 @@
   --syntax-keyword: #E879F9;
   --syntax-string: #93C5FD;
   --syntax-number: #6EE7B7;
-  --syntax-comment: #71717A;
+  --syntax-comment: #85858F;
   --syntax-punctuation: #D4D4D8;
 
   /* 行号 */
   --ln-bg: #18181B;
-  --ln-text: #71717A;
+  --ln-text: #85858F;
   --workbook-header-bg: #1B2B38;
   --workbook-header-border: #557085;
   --workbook-grid-border: #26313D;
@@ -196,6 +200,10 @@
   --acc2: #76C7D2;
   --version-base: #8AB8E3;
   --version-mine: #E6C95A;
+
+  /* 来源标识 */
+  --source-git: #FF795D;
+  --source-svn: #8AB8E3;
 
   /* 按钮激活态 */
   --btn-active-bg: var(--accent);
@@ -259,7 +267,7 @@
 
   /* 行号 */
   --ln-bg: #FFFFFF;
-  --ln-text: #A1A1AA;
+  --ln-text: #71717A;
   --workbook-header-bg: #EDF4FA;
   --workbook-header-border: #9FB3C4;
   --workbook-grid-border: #E2E8F0;
@@ -288,6 +296,10 @@
   --acc2: #007A86;
   --version-base: #246FAE;
   --version-mine: #8D6200;
+
+  /* 来源标识 */
+  --source-git: #B83E27;
+  --source-svn: #3F6698;
 
   /* 按钮激活态 */
   --btn-active-bg: var(--accent);
@@ -380,6 +392,10 @@
   --acc2: #00FFFF;
   --version-base: #00FFFF;
   --version-mine: #FFFF00;
+
+  /* 来源标识 */
+  --source-git: #FFFF00;
+  --source-svn: #00FFFF;
 
   /* 按钮激活态 */
   --btn-active-bg: var(--accent);

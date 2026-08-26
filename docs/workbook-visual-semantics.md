@@ -79,6 +79,17 @@
 - tooltip hint：`getWorkbookCompareHintVisual`
 - merge continuation：`getWorkbookMergeContinuationVisual`
 
+### 2.3 Diff 颜色角色
+
+所有布局统一遵循同一组颜色角色，不能因为组件或 Canvas/DOM 渲染方式不同而互换：
+
+- `*Bg`：整行或整个单元格的语义背景
+- `*Hl`：字符级、词级的局部差异高亮
+- `*Tx`：文字、前缀、行号和标签
+- `*Brd`：边框、轮廓、左侧标记、分隔线和 MiniMap 标记
+
+普通 UI 组件不得直接写固定色值；主题颜色必须由 CSS Variables 或共享视觉 helper 提供。角色插画、粒子和品牌艺术资产可维护独立的艺术调色板。
+
 ## 3. Selection 语义
 
 Selection 相关视觉不允许在 canvas 组件里直接手写 alpha 规则，统一通过：

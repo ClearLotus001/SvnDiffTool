@@ -2,6 +2,7 @@ import type { WorkbookRowDeltaTone } from '@/types';
 import type { ThemeTokens } from '@/theme/tokens';
 import { resolveThemeAppearance } from '@/theme';
 import type { LineNumberTone } from '@/utils/diff/lineNumberTone';
+import { resolveDiffIndicatorThemeVisual } from '@/utils/diff/diffIndicatorVisuals';
 import {
   resolveDiffMiniMapPaint,
 } from '@/utils/diff/minimapColors';
@@ -18,6 +19,19 @@ export interface WorkbookMiniMapPaint {
 
 function normalizeWorkbookRowTone(tone: WorkbookRowSemanticTone): WorkbookRowDeltaTone {
   return tone === 'neutral' ? 'equal' : tone;
+}
+
+function resolveWorkbookSemanticDiffVisual(
+  theme: ThemeTokens,
+  tone: WorkbookRowSemanticTone,
+) {
+  const semanticTone = normalizeWorkbookRowTone(tone);
+  if (semanticTone === 'equal') return null;
+  return resolveDiffIndicatorThemeVisual(
+    theme,
+    semanticTone === 'mixed' ? 'modify' : semanticTone,
+    'strong',
+  );
 }
 
 export function resolveWorkbookVersionAccent(
@@ -179,37 +193,15 @@ export function resolveWorkbookAuxBarPalette(
   labelText: string;
   subduedText: string;
 } {
-  const semanticTone = normalizeWorkbookRowTone(tone);
-  if (semanticTone === 'add') {
+  const semanticVisual = resolveWorkbookSemanticDiffVisual(theme, tone);
+  if (semanticVisual) {
     return {
       background: `linear-gradient(180deg, ${theme.bg2} 0%, ${theme.bg1} 100%)`,
-      border: `${theme.addBrd}66`,
-      accent: theme.addBrd,
-      buttonBorder: `${theme.addBrd}55`,
-      buttonText: theme.addTx,
-      labelText: theme.addTx,
-      subduedText: theme.t2,
-    };
-  }
-  if (semanticTone === 'delete') {
-    return {
-      background: `linear-gradient(180deg, ${theme.bg2} 0%, ${theme.bg1} 100%)`,
-      border: `${theme.delBrd}66`,
-      accent: theme.delBrd,
-      buttonBorder: `${theme.delBrd}55`,
-      buttonText: theme.delTx,
-      labelText: theme.delTx,
-      subduedText: theme.t2,
-    };
-  }
-  if (semanticTone === 'mixed') {
-    return {
-      background: `linear-gradient(180deg, ${theme.bg2} 0%, ${theme.bg1} 100%)`,
-      border: `${theme.chgTx}66`,
-      accent: theme.chgTx,
-      buttonBorder: `${theme.chgTx}55`,
-      buttonText: theme.chgTx,
-      labelText: theme.chgTx,
+      border: `${semanticVisual.border}66`,
+      accent: semanticVisual.border,
+      buttonBorder: `${semanticVisual.border}55`,
+      buttonText: semanticVisual.textColor,
+      labelText: semanticVisual.textColor,
       subduedText: theme.t2,
     };
   }
@@ -251,12 +243,9 @@ export function resolveWorkbookRowBorderColor(
   tone: WorkbookRowSemanticTone,
   sideAccent: WorkbookRowSideAccent = null,
 ): string {
-  const semanticTone = normalizeWorkbookRowTone(tone);
   if (sideAccent) return getWorkbookSideAccent(theme, sideAccent);
-  if (semanticTone === 'add') return theme.addBrd;
-  if (semanticTone === 'delete') return theme.delBrd;
-  if (semanticTone === 'mixed') return theme.chgTx;
-  return theme.workbookGridBorderStrong;
+  return resolveWorkbookSemanticDiffVisual(theme, tone)?.border
+    ?? theme.workbookGridBorderStrong;
 }
 
 export function resolveWorkbookRowRuleColor(
@@ -280,11 +269,8 @@ export function resolveWorkbookRowLineNumberColor(params: {
     fallbackTone,
     active = false,
   } = params;
-  const semanticTone = normalizeWorkbookRowTone(tone);
-
-  if (semanticTone === 'add') return theme.addTx;
-  if (semanticTone === 'delete') return theme.delTx;
-  if (semanticTone === 'mixed') return theme.chgTx;
+  const semanticVisual = resolveWorkbookSemanticDiffVisual(theme, tone);
+  if (semanticVisual) return semanticVisual.textColor;
   const inactiveVersionAlpha = isLightWorkbookTheme(theme) ? 'e6' : 'bf';
   if (fallbackTone === 'base') return active ? theme.versionBase : withHexAlpha(theme.versionBase, inactiveVersionAlpha);
   if (fallbackTone === 'mine') return active ? theme.versionMine : withHexAlpha(theme.versionMine, inactiveVersionAlpha);
@@ -327,7 +313,7 @@ export function resolveWorkbookMiniMapColor(
 ): string {
   const paint = resolveWorkbookMiniMapPaint(theme, tone);
   if (paint.kind === 'solid') return paint.color ?? theme.bg2;
-  return paint.stops?.[1]?.color ?? resolveDiffMiniMapPaint(theme, 'modify').color ?? theme.chgTx;
+  return paint.stops?.[1]?.color ?? resolveDiffMiniMapPaint(theme, 'modify').color ?? theme.chgBrd;
 }
 
 export function resolveWorkbookOverlayPalette(
@@ -341,31 +327,32 @@ export function resolveWorkbookOverlayPalette(
   shine: string;
 } {
   const semanticTone = normalizeWorkbookRowTone(tone);
+  const semanticVisual = resolveWorkbookSemanticDiffVisual(theme, tone);
   if (semanticTone === 'add') {
     return {
-      left: theme.addBrd,
-      right: theme.addBrd,
-      mid: theme.addTx,
-      continuation: `${theme.addBrd}38`,
-      shine: `${theme.addTx}44`,
+      left: semanticVisual?.border ?? theme.addBrd,
+      right: semanticVisual?.border ?? theme.addBrd,
+      mid: semanticVisual?.border ?? theme.addBrd,
+      continuation: `${semanticVisual?.border ?? theme.addBrd}38`,
+      shine: `${semanticVisual?.border ?? theme.addBrd}44`,
     };
   }
   if (semanticTone === 'delete') {
     return {
-      left: theme.delBrd,
-      right: theme.delBrd,
-      mid: theme.delTx,
-      continuation: `${theme.delBrd}38`,
-      shine: `${theme.delTx}44`,
+      left: semanticVisual?.border ?? theme.delBrd,
+      right: semanticVisual?.border ?? theme.delBrd,
+      mid: semanticVisual?.border ?? theme.delBrd,
+      continuation: `${semanticVisual?.border ?? theme.delBrd}38`,
+      shine: `${semanticVisual?.border ?? theme.delBrd}44`,
     };
   }
   if (semanticTone === 'mixed') {
     return {
       left: theme.versionBase,
       right: theme.versionMine,
-      mid: theme.chgTx,
-      continuation: `${theme.chgTx}38`,
-      shine: `${theme.chgTx}44`,
+      mid: semanticVisual?.border ?? theme.chgBrd,
+      continuation: `${semanticVisual?.border ?? theme.chgBrd}38`,
+      shine: `${semanticVisual?.border ?? theme.chgBrd}44`,
     };
   }
   return {

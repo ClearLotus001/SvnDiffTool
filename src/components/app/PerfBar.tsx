@@ -81,7 +81,8 @@ const PerfBar = memo(({ metrics }: PerfBarProps) => {
         {chip(t('perfTextResolve'), formatMs(metrics.textResolveMs), cssVar('acc2'))}
         {chip(t('perfMetadata'), formatMs(metrics.metadataMs), cssVar('acc'))}
         {chip(t('perfDiff'), formatMs(metrics.diffMs), cssVar('acc2'))}
-        {chip(t('perfTotal'), formatMs(metrics.totalAppMs), cssVar('acc'))}
+        {chip(t('perfRendererApply'), formatMs(metrics.rendererApplyMs), cssVar('acc'))}
+        {chip(t('perfRequestCommit'), formatMs(metrics.requestToCommitMs), cssVar('acc'))}
         {chip(t('perfBaseBytes'), formatBytes(metrics.baseBytes), cssVar('versionBase'))}
         {chip(t('perfMineBytes'), formatBytes(metrics.mineBytes), cssVar('versionMine'))}
         {chip(t('perfDiffLines'), typeof metrics.diffLineCount === 'number' ? String(metrics.diffLineCount) : '—', cssVar('acc2'))}

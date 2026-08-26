@@ -8,6 +8,7 @@ export default defineConfig({
   testDir: './tests/e2e',
   timeout: 30_000,
   fullyParallel: false,
+  workers: 4,
   use: {
     baseURL: e2eBaseUrl,
     headless: true,
@@ -16,7 +17,7 @@ export default defineConfig({
   webServer: {
     command: `npm run build:renderer && npx vite preview --host ${e2eUrl.hostname} --port ${e2ePort} --strictPort`,
     url: e2eBaseUrl,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 120_000,
   },
   projects: [

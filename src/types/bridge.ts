@@ -35,6 +35,7 @@ export interface LaunchContextPayload {
 
 export interface VersoraBridge {
   notifyRendererReady?(): void;
+  releaseSessionResources?(): Promise<void>;
   saveStartupAppearance?(appearance: { themeKey?: ThemeKey; locale?: 'zh-CN' | 'en-US' }): void;
   getLaunchContext(): Promise<LaunchContextPayload>;
   getDiffData(compareMode?: WorkbookCompareMode): Promise<DiffData>;

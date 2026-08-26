@@ -13,6 +13,7 @@ import {
 } from './workbookProjection.js';
 import { haveSameLocalFileAndBytes, haveSameLocalFileContents } from './svnOperations.js';
 import { prepareTextDiffAnalysis } from './text/diff.js';
+import { getSessionCacheGeneration } from './state.js';
 import type {
   DiffAnalysisSnapshot,
   FilePayload,
@@ -30,6 +31,7 @@ interface AnalysisSnapshotCacheEntry {
 const analysisSnapshotCache = new Map<string, AnalysisSnapshotCacheEntry>();
 const analysisSnapshotInFlight = new Map<string, Promise<DiffAnalysisSnapshot>>();
 const analysisSnapshotMemoryEstimateCache = new WeakMap<DiffAnalysisSnapshot, number>();
+let analysisSnapshotCacheGeneration = getSessionCacheGeneration();
 const WORKBOOK_METADATA_ONLY_PAYLOAD_OPTIONS = {
   includeWorkbookText: false,
   includeWorkbookBytes: false,
@@ -49,6 +51,16 @@ export interface ResolveAnalysisSnapshotInput {
   mineLocalPath: string;
 }
 
+function syncAnalysisSnapshotCacheGeneration(): number {
+  const currentGeneration = getSessionCacheGeneration();
+  if (analysisSnapshotCacheGeneration !== currentGeneration) {
+    analysisSnapshotCache.clear();
+    analysisSnapshotInFlight.clear();
+    analysisSnapshotCacheGeneration = currentGeneration;
+  }
+  return currentGeneration;
+}
+
 export function buildAnalysisSnapshotCacheKey({
   sourceIdentity,
   compareMode,
@@ -66,6 +78,7 @@ export function buildAnalysisSnapshotCacheKey({
 export function peekAnalysisSnapshot(
   input: Pick<ResolveAnalysisSnapshotInput, 'sourceIdentity' | 'compareMode' | 'baseRevisionId' | 'mineRevisionId'>,
 ): DiffAnalysisSnapshot | null {
+  syncAnalysisSnapshotCacheGeneration();
   const key = buildAnalysisSnapshotCacheKey(input);
   const cached = analysisSnapshotCache.get(key);
   return cached ? touchAnalysisSnapshot(key, cached) : null;
@@ -90,6 +103,7 @@ export function peekWorkbookAnalysisSnapshot(
 export function getInFlightAnalysisSnapshot(
   input: Pick<ResolveAnalysisSnapshotInput, 'sourceIdentity' | 'compareMode' | 'baseRevisionId' | 'mineRevisionId'>,
 ): Promise<DiffAnalysisSnapshot> | null {
+  syncAnalysisSnapshotCacheGeneration();
   return analysisSnapshotInFlight.get(buildAnalysisSnapshotCacheKey(input)) ?? null;
 }
 
@@ -394,6 +408,7 @@ function buildTextSnapshot(input: ResolveAnalysisSnapshotInput): DiffAnalysisSna
 export async function resolveAnalysisSnapshot(
   input: ResolveAnalysisSnapshotInput,
 ): Promise<DiffAnalysisSnapshot> {
+  const cacheGeneration = syncAnalysisSnapshotCacheGeneration();
   const key = buildAnalysisSnapshotCacheKey(input);
   const cached = analysisSnapshotCache.get(key);
   if (cached) {
@@ -409,7 +424,9 @@ export async function resolveAnalysisSnapshot(
     const snapshot = input.isWorkbook
       ? await buildWorkbookSnapshot(input)
       : buildTextSnapshot(input);
-    rememberAnalysisSnapshot(key, snapshot);
+    if (getSessionCacheGeneration() === cacheGeneration) {
+      rememberAnalysisSnapshot(key, snapshot);
+    }
     return snapshot;
   })();
 
@@ -426,4 +443,5 @@ export async function resolveAnalysisSnapshot(
 export function clearAnalysisSnapshotCache() {
   analysisSnapshotCache.clear();
   analysisSnapshotInFlight.clear();
+  analysisSnapshotCacheGeneration = getSessionCacheGeneration();
 }

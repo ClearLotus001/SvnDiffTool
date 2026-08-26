@@ -26,6 +26,9 @@ test('Electron exposes one renderer bridge and one launch-data path', () => {
     assert.equal(source.includes(legacyLaunchMethod), false);
   }
   assert.equal(ipcSource.includes(legacyLaunchChannel), false);
+  assert.match(preloadSource, /releaseSessionResources: \(\) => ipcRenderer\.invoke\('release-session-resources'\)/);
+  assert.match(bridgeTypeSource, /releaseSessionResources\?\(\): Promise<void>/);
+  assert.match(ipcSource, /safeHandle\('release-session-resources'/);
 
   const noDiffRequestGuard = lifecycleSource.indexOf('if (!launchContext.hasDiffRequest)');
   assert.ok(noDiffRequestGuard >= 0);
