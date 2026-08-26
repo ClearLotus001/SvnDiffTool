@@ -12,7 +12,9 @@ test('E2E runner selects an available port and never reuses an unknown preview s
   };
 
   assert.ok(port >= 49_180);
-  assert.match(config, /workers: 4/);
+  assert.match(config, /workers: isCi \? 2 : 4/);
+  assert.match(config, /timeout: isCi \? 45_000 : 30_000/);
+  assert.match(config, /reducedMotion: isCi \? 'reduce' : 'no-preference'/);
   assert.match(config, /reuseExistingServer: false/);
   assert.equal(packageJson.scripts['test:e2e'], 'tsx scripts/run-e2e.ts');
 });

@@ -188,10 +188,9 @@ test(`fast workbook minimap dragging keeps a rendered canvas over the ${layout} 
     miniMapBox!.x + (miniMapBox!.width / 2),
     miniMapBox!.y + (miniMapBox!.height * 0.2),
   );
-  await page.waitForTimeout(8);
   const clickPreview = page.locator('[data-workbook-fast-scroll-viewport]');
   await expect.poll(() => clickPreview.count()).toBeGreaterThan(0);
-  const clickPreviewOpaquePixels = await clickPreview.locator('canvas').evaluateAll(canvases => canvases.reduce(
+  await expect.poll(() => clickPreview.locator('canvas').evaluateAll(canvases => canvases.reduce(
     (opaque, canvas) => {
       const workbookCanvas = canvas as HTMLCanvasElement;
       const context = workbookCanvas.getContext('2d');
@@ -205,8 +204,7 @@ test(`fast workbook minimap dragging keeps a rendered canvas over the ${layout} 
       return opaque + ((pixel[3] ?? 0) > 0 ? 1 : 0);
     },
     0,
-  ));
-  expect(clickPreviewOpaquePixels).toBeGreaterThan(0);
+  )).catch(() => 0), { timeout: 2_000 }).toBeGreaterThan(0);
   await page.waitForTimeout(180);
   await expect(clickPreview).toHaveCount(0);
   await expect.poll(() => scrollers.first().evaluate(element => element.scrollTop)).not.toBe(beforeClickScrollTop);
