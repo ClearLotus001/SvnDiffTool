@@ -10,6 +10,18 @@ import type {
 
 export type ConcreteDiffType = Exclude<DiffTypeFilter, 'all'>;
 
+export interface DiffTypeAvailability {
+  add: boolean;
+  modify: boolean;
+  delete: boolean;
+}
+
+const EMPTY_DIFF_TYPE_AVAILABILITY: DiffTypeAvailability = {
+  add: false,
+  modify: false,
+  delete: false,
+};
+
 type WorkbookRowClassification = Pick<
   WorkbookRowDelta,
   'hasChanges' | 'structuralChange' | 'tone'
@@ -31,6 +43,17 @@ function resolveWorkbookRegionDiffType(
   if (!region.hasBaseSide && region.hasMineSide) return 'add';
   if (region.hasBaseSide && !region.hasMineSide) return 'delete';
   return 'modify';
+}
+
+export function getTextDiffTypeAvailability(
+  analysis: Pick<PreparedTextAnalysis, 'stats'> | null,
+): DiffTypeAvailability {
+  if (!analysis) return EMPTY_DIFF_TYPE_AVAILABILITY;
+  return {
+    add: analysis.stats.add > 0,
+    modify: analysis.stats.chg > 0,
+    delete: analysis.stats.del > 0,
+  };
 }
 
 export function workbookRegionMatchesDiffType(

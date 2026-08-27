@@ -16,6 +16,7 @@ import {
 import { prepareTextDiffAnalysisFromDiffLines } from '@/utils/diff/preparedTextAnalysis';
 import {
   filterTextDiffAnalysis,
+  getTextDiffTypeAvailability,
   workbookRegionMatchesDiffType,
 } from '@/utils/diff/diffTypeFilter';
 import {
@@ -27,7 +28,10 @@ import {
   getWorkbookSheetMaxRowNumber,
   resolveWorkbookGotoTarget,
 } from '@/utils/workbook/workbookGoto';
-import { buildWorkbookVisibilityModel } from '@/utils/workbook/workbookVisibilityModel';
+import {
+  buildWorkbookVisibilityModel,
+  getWorkbookDiffTypeAvailability,
+} from '@/utils/workbook/workbookVisibilityModel';
 import {
   buildWorkbookDiffRegions,
   buildWorkbookNavigationRegions,
@@ -318,6 +322,24 @@ export default function useAppViewModel({
       workbookSections,
     ],
   );
+  const diffTypeAvailability = useMemo(
+    () => (
+      isWorkbookMode
+        ? getWorkbookDiffTypeAvailability({
+            sections: workbookSections,
+            sectionRowIndex: workbookSectionRowIndex,
+            compareMode: workbookCompareMode,
+          })
+        : getTextDiffTypeAvailability(sourceTextAnalysis)
+    ),
+    [
+      isWorkbookMode,
+      sourceTextAnalysis,
+      workbookCompareMode,
+      workbookSectionRowIndex,
+      workbookSections,
+    ],
+  );
   const workbookDiffRegions = useMemo(
     () => {
       if (!showOnlyDifferences && diffTypeFilter === 'all') return allWorkbookDiffRegions;
@@ -558,6 +580,7 @@ export default function useAppViewModel({
     workbookSectionRowIndex,
     workbookVisibilityModel,
     isWorkbookMode,
+    diffTypeAvailability,
     hunkNavigationEnabled,
     workbookDiffRegions,
     activeWorkbookDiffRegion,

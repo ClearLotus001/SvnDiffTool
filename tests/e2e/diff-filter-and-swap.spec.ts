@@ -126,6 +126,49 @@ test('workbook type filters remove non-matching rows from the rendered canvas', 
   await expect.poll(renderedHeight).toBe(fullHeight);
 });
 
+test('diff type buttons are disabled when their source type has no differences', async ({ page }) => {
+  await page.evaluate(async () => {
+    await window.__SVN_DIFF_E2E__!.loadTextDiff({
+      fileName: 'added-only.txt',
+      baseContent: 'same',
+      mineContent: 'same\nadded',
+      layout: 'split-h',
+    });
+  });
+  await page.waitForFunction(() => window.__SVN_DIFF_E2E__?.getSnapshot().fileName === 'added-only.txt');
+
+  await expect(page.getByTestId('diff-filter-all')).toBeEnabled();
+  await expect(page.getByTestId('diff-filter-add')).toBeEnabled();
+  await expect(page.getByTestId('diff-filter-modify')).toBeDisabled();
+  await expect(page.getByTestId('diff-filter-delete')).toBeDisabled();
+
+  await page.getByTestId('diff-filter-add').click();
+  await expect(page.getByTestId('diff-filter-add')).toHaveAttribute('aria-checked', 'true');
+
+  await page.evaluate(async () => {
+    await window.__SVN_DIFF_E2E__!.loadWorkbookDiff({
+      fileName: 'modified-only.xlsx',
+      baseContent: [
+        '@@sheet\tModified',
+        '@@row\t1\tID\tValue',
+        '@@row\t2\t1\tBefore',
+      ].join('\n'),
+      mineContent: [
+        '@@sheet\tModified',
+        '@@row\t1\tID\tValue',
+        '@@row\t2\t1\tAfter',
+      ].join('\n'),
+      layout: 'split-h',
+    });
+  });
+  await page.waitForFunction(() => window.__SVN_DIFF_E2E__?.getSnapshot().fileName === 'modified-only.xlsx');
+
+  await expect(page.getByTestId('diff-filter-all')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByTestId('diff-filter-add')).toBeDisabled();
+  await expect(page.getByTestId('diff-filter-modify')).toBeEnabled();
+  await expect(page.getByTestId('diff-filter-delete')).toBeDisabled();
+});
+
 test('swap button exchanges the complete left and right comparison sides', async ({ page }) => {
   await page.evaluate(async () => {
     await window.__SVN_DIFF_E2E__!.loadTextDiff({

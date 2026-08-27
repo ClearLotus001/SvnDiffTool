@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import type { DiffData, DiffLine, PreparedTextAnalysis } from '../src/types';
-import { filterTextDiffAnalysis } from '../src/utils/diff/diffTypeFilter';
+import {
+  filterTextDiffAnalysis,
+  getTextDiffTypeAvailability,
+} from '../src/utils/diff/diffTypeFilter';
 import { prepareTextDiffAnalysisFromDiffLines } from '../src/utils/diff/preparedTextAnalysis';
 import { swapDiffDataSides, swapDiffLinesSides } from '../src/utils/diff/swapDiffSides';
 
@@ -72,6 +75,16 @@ test('text change filters distinguish replacements from independent additions an
   assert.equal(modified.splitRowDescriptors[0]?.isReplacementPair, true);
   assert.equal(filterTextDiffAnalysis(analysis, 'modify'), modified);
   assert.equal(filterTextDiffAnalysis(analysis, 'all'), analysis);
+  assert.deepEqual(getTextDiffTypeAvailability(analysis), {
+    add: true,
+    modify: true,
+    delete: true,
+  });
+  assert.deepEqual(getTextDiffTypeAvailability(modified), {
+    add: false,
+    modify: true,
+    delete: false,
+  });
 });
 
 test('side swapping preserves canonical replacement blocks and is reversible', () => {

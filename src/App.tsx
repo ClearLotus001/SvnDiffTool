@@ -333,6 +333,7 @@ export default function App() {
     workbookSectionRowIndex,
     workbookVisibilityModel,
     isWorkbookMode,
+    diffTypeAvailability,
     hunkNavigationEnabled,
     workbookDiffRegions,
     activeWorkbookDiffRegion,
@@ -371,6 +372,12 @@ export default function App() {
     currentDiffDataRef.current,
     workbookCompareMode,
   );
+
+  useEffect(() => {
+    if (diffTypeFilter !== 'all' && !diffTypeAvailability[diffTypeFilter]) {
+      setDiffTypeFilter('all');
+    }
+  }, [diffTypeAvailability, diffTypeFilter, setDiffTypeFilter]);
 
   useEffect(() => {
     if (previousShowSearchRef.current && !showSearch) {
@@ -894,6 +901,7 @@ export default function App() {
           {hasLoadedDiff && !isLoadingDiff && (
             <DiffFilterToolbar
               value={diffTypeFilter}
+              availability={diffTypeAvailability}
               onChange={setDiffTypeFilter}
             />
           )}

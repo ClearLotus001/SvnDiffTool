@@ -7,6 +7,7 @@ import type {
 import {
   resolveWorkbookRowDiffType,
   type ConcreteDiffType,
+  type DiffTypeAvailability,
 } from '@/utils/diff/diffTypeFilter';
 import { buildWorkbookSplitRowCompareState } from '@/utils/workbook/workbookCompare';
 import { getWorkbookSideRowNumber } from '@/utils/workbook/workbookNavigation';
@@ -40,6 +41,11 @@ interface BuildWorkbookVisibilityModelOptions {
   modifiedSheetNames: ReadonlySet<string>;
   compareMode: WorkbookCompareMode;
 }
+
+type WorkbookDiffTypeAvailabilityOptions = Pick<
+  BuildWorkbookVisibilityModelOptions,
+  'sections' | 'sectionRowIndex' | 'compareMode'
+>;
 
 interface WorkbookVisibilityCacheEntry {
   effectiveModifiedSheetNames: ReadonlySet<string>;
@@ -122,6 +128,36 @@ function getVisibilityCacheEntry(
 
 function getSearchTypes(filter: DiffTypeFilter): readonly ConcreteDiffType[] {
   return filter === 'all' ? CONCRETE_DIFF_TYPES : [filter];
+}
+
+export function getWorkbookDiffTypeAvailability({
+  sections,
+  sectionRowIndex,
+  compareMode,
+}: WorkbookDiffTypeAvailabilityOptions): DiffTypeAvailability {
+  const availability: DiffTypeAvailability = {
+    add: false,
+    modify: false,
+    delete: false,
+  };
+
+  for (const section of sections) {
+    if (section.changeType === 'add' || section.changeType === 'delete') {
+      availability[section.changeType] = true;
+    } else if (section.changeType === 'rename') {
+      availability.modify = true;
+    }
+
+    const rows = sectionRowIndex.get(section.name)?.rows ?? [];
+    for (const row of rows) {
+      const delta = buildWorkbookSplitRowCompareState(row, undefined, compareMode);
+      const rowType = resolveWorkbookRowDiffType(delta);
+      if (rowType) availability[rowType] = true;
+      if (availability.add && availability.modify && availability.delete) return availability;
+    }
+  }
+
+  return availability;
 }
 
 function createCompositeSearchableCellIndex(
